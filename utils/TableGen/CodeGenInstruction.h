@@ -41,6 +41,7 @@ namespace llvm {
       static ConstraintInfo getEarlyClobber() {
         ConstraintInfo I;
         I.Kind = EarlyClobber;
+        I.OtherTiedOperand = 0;
         return I;
       }
       
@@ -132,7 +133,6 @@ namespace llvm {
     bool isNotDuplicable;
     bool hasOptionalDef;
     bool hasSideEffects;
-    bool mayHaveSideEffects;
     bool neverHasSideEffects;
     bool isAsCheapAsAMove;
     bool hasExtraSrcRegAllocReq;

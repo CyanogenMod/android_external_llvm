@@ -10,6 +10,7 @@
 #include "llvm/Target/TargetAsmParser.h"
 #include "X86.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCExpr.h"
@@ -183,6 +184,14 @@ struct X86Operand : public MCParsedAsmOperand {
 
   bool isReg() const { return Kind == Register; }
 
+  void addExpr(MCInst &Inst, const MCExpr *Expr) const {
+    // Add as immediates when possible.
+    if (const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(Expr))
+      Inst.addOperand(MCOperand::CreateImm(CE->getValue()));
+    else
+      Inst.addOperand(MCOperand::CreateExpr(Expr));
+  }
+
   void addRegOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     Inst.addOperand(MCOperand::CreateReg(getReg()));
@@ -190,13 +199,13 @@ struct X86Operand : public MCParsedAsmOperand {
 
   void addImmOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateExpr(getImm()));
+    addExpr(Inst, getImm());
   }
 
   void addImmSExt8Operands(MCInst &Inst, unsigned N) const {
     // FIXME: Support user customization of the render method.
     assert(N == 1 && "Invalid number of operands!");
-    Inst.addOperand(MCOperand::CreateExpr(getImm()));
+    addExpr(Inst, getImm());
   }
 
   void addMemOperands(MCInst &Inst, unsigned N) const {
@@ -204,7 +213,7 @@ struct X86Operand : public MCParsedAsmOperand {
     Inst.addOperand(MCOperand::CreateReg(getMemBaseReg()));
     Inst.addOperand(MCOperand::CreateImm(getMemScale()));
     Inst.addOperand(MCOperand::CreateReg(getMemIndexReg()));
-    Inst.addOperand(MCOperand::CreateExpr(getMemDisp()));
+    addExpr(Inst, getMemDisp());
     Inst.addOperand(MCOperand::CreateReg(getMemSegReg()));
   }
 
@@ -218,7 +227,7 @@ struct X86Operand : public MCParsedAsmOperand {
     Inst.addOperand(MCOperand::CreateReg(getMemBaseReg()));
     Inst.addOperand(MCOperand::CreateImm(getMemScale()));
     Inst.addOperand(MCOperand::CreateReg(getMemIndexReg()));
-    Inst.addOperand(MCOperand::CreateExpr(getMemDisp()));
+    addExpr(Inst, getMemDisp());
   }
 
   static X86Operand *CreateToken(StringRef Str, SMLoc Loc) {
@@ -492,24 +501,20 @@ X86Operand *X86ATTAsmParser::ParseMemOperand() {
 bool X86ATTAsmParser::
 ParseInstruction(const StringRef &Name, SMLoc NameLoc,
                  SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
-  // FIXME: Hack to recognize "sal..." for now. We need a way to represent
-  // alternative syntaxes in the .td file, without requiring instruction
-  // duplication.
-  if (Name.startswith("sal")) {
-    std::string Tmp = "shl" + Name.substr(3).str();
-    Operands.push_back(X86Operand::CreateToken(Tmp, NameLoc));
-  } else {
-    // FIXME: This is a hack.  We eventually want to add a general pattern
-    // mechanism to be used in the table gen file for these assembly names that
-    // use the same opcodes.  Also we should only allow the "alternate names"
-    // for rep and repne with the instructions they can only appear with.
-    StringRef PatchedName = Name;
-    if (Name == "repe" || Name == "repz")
-      PatchedName = "rep";
-    else if (Name == "repnz")
-      PatchedName = "repne";
-    Operands.push_back(X86Operand::CreateToken(PatchedName, NameLoc));
-  }
+  // FIXME: Hack to recognize "sal..." and "rep..." for now. We need a way to
+  // represent alternative syntaxes in the .td file, without requiring
+  // instruction duplication.
+  StringRef PatchedName = StringSwitch<StringRef>(Name)
+    .Case("sal", "shl")
+    .Case("salb", "shlb")
+    .Case("sall", "shll")
+    .Case("salq", "shlq")
+    .Case("salw", "shlw")
+    .Case("repe", "rep")
+    .Case("repz", "rep")
+    .Case("repnz", "repne")
+    .Default(Name);
+  Operands.push_back(X86Operand::CreateToken(PatchedName, NameLoc));
 
   if (getLexer().isNot(AsmToken::EndOfStatement)) {
 

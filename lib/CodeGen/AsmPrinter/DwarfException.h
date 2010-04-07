@@ -76,9 +76,6 @@ class DwarfException : public DwarfPrinter {
   /// ExceptionTimer - Timer for the Dwarf exception writer.
   Timer *ExceptionTimer;
 
-  /// SizeOfEncodedValue - Return the size of the encoding in bytes.
-  unsigned SizeOfEncodedValue(unsigned Encoding);
-
   /// EmitCIE - Emit a Common Information Entry (CIE). This holds information
   /// that is shared among many Frame Description Entries.  There is at least
   /// one CIE in every non-empty .debug_frame section.
@@ -135,7 +132,7 @@ class DwarfException : public DwarfPrinter {
   struct ActionEntry {
     int ValueForTypeID; // The value to write - may not be equal to the type id.
     int NextAction;
-    struct ActionEntry *Previous;
+    unsigned Previous;
   };
 
   /// CallSiteEntry - Structure describing an entry in the call-site table.

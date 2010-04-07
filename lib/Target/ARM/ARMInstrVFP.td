@@ -54,7 +54,7 @@ def vfp_f64imm : Operand<f64>,
 //  Load / store Instructions.
 //
 
-let canFoldAsLoad = 1, isReMaterializable = 1, mayHaveSideEffects = 1 in {
+let canFoldAsLoad = 1, isReMaterializable = 1 in {
 def VLDRD : ADI5<0b1101, 0b01, (outs DPR:$dst), (ins addrmode5:$addr),
                  IIC_fpLoad64, "vldr", ".64\t$dst, $addr",
                  [(set DPR:$dst, (load addrmode5:$addr))]>;
@@ -411,6 +411,101 @@ def VTOUIRS : AVConv1In<0b11101, 0b11, 0b1100, 0b1010,
                  [/* For disassembly only; pattern left blank */]> {
   let Inst{7} = 0; // Z bit
 }
+
+// Convert between floating-point and fixed-point
+// Data type for fixed-point naming convention:
+//   S16 (U=0, sx=0) -> SH
+//   U16 (U=1, sx=0) -> UH
+//   S32 (U=0, sx=1) -> SL
+//   U32 (U=1, sx=1) -> UL
+
+let Constraints = "$a = $dst" in {
+
+// FP to Fixed-Point:
+
+def VTOSHS : AVConv1XI<0b11101, 0b11, 0b1110, 0b1010, 0,
+                       (outs SPR:$dst), (ins SPR:$a, i32imm:$fbits),
+                 IIC_fpCVTSI, "vcvt", ".s16.f32\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VTOUHS : AVConv1XI<0b11101, 0b11, 0b1111, 0b1010, 0,
+                       (outs SPR:$dst), (ins SPR:$a, i32imm:$fbits),
+                 IIC_fpCVTSI, "vcvt", ".u16.f32\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VTOSLS : AVConv1XI<0b11101, 0b11, 0b1110, 0b1010, 1,
+                       (outs SPR:$dst), (ins SPR:$a, i32imm:$fbits),
+                 IIC_fpCVTSI, "vcvt", ".s32.f32\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VTOULS : AVConv1XI<0b11101, 0b11, 0b1111, 0b1010, 1,
+                       (outs SPR:$dst), (ins SPR:$a, i32imm:$fbits),
+                 IIC_fpCVTSI, "vcvt", ".u32.f32\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VTOSHD : AVConv1XI<0b11101, 0b11, 0b1110, 0b1011, 0,
+                       (outs DPR:$dst), (ins DPR:$a, i32imm:$fbits),
+                 IIC_fpCVTDI, "vcvt", ".s16.f64\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VTOUHD : AVConv1XI<0b11101, 0b11, 0b1111, 0b1011, 0,
+                       (outs DPR:$dst), (ins DPR:$a, i32imm:$fbits),
+                 IIC_fpCVTDI, "vcvt", ".u16.f64\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VTOSLD : AVConv1XI<0b11101, 0b11, 0b1110, 0b1011, 1,
+                       (outs DPR:$dst), (ins DPR:$a, i32imm:$fbits),
+                 IIC_fpCVTDI, "vcvt", ".s32.f64\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VTOULD : AVConv1XI<0b11101, 0b11, 0b1111, 0b1011, 1,
+                       (outs DPR:$dst), (ins DPR:$a, i32imm:$fbits),
+                 IIC_fpCVTDI, "vcvt", ".u32.f64\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+// Fixed-Point to FP:
+
+def VSHTOS : AVConv1XI<0b11101, 0b11, 0b1010, 0b1010, 0,
+                       (outs SPR:$dst), (ins SPR:$a, i32imm:$fbits),
+                 IIC_fpCVTIS, "vcvt", ".f32.s16\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VUHTOS : AVConv1XI<0b11101, 0b11, 0b1011, 0b1010, 0,
+                       (outs SPR:$dst), (ins SPR:$a, i32imm:$fbits),
+                 IIC_fpCVTIS, "vcvt", ".f32.u16\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VSLTOS : AVConv1XI<0b11101, 0b11, 0b1010, 0b1010, 1,
+                       (outs SPR:$dst), (ins SPR:$a, i32imm:$fbits),
+                 IIC_fpCVTIS, "vcvt", ".f32.s32\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VULTOS : AVConv1XI<0b11101, 0b11, 0b1011, 0b1010, 1,
+                       (outs SPR:$dst), (ins SPR:$a, i32imm:$fbits),
+                 IIC_fpCVTIS, "vcvt", ".f32.u32\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VSHTOD : AVConv1XI<0b11101, 0b11, 0b1010, 0b1011, 0,
+                       (outs DPR:$dst), (ins DPR:$a, i32imm:$fbits),
+                 IIC_fpCVTID, "vcvt", ".f64.s16\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VUHTOD : AVConv1XI<0b11101, 0b11, 0b1011, 0b1011, 0,
+                       (outs DPR:$dst), (ins DPR:$a, i32imm:$fbits),
+                 IIC_fpCVTID, "vcvt", ".f64.u16\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VSLTOD : AVConv1XI<0b11101, 0b11, 0b1010, 0b1011, 1,
+                       (outs DPR:$dst), (ins DPR:$a, i32imm:$fbits),
+                 IIC_fpCVTID, "vcvt", ".f64.s32\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+def VULTOD : AVConv1XI<0b11101, 0b11, 0b1011, 0b1011, 1,
+                       (outs DPR:$dst), (ins DPR:$a, i32imm:$fbits),
+                 IIC_fpCVTID, "vcvt", ".f64.u32\t$dst, $a, $fbits",
+                 [/* For disassembly only; pattern left blank */]>;
+
+} // End of 'let Constraints = "$src = $dst" in'
 
 //===----------------------------------------------------------------------===//
 // FP FMA Operations.

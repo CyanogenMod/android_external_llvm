@@ -9,6 +9,10 @@ add_executable(tblgen
   CodeGenInstruction.cpp
   CodeGenTarget.cpp
   DAGISelEmitter.cpp
+  DAGISelMatcherEmitter.cpp
+  DAGISelMatcherGen.cpp
+  DAGISelMatcherOpt.cpp
+  DAGISelMatcher.cpp
   DisassemblerEmitter.cpp
   EDEmitter.cpp
   FastISelEmitter.cpp

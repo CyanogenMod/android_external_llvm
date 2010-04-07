@@ -18,6 +18,7 @@
 #include "llvm/Function.h"
 #include "llvm/GlobalVariable.h"
 #include "llvm/Instructions.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/CodeGen/JITCodeEmitter.h"
 #include "llvm/CodeGen/MachineCodeInfo.h"
 #include "llvm/ExecutionEngine/GenericValue.h"
@@ -27,6 +28,7 @@
 #include "llvm/Target/TargetJITInfo.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MutexGuard.h"
 #include "llvm/System/DynamicLibrary.h"
 #include "llvm/Config/config.h"
@@ -237,15 +239,62 @@ ExecutionEngine *JIT::createJIT(Module *M,
   }
 }
 
+namespace {
+/// This class supports the global getPointerToNamedFunction(), which allows
+/// bugpoint or gdb users to search for a function by name without any context.
+class JitPool {
+  SmallPtrSet<JIT*, 1> JITs;  // Optimize for process containing just 1 JIT.
+  mutable sys::Mutex Lock;
+public:
+  void Add(JIT *jit) {
+    MutexGuard guard(Lock);
+    JITs.insert(jit);
+  }
+  void Remove(JIT *jit) {
+    MutexGuard guard(Lock);
+    JITs.erase(jit);
+  }
+  void *getPointerToNamedFunction(const char *Name) const {
+    MutexGuard guard(Lock);
+    assert(JITs.size() != 0 && "No Jit registered");
+    //search function in every instance of JIT
+    for (SmallPtrSet<JIT*, 1>::const_iterator Jit = JITs.begin(),
+           end = JITs.end();
+         Jit != end; ++Jit) {
+      if (Function *F = (*Jit)->FindFunctionNamed(Name))
+        return (*Jit)->getPointerToFunction(F);
+    }
+    // The function is not available : fallback on the first created (will
+    // search in symbol of the current program/library)
+    return (*JITs.begin())->getPointerToNamedFunction(Name);
+  }
+};
+ManagedStatic<JitPool> AllJits;
+}
+extern "C" {
+  // getPointerToNamedFunction - This function is used as a global wrapper to
+  // JIT::getPointerToNamedFunction for the purpose of resolving symbols when
+  // bugpoint is debugging the JIT. In that scenario, we are loading an .so and
+  // need to resolve function(s) that are being mis-codegenerated, so we need to
+  // resolve their addresses at runtime, and this is the way to do it.
+  void *getPointerToNamedFunction(const char *Name) {
+    return AllJits->getPointerToNamedFunction(Name);
+  }
+}
+
 JIT::JIT(Module *M, TargetMachine &tm, TargetJITInfo &tji,
          JITMemoryManager *JMM, CodeGenOpt::Level OptLevel, bool GVsWithCode)
-  : ExecutionEngine(M), TM(tm), TJI(tji), AllocateGVsWithCode(GVsWithCode) {
+  : ExecutionEngine(M), TM(tm), TJI(tji), AllocateGVsWithCode(GVsWithCode),
+    isAlreadyCodeGenerating(false) {
   setTargetData(TM.getTargetData());
 
   jitstate = new JITState(M);
 
   // Initialize JCE
   JCE = createEmitter(*this, JMM, TM);
+
+  // Register in global list of all JITs.
+  AllJits->Add(this);
 
   // Add target data
   MutexGuard locked(lock);
@@ -281,6 +330,7 @@ JIT::JIT(Module *M, TargetMachine &tm, TargetJITInfo &tji,
 }
 
 JIT::~JIT() {
+  AllJits->Remove(this);
   delete jitstate;
   delete JCE;
   delete &TM;
@@ -361,12 +411,12 @@ GenericValue JIT::runFunction(Function *F,
 
   // Handle some common cases first.  These cases correspond to common `main'
   // prototypes.
-  if (RetTy->isInteger(32) || RetTy->isVoidTy()) {
+  if (RetTy->isIntegerTy(32) || RetTy->isVoidTy()) {
     switch (ArgValues.size()) {
     case 3:
-      if (FTy->getParamType(0)->isInteger(32) &&
-          isa<PointerType>(FTy->getParamType(1)) &&
-          isa<PointerType>(FTy->getParamType(2))) {
+      if (FTy->getParamType(0)->isIntegerTy(32) &&
+          FTy->getParamType(1)->isPointerTy() &&
+          FTy->getParamType(2)->isPointerTy()) {
         int (*PF)(int, char **, const char **) =
           (int(*)(int, char **, const char **))(intptr_t)FPtr;
 
@@ -379,8 +429,8 @@ GenericValue JIT::runFunction(Function *F,
       }
       break;
     case 2:
-      if (FTy->getParamType(0)->isInteger(32) &&
-          isa<PointerType>(FTy->getParamType(1))) {
+      if (FTy->getParamType(0)->isIntegerTy(32) &&
+          FTy->getParamType(1)->isPointerTy()) {
         int (*PF)(int, char **) = (int(*)(int, char **))(intptr_t)FPtr;
 
         // Call the function.
@@ -392,7 +442,7 @@ GenericValue JIT::runFunction(Function *F,
       break;
     case 1:
       if (FTy->getNumParams() == 1 &&
-          FTy->getParamType(0)->isInteger(32)) {
+          FTy->getParamType(0)->isIntegerTy(32)) {
         GenericValue rv;
         int (*PF)(int) = (int(*)(int))(intptr_t)FPtr;
         rv.IntVal = APInt(32, PF(ArgValues[0].IntVal.getZExtValue()));
@@ -503,8 +553,12 @@ GenericValue JIT::runFunction(Function *F,
   else
     ReturnInst::Create(F->getContext(), StubBB);           // Just return void.
 
-  // Finally, return the value returned by our nullary stub function.
-  return runFunction(Stub, std::vector<GenericValue>());
+  // Finally, call our nullary stub function.
+  GenericValue Result = runFunction(Stub, std::vector<GenericValue>());
+  // Erase it, since no other function can have a reference to it.
+  Stub->eraseFromParent();
+  // And return the result.
+  return Result;
 }
 
 void JIT::RegisterJITEventListener(JITEventListener *L) {
@@ -570,7 +624,6 @@ void JIT::runJITOnFunction(Function *F, MachineCodeInfo *MCI) {
 }
 
 void JIT::runJITOnFunctionUnlocked(Function *F, const MutexGuard &locked) {
-  static bool isAlreadyCodeGenerating = false;
   assert(!isAlreadyCodeGenerating && "Error: Recursive compilation detected!");
 
   // JIT the function

@@ -21,6 +21,7 @@
 #include "Unix.h"
 #include <sys/utsname.h>
 #include <string>
+#include <ctype.h>
 
 using namespace llvm;
 

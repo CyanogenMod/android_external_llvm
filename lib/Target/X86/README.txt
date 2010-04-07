@@ -227,11 +227,6 @@ lambda, siod, optimizer-eval, ackermann, hash2, nestedloop, strcat, and Treesor.
 
 //===---------------------------------------------------------------------===//
 
-Teach the coalescer to coalesce vregs of different register classes. e.g. FR32 /
-FR64 to VR128.
-
-//===---------------------------------------------------------------------===//
-
 Adding to the list of cmp / test poor codegen issues:
 
 int test(__m128 *A, __m128 *B) {
@@ -1866,5 +1861,71 @@ fact these instructions are identical to the non-lock versions. We need a way to
 add target specific information to target nodes and have this information
 carried over to machine instructions. Asm printer (or JIT) can use this
 information to add the "lock" prefix.
+
+//===---------------------------------------------------------------------===//
+
+_Bool bar(int *x) { return *x & 1; }
+
+define zeroext i1 @bar(i32* nocapture %x) nounwind readonly {
+entry:
+  %tmp1 = load i32* %x                            ; <i32> [#uses=1]
+  %and = and i32 %tmp1, 1                         ; <i32> [#uses=1]
+  %tobool = icmp ne i32 %and, 0                   ; <i1> [#uses=1]
+  ret i1 %tobool
+}
+
+bar:                                                        # @bar
+# BB#0:                                                     # %entry
+	movl	4(%esp), %eax
+	movb	(%eax), %al
+	andb	$1, %al
+	movzbl	%al, %eax
+	ret
+
+Missed optimization: should be movl+andl.
+
+//===---------------------------------------------------------------------===//
+
+Consider the following two functions compiled with clang:
+_Bool foo(int *x) { return !(*x & 4); }
+unsigned bar(int *x) { return !(*x & 4); }
+
+foo:
+	movl	4(%esp), %eax
+	testb	$4, (%eax)
+	sete	%al
+	movzbl	%al, %eax
+	ret
+
+bar:
+	movl	4(%esp), %eax
+	movl	(%eax), %eax
+	shrl	$2, %eax
+	andl	$1, %eax
+	xorl	$1, %eax
+	ret
+
+The second function generates more code even though the two functions are
+are functionally identical.
+
+//===---------------------------------------------------------------------===//
+
+Take the following C code:
+int x(int y) { return (y & 63) << 14; }
+
+Code produced by gcc:
+	andl	$63, %edi
+	sall	$14, %edi
+	movl	%edi, %eax
+	ret
+
+Code produced by clang:
+	shll	$14, %edi
+	movl	%edi, %eax
+	andl	$1032192, %eax
+	ret
+
+The code produced by gcc is 3 bytes shorter.  This sort of construct often
+shows up with bitfields.
 
 //===---------------------------------------------------------------------===//

@@ -66,12 +66,17 @@
       </li>
       <li><a href="#t_derived">Derived Types</a>
         <ol>
-          <li><a href="#t_array">Array Type</a></li>
+          <li><a href="#t_aggregate">Aggregate Types</a>
+            <ol>
+              <li><a href="#t_array">Array Type</a></li>
+              <li><a href="#t_struct">Structure Type</a></li>
+              <li><a href="#t_pstruct">Packed Structure Type</a></li>
+              <li><a href="#t_union">Union Type</a></li>
+              <li><a href="#t_vector">Vector Type</a></li>
+            </ol>
+          </li>
           <li><a href="#t_function">Function Type</a></li>
           <li><a href="#t_pointer">Pointer Type</a></li>
-          <li><a href="#t_struct">Structure Type</a></li>
-          <li><a href="#t_pstruct">Packed Structure Type</a></li>
-          <li><a href="#t_vector">Vector Type</a></li>
           <li><a href="#t_opaque">Opaque Type</a></li>
         </ol>
       </li>
@@ -843,7 +848,7 @@ define i32 @main() {                                        <i>; i32()* </i>
 
 <div class="doc_text">
 
-<p>LLVM function definitions consist of the "<tt>define</tt>" keyord, an
+<p>LLVM function definitions consist of the "<tt>define</tt>" keyword, an
    optional <a href="#linkage">linkage type</a>, an optional
    <a href="#visibility">visibility style</a>, an optional
    <a href="#callingconv">calling convention</a>, a return type, an optional
@@ -1078,6 +1083,11 @@ define void @f() optsize { ... }
 </div>
 
 <dl>
+  <dt><tt><b>alignstack(&lt;<em>n</em>&gt;)</b></tt></dt>
+  <dd>This attribute indicates that, when emitting the prologue and epilogue,
+      the backend should forcibly align the stack pointer. Specify the
+      desired alignment, which must be a power of two, in parentheses.
+
   <dt><tt><b>alwaysinline</b></tt></dt>
   <dd>This attribute indicates that the inliner should attempt to inline this
       function into callers whenever possible, ignoring any active inlining size
@@ -1267,7 +1277,7 @@ target datalayout = "<i>layout specification</i>"
 
 <ul>
   <li><tt>E</tt> - big endian</li>
-  <li><tt>p:32:64:64</tt> - 32-bit pointers with 64-bit alignment</li>
+  <li><tt>p:64:64:64</tt> - 64-bit pointers with 64-bit alignment</li>
   <li><tt>i1:8:8</tt> - i1 is 8-bit (byte) aligned</li>
   <li><tt>i8:8:8</tt> - i8 is 8-bit (byte) aligned</li>
   <li><tt>i16:16:16</tt> - i16 is 16-bit aligned</li>
@@ -1399,6 +1409,7 @@ Classifications</a> </div>
           <a href="#t_pointer">pointer</a>,
           <a href="#t_vector">vector</a>,
           <a href="#t_struct">structure</a>,
+          <a href="#t_union">union</a>,
           <a href="#t_array">array</a>,
           <a href="#t_label">label</a>,
           <a href="#t_metadata">metadata</a>.
@@ -1413,12 +1424,12 @@ Classifications</a> </div>
     </tr>
     <tr>
       <td><a href="#t_derived">derived</a></td>
-      <td><a href="#t_integer">integer</a>,
-          <a href="#t_array">array</a>,
+      <td><a href="#t_array">array</a>,
           <a href="#t_function">function</a>,
           <a href="#t_pointer">pointer</a>,
           <a href="#t_struct">structure</a>,
           <a href="#t_pstruct">packed structure</a>,
+          <a href="#t_union">union</a>,
           <a href="#t_vector">vector</a>,
           <a href="#t_opaque">opaque</a>.
       </td>
@@ -1556,6 +1567,21 @@ Classifications</a> </div>
    possible to have a two dimensional array, using an array as the element type
    of another array.</p>
 
+   
+</div>
+
+<!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"> <a name="t_aggregate">Aggregate Types</a> </div>
+
+<div class="doc_text">
+
+<p>Aggregate Types are a subset of derived types that can contain multiple
+  member types. <a href="#t_array">Arrays</a>,
+  <a href="#t_struct">structs</a>, <a href="#t_vector">vectors</a> and
+  <a href="#t_union">unions</a> are aggregate types.</p>
+
+</div>
+
 </div>
 
 <!-- _______________________________________________________________________ -->
@@ -1624,9 +1650,9 @@ Classifications</a> </div>
 <h5>Overview:</h5>
 <p>The function type can be thought of as a function signature.  It consists of
    a return type and a list of formal parameter types. The return type of a
-   function type is a scalar type, a void type, or a struct type.  If the return
-   type is a struct type then all struct elements must be of first class types,
-   and the struct must have at least one element.</p>
+   function type is a scalar type, a void type, a struct type, or a union
+   type.  If the return type is a struct type then all struct elements must be
+   of first class types, and the struct must have at least one element.</p>
 
 <h5>Syntax:</h5>
 <pre>
@@ -1638,7 +1664,7 @@ Classifications</a> </div>
    which indicates that the function takes a variable number of arguments.
    Variable argument functions can access their arguments with
    the <a href="#int_varargs">variable argument handling intrinsic</a>
-   functions.  '<tt>&lt;returntype&gt;</tt>' is a any type except
+   functions.  '<tt>&lt;returntype&gt;</tt>' is any type except
    <a href="#t_label">label</a>.</p>
 
 <h5>Examples:</h5>
@@ -1648,12 +1674,11 @@ Classifications</a> </div>
     <td class="left">function taking an <tt>i32</tt>, returning an <tt>i32</tt>
     </td>
   </tr><tr class="layout">
-    <td class="left"><tt>float&nbsp;(i16&nbsp;signext,&nbsp;i32&nbsp;*)&nbsp;*
+    <td class="left"><tt>float&nbsp;(i16,&nbsp;i32&nbsp;*)&nbsp;*
     </tt></td>
     <td class="left"><a href="#t_pointer">Pointer</a> to a function that takes
-      an <tt>i16</tt> that should be sign extended and a
-      <a href="#t_pointer">pointer</a> to <tt>i32</tt>, returning
-      <tt>float</tt>.
+      an <tt>i16</tt> and a <a href="#t_pointer">pointer</a> to <tt>i32</tt>,
+      returning <tt>float</tt>.
     </td>
   </tr><tr class="layout">
     <td class="left"><tt>i32 (i8*, ...)</tt></td>
@@ -1749,15 +1774,65 @@ Classifications</a> </div>
 </div>
 
 <!-- _______________________________________________________________________ -->
+<div class="doc_subsubsection"> <a name="t_union">Union Type</a> </div>
+
+<div class="doc_text">
+
+<h5>Overview:</h5>
+<p>A union type describes an object with size and alignment suitable for
+   an object of any one of a given set of types (also known as an "untagged"
+   union). It is similar in concept and usage to a
+   <a href="#t_struct">struct</a>, except that all members of the union
+   have an offset of zero. The elements of a union may be any type that has a
+   size. Unions must have at least one member - empty unions are not allowed.
+   </p>
+
+<p>The size of the union as a whole will be the size of its largest member,
+   and the alignment requirements of the union as a whole will be the largest
+   alignment requirement of any member.</p>
+
+<p>Union members are accessed using '<tt><a href="#i_load">load</a></tt> and
+   '<tt><a href="#i_store">store</a></tt>' by getting a pointer to a field with
+   the '<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.
+   Since all members are at offset zero, the getelementptr instruction does
+   not affect the address, only the type of the resulting pointer.</p>
+
+<h5>Syntax:</h5>
+<pre>
+  union { &lt;type list&gt; }
+</pre>
+
+<h5>Examples:</h5>
+<table class="layout">
+  <tr class="layout">
+    <td class="left"><tt>union { i32, i32*, float }</tt></td>
+    <td class="left">A union of three types: an <tt>i32</tt>, a pointer to
+      an <tt>i32</tt>, and a <tt>float</tt>.</td>
+  </tr><tr class="layout">
+    <td class="left">
+      <tt>union {&nbsp;float,&nbsp;i32&nbsp;(i32)&nbsp;*&nbsp;}</tt></td>
+    <td class="left">A union, where the first element is a <tt>float</tt> and the
+      second element is a <a href="#t_pointer">pointer</a> to a
+      <a href="#t_function">function</a> that takes an <tt>i32</tt>, returning
+      an <tt>i32</tt>.</td>
+  </tr>
+</table>
+
+</div>
+
+<!-- _______________________________________________________________________ -->
 <div class="doc_subsubsection"> <a name="t_pointer">Pointer Type</a> </div>
 
 <div class="doc_text">
 
 <h5>Overview:</h5>
-<p>As in many languages, the pointer type represents a pointer or reference to
-   another object, which must live in memory. Pointer types may have an optional
-   address space attribute defining the target-specific numbered address space
-   where the pointed-to object resides. The default address space is zero.</p>
+<p>The pointer type is used to specify memory locations.
+   Pointers are commonly used to reference objects in memory.</p>
+   
+<p>Pointer types may have an optional address space attribute defining the
+   numbered address space where the pointed-to object resides. The default
+   address space is number zero. The semantics of non-zero address
+   spaces are target-specific.</p>
 
 <p>Note that LLVM does not permit pointers to void (<tt>void*</tt>) nor does it
    permit pointers to labels (<tt>label*</tt>).  Use <tt>i8*</tt> instead.</p>
@@ -1986,6 +2061,14 @@ Classifications</a> </div>
       the number and types of elements must match those specified by the
       type.</dd>
 
+  <dt><b>Union constants</b></dt>
+  <dd>Union constants are represented with notation similar to a structure with
+      a single element - that is, a single typed element surrounded
+      by braces (<tt>{}</tt>)).  For example: "<tt>{ i32 4 }</tt>".  The
+      <a href="#t_union">union type</a> can be initialized with a single-element
+      struct as long as the type of the struct element matches the type of
+      one of the union members.</dd>
+
   <dt><b>Array constants</b></dt>
   <dd>Array constants are represented with notation similar to array type
      definitions (a comma separated list of elements, surrounded by square
@@ -2004,7 +2087,8 @@ Classifications</a> </div>
 
   <dt><b>Zero initialization</b></dt>
   <dd>The string '<tt>zeroinitializer</tt>' can be used to zero initialize a
-      value to zero of <em>any</em> type, including scalar and aggregate types.
+      value to zero of <em>any</em> type, including scalar and
+      <a href="#t_aggregate">aggregate</a> types.
       This is often used to avoid having to print large zero initializers
       (e.g. for large arrays) and is always exactly equivalent to using explicit
       zero initializers.</dd>
@@ -2436,6 +2520,23 @@ call void asm alignstack "eieio", ""()
    metadata nodes, which can be looked up in the module symbol table. For
    example: "<tt>!foo =  metadata !{!4, !3}</tt>".
 
+<p>Metadata can be used as function arguments. Here <tt>llvm.dbg.value</tt> 
+   function is using two metadata arguments.
+
+   <div class="doc_code">
+     <pre>
+       call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
+     </pre>
+   </div></p>
+
+<p>Metadata can be attached with an instruction. Here metadata <tt>!21</tt> is
+   attached with <tt>add</tt> instruction using <tt>!dbg</tt> identifier.
+
+  <div class="doc_code">
+    <pre>
+      %indvar.next = add i64 %indvar, 1, !dbg !21
+    </pre>
+  </div></p>
 </div>
 
 
@@ -2803,9 +2904,10 @@ IfUnequal:
       function to be invoked. </li>
 
   <li>'<tt>function args</tt>': argument list whose types match the function
-      signature argument types.  If the function signature indicates the
-      function accepts a variable number of arguments, the extra arguments can
-      be specified.</li>
+      signature argument types and parameter attributes. All arguments must be
+      of <a href="#t_firstclass">first class</a> type. If the function
+      signature indicates the function accepts a variable number of arguments,
+      the extra arguments can be specified.</li>
 
   <li>'<tt>normal label</tt>': the label reached when the called function
       executes a '<tt><a href="#i_ret">ret</a></tt>' instruction. </li>
@@ -3840,7 +3942,8 @@ Instruction</a> </div>
 
 <div class="doc_text">
 
-<p>LLVM supports several instructions for working with aggregate values.</p>
+<p>LLVM supports several instructions for working with
+  <a href="#t_aggregate">aggregate</a> values.</p>
 
 </div>
 
@@ -3857,14 +3960,14 @@ Instruction</a> </div>
 </pre>
 
 <h5>Overview:</h5>
-<p>The '<tt>extractvalue</tt>' instruction extracts the value of a struct field
-   or array element from an aggregate value.</p>
+<p>The '<tt>extractvalue</tt>' instruction extracts the value of a member field
+   from an <a href="#t_aggregate">aggregate</a> value.</p>
 
 <h5>Arguments:</h5>
 <p>The first operand of an '<tt>extractvalue</tt>' instruction is a value
-   of <a href="#t_struct">struct</a> or <a href="#t_array">array</a> type.  The
-   operands are constant indices to specify which value to extract in a similar
-   manner as indices in a
+   of <a href="#t_struct">struct</a>, <a href="#t_union">union</a>  or
+   <a href="#t_array">array</a> type.  The operands are constant indices to
+   specify which value to extract in a similar manner as indices in a
    '<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.</p>
 
 <h5>Semantics:</h5>
@@ -3891,16 +3994,15 @@ Instruction</a> </div>
 </pre>
 
 <h5>Overview:</h5>
-<p>The '<tt>insertvalue</tt>' instruction inserts a value into a struct field or
-   array element in an aggregate.</p>
-
+<p>The '<tt>insertvalue</tt>' instruction inserts a value into a member field
+   in an <a href="#t_aggregate">aggregate</a> value.</p>
 
 <h5>Arguments:</h5>
 <p>The first operand of an '<tt>insertvalue</tt>' instruction is a value
-   of <a href="#t_struct">struct</a> or <a href="#t_array">array</a> type.  The
-   second operand is a first-class value to insert.  The following operands are
-   constant indices indicating the position at which to insert the value in a
-   similar manner as indices in a
+   of <a href="#t_struct">struct</a>, <a href="#t_union">union</a> or
+   <a href="#t_array">array</a> type.  The second operand is a first-class
+   value to insert.  The following operands are constant indices indicating
+   the position at which to insert the value in a similar manner as indices in a
    '<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.  The
    value to insert must have the same type as the value identified by the
    indices.</p>
@@ -3992,8 +4094,9 @@ Instruction</a> </div>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;result&gt; = load &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;]
-  &lt;result&gt; = volatile load &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;]
+  &lt;result&gt; = load &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !&lt;index&gt;]
+  &lt;result&gt; = volatile load &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !&lt;index&gt;]
+  !&lt;index&gt; = !{ i32 1 }
 </pre>
 
 <h5>Overview:</h5>
@@ -4006,15 +4109,23 @@ Instruction</a> </div>
    marked as <tt>volatile</tt>, then the optimizer is not allowed to modify the
    number or order of execution of this <tt>load</tt> with other
    volatile <tt>load</tt> and <tt><a href="#i_store">store</a></tt>
-   instructions. </p>
+   instructions.</p>
 
-<p>The optional constant "align" argument specifies the alignment of the
+<p>The optional constant <tt>align</tt> argument specifies the alignment of the
    operation (that is, the alignment of the memory address). A value of 0 or an
-   omitted "align" argument means that the operation has the preferential
+   omitted <tt>align</tt> argument means that the operation has the preferential
    alignment for the target. It is the responsibility of the code emitter to
    ensure that the alignment information is correct. Overestimating the
-   alignment results in an undefined behavior. Underestimating the alignment may
+   alignment results in undefined behavior. Underestimating the alignment may
    produce less efficient code. An alignment of 1 is always safe.</p>
+
+<p>The optional <tt>!nontemporal</tt> metadata must reference a single
+   metatadata name &lt;index&gt; corresponding to a metadata node with
+   one <tt>i32</tt> entry of value 1.  The existence of
+   the <tt>!nontemporal</tt> metatadata on the instruction tells the optimizer
+   and code generator that this load is not expected to be reused in the cache.
+   The code generator may select special instructions to save cache bandwidth,
+   such as the <tt>MOVNT</tt> instruction on x86.</p>
 
 <h5>Semantics:</h5>
 <p>The location of memory pointed to is loaded.  If the value being loaded is of
@@ -4042,8 +4153,8 @@ Instruction</a> </div>
 
 <h5>Syntax:</h5>
 <pre>
-  store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;]                   <i>; yields {void}</i>
-  volatile store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;]          <i>; yields {void}</i>
+  store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !<index>]                   <i>; yields {void}</i>
+  volatile store &lt;ty&gt; &lt;value&gt;, &lt;ty&gt;* &lt;pointer&gt;[, align &lt;alignment&gt;][, !nontemporal !<index>]          <i>; yields {void}</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -4067,6 +4178,15 @@ Instruction</a> </div>
    ensure that the alignment information is correct. Overestimating the
    alignment results in an undefined behavior. Underestimating the alignment may
    produce less efficient code. An alignment of 1 is always safe.</p>
+
+<p>The optional !nontemporal metadata must reference a single metatadata
+   name <index> corresponding to a metadata node with one i32 entry of
+   value 1.  The existence of the !nontemporal metatadata on the
+   instruction tells the optimizer and code generator that this load is
+   not expected to be reused in the cache.  The code generator may
+   select special instructions to save cache bandwidth, such as the
+   MOVNT instruction on x86.</p>
+
 
 <h5>Semantics:</h5>
 <p>The contents of memory are updated to contain '<tt>&lt;value&gt;</tt>' at the
@@ -4102,8 +4222,8 @@ Instruction</a> </div>
 
 <h5>Overview:</h5>
 <p>The '<tt>getelementptr</tt>' instruction is used to get the address of a
-   subelement of an aggregate data structure. It performs address calculation
-   only and does not access memory.</p>
+   subelement of an <a href="#t_aggregate">aggregate</a> data structure.
+   It performs address calculation only and does not access memory.</p>
 
 <h5>Arguments:</h5>
 <p>The first argument is always a pointer, and forms the basis of the
@@ -4113,15 +4233,15 @@ Instruction</a> </div>
    indexes the pointer value given as the first argument, the second index
    indexes a value of the type pointed to (not necessarily the value directly
    pointed to, since the first index can be non-zero), etc. The first type
-   indexed into must be a pointer value, subsequent types can be arrays, vectors
-   and structs. Note that subsequent types being indexed into can never be
-   pointers, since that would require loading the pointer before continuing
-   calculation.</p>
+   indexed into must be a pointer value, subsequent types can be arrays,
+   vectors, structs and unions. Note that subsequent types being indexed into
+   can never be pointers, since that would require loading the pointer before
+   continuing calculation.</p>
 
 <p>The type of each index argument depends on the type it is indexing into.
-   When indexing into a (optionally packed) structure, only <tt>i32</tt> integer
-   <b>constants</b> are allowed.  When indexing into an array, pointer or
-   vector, integers of any width are allowed, and they are not required to be
+   When indexing into a (optionally packed) structure or union, only <tt>i32</tt>
+   integer <b>constants</b> are allowed.  When indexing into an array, pointer
+   or vector, integers of any width are allowed, and they are not required to be
    constant.</p>
 
 <p>For example, let's consider a C code fragment and how it gets compiled to
@@ -4861,7 +4981,7 @@ entry:
       <tt>op1</tt> is equal to <tt>op2</tt>.</li>
 
   <li><tt>ogt</tt>: yields <tt>true</tt> if both operands are not a QNAN and
-      <tt>op1</tt> is greather than <tt>op2</tt>.</li>
+      <tt>op1</tt> is greater than <tt>op2</tt>.</li>
 
   <li><tt>oge</tt>: yields <tt>true</tt> if both operands are not a QNAN and
       <tt>op1</tt> is greater than or equal to <tt>op2</tt>.</li>
@@ -5037,7 +5157,7 @@ Loop:       ; Infinite loop that counts from 0 on up...
         <li>The call is in tail position (ret immediately follows call and ret
             uses value of call or is void).</li>
         <li>Option <tt>-tailcallopt</tt> is enabled,
-            or <code>llvm::PerformTailCallOpt</code> is <code>true</code>.</li>
+            or <code>llvm::GuaranteedTailCallOpt</code> is <code>true</code>.</li>
         <li><a href="CodeGenerator.html#tailcallopt">Platform specific
             constraints are met.</a></li>
       </ul>
@@ -5068,10 +5188,10 @@ Loop:       ; Infinite loop that counts from 0 on up...
       to function value.</li>
 
   <li>'<tt>function args</tt>': argument list whose types match the function
-      signature argument types. All arguments must be of
-      <a href="#t_firstclass">first class</a> type. If the function signature
-      indicates the function accepts a variable number of arguments, the extra
-      arguments can be specified.</li>
+      signature argument types and parameter attributes. All arguments must be
+      of <a href="#t_firstclass">first class</a> type. If the function
+      signature indicates the function accepts a variable number of arguments,
+      the extra arguments can be specified.</li>
 
   <li>The optional <a href="#fnattrs">function attributes</a> list. Only
       '<tt>noreturn</tt>', '<tt>nounwind</tt>', '<tt>readonly</tt>' and
@@ -5106,7 +5226,7 @@ Loop:       ; Infinite loop that counts from 0 on up...
 standard C99 library as being the C99 library functions, and may perform
 optimizations or generate code for them under that assumption.  This is
 something we'd like to change in the future to provide better support for
-freestanding environments and non-C-based langauges.</p>
+freestanding environments and non-C-based languages.</p>
 
 </div>
 
@@ -5662,7 +5782,7 @@ LLVM</a>.</p>
 
 <h5>Semantics:</h5>
 <p>This intrinsic does not modify the behavior of the program.  Backends that do
-   not support this intrinisic may ignore it.</p>
+   not support this intrinsic may ignore it.</p>
 
 </div>
 
@@ -5742,7 +5862,7 @@ LLVM</a>.</p>
    number of bytes to copy, and the fourth argument is the alignment of the
    source and destination locations.</p>
 
-<p>If the call to this intrinisic has an alignment value that is not 0 or 1,
+<p>If the call to this intrinsic has an alignment value that is not 0 or 1,
    then the caller guarantees that both the source and destination pointers are
    aligned to that boundary.</p>
 
@@ -5792,7 +5912,7 @@ LLVM</a>.</p>
    number of bytes to copy, and the fourth argument is the alignment of the
    source and destination locations.</p>
 
-<p>If the call to this intrinisic has an alignment value that is not 0 or 1,
+<p>If the call to this intrinsic has an alignment value that is not 0 or 1,
    then the caller guarantees that the source and destination pointers are
    aligned to that boundary.</p>
 
@@ -5840,7 +5960,7 @@ LLVM</a>.</p>
    specifying the number of bytes to fill, and the fourth argument is the known
    alignment of destination location.</p>
 
-<p>If the call to this intrinisic has an alignment value that is not 0 or 1,
+<p>If the call to this intrinsic has an alignment value that is not 0 or 1,
    then the caller guarantees that the destination pointer is aligned to that
    boundary.</p>
 
@@ -6611,7 +6731,7 @@ LLVM</a>.</p>
 <h5>Arguments:</h5>
 <p>The <tt>llvm.memory.barrier</tt> intrinsic requires five boolean arguments.
    The first four arguments enables a specific barrier as listed below.  The
-   fith argument specifies that the barrier applies to io or device or uncached
+   fifth argument specifies that the barrier applies to io or device or uncached
    memory.</p>
 
 <ul>
@@ -7350,7 +7470,7 @@ LLVM</a>.</p>
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2010-02-05 17:16:28 -0800 (Fri, 05 Feb 2010) $
+  Last modified: $Date: 2010-03-05 07:44:48 +0800 (五, 05  3月 2010) $
 </address>
 
 </body>

@@ -662,7 +662,7 @@ bool SimpleRegisterCoalescing::ReMaterializeTrivialDef(LiveInterval &SrcInt,
   if (!tii_->isTriviallyReMaterializable(DefMI, AA))
     return false;
   bool SawStore = false;
-  if (!DefMI->isSafeToMove(tii_, SawStore, AA))
+  if (!DefMI->isSafeToMove(tii_, AA, SawStore))
     return false;
   if (TID.getNumDefs() != 1)
     return false;
@@ -702,7 +702,8 @@ bool SimpleRegisterCoalescing::ReMaterializeTrivialDef(LiveInterval &SrcInt,
     for (const unsigned* SR = tri_->getSubRegisters(DstReg); *SR; ++SR) {
       if (!li_->hasInterval(*SR))
         continue;
-      DLR = li_->getInterval(*SR).getLiveRangeContaining(DefIdx);
+      const LiveRange *DLR =
+          li_->getInterval(*SR).getLiveRangeContaining(DefIdx);
       if (DLR && DLR->valno->getCopy() == CopyMI)
         DLR->valno->setCopy(0);
     }
@@ -741,9 +742,21 @@ bool SimpleRegisterCoalescing::ReMaterializeTrivialDef(LiveInterval &SrcInt,
       NewMI->addOperand(MO);
     if (MO.isDef() && li_->hasInterval(MO.getReg())) {
       unsigned Reg = MO.getReg();
-      DLR = li_->getInterval(Reg).getLiveRangeContaining(DefIdx);
+      const LiveRange *DLR =
+          li_->getInterval(Reg).getLiveRangeContaining(DefIdx);
       if (DLR && DLR->valno->getCopy() == CopyMI)
         DLR->valno->setCopy(0);
+      // Handle subregs as well
+      if (TargetRegisterInfo::isPhysicalRegister(Reg)) {
+        for (const unsigned* SR = tri_->getSubRegisters(Reg); *SR; ++SR) {
+          if (!li_->hasInterval(*SR))
+            continue;
+          const LiveRange *DLR =
+              li_->getInterval(*SR).getLiveRangeContaining(DefIdx);
+          if (DLR && DLR->valno->getCopy() == CopyMI)
+            DLR->valno->setCopy(0);
+        }
+      }
     }
   }
 
@@ -752,6 +765,7 @@ bool SimpleRegisterCoalescing::ReMaterializeTrivialDef(LiveInterval &SrcInt,
   CopyMI->eraseFromParent();
   ReMatCopies.insert(CopyMI);
   ReMatDefs.insert(DefMI);
+  DEBUG(dbgs() << "Remat: " << *NewMI);
   ++NumReMats;
   return true;
 }
@@ -771,11 +785,16 @@ SimpleRegisterCoalescing::UpdateRegDefsUses(unsigned SrcReg, unsigned DstReg,
     SubIdx = 0;
   }
 
+  // Copy the register use-list before traversing it. We may be adding operands
+  // and invalidating pointers.
+  SmallVector<std::pair<MachineInstr*, unsigned>, 32> reglist;
   for (MachineRegisterInfo::reg_iterator I = mri_->reg_begin(SrcReg),
-         E = mri_->reg_end(); I != E; ) {
-    MachineOperand &O = I.getOperand();
-    MachineInstr *UseMI = &*I;
-    ++I;
+         E = mri_->reg_end(); I != E; ++I)
+    reglist.push_back(std::make_pair(&*I, I.getOperandNo()));
+
+  for (unsigned N=0; N != reglist.size(); ++N) {
+    MachineInstr *UseMI = reglist[N].first;
+    MachineOperand &O = UseMI->getOperand(reglist[N].second);
     unsigned OldSubIdx = O.getSubReg();
     if (DstIsPhys) {
       unsigned UseDstReg = DstReg;
@@ -796,6 +815,19 @@ SimpleRegisterCoalescing::UpdateRegDefsUses(unsigned SrcReg, unsigned DstReg,
 
       O.setReg(UseDstReg);
       O.setSubReg(0);
+      if (OldSubIdx) {
+        // Def and kill of subregister of a virtual register actually defs and
+        // kills the whole register. Add imp-defs and imp-kills as needed.
+        if (O.isDef()) {
+          if(O.isDead())
+            UseMI->addRegisterDead(DstReg, tri_, true);
+          else
+            UseMI->addRegisterDefined(DstReg, tri_);
+        } else if (!O.isUndef() &&
+                   (O.isKill() ||
+                    UseMI->isRegTiedToDefOperand(&O-&UseMI->getOperand(0))))
+          UseMI->addRegisterKilled(DstReg, tri_, true);
+      }
       continue;
     }
 
@@ -1148,12 +1180,14 @@ SimpleRegisterCoalescing::isWinToJoinCrossClass(unsigned LargeReg,
   LiveInterval &SmallInt = li_->getInterval(SmallReg);
   unsigned LargeSize = li_->getApproximateInstructionCount(LargeInt);
   unsigned SmallSize = li_->getApproximateInstructionCount(SmallInt);
-  if (SmallSize > Threshold || LargeSize > Threshold)
-    if ((float)std::distance(mri_->use_nodbg_begin(SmallReg),
-                             mri_->use_nodbg_end()) / SmallSize <
-        (float)std::distance(mri_->use_nodbg_begin(LargeReg),
-                             mri_->use_nodbg_end()) / LargeSize)
+  if (LargeSize > Threshold) {
+    unsigned SmallUses = std::distance(mri_->use_nodbg_begin(SmallReg),
+                                       mri_->use_nodbg_end());
+    unsigned LargeUses = std::distance(mri_->use_nodbg_begin(LargeReg),
+                                       mri_->use_nodbg_end());
+    if (SmallUses*LargeSize < LargeUses*SmallSize)
       return false;
+  }
   return true;
 }
 
@@ -1173,6 +1207,8 @@ SimpleRegisterCoalescing::HasIncompatibleSubRegDefUse(MachineInstr *CopyMI,
   for (MachineRegisterInfo::reg_iterator I = mri_->reg_begin(VirtReg),
          E = mri_->reg_end(); I != E; ++I) {
     MachineOperand &O = I.getOperand();
+    if (O.isDebug())
+      continue;
     MachineInstr *MI = &*I;
     if (MI == CopyMI || JoinedCopies.count(MI))
       continue;
@@ -1559,7 +1595,10 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
         (isExtSubReg || DstRC->isASubClass()) &&
         !isWinToJoinCrossClass(LargeReg, SmallReg,
                                allocatableRCRegs_[NewRC].count())) {
-      DEBUG(dbgs() << "\tSrc/Dest are different register classes.\n");
+      DEBUG(dbgs() << "\tSrc/Dest are different register classes: "
+                   << SrcRC->getName() << "/"
+                   << DstRC->getName() << " -> "
+                   << NewRC->getName() << ".\n");
       // Allow the coalescer to try again in case either side gets coalesced to
       // a physical register that's compatible with the other side. e.g.
       // r1024 = MOV32to32_ r1025
@@ -1680,6 +1719,7 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
         (AdjustCopiesBackFrom(SrcInt, DstInt, CopyMI) ||
          RemoveCopyByCommutingDef(SrcInt, DstInt, CopyMI))) {
       JoinedCopies.insert(CopyMI);
+      DEBUG(dbgs() << "Trivial!\n");
       return true;
     }
 
@@ -1839,7 +1879,7 @@ static unsigned ComputeUltimateVN(VNInfo *VNI,
   // If the VN has already been computed, just return it.
   if (ThisValNoAssignments[VN] >= 0)
     return ThisValNoAssignments[VN];
-//  assert(ThisValNoAssignments[VN] != -2 && "Cyclic case?");
+  assert(ThisValNoAssignments[VN] != -2 && "Cyclic value numbers");
 
   // If this val is not a copy from the other val, then it must be a new value
   // number in the destination.

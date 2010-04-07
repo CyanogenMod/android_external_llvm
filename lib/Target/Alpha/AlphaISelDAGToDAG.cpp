@@ -64,7 +64,7 @@ namespace {
     /// that the bits 1-7 of LHS are already zero.  If LHS is non-null, we are
     /// in checking mode.  If LHS is null, we assume that the mask has already
     /// been validated before.
-    uint64_t get_zapImm(SDValue LHS, uint64_t Constant) {
+    uint64_t get_zapImm(SDValue LHS, uint64_t Constant) const {
       uint64_t BitsToCheck = 0;
       unsigned Result = 0;
       for (unsigned i = 0; i != 8; ++i) {
@@ -159,10 +159,6 @@ namespace {
     // target-specific node if it hasn't already been changed.
     SDNode *Select(SDNode *N);
     
-    /// InstructionSelect - This callback is invoked by
-    /// SelectionDAGISel when it has created a SelectionDAG for us to codegen.
-    virtual void InstructionSelect();
-    
     virtual const char *getPassName() const {
       return "Alpha DAG->DAG Pattern Instruction Selection";
     } 
@@ -222,20 +218,11 @@ SDNode *AlphaDAGToDAGISel::getGlobalRetAddr() {
   return CurDAG->getRegister(GlobalRetAddr, TLI.getPointerTy()).getNode();
 }
 
-/// InstructionSelect - This callback is invoked by
-/// SelectionDAGISel when it has created a SelectionDAG for us to codegen.
-void AlphaDAGToDAGISel::InstructionSelect() {
-  // Select target instructions for the DAG.
-  SelectRoot(*CurDAG);
-  CurDAG->RemoveDeadNodes();
-}
-
 // Select - Convert the specified operand from a target-independent to a
 // target-specific node if it hasn't already been changed.
 SDNode *AlphaDAGToDAGISel::Select(SDNode *N) {
-  if (N->isMachineOpcode()) {
+  if (N->isMachineOpcode())
     return NULL;   // Already selected.
-  }
   DebugLoc dl = N->getDebugLoc();
 
   switch (N->getOpcode()) {

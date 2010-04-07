@@ -17,6 +17,7 @@
 #include "llvm/Assembly/Writer.h"
 #include "llvm/Assembly/PrintModulePass.h"
 #include "llvm/Assembly/AsmAnnotationWriter.h"
+#include "llvm/LLVMContext.h"
 #include "llvm/CallingConv.h"
 #include "llvm/Constants.h"
 #include "llvm/DerivedTypes.h"
@@ -239,6 +240,19 @@ void TypePrinting::CalcTypeName(const Type *Ty,
       OS << '>';
     break;
   }
+  case Type::UnionTyID: {
+    const UnionType *UTy = cast<UnionType>(Ty);
+    OS << "union { ";
+    for (StructType::element_iterator I = UTy->element_begin(),
+         E = UTy->element_end(); I != E; ++I) {
+      CalcTypeName(*I, TypeStack, OS);
+      if (next(I) != UTy->element_end())
+        OS << ',';
+      OS << ' ';
+    }
+    OS << '}';
+    break;
+  }
   case Type::PointerTyID: {
     const PointerType *PTy = cast<PointerType>(Ty);
     CalcTypeName(PTy->getElementType(), TypeStack, OS);
@@ -363,8 +377,8 @@ namespace {
         return;
 
       // If this is a structure or opaque type, add a name for the type.
-      if (((isa<StructType>(Ty) && cast<StructType>(Ty)->getNumElements())
-            || isa<OpaqueType>(Ty)) && !TP.hasTypeName(Ty)) {
+      if (((Ty->isStructTy() && cast<StructType>(Ty)->getNumElements())
+            || Ty->isOpaqueTy()) && !TP.hasTypeName(Ty)) {
         TP.addTypeName(Ty, "%"+utostr(unsigned(NumberedTypes.size())));
         NumberedTypes.push_back(Ty);
       }
@@ -418,13 +432,13 @@ static void AddModuleTypesToPrinter(TypePrinting &TP,
     // they are used too often to have a single useful name.
     if (const PointerType *PTy = dyn_cast<PointerType>(Ty)) {
       const Type *PETy = PTy->getElementType();
-      if ((PETy->isPrimitiveType() || PETy->isInteger()) &&
-          !isa<OpaqueType>(PETy))
+      if ((PETy->isPrimitiveType() || PETy->isIntegerTy()) &&
+          !PETy->isOpaqueTy())
         continue;
     }
 
     // Likewise don't insert primitives either.
-    if (Ty->isInteger() || Ty->isPrimitiveType())
+    if (Ty->isIntegerTy() || Ty->isPrimitiveType())
       continue;
 
     // Get the name as a string and insert it into TypeNames.
@@ -836,7 +850,7 @@ static void WriteOptimizationInfo(raw_ostream &Out, const User *U) {
 static void WriteConstantInt(raw_ostream &Out, const Constant *CV,
                              TypePrinting &TypePrinter, SlotTracker *Machine) {
   if (const ConstantInt *CI = dyn_cast<ConstantInt>(CV)) {
-    if (CI->getType()->isInteger(1)) {
+    if (CI->getType()->isIntegerTy(1)) {
       Out << (CI->getZExtValue() ? "true" : "false");
       return;
     }
@@ -1223,7 +1237,6 @@ class AssemblyWriter {
   TypePrinting TypePrinter;
   AssemblyAnnotationWriter *AnnotationWriter;
   std::vector<const Type*> NumberedTypes;
-  SmallVector<StringRef, 8> MDNames;
   
 public:
   inline AssemblyWriter(formatted_raw_ostream &o, SlotTracker &Mac,
@@ -1231,8 +1244,6 @@ public:
                         AssemblyAnnotationWriter *AAW)
     : Out(o), Machine(Mac), TheModule(M), AnnotationWriter(AAW) {
     AddModuleTypesToPrinter(TypePrinter, NumberedTypes, M);
-    if (M)
-      M->getMDKindNames(MDNames);
   }
 
   void printMDNodeBody(const MDNode *MD);
@@ -1252,14 +1263,13 @@ public:
   void printArgument(const Argument *FA, Attributes Attrs);
   void printBasicBlock(const BasicBlock *BB);
   void printInstruction(const Instruction &I);
-private:
 
+private:
   // printInfoComment - Print a little comment after the instruction indicating
   // which slot it occupies.
   void printInfoComment(const Value &V);
 };
 }  // end of anonymous namespace
-
 
 void AssemblyWriter::writeOperand(const Value *Operand, bool PrintType) {
   if (Operand == 0) {
@@ -1689,11 +1699,15 @@ void AssemblyWriter::printBasicBlock(const BasicBlock *BB) {
   if (AnnotationWriter) AnnotationWriter->emitBasicBlockEndAnnot(BB, Out);
 }
 
-
 /// printInfoComment - Print a little comment after the instruction indicating
 /// which slot it occupies.
 ///
 void AssemblyWriter::printInfoComment(const Value &V) {
+  if (AnnotationWriter) {
+    AnnotationWriter->printInfoComment(V, Out);
+    return;
+  }
+
   if (V.getType()->isVoidTy()) return;
   
   Out.PadToColumn(50);
@@ -1834,8 +1848,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     //
     Out << ' ';
     if (!FTy->isVarArg() &&
-        (!isa<PointerType>(RetTy) ||
-         !isa<FunctionType>(cast<PointerType>(RetTy)->getElementType()))) {
+        (!RetTy->isPointerTy() ||
+         !cast<PointerType>(RetTy)->getElementType()->isFunctionTy())) {
       TypePrinter.print(RetTy, Out);
       Out << ' ';
       writeOperand(Operand, false);
@@ -1880,8 +1894,8 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     //
     Out << ' ';
     if (!FTy->isVarArg() &&
-        (!isa<PointerType>(RetTy) ||
-         !isa<FunctionType>(cast<PointerType>(RetTy)->getElementType()))) {
+        (!RetTy->isPointerTy() ||
+         !cast<PointerType>(RetTy)->getElementType()->isFunctionTy())) {
       TypePrinter.print(RetTy, Out);
       Out << ' ';
       writeOperand(Operand, false);
@@ -1972,12 +1986,20 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
   }
 
   // Print Metadata info.
-  if (!MDNames.empty()) {
-    SmallVector<std::pair<unsigned, MDNode*>, 4> InstMD;
-    I.getAllMetadata(InstMD);
-    for (unsigned i = 0, e = InstMD.size(); i != e; ++i)
-      Out << ", !" << MDNames[InstMD[i].first]
-          << " !" << Machine.getMetadataSlot(InstMD[i].second);
+  SmallVector<std::pair<unsigned, MDNode*>, 4> InstMD;
+  I.getAllMetadata(InstMD);
+  if (!InstMD.empty()) {
+    SmallVector<StringRef, 8> MDNames;
+    I.getType()->getContext().getMDKindNames(MDNames);
+    for (unsigned i = 0, e = InstMD.size(); i != e; ++i) {
+      unsigned Kind = InstMD[i].first;
+       if (Kind < MDNames.size()) {
+         Out << ", !" << MDNames[Kind];
+      } else {
+        Out << ", !<unknown kind #" << Kind << ">";
+      }
+      Out << " !" << Machine.getMetadataSlot(InstMD[i].second);
+    }
   }
   printInfoComment(I);
 }

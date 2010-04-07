@@ -65,7 +65,7 @@ ready&gt; <b>def test(x) 1+2+x;</b>
 Read function definition:
 define double @test(double %x) {
 entry:
-        %addtmp = add double 3.000000e+00, %x
+        %addtmp = fadd double 3.000000e+00, %x
         ret double %addtmp
 }
 </pre>
@@ -80,8 +80,8 @@ ready&gt; <b>def test(x) 1+2+x;</b>
 Read function definition:
 define double @test(double %x) {
 entry:
-        %addtmp = add double 2.000000e+00, 1.000000e+00
-        %addtmp1 = add double %addtmp, %x
+        %addtmp = fadd double 2.000000e+00, 1.000000e+00
+        %addtmp1 = fadd double %addtmp, %x
         ret double %addtmp1
 }
 </pre>
@@ -113,9 +113,9 @@ ready&gt; <b>def test(x) (1+2+x)*(x+(1+2));</b>
 ready> Read function definition:
 define double @test(double %x) {
 entry:
-        %addtmp = add double 3.000000e+00, %x
-        %addtmp1 = add double %x, 3.000000e+00
-        %multmp = mul double %addtmp, %addtmp1
+        %addtmp = fadd double 3.000000e+00, %x
+        %addtmp1 = fadd double %x, 3.000000e+00
+        %multmp = fmul double %addtmp, %addtmp1
         ret double %multmp
 }
 </pre>
@@ -240,8 +240,8 @@ ready&gt; <b>def test(x) (1+2+x)*(x+(1+2));</b>
 ready> Read function definition:
 define double @test(double %x) {
 entry:
-        %addtmp = add double %x, 3.000000e+00
-        %multmp = mul double %addtmp, %addtmp
+        %addtmp = fadd double %x, 3.000000e+00
+        %multmp = fmul double %addtmp, %addtmp
         ret double %multmp
 }
 </pre>
@@ -363,8 +363,8 @@ ready&gt; <b>def testfunc(x y) x + y*2; </b>
 Read function definition:
 define double @testfunc(double %x, double %y) {
 entry:
-        %multmp = mul double %y, 2.000000e+00
-        %addtmp = add double %multmp, %x
+        %multmp = fmul double %y, 2.000000e+00
+        %addtmp = fadd double %multmp, %x
         ret double %addtmp
 }
 
@@ -411,10 +411,10 @@ Read function definition:
 define double @foo(double %x) {
 entry:
         %calltmp = call double @sin( double %x )
-        %multmp = mul double %calltmp, %calltmp
+        %multmp = fmul double %calltmp, %calltmp
         %calltmp2 = call double @cos( double %x )
-        %multmp4 = mul double %calltmp2, %calltmp2
-        %addtmp = add double %multmp, %multmp4
+        %multmp4 = fmul double %calltmp2, %calltmp2
+        %addtmp = fadd double %multmp, %multmp4
         ret double %addtmp
 }
 
@@ -485,7 +485,7 @@ LLVM JIT and optimizer.  To build this example, use:
 <div class="doc_code">
 <pre>
    # Compile
-   g++ -g toy.cpp `llvm-config --cppflags --ldflags --libs core jit interpreter native` -O3 -o toy
+   g++ -g toy.cpp `llvm-config --cppflags --ldflags --libs core jit native` -O3 -o toy
    # Run
    ./toy
 </pre>
@@ -502,7 +502,6 @@ at runtime.</p>
 <pre>
 #include "llvm/DerivedTypes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/ExecutionEngine/Interpreter.h"
 #include "llvm/ExecutionEngine/JIT.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
@@ -1075,7 +1074,12 @@ int main() {
   TheModule = new Module("my cool jit", Context);
 
   // Create the JIT.  This takes ownership of the module.
-  TheExecutionEngine = EngineBuilder(TheModule).create();
+  std::string ErrStr;
+  TheExecutionEngine = EngineBuilder(TheModule).setErrorStr(&ErrStr).create();
+  if (!TheExecutionEngine) {
+    fprintf(stderr, "Could not create ExecutionEngine: %s\n", ErrStr.c_str());
+    exit(1);
+  }
 
   FunctionPassManager OurFPM(TheModule);
 
@@ -1122,7 +1126,7 @@ int main() {
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2010-02-03 09:27:31 -0800 (Wed, 03 Feb 2010) $
+  Last modified: $Date: 2010-03-02 09:11:08 +0800 (二, 02  3月 2010) $
 </address>
 </body>
 </html>

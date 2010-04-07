@@ -94,7 +94,7 @@ public:
   //===--------------------------------------------------------------------===//
   
   /// CreateGlobalString - Make a new global variable with an initializer that
-  /// has array of i8 type filled in the nul terminated string value
+  /// has array of i8 type filled in with the nul terminated string value
   /// specified.  If Name is specified, it is the name of the global variable
   /// created.
   Value *CreateGlobalString(const char *Str = "", const Twine &Name = "");
@@ -141,6 +141,10 @@ public:
   /// getVoidTy - Fetch the type representing void.
   const Type *getVoidTy() {
     return Type::getVoidTy(Context);
+  }
+  
+  const Type *getInt8PtrTy() {
+    return Type::getInt8PtrTy(Context);
   }
   
   /// getCurrentFunctionReturnType - Get the return type of the current function

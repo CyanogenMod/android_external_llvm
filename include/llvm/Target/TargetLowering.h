@@ -346,6 +346,11 @@ public:
     return true;
   }
 
+  /// canOpTrap - Returns true if the operation can trap for the value type.
+  /// VT must be a legal type. By default, we optimistically assume most
+  /// operations don't trap except for divide and remainder.
+  virtual bool canOpTrap(unsigned Op, EVT VT) const;
+
   /// isVectorClearMaskLegal - Similar to isShuffleMaskLegal. This is
   /// used by Targets can use this to indicate if there is a suitable
   /// VECTOR_SHUFFLE that can be used to replace a VAND with a constant
@@ -659,12 +664,12 @@ public:
 
   /// getOptimalMemOpType - Returns the target specific optimal type for load
   /// and store operations as a result of memset, memcpy, and memmove lowering.
-  /// It returns EVT::iAny if SelectionDAG should be responsible for
+  /// It returns EVT::Other if SelectionDAG should be responsible for
   /// determining it.
   virtual EVT getOptimalMemOpType(uint64_t Size, unsigned Align,
                                   bool isSrcConst, bool isSrcStr,
                                   SelectionDAG &DAG) const {
-    return MVT::iAny;
+    return MVT::Other;
   }
   
   /// usesUnderscoreSetJmp - Determine if we should use _setjmp or setjmp
@@ -1159,7 +1164,7 @@ public:
               bool isVarArg, bool isInreg, unsigned NumFixedArgs,
               CallingConv::ID CallConv, bool isTailCall,
               bool isReturnValueUsed, SDValue Callee, ArgListTy &Args,
-              SelectionDAG &DAG, DebugLoc dl, unsigned Order);
+              SelectionDAG &DAG, DebugLoc dl);
 
   /// LowerCall - This hook must be implemented to lower calls into the
   /// the specified DAG. The outgoing arguments to the call are described

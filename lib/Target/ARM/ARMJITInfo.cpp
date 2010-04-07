@@ -48,7 +48,13 @@ static TargetJITInfo::JITCompilerFn JITCompilerFunction;
 // write our own wrapper, which does things our way, so we have complete
 // control over register saving and restoring.
 extern "C" {
-#if defined(__arm__)
+    // We don't need this on Android (generally on hand-held devices). This
+    // function is for the purpose of supporting "lazy symbol lookup" (lookup
+    // undefined symbol at runtime) (Actually, if you tried to remove the 
+    // !defined(ANDROID) guard, you'll get compilation error since Android's
+    // toolchain choose armv5te as its CPU architecture which does not support
+    // instruction 'stmdb' and 'ldmia' within the function)
+#if defined(__arm__) && !defined(ANDROID)
   void ARMCompilationCallback();
   asm(
     ".text\n"
@@ -60,7 +66,7 @@ extern "C" {
     // whole compilation callback doesn't exist as far as the caller is
     // concerned, so we can't just preserve the callee saved regs.
     "stmdb sp!, {r0, r1, r2, r3, lr}\n"
-#ifndef __SOFTFP__
+#if (defined(__VFP_FP__) && !defined(__SOFTFP__))
     "fstmfdd sp!, {d0, d1, d2, d3, d4, d5, d6, d7}\n"
 #endif
     // The LR contains the address of the stub function on entry.
@@ -83,7 +89,7 @@ extern "C" {
     // 6-20 | D0..D7 | Saved VFP registers
     //      +--------+
     //
-#ifndef __SOFTFP__
+#if (defined(__VFP_FP__) && !defined(__SOFTFP__))
     // Restore VFP caller-saved registers.
     "fldmfdd sp!, {d0, d1, d2, d3, d4, d5, d6, d7}\n"
 #endif
@@ -316,6 +322,18 @@ void ARMJITInfo::relocate(void *Function, MachineRelocation *MR,
       // JT base - (instruction addr + 8)
       ResultPtr = ResultPtr - (intptr_t)RelocPos - 8;
       *((intptr_t*)RelocPos) |= ResultPtr;
+      break;
+    }
+    case ARM::reloc_arm_movw: {
+      ResultPtr = ResultPtr & 0xFFFF; 
+      *((intptr_t*)RelocPos) |= ResultPtr & 0xFFF;
+      *((intptr_t*)RelocPos) |= ((ResultPtr >> 12) & 0xF) << 16; // imm4:imm12, Insts[19-16] = imm4, Insts[11-0] = imm12
+      break;
+    }
+    case ARM::reloc_arm_movt: {
+      ResultPtr = (ResultPtr >> 16) & 0xFFFF; 
+      *((intptr_t*)RelocPos) |= ResultPtr & 0xFFF;
+      *((intptr_t*)RelocPos) |= ((ResultPtr >> 12) & 0xF) << 16; // imm4:imm12, Insts[19-16] = imm4, Insts[11-0] = imm12
       break;
     }
     }

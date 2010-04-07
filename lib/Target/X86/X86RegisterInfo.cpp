@@ -191,6 +191,8 @@ X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
         return &X86::GR16_NOREXRegClass;
       else if (A == &X86::GR16_ABCDRegClass)
         return &X86::GR16_ABCDRegClass;
+    } else if (B == &X86::FR32RegClass) {
+      return A;
     }
     break;
   case 2:
@@ -207,6 +209,8 @@ X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
       else if (A == &X86::GR16RegClass || A == &X86::GR16_ABCDRegClass ||
                A == &X86::GR16_NOREXRegClass)
         return &X86::GR16_ABCDRegClass;
+    } else if (B == &X86::FR64RegClass) {
+      return A;
     }
     break;
   case 3:
@@ -234,6 +238,8 @@ X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
         return &X86::GR32_NOREXRegClass;
       else if (A == &X86::GR32_ABCDRegClass)
         return &X86::GR64_ABCDRegClass;
+    } else if (B == &X86::VR128RegClass) {
+      return A;
     }
     break;
   case 4:
@@ -446,8 +452,10 @@ bool X86RegisterInfo::canRealignStack(const MachineFunction &MF) const {
 
 bool X86RegisterInfo::needsStackRealignment(const MachineFunction &MF) const {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
+  const Function *F = MF.getFunction();
   bool requiresRealignment =
-    RealignStack && (MFI->getMaxAlignment() > StackAlign);
+    RealignStack && ((MFI->getMaxAlignment() > StackAlign) ||
+                     F->hasFnAttr(Attribute::StackAlignment));
 
   // FIXME: Currently we don't support stack realignment for functions with
   //        variable-sized allocas.
@@ -485,7 +493,7 @@ X86RegisterInfo::getFrameIndexOffset(const MachineFunction &MF, int FI) const {
       Offset += SlotSize;
     } else {
       unsigned Align = MFI->getObjectAlignment(FI);
-      assert( (-(Offset + StackSize)) % Align == 0);
+      assert((-(Offset + StackSize)) % Align == 0);
       Align = 0;
       return Offset + StackSize;
     }
@@ -626,10 +634,6 @@ void
 X86RegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
                                                       RegScavenger *RS) const {
   MachineFrameInfo *MFI = MF.getFrameInfo();
-
-  // Calculate and set max stack object alignment early, so we can decide
-  // whether we will need stack realignment (and thus FP).
-  MFI->calculateMaxStackAlignment();
 
   X86MachineFunctionInfo *X86FI = MF.getInfo<X86MachineFunctionInfo>();
   int32_t TailCallReturnAddrDelta = X86FI->getTCReturnAddrDelta();
@@ -1053,7 +1057,8 @@ void X86RegisterInfo::emitPrologue(MachineFunction &MF) const {
       BuildMI(MBB, MBBI, DL, TII.get(X86::MOV32ri), X86::EAX)
         .addImm(NumBytes);
       BuildMI(MBB, MBBI, DL, TII.get(X86::CALLpcrel32))
-        .addExternalSymbol("_alloca");
+        .addExternalSymbol("_alloca")
+        .addReg(StackPtr, RegState::Define | RegState::Implicit);
     } else {
       // Save EAX
       BuildMI(MBB, MBBI, DL, TII.get(X86::PUSH32r))
@@ -1064,7 +1069,8 @@ void X86RegisterInfo::emitPrologue(MachineFunction &MF) const {
       BuildMI(MBB, MBBI, DL, TII.get(X86::MOV32ri), X86::EAX)
         .addImm(NumBytes - 4);
       BuildMI(MBB, MBBI, DL, TII.get(X86::CALLpcrel32))
-        .addExternalSymbol("_alloca");
+        .addExternalSymbol("_alloca")
+        .addReg(StackPtr, RegState::Define | RegState::Implicit);
 
       // Restore EAX
       MachineInstr *MI = addRegOffset(BuildMI(MF, DL, TII.get(X86::MOV32rm),

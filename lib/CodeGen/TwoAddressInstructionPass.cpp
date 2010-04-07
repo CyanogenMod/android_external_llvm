@@ -160,7 +160,7 @@ bool TwoAddressInstructionPass::Sink3AddrInstruction(MachineBasicBlock *MBB,
                                            MachineBasicBlock::iterator OldPos) {
   // Check if it's safe to move this instruction.
   bool SeenStore = true; // Be conservative.
-  if (!MI->isSafeToMove(TII, SeenStore, AA))
+  if (!MI->isSafeToMove(TII, AA, SeenStore))
     return false;
 
   unsigned DefReg = 0;
@@ -213,6 +213,9 @@ bool TwoAddressInstructionPass::Sink3AddrInstruction(MachineBasicBlock *MBB,
   unsigned NumVisited = 0;
   for (MachineBasicBlock::iterator I = llvm::next(OldPos); I != KillPos; ++I) {
     MachineInstr *OtherMI = I;
+    // DBG_VALUE cannot be counted against the limit.
+    if (OtherMI->isDebugValue())
+      continue;
     if (NumVisited > 30)  // FIXME: Arbitrary limit to reduce compile time cost.
       return false;
     ++NumVisited;
@@ -451,13 +454,10 @@ MachineInstr *findOnlyInterestingUse(unsigned Reg, MachineBasicBlock *MBB,
                                      const TargetInstrInfo *TII,
                                      bool &IsCopy,
                                      unsigned &DstReg, bool &IsDstPhys) {
-  MachineRegisterInfo::use_iterator UI = MRI->use_begin(Reg);
-  if (UI == MRI->use_end())
+  if (!MRI->hasOneNonDBGUse(Reg))
+    // None or more than one use.
     return 0;
-  MachineInstr &UseMI = *UI;
-  if (++UI != MRI->use_end())
-    // More than one use.
-    return 0;
+  MachineInstr &UseMI = *MRI->use_nodbg_begin(Reg);
   if (UseMI.getParent() != MBB)
     return 0;
   unsigned SrcReg;
@@ -923,6 +923,10 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
     for (MachineBasicBlock::iterator mi = mbbi->begin(), me = mbbi->end();
          mi != me; ) {
       MachineBasicBlock::iterator nmi = llvm::next(mi);
+      if (mi->isDebugValue()) {
+        mi = nmi;
+        continue;
+      }
       const TargetInstrDesc &TID = mi->getDesc();
       bool FirstTied = true;
 
@@ -1021,7 +1025,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
           // copying it.
           if (DefMI &&
               DefMI->getDesc().isAsCheapAsAMove() &&
-              DefMI->isSafeToReMat(TII, regB, AA) &&
+              DefMI->isSafeToReMat(TII, AA, regB) &&
               isProfitableToReMat(regB, rc, mi, DefMI, mbbi, Dist)){
             DEBUG(dbgs() << "2addr: REMATTING : " << *DefMI << "\n");
             unsigned regASubIdx = mi->getOperand(DstIdx).getSubReg();

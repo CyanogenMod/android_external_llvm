@@ -368,6 +368,7 @@ void format_object_base::home() {
 /// if no error occurred.
 raw_fd_ostream::raw_fd_ostream(const char *Filename, std::string &ErrorInfo,
                                unsigned Flags) : pos(0) {
+  assert(Filename != 0 && "Filename is null");
   // Verify that we don't have both "append" and "excl".
   assert((!(Flags & F_Excl) || !(Flags & F_Append)) &&
          "Cannot specify both 'excl' and 'append' file creation flags!");
@@ -574,12 +575,18 @@ void raw_svector_ostream::resync() {
 }
 
 void raw_svector_ostream::write_impl(const char *Ptr, size_t Size) {
-  assert(Ptr == OS.end() && OS.size() + Size <= OS.capacity() &&
-         "Invalid write_impl() call!");
-
-  // We don't need to copy the bytes, just commit the bytes to the
-  // SmallVector.
-  OS.set_size(OS.size() + Size);
+  // If we're writing bytes from the end of the buffer into the smallvector, we
+  // don't need to copy the bytes, just commit the bytes because they are
+  // already in the right place.
+  if (Ptr == OS.end()) {
+    assert(OS.size() + Size <= OS.capacity() && "Invalid write_impl() call!");
+    OS.set_size(OS.size() + Size);
+  } else {
+    assert(GetNumBytesInBuffer() == 0 &&
+           "Should be writing from buffer if some bytes in it");
+    // Otherwise, do copy the bytes.
+    OS.append(Ptr, Ptr+Size);
+  }
 
   // Grow the vector if necessary.
   if (OS.capacity() - OS.size() < 64)

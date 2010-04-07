@@ -31,8 +31,8 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
+#include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/ValueTypes.h"
-#include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -371,7 +371,8 @@ MSP430TargetLowering::LowerCCCArguments(SDValue Chain,
       //from this parameter
       SDValue FIN = DAG.getFrameIndex(FI, MVT::i16);
       InVals.push_back(DAG.getLoad(VA.getLocVT(), dl, Chain, FIN,
-                                   PseudoSourceValue::getFixedStack(FI), 0));
+                                   PseudoSourceValue::getFixedStack(FI), 0,
+                                   false, false, 0));
     }
   }
 
@@ -500,7 +501,7 @@ MSP430TargetLowering::LowerCCCCallTo(SDValue Chain, SDValue Callee,
 
       MemOpChains.push_back(DAG.getStore(Chain, dl, Arg, PtrOff,
                                          PseudoSourceValue::getStack(),
-                                         VA.getLocMemOffset()));
+                                         VA.getLocMemOffset(), false, false, 0));
     }
   }
 
@@ -794,18 +795,15 @@ SDValue MSP430TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) {
      if (andCC) {
        // C = ~Z, thus Res = SRW & 1, no processing is required
      } else {
-       // Res = (SRW >> 1) & 1
+       // Res = ~((SRW >> 1) & 1)
        Shift = true;
+       Invert = true;
      }
      break;
    case MSP430CC::COND_E:
-     if (andCC) {
-       // C = ~Z, thus Res = ~(SRW & 1)
-     } else {
-       // Res = ~((SRW >> 1) & 1)
-       Shift = true;
-     }
-     Invert = true;
+     Shift = true;
+     // C = ~Z for AND instruction, thus we can put Res = ~(SRW & 1), however,
+     // Res = (SRW >> 1) & 1 is 1 word shorter.
      break;
   }
   EVT VT = Op.getValueType();
@@ -893,13 +891,13 @@ SDValue MSP430TargetLowering::LowerRETURNADDR(SDValue Op, SelectionDAG &DAG) {
     return DAG.getLoad(getPointerTy(), dl, DAG.getEntryNode(),
                        DAG.getNode(ISD::ADD, dl, getPointerTy(),
                                    FrameAddr, Offset),
-                       NULL, 0);
+                       NULL, 0, false, false, 0);
   }
 
   // Just load the return address.
   SDValue RetAddrFI = getReturnAddressFrameIndex(DAG);
   return DAG.getLoad(getPointerTy(), dl, DAG.getEntryNode(),
-                     RetAddrFI, NULL, 0);
+                     RetAddrFI, NULL, 0, false, false, 0);
 }
 
 SDValue MSP430TargetLowering::LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) {
@@ -911,7 +909,8 @@ SDValue MSP430TargetLowering::LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) {
   SDValue FrameAddr = DAG.getCopyFromReg(DAG.getEntryNode(), dl,
                                          MSP430::FPW, VT);
   while (Depth--)
-    FrameAddr = DAG.getLoad(VT, dl, DAG.getEntryNode(), FrameAddr, NULL, 0);
+    FrameAddr = DAG.getLoad(VT, dl, DAG.getEntryNode(), FrameAddr, NULL, 0,
+                            false, false, 0);
   return FrameAddr;
 }
 
@@ -971,7 +970,7 @@ const char *MSP430TargetLowering::getTargetNodeName(unsigned Opcode) const {
 
 bool MSP430TargetLowering::isTruncateFree(const Type *Ty1,
                                           const Type *Ty2) const {
-  if (!Ty1->isInteger() || !Ty2->isInteger())
+  if (!Ty1->isIntegerTy() || !Ty2->isIntegerTy())
     return false;
 
   return (Ty1->getPrimitiveSizeInBits() > Ty2->getPrimitiveSizeInBits());
@@ -986,7 +985,7 @@ bool MSP430TargetLowering::isTruncateFree(EVT VT1, EVT VT2) const {
 
 bool MSP430TargetLowering::isZExtFree(const Type *Ty1, const Type *Ty2) const {
   // MSP430 implicitly zero-extends 8-bit results in 16-bit registers.
-  return 0 && Ty1->isInteger(8) && Ty2->isInteger(16);
+  return 0 && Ty1->isIntegerTy(8) && Ty2->isIntegerTy(16);
 }
 
 bool MSP430TargetLowering::isZExtFree(EVT VT1, EVT VT2) const {

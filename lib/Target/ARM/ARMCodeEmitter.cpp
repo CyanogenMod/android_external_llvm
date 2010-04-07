@@ -86,6 +86,7 @@ namespace {
     void emitWordLE(unsigned Binary);
     void emitDWordLE(uint64_t Binary);
     void emitConstPoolInstruction(const MachineInstr &MI);
+    void emitMOVi32immInstruction(const MachineInstr &MI);
     void emitMOVi2piecesInstruction(const MachineInstr &MI);
     void emitLEApcrelJTInstruction(const MachineInstr &MI);
     void emitPseudoMoveInstruction(const MachineInstr &MI);
@@ -141,6 +142,15 @@ namespace {
     unsigned getMachineOpValue(const MachineInstr &MI,const MachineOperand &MO);
     unsigned getMachineOpValue(const MachineInstr &MI, unsigned OpIdx) {
       return getMachineOpValue(MI, MI.getOperand(OpIdx));
+    }
+
+    /// getMovi32Value - Return binary encoding of operand for movw/movt. If the 
+    /// machine operand requires relocation, record the relocation and return zero.
+    unsigned getMovi32Value(const MachineInstr &MI,const MachineOperand &MO, 
+                            unsigned Reloc);
+    unsigned getMovi32Value(const MachineInstr &MI, unsigned OpIdx, 
+                            unsigned Reloc) {
+      return getMovi32Value(MI, MI.getOperand(OpIdx), Reloc);
     }
 
     /// getShiftOp - Return the shift opcode (bit[6:5]) of the immediate value.
@@ -210,6 +220,54 @@ unsigned ARMCodeEmitter::getShiftOp(unsigned Imm) const {
   case ARM_AM::lsr: return 1;
   case ARM_AM::ror:
   case ARM_AM::rrx: return 3;
+  }
+  return 0;
+}
+
+/// getMovi32Value - Return binary encoding of operand for movw/movt. If the 
+/// machine operand requires relocation, record the relocation and return zero.
+unsigned ARMCodeEmitter::getMovi32Value(const MachineInstr &MI,
+                                        const MachineOperand &MO, 
+                                        unsigned Reloc) {
+  assert(((Reloc == ARM::reloc_arm_movt) || (Reloc == ARM::reloc_arm_movw)) 
+      && "Relocation to this function should be for movt or movw");
+  switch(MO.getType()) {
+  case MachineOperand::MO_Register:
+    return ARMRegisterInfo::getRegisterNumbering(MO.getReg());
+    break;
+
+  case MachineOperand::MO_Immediate:
+    return static_cast<unsigned>(MO.getImm());
+    break;
+
+  case MachineOperand::MO_FPImmediate:
+    return static_cast<unsigned>(
+        MO.getFPImm()->getValueAPF().bitcastToAPInt().getLimitedValue());
+    break;
+
+  case MachineOperand::MO_MachineBasicBlock:
+    emitMachineBasicBlock(MO.getMBB(), Reloc);
+    break;
+
+  case MachineOperand::MO_ConstantPoolIndex:
+    emitConstPoolAddress(MO.getIndex(), Reloc);
+    break;
+
+  case MachineOperand::MO_JumpTableIndex:
+    emitJumpTableAddress(MO.getIndex(), Reloc);
+    break;
+
+  case MachineOperand::MO_ExternalSymbol:
+    emitExternalSymbolAddress(MO.getSymbolName(), Reloc);
+    break;
+
+  case MachineOperand::MO_GlobalAddress:
+    emitGlobalAddress(MO.getGlobal(), Reloc, true, false);
+    break;
+
+  default:
+    llvm_unreachable("Unsupported immediate operand type for movw/movt");
+    break;
   }
   return 0;
 }
@@ -433,6 +491,41 @@ void ARMCodeEmitter::emitConstPoolInstruction(const MachineInstr &MI) {
   }
 }
 
+void ARMCodeEmitter::emitMOVi32immInstruction(const MachineInstr &MI) {
+  const MachineOperand &MO0 = MI.getOperand(0);
+  const MachineOperand &MO1 = MI.getOperand(1);
+
+  unsigned Lo16 = getMovi32Value(MI, MO1, ARM::reloc_arm_movw) & 0xFFFF;
+
+  // Emit the 'mov' instruction.
+  unsigned Binary = 0x30 << 20;  // mov: Insts{27-20} = 0b00110000
+
+  // Set the conditional execution predicate.
+  Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+
+  // Encode Rd.
+  Binary |= getMachineOpValue(MI, MO0) << ARMII::RegRdShift;
+
+  // Encode imm.
+  Binary |= Lo16 & 0xFFF;
+  Binary |= ((Lo16 >> 12) & 0xF) << 16; // imm4:imm12, Insts[19-16] = imm4, Insts[11-0] = imm12
+  emitWordLE(Binary);
+
+  unsigned Hi16 = (getMovi32Value(MI, MO1, ARM::reloc_arm_movt) >> 16) & 0xFFFF;
+  // Emit the 'mov' instruction.
+  Binary = 0x34 << 20; // movt: Insts[27-20] = 0b00110100
+
+  // Set the conditional execution predicate.
+  Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+
+  // Encode Rd.
+  Binary |= getMachineOpValue(MI, MO0) << ARMII::RegRdShift;
+
+  Binary |= Hi16 & 0xFFF;
+  Binary |= ((Hi16 >> 12) & 0xF) << 16;
+  emitWordLE(Binary);
+}
+
 void ARMCodeEmitter::emitMOVi2piecesInstruction(const MachineInstr &MI) {
   const MachineOperand &MO0 = MI.getOperand(0);
   const MachineOperand &MO1 = MI.getOperand(1);
@@ -552,7 +645,6 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
   switch (Opcode) {
   default:
     llvm_unreachable("ARMCodeEmitter::emitPseudoInstruction");
-  // FIXME: Add support for MOVimm32.
   case TargetOpcode::INLINEASM: {
     // We allow inline assembler nodes with empty bodies - they can
     // implicitly define registers, which is ok for JIT.
@@ -599,6 +691,11 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
     emitMiscLoadStoreInstruction(MI, ARM::PC);
     break;
   }
+
+  case ARM::MOVi32imm:
+    emitMOVi32immInstruction(MI);
+    break;
+
   case ARM::MOVi2pieces:
     // Two instructions to materialize a constant.
     emitMOVi2piecesInstruction(MI);
@@ -1138,7 +1235,7 @@ void ARMCodeEmitter::emitMiscBranchInstruction(const MachineInstr &MI) {
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
 
-  if (TID.Opcode == ARM::BX_RET)
+  if (TID.Opcode == ARM::BX_RET || TID.Opcode == ARM::MOVPCLR)
     // The return register is LR.
     Binary |= ARMRegisterInfo::getRegisterNumbering(ARM::LR);
   else

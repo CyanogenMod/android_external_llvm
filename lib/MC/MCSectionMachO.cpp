@@ -10,6 +10,7 @@
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/Support/raw_ostream.h"
+#include <ctype.h>
 using namespace llvm;
 
 /// SectionTypeDescriptors - These are strings that describe the various section

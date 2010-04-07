@@ -22,6 +22,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormattedStream.h"
+#include <ctype.h>
 using namespace llvm;
 
 namespace {
@@ -133,6 +134,9 @@ public:
   virtual void EmitValueToAlignment(unsigned ByteAlignment, int64_t Value = 0,
                                     unsigned ValueSize = 1,
                                     unsigned MaxBytesToEmit = 0);
+
+  virtual void EmitCodeAlignment(unsigned ByteAlignment,
+                                 unsigned MaxBytesToEmit = 0);
 
   virtual void EmitValueToOffset(const MCExpr *Offset,
                                  unsigned char Value = 0);
@@ -513,6 +517,13 @@ void MCAsmStreamer::EmitValueToAlignment(unsigned ByteAlignment, int64_t Value,
   EmitEOL();
 }
 
+void MCAsmStreamer::EmitCodeAlignment(unsigned ByteAlignment,
+                                      unsigned MaxBytesToEmit) {
+  // Emit with a text fill value.
+  EmitValueToAlignment(ByteAlignment, MAI.getTextAlignFillValue(),
+                       1, MaxBytesToEmit);
+}
+
 void MCAsmStreamer::EmitValueToOffset(const MCExpr *Offset,
                                       unsigned char Value) {
   // FIXME: Verify that Offset is associated with the current section.
@@ -552,7 +563,7 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst) {
 
   for (unsigned i = 0, e = Fixups.size(); i != e; ++i) {
     MCFixup &F = Fixups[i];
-    MCFixupKindInfo &Info = Emitter->getFixupKindInfo(F.getKind());
+    const MCFixupKindInfo &Info = Emitter->getFixupKindInfo(F.getKind());
     for (unsigned j = 0; j != Info.TargetSize; ++j) {
       unsigned Index = F.getOffset() * 8 + Info.TargetOffset + j;
       assert(Index < Code.size() * 8 && "Invalid offset in fixup!");
@@ -599,7 +610,7 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst) {
 
   for (unsigned i = 0, e = Fixups.size(); i != e; ++i) {
     MCFixup &F = Fixups[i];
-    MCFixupKindInfo &Info = Emitter->getFixupKindInfo(F.getKind());
+    const MCFixupKindInfo &Info = Emitter->getFixupKindInfo(F.getKind());
     OS << "  fixup " << char('A' + i) << " - " << "offset: " << F.getOffset()
        << ", value: " << *F.getValue() << ", kind: " << Info.Name << "\n";
   }
@@ -616,6 +627,12 @@ void MCAsmStreamer::EmitInstruction(const MCInst &Inst) {
   if (ShowInst) {
     raw_ostream &OS = GetCommentOS();
     OS << "<MCInst #" << Inst.getOpcode();
+    
+    StringRef InstName;
+    if (InstPrinter)
+      InstName = InstPrinter->getOpcodeName(Inst.getOpcode());
+    if (!InstName.empty())
+      OS << ' ' << InstName;
     
     for (unsigned i = 0, e = Inst.getNumOperands(); i != e; ++i) {
       OS << "\n  ";

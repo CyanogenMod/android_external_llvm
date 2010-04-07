@@ -289,8 +289,8 @@ public:
 
   MachineInstr *duplicate(MachineInstr *Orig, MachineFunction &MF) const;
 
-  virtual bool isIdentical(const MachineInstr *MI, const MachineInstr *Other,
-                           const MachineRegisterInfo *MRI) const;
+  virtual bool produceSameValue(const MachineInstr *MI0,
+                                const MachineInstr *MI1) const;
 };
 
 static inline
@@ -332,7 +332,7 @@ bool isJumpTableBranchOpcode(int Opc) {
 
 static inline
 bool isIndirectBranchOpcode(int Opc) {
-  return Opc == ARM::BRIND || Opc == ARM::tBRIND;
+  return Opc == ARM::BRIND || Opc == ARM::MOVPCRX || Opc == ARM::tBRIND;
 }
 
 /// getInstrPredicate - If instruction is predicated, returns its predicate

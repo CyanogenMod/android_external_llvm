@@ -22,6 +22,7 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
+#include <ctype.h>
 using namespace llvm;
 
 namespace {

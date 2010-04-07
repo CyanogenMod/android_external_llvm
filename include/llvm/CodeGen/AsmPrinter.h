@@ -223,7 +223,7 @@ namespace llvm {
     void EmitFunctionBody();
 
     /// EmitInstruction - Targets should implement this to emit instructions.
-    virtual void EmitInstruction(const MachineInstr *MI) {
+    virtual void EmitInstruction(const MachineInstr *) {
       assert(0 && "EmitInstruction not implemented");
     }
     
@@ -308,7 +308,7 @@ namespace llvm {
 
     /// GetGlobalValueSymbol - Return the MCSymbol for the specified global
     /// value.
-    MCSymbol *GetGlobalValueSymbol(const GlobalValue *GV) const;
+    virtual MCSymbol *GetGlobalValueSymbol(const GlobalValue *GV) const;
 
     /// GetSymbolWithGlobalValueBase - Return the MCSymbol for a symbol with
     /// global value name as its base, with the specified suffix, and where the
@@ -355,6 +355,11 @@ namespace llvm {
 
     /// printOffset - This is just convenient handler for printing offsets.
     void printOffset(int64_t Offset) const;
+
+    /// isBlockOnlyReachableByFallthough - Return true if the basic block has
+    /// exactly one predecessor and the control transfer mechanism between
+    /// the predecessor and this block is a fall-through.
+    virtual bool isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) const;
 
   private:
 

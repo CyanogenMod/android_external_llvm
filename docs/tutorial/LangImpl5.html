@@ -678,7 +678,7 @@ loop:		; preds = %loop, %entry
         ; body
 	%calltmp = call double @putchard( double 4.200000e+01 )
         ; increment
-	%nextvar = add double %i, 1.000000e+00
+	%nextvar = fadd double %i, 1.000000e+00
 
         ; termination test
 	%cmptmp = fcmp ult double %i, %n
@@ -902,7 +902,6 @@ if/then/else and for expressions..  To build this example, use:
 <pre>
 #include "llvm/DerivedTypes.h"
 #include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/ExecutionEngine/Interpreter.h"
 #include "llvm/ExecutionEngine/JIT.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
@@ -1720,7 +1719,12 @@ int main() {
   TheModule = new Module("my cool jit", Context);
 
   // Create the JIT.  This takes ownership of the module.
-  TheExecutionEngine = EngineBuilder(TheModule).create();
+  std::string ErrStr;
+  TheExecutionEngine = EngineBuilder(TheModule).setErrorStr(&ErrStr).create();
+  if (!TheExecutionEngine) {
+    fprintf(stderr, "Could not create ExecutionEngine: %s\n", ErrStr.c_str());
+    exit(1);
+  }
 
   FunctionPassManager OurFPM(TheModule);
 
@@ -1767,7 +1771,7 @@ int main() {
 
   <a href="mailto:sabre@nondot.org">Chris Lattner</a><br>
   <a href="http://llvm.org">The LLVM Compiler Infrastructure</a><br>
-  Last modified: $Date: 2010-02-03 09:27:31 -0800 (Wed, 03 Feb 2010) $
+  Last modified: $Date: 2010-03-02 09:11:08 +0800 (二, 02  3月 2010) $
 </address>
 </body>
 </html>

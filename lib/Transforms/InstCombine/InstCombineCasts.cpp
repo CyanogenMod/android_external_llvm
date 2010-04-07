@@ -23,7 +23,7 @@ using namespace PatternMatch;
 ///
 static Value *DecomposeSimpleLinearExpr(Value *Val, unsigned &Scale,
                                         int &Offset) {
-  assert(Val->getType()->isInteger(32) && "Unexpected allocation size type!");
+  assert(Val->getType()->isIntegerTy(32) && "Unexpected allocation size type!");
   if (ConstantInt *CI = dyn_cast<ConstantInt>(Val)) {
     Offset = CI->getZExtValue();
     Scale  = 0;
@@ -255,17 +255,26 @@ isEliminableCastPair(
   return Instruction::CastOps(Res);
 }
 
-/// ValueRequiresCast - Return true if the cast from "V to Ty" actually results
-/// in any code being generated.  It does not require codegen if V is simple
-/// enough or if the cast can be folded into other casts.
-bool InstCombiner::ValueRequiresCast(Instruction::CastOps opcode,const Value *V,
-                                     const Type *Ty) {
+/// ShouldOptimizeCast - Return true if the cast from "V to Ty" actually
+/// results in any code being generated and is interesting to optimize out. If
+/// the cast can be eliminated by some other simple transformation, we prefer
+/// to do the simplification first.
+bool InstCombiner::ShouldOptimizeCast(Instruction::CastOps opc, const Value *V,
+                                      const Type *Ty) {
+  // Noop casts and casts of constants should be eliminated trivially.
   if (V->getType() == Ty || isa<Constant>(V)) return false;
   
-  // If this is another cast that can be eliminated, it isn't codegen either.
+  // If this is another cast that can be eliminated, we prefer to have it
+  // eliminated.
   if (const CastInst *CI = dyn_cast<CastInst>(V))
-    if (isEliminableCastPair(CI, opcode, Ty, TD))
+    if (isEliminableCastPair(CI, opc, Ty, TD))
       return false;
+  
+  // If this is a vector sext from a compare, then we don't want to break the
+  // idiom where each element of the extended vector is either zero or all ones.
+  if (opc == Instruction::SExt && isa<CmpInst>(V) && Ty->isVectorTy())
+    return false;
+  
   return true;
 }
 
@@ -294,8 +303,8 @@ Instruction *InstCombiner::commonCastTransforms(CastInst &CI) {
   if (isa<PHINode>(Src)) {
     // We don't do this if this would create a PHI node with an illegal type if
     // it is currently legal.
-    if (!isa<IntegerType>(Src->getType()) ||
-        !isa<IntegerType>(CI.getType()) ||
+    if (!Src->getType()->isIntegerTy() ||
+        !CI.getType()->isIntegerTy() ||
         ShouldChangeType(CI.getType(), Src->getType()))
       if (Instruction *NV = FoldOpIntoPhi(CI))
         return NV;
@@ -427,7 +436,7 @@ Instruction *InstCombiner::visitTrunc(TruncInst &CI) {
   // type.   Only do this if the dest type is a simple type, don't convert the
   // expression tree to something weird like i93 unless the source is also
   // strange.
-  if ((isa<VectorType>(DestTy) || ShouldChangeType(SrcTy, DestTy)) &&
+  if ((DestTy->isVectorTy() || ShouldChangeType(SrcTy, DestTy)) &&
       CanEvaluateTruncated(Src, DestTy)) {
       
     // If this cast is a truncate, evaluting in a different type always
@@ -719,7 +728,7 @@ Instruction *InstCombiner::visitZExt(ZExtInst &CI) {
   // expression tree to something weird like i93 unless the source is also
   // strange.
   unsigned BitsToClear;
-  if ((isa<VectorType>(DestTy) || ShouldChangeType(SrcTy, DestTy)) &&
+  if ((DestTy->isVectorTy() || ShouldChangeType(SrcTy, DestTy)) &&
       CanEvaluateZExtd(Src, DestTy, BitsToClear)) { 
     assert(BitsToClear < SrcTy->getScalarSizeInBits() &&
            "Unreasonable BitsToClear");
@@ -828,7 +837,7 @@ Instruction *InstCombiner::visitZExt(ZExtInst &CI) {
 
   // zext (xor i1 X, true) to i32  --> xor (zext i1 X to i32), 1
   Value *X;
-  if (SrcI && SrcI->hasOneUse() && SrcI->getType()->isInteger(1) &&
+  if (SrcI && SrcI->hasOneUse() && SrcI->getType()->isIntegerTy(1) &&
       match(SrcI, m_Not(m_Value(X))) &&
       (!X->hasOneUse() || !isa<CmpInst>(X))) {
     Value *New = Builder->CreateZExt(X, CI.getType());
@@ -927,7 +936,7 @@ Instruction *InstCombiner::visitSExt(SExtInst &CI) {
   // type.   Only do this if the dest type is a simple type, don't convert the
   // expression tree to something weird like i93 unless the source is also
   // strange.
-  if ((isa<VectorType>(DestTy) || ShouldChangeType(SrcTy, DestTy)) &&
+  if ((DestTy->isVectorTy() || ShouldChangeType(SrcTy, DestTy)) &&
       CanEvaluateSExtd(Src, DestTy)) {
     // Okay, we can transform this!  Insert the new expression now.
     DEBUG(dbgs() << "ICE: EvaluateInDifferentType converting expression type"
@@ -1280,7 +1289,7 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
       Constant::getNullValue(Type::getInt32Ty(CI.getContext()));
     unsigned NumZeros = 0;
     while (SrcElTy != DstElTy && 
-           isa<CompositeType>(SrcElTy) && !isa<PointerType>(SrcElTy) &&
+           isa<CompositeType>(SrcElTy) && !SrcElTy->isPointerTy() &&
            SrcElTy->getNumContainedTypes() /* not "{}" */) {
       SrcElTy = cast<CompositeType>(SrcElTy)->getTypeAtIndex(ZeroUInt);
       ++NumZeros;
@@ -1295,7 +1304,7 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
   }
 
   if (const VectorType *DestVTy = dyn_cast<VectorType>(DestTy)) {
-    if (DestVTy->getNumElements() == 1 && !isa<VectorType>(SrcTy)) {
+    if (DestVTy->getNumElements() == 1 && !SrcTy->isVectorTy()) {
       Value *Elem = Builder->CreateBitCast(Src, DestVTy->getElementType());
       return InsertElementInst::Create(UndefValue::get(DestTy), Elem,
                      Constant::getNullValue(Type::getInt32Ty(CI.getContext())));
@@ -1304,7 +1313,7 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
   }
 
   if (const VectorType *SrcVTy = dyn_cast<VectorType>(SrcTy)) {
-    if (SrcVTy->getNumElements() == 1 && !isa<VectorType>(DestTy)) {
+    if (SrcVTy->getNumElements() == 1 && !DestTy->isVectorTy()) {
       Value *Elem = 
         Builder->CreateExtractElement(Src,
                    Constant::getNullValue(Type::getInt32Ty(CI.getContext())));
@@ -1315,7 +1324,7 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
   if (ShuffleVectorInst *SVI = dyn_cast<ShuffleVectorInst>(Src)) {
     // Okay, we have (bitcast (shuffle ..)).  Check to see if this is
     // a bitconvert to a vector with the same # elts.
-    if (SVI->hasOneUse() && isa<VectorType>(DestTy) && 
+    if (SVI->hasOneUse() && DestTy->isVectorTy() && 
         cast<VectorType>(DestTy)->getNumElements() ==
               SVI->getType()->getNumElements() &&
         SVI->getType()->getNumElements() ==
@@ -1337,7 +1346,7 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
     }
   }
   
-  if (isa<PointerType>(SrcTy))
+  if (SrcTy->isPointerTy())
     return commonPointerCastTransforms(CI);
   return commonCastTransforms(CI);
 }

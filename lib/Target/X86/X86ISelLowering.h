@@ -180,7 +180,7 @@ namespace llvm {
 
       /// PINSRW - Insert the lower 16-bits of a 32-bit value to a vector,
       /// corresponds to X86::PINSRW.
-      PINSRW,
+      PINSRW, MMX_PINSRW,
 
       /// PSHUFB - Shuffle 16 8-bit values within a vector.
       PSHUFB,
@@ -249,6 +249,9 @@ namespace llvm {
       // with control flow.
       VASTART_SAVE_XMM_REGS,
 
+      // MINGW_ALLOCA - MingW's __alloca call to do stack probing.
+      MINGW_ALLOCA,
+
       // ATOMADD64_DAG, ATOMSUB64_DAG, ATOMOR64_DAG, ATOMAND64_DAG, 
       // ATOMXOR64_DAG, ATOMNAND64_DAG, ATOMSWAP64_DAG - 
       // Atomic 64-bit binary operations.
@@ -259,6 +262,10 @@ namespace llvm {
       ATOMAND64_DAG,
       ATOMNAND64_DAG,
       ATOMSWAP64_DAG
+
+      // WARNING: Do not add anything in the end unless you want the node to
+      // have memop! In fact, starting from ATOMADD64_DAG all opcodes will be
+      // thought as target memory ops!
     };
   }
 
@@ -639,7 +646,6 @@ namespace llvm {
                                 int FPDiff, DebugLoc dl);
 
     CCAssignFn *CCAssignFnForNode(CallingConv::ID CallConv) const;
-    NameDecorationStyle NameDecorationForCallConv(CallingConv::ID CallConv);
     unsigned GetAlignedArgumentStackSize(unsigned StackSize, SelectionDAG &DAG);
 
     std::pair<SDValue,SDValue> FP_TO_INTHelper(SDValue Op, SelectionDAG &DAG,
@@ -790,7 +796,11 @@ namespace llvm {
     MachineBasicBlock *EmitLoweredSelect(MachineInstr *I,
                                          MachineBasicBlock *BB,
                     DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
-    
+
+    MachineBasicBlock *EmitLoweredMingwAlloca(MachineInstr *MI,
+                                              MachineBasicBlock *BB,
+                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
+
     /// Emit nodes that will be selected as "test Op0,Op0", or something
     /// equivalent, for use with the given x86 condition code.
     SDValue EmitTest(SDValue Op0, unsigned X86CC, SelectionDAG &DAG);

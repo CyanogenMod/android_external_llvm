@@ -56,11 +56,11 @@ typedef const PassInfo* AnalysisID;
 /// Ordering of pass manager types is important here.
 enum PassManagerType {
   PMT_Unknown = 0,
-  PMT_ModulePassManager = 1, /// MPPassManager 
-  PMT_CallGraphPassManager,  /// CGPassManager
-  PMT_FunctionPassManager,   /// FPPassManager
-  PMT_LoopPassManager,       /// LPPassManager
-  PMT_BasicBlockPassManager, /// BBPassManager
+  PMT_ModulePassManager = 1, ///< MPPassManager 
+  PMT_CallGraphPassManager,  ///< CGPassManager
+  PMT_FunctionPassManager,   ///< FPPassManager
+  PMT_LoopPassManager,       ///< LPPassManager
+  PMT_BasicBlockPassManager, ///< BBPassManager
   PMT_Last
 };
 
@@ -163,7 +163,7 @@ public:
   /// an analysis interface through multiple inheritance.  If needed, it should
   /// override this to adjust the this pointer as needed for the specified pass
   /// info.
-  virtual void *getAdjustedAnalysisPointer(const PassInfo *PI) {
+  virtual void *getAdjustedAnalysisPointer(const PassInfo *) {
     return this;
   }
   virtual ImmutablePass *getAsImmutablePass() { return 0; }

@@ -33,10 +33,11 @@
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineModuleInfoImpls.h"
+#include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/MC/MCAsmInfo.h"
-#include "llvm/Target/TargetLoweringObjectFile.h"
+#include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/ADT/SmallString.h"
@@ -52,40 +53,42 @@ void X86AsmPrinter::PrintPICBaseSymbol() const {
                                                                     OutContext);
 }
 
+MCSymbol *X86AsmPrinter::GetGlobalValueSymbol(const GlobalValue *GV) const {
+  SmallString<60> NameStr;
+  Mang->getNameWithPrefix(NameStr, GV, false);
+  MCSymbol *Symb = OutContext.GetOrCreateSymbol(NameStr.str());
+
+  if (Subtarget->isTargetCygMing()) {
+    X86COFFMachineModuleInfo &COFFMMI =
+      MMI->getObjFileInfo<X86COFFMachineModuleInfo>();
+    COFFMMI.DecorateCygMingName(Symb, OutContext, GV, *TM.getTargetData());
+
+    // Save function name for later type emission.
+    if (const Function *F = dyn_cast<Function>(GV))
+      if (F->isDeclaration())
+        COFFMMI.addExternalFunction(Symb->getName());
+
+  }
+
+  return Symb;
+}
+
 /// runOnMachineFunction - Emit the function body.
 ///
 bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   SetupMachineFunction(MF);
-  
-  // COFF and Cygwin specific mangling stuff.  This should be moved out to the
-  // mangler or handled some other way?
-  if (Subtarget->isTargetCOFF()) {
-    X86COFFMachineModuleInfo &COFFMMI = 
-      MMI->getObjFileInfo<X86COFFMachineModuleInfo>();
 
-    // Populate function information map.  Don't want to populate
-    // non-stdcall or non-fastcall functions' information right now.
+  if (Subtarget->isTargetCOFF()) {
     const Function *F = MF.getFunction();
-    CallingConv::ID CC = F->getCallingConv();
-    if (CC == CallingConv::X86_StdCall || CC == CallingConv::X86_FastCall)
-      COFFMMI.AddFunctionInfo(F, *MF.getInfo<X86MachineFunctionInfo>());
-  }
-  if (Subtarget->isTargetCygMing()) {
-    const Function *F = MF.getFunction();
-    X86COFFMachineModuleInfo &COFFMMI = 
-      MMI->getObjFileInfo<X86COFFMachineModuleInfo>();
-    COFFMMI.DecorateCygMingName(CurrentFnSym, OutContext,F,*TM.getTargetData());
-    
-    O << "\t.def\t " << *CurrentFnSym;
-    O << ";\t.scl\t" <<
+    O << "\t.def\t " << *CurrentFnSym << ";\t.scl\t" <<
     (F->hasInternalLinkage() ? COFF::C_STAT : COFF::C_EXT)
     << ";\t.type\t" << (COFF::DT_FCN << COFF::N_BTSHFT)
     << ";\t.endef\n";
   }
-  
+
   // Have common code print out the function header with linkage info etc.
   EmitFunctionHeader();
-  
+
   // Emit the rest of the function body.
   EmitFunctionBody();
 
@@ -119,12 +122,6 @@ void X86AsmPrinter::printSymbolOperand(const MachineOperand &MO) {
     else
       GVSym = GetGlobalValueSymbol(GV);
 
-    if (Subtarget->isTargetCygMing()) {
-      X86COFFMachineModuleInfo &COFFMMI =
-        MMI->getObjFileInfo<X86COFFMachineModuleInfo>();
-      COFFMMI.DecorateCygMingName(GVSym, OutContext, GV, *TM.getTargetData());
-    }
-    
     // Handle dllimport linkage.
     if (MO.getTargetFlags() == X86II::MO_DLLIMPORT)
       GVSym = OutContext.GetOrCreateSymbol(Twine("__imp_") + GVSym->getName());
@@ -585,7 +582,6 @@ void X86AsmPrinter::EmitEndOfAsmFile(Module &M) {
       for (Module::const_iterator I = M.begin(), E = M.end(); I != E; ++I)
         if (I->hasDLLExportLinkage()) {
           MCSymbol *Sym = GetGlobalValueSymbol(I);
-          COFFMMI.DecorateCygMingName(Sym, OutContext, I, *TM.getTargetData());
           DLLExportedFns.push_back(Sym);
         }
 
@@ -605,6 +601,28 @@ void X86AsmPrinter::EmitEndOfAsmFile(Module &M) {
         for (unsigned i = 0, e = DLLExportedFns.size(); i != e; ++i)
           O << "\t.ascii \" -export:" << *DLLExportedFns[i] << "\"\n";
       }
+    }
+  }
+
+  if (Subtarget->isTargetELF()) {
+    TargetLoweringObjectFileELF &TLOFELF =
+      static_cast<TargetLoweringObjectFileELF &>(getObjFileLowering());
+
+    MachineModuleInfoELF &MMIELF = MMI->getObjFileInfo<MachineModuleInfoELF>();
+
+    // Output stubs for external and common global variables.
+    MachineModuleInfoELF::SymbolListTy Stubs = MMIELF.GetGVStubList();
+    if (!Stubs.empty()) {
+      OutStreamer.SwitchSection(TLOFELF.getDataRelSection());
+      const TargetData *TD = TM.getTargetData();
+
+      for (unsigned i = 0, e = Stubs.size(); i != e; ++i)
+        O << *Stubs[i].first << ":\n"
+          << (TD->getPointerSize() == 8 ?
+              MAI->getData64bitsDirective() : MAI->getData32bitsDirective())
+          << *Stubs[i].second << '\n';
+
+      Stubs.clear();
     }
   }
 }
