@@ -1,5 +1,6 @@
 # Only use this on the device or emulator.
 ifneq ($(TARGET_SIMULATOR),true)
+ifneq ($(TARGET_PRODUCT),sdk)
 
 LOCAL_PATH := $(call my-dir)
 LLVM_ROOT_PATH := $(LOCAL_PATH)
@@ -36,4 +37,5 @@ LLVM_TBLGEN_RULES_MK := $(LOCAL_PATH)/tblgen-rules.mk
 
 include $(subdirs)
 
-endif
+endif # TARGET_PRODUCT != sdk
+endif # TARGET_SIMULATOR != true
