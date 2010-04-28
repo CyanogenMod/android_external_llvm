@@ -16,13 +16,13 @@
 #include "X86AsmPrinter.h"
 #include "X86COFFMachineModuleInfo.h"
 #include "X86MCAsmInfo.h"
-#include "X86MCTargetExpr.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/CodeGen/MachineModuleInfoImpls.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/Mangler.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/ADT/SmallString.h"
@@ -54,7 +54,12 @@ GetSymbolFromOperand(const MachineOperand &MO) const {
 
   SmallString<128> Name;
   
-  if (MO.isGlobal()) {
+  if (!MO.isGlobal()) {
+    assert(MO.isSymbol());
+    Name += AsmPrinter.MAI->getGlobalPrefix();
+    Name += MO.getSymbolName();
+  } else {    
+    const GlobalValue *GV = MO.getGlobal();
     bool isImplicitlyPrivate = false;
     if (MO.getTargetFlags() == X86II::MO_DARWIN_STUB ||
         MO.getTargetFlags() == X86II::MO_DARWIN_NONLAZY ||
@@ -62,18 +67,7 @@ GetSymbolFromOperand(const MachineOperand &MO) const {
         MO.getTargetFlags() == X86II::MO_DARWIN_HIDDEN_NONLAZY_PIC_BASE)
       isImplicitlyPrivate = true;
     
-    const GlobalValue *GV = MO.getGlobal();
     Mang->getNameWithPrefix(Name, GV, isImplicitlyPrivate);
-  
-    if (getSubtarget().isTargetCygMing()) {
-      X86COFFMachineModuleInfo &COFFMMI = 
-        AsmPrinter.MMI->getObjFileInfo<X86COFFMachineModuleInfo>();
-      COFFMMI.DecorateCygMingName(Name, GV, *AsmPrinter.TM.getTargetData());
-    }
-  } else {
-    assert(MO.isSymbol());
-    Name += AsmPrinter.MAI->getGlobalPrefix();
-    Name += MO.getSymbolName();
   }
 
   // If the target flags on the operand changes the name of the symbol, do that
@@ -91,35 +85,49 @@ GetSymbolFromOperand(const MachineOperand &MO) const {
     Name += "$non_lazy_ptr";
     MCSymbol *Sym = Ctx.GetOrCreateSymbol(Name.str());
 
-    MCSymbol *&StubSym = getMachOMMI().getGVStubEntry(Sym);
-    if (StubSym == 0) {
+    MachineModuleInfoImpl::StubValueTy &StubSym =
+      getMachOMMI().getGVStubEntry(Sym);
+    if (StubSym.getPointer() == 0) {
       assert(MO.isGlobal() && "Extern symbol not handled yet");
-      StubSym = AsmPrinter.GetGlobalValueSymbol(MO.getGlobal());
+      StubSym =
+        MachineModuleInfoImpl::
+        StubValueTy(AsmPrinter.Mang->getSymbol(MO.getGlobal()),
+                    !MO.getGlobal()->hasInternalLinkage());
     }
     return Sym;
   }
   case X86II::MO_DARWIN_HIDDEN_NONLAZY_PIC_BASE: {
     Name += "$non_lazy_ptr";
     MCSymbol *Sym = Ctx.GetOrCreateSymbol(Name.str());
-    MCSymbol *&StubSym = getMachOMMI().getHiddenGVStubEntry(Sym);
-    if (StubSym == 0) {
+    MachineModuleInfoImpl::StubValueTy &StubSym =
+      getMachOMMI().getHiddenGVStubEntry(Sym);
+    if (StubSym.getPointer() == 0) {
       assert(MO.isGlobal() && "Extern symbol not handled yet");
-      StubSym = AsmPrinter.GetGlobalValueSymbol(MO.getGlobal());
+      StubSym =
+        MachineModuleInfoImpl::
+        StubValueTy(AsmPrinter.Mang->getSymbol(MO.getGlobal()),
+                    !MO.getGlobal()->hasInternalLinkage());
     }
     return Sym;
   }
   case X86II::MO_DARWIN_STUB: {
     Name += "$stub";
     MCSymbol *Sym = Ctx.GetOrCreateSymbol(Name.str());
-    MCSymbol *&StubSym = getMachOMMI().getFnStubEntry(Sym);
-    if (StubSym)
+    MachineModuleInfoImpl::StubValueTy &StubSym =
+      getMachOMMI().getFnStubEntry(Sym);
+    if (StubSym.getPointer())
       return Sym;
     
     if (MO.isGlobal()) {
-      StubSym = AsmPrinter.GetGlobalValueSymbol(MO.getGlobal());
+      StubSym =
+        MachineModuleInfoImpl::
+        StubValueTy(AsmPrinter.Mang->getSymbol(MO.getGlobal()),
+                    !MO.getGlobal()->hasInternalLinkage());
     } else {
       Name.erase(Name.end()-5, Name.end());
-      StubSym = Ctx.GetOrCreateSymbol(Name.str());
+      StubSym =
+        MachineModuleInfoImpl::
+        StubValueTy(Ctx.GetOrCreateSymbol(Name.str()), false);
     }
     return Sym;
   }
@@ -133,7 +141,7 @@ MCOperand X86MCInstLower::LowerSymbolOperand(const MachineOperand &MO,
   // FIXME: We would like an efficient form for this, so we don't have to do a
   // lot of extra uniquing.
   const MCExpr *Expr = 0;
-  X86MCTargetExpr::VariantKind RefKind = X86MCTargetExpr::Invalid;
+  MCSymbolRefExpr::VariantKind RefKind = MCSymbolRefExpr::VK_None;
   
   switch (MO.getTargetFlags()) {
   default: llvm_unreachable("Unknown target flag on GV operand");
@@ -144,15 +152,15 @@ MCOperand X86MCInstLower::LowerSymbolOperand(const MachineOperand &MO,
   case X86II::MO_DARWIN_STUB:
     break;
       
-  case X86II::MO_TLSGD:     RefKind = X86MCTargetExpr::TLSGD; break;
-  case X86II::MO_GOTTPOFF:  RefKind = X86MCTargetExpr::GOTTPOFF; break;
-  case X86II::MO_INDNTPOFF: RefKind = X86MCTargetExpr::INDNTPOFF; break;
-  case X86II::MO_TPOFF:     RefKind = X86MCTargetExpr::TPOFF; break;
-  case X86II::MO_NTPOFF:    RefKind = X86MCTargetExpr::NTPOFF; break;
-  case X86II::MO_GOTPCREL:  RefKind = X86MCTargetExpr::GOTPCREL; break;
-  case X86II::MO_GOT:       RefKind = X86MCTargetExpr::GOT; break;
-  case X86II::MO_GOTOFF:    RefKind = X86MCTargetExpr::GOTOFF; break;
-  case X86II::MO_PLT:       RefKind = X86MCTargetExpr::PLT; break;
+  case X86II::MO_TLSGD:     RefKind = MCSymbolRefExpr::VK_TLSGD; break;
+  case X86II::MO_GOTTPOFF:  RefKind = MCSymbolRefExpr::VK_GOTTPOFF; break;
+  case X86II::MO_INDNTPOFF: RefKind = MCSymbolRefExpr::VK_INDNTPOFF; break;
+  case X86II::MO_TPOFF:     RefKind = MCSymbolRefExpr::VK_TPOFF; break;
+  case X86II::MO_NTPOFF:    RefKind = MCSymbolRefExpr::VK_NTPOFF; break;
+  case X86II::MO_GOTPCREL:  RefKind = MCSymbolRefExpr::VK_GOTPCREL; break;
+  case X86II::MO_GOT:       RefKind = MCSymbolRefExpr::VK_GOT; break;
+  case X86II::MO_GOTOFF:    RefKind = MCSymbolRefExpr::VK_GOTOFF; break;
+  case X86II::MO_PLT:       RefKind = MCSymbolRefExpr::VK_PLT; break;
   case X86II::MO_PIC_BASE_OFFSET:
   case X86II::MO_DARWIN_NONLAZY_PIC_BASE:
   case X86II::MO_DARWIN_HIDDEN_NONLAZY_PIC_BASE:
@@ -161,15 +169,20 @@ MCOperand X86MCInstLower::LowerSymbolOperand(const MachineOperand &MO,
     Expr = MCBinaryExpr::CreateSub(Expr, 
                                MCSymbolRefExpr::Create(GetPICBaseSymbol(), Ctx),
                                    Ctx);
+    if (MO.isJTI() && AsmPrinter.MAI->hasSetDirective()) {
+      // If .set directive is supported, use it to reduce the number of
+      // relocations the assembler will generate for differences between
+      // local labels. This is only safe when the symbols are in the same
+      // section so we are restricting it to jumptable references.
+      MCSymbol *Label = Ctx.CreateTempSymbol();
+      AsmPrinter.OutStreamer.EmitAssignment(Label, Expr);
+      Expr = MCSymbolRefExpr::Create(Label, Ctx);
+    }
     break;
   }
   
-  if (Expr == 0) {
-    if (RefKind == X86MCTargetExpr::Invalid)
-      Expr = MCSymbolRefExpr::Create(Sym, Ctx);
-    else
-      Expr = X86MCTargetExpr::Create(Sym, RefKind, Ctx);
-  }
+  if (Expr == 0)
+    Expr = MCSymbolRefExpr::Create(Sym, RefKind, Ctx);
   
   if (!MO.isJTI() && MO.getOffset())
     Expr = MCBinaryExpr::CreateAdd(Expr,
@@ -233,7 +246,7 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
       break;
     case MachineOperand::MO_MachineBasicBlock:
       MCOp = MCOperand::CreateExpr(MCSymbolRefExpr::Create(
-                       MO.getMBB()->getSymbol(Ctx), Ctx));
+                       MO.getMBB()->getSymbol(), Ctx));
       break;
     case MachineOperand::MO_GlobalAddress:
       MCOp = LowerSymbolOperand(MO, GetSymbolFromOperand(MO));
@@ -283,7 +296,9 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
     LowerUnaryToTwoAddr(OutMI, X86::MMX_PCMPEQDrr); break;
   case X86::FsFLD0SS:     LowerUnaryToTwoAddr(OutMI, X86::PXORrr); break;
   case X86::FsFLD0SD:     LowerUnaryToTwoAddr(OutMI, X86::PXORrr); break;
-  case X86::V_SET0:       LowerUnaryToTwoAddr(OutMI, X86::XORPSrr); break;
+  case X86::V_SET0PS:     LowerUnaryToTwoAddr(OutMI, X86::XORPSrr); break;
+  case X86::V_SET0PD:     LowerUnaryToTwoAddr(OutMI, X86::XORPDrr); break;
+  case X86::V_SET0PI:     LowerUnaryToTwoAddr(OutMI, X86::PXORrr); break;
   case X86::V_SETALLONES: LowerUnaryToTwoAddr(OutMI, X86::PCMPEQDrr); break;
 
   case X86::MOV16r0:
@@ -294,66 +309,64 @@ void X86MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
     LowerSubReg32_Op0(OutMI, X86::MOV32r0);   // MOV64r0 -> MOV32r0
     LowerUnaryToTwoAddr(OutMI, X86::XOR32rr); // MOV32r0 -> XOR32rr
     break;
+      
+      
+  // The assembler backend wants to see branches in their small form and relax
+  // them to their large form.  The JIT can only handle the large form because
+  // it does not do relaxation.  For now, translate the large form to the
+  // small one here.
+  case X86::JMP_4: OutMI.setOpcode(X86::JMP_1); break;
+  case X86::JO_4:  OutMI.setOpcode(X86::JO_1); break;
+  case X86::JNO_4: OutMI.setOpcode(X86::JNO_1); break;
+  case X86::JB_4:  OutMI.setOpcode(X86::JB_1); break;
+  case X86::JAE_4: OutMI.setOpcode(X86::JAE_1); break;
+  case X86::JE_4:  OutMI.setOpcode(X86::JE_1); break;
+  case X86::JNE_4: OutMI.setOpcode(X86::JNE_1); break;
+  case X86::JBE_4: OutMI.setOpcode(X86::JBE_1); break;
+  case X86::JA_4:  OutMI.setOpcode(X86::JA_1); break;
+  case X86::JS_4:  OutMI.setOpcode(X86::JS_1); break;
+  case X86::JNS_4: OutMI.setOpcode(X86::JNS_1); break;
+  case X86::JP_4:  OutMI.setOpcode(X86::JP_1); break;
+  case X86::JNP_4: OutMI.setOpcode(X86::JNP_1); break;
+  case X86::JL_4:  OutMI.setOpcode(X86::JL_1); break;
+  case X86::JGE_4: OutMI.setOpcode(X86::JGE_1); break;
+  case X86::JLE_4: OutMI.setOpcode(X86::JLE_1); break;
+  case X86::JG_4:  OutMI.setOpcode(X86::JG_1); break;
   }
 }
 
-
+void X86AsmPrinter::PrintDebugValueComment(const MachineInstr *MI,
+                                           raw_ostream &O) {
+  // Only the target-dependent form of DBG_VALUE should get here.
+  // Referencing the offset and metadata as NOps-2 and NOps-1 is
+  // probably portable to other targets; frame pointer location is not.
+  unsigned NOps = MI->getNumOperands();
+  assert(NOps==7);
+  O << '\t' << MAI->getCommentString() << "DEBUG_VALUE: ";
+  // cast away const; DIetc do not take const operands for some reason.
+  DIVariable V(const_cast<MDNode *>(MI->getOperand(NOps-1).getMetadata()));
+  O << V.getName();
+  O << " <- ";
+  // Frame address.  Currently handles register +- offset only.
+  assert(MI->getOperand(0).isReg() && MI->getOperand(3).isImm());
+  O << '['; printOperand(MI, 0, O); O << '+'; printOperand(MI, 3, O);
+  O << ']';
+  O << "+";
+  printOperand(MI, NOps-2, O);
+}
 
 void X86AsmPrinter::EmitInstruction(const MachineInstr *MI) {
   X86MCInstLower MCInstLowering(OutContext, Mang, *this);
   switch (MI->getOpcode()) {
-  case TargetOpcode::DBG_VALUE: {
-    // FIXME: if this is implemented for another target before it goes
-    // away completely, the common part should be moved into AsmPrinter.
-    if (!VerboseAsm)
-      return;
-    O << '\t' << MAI->getCommentString() << "DEBUG_VALUE: ";
-    unsigned NOps = MI->getNumOperands();
-    // cast away const; DIetc do not take const operands for some reason.
-    DIVariable V((MDNode*)(MI->getOperand(NOps-1).getMetadata()));
-    O << V.getName();
-    O << " <- ";
-    if (NOps==3) {
-      // Register or immediate value. Register 0 means undef.
-      assert(MI->getOperand(0).getType()==MachineOperand::MO_Register ||
-             MI->getOperand(0).getType()==MachineOperand::MO_Immediate ||
-             MI->getOperand(0).getType()==MachineOperand::MO_FPImmediate);
-      if (MI->getOperand(0).getType()==MachineOperand::MO_Register &&
-          MI->getOperand(0).getReg()==0) {
-        // Suppress offset in this case, it is not meaningful.
-        O << "undef";
-        OutStreamer.AddBlankLine();
-        return;
-      } else if (MI->getOperand(0).getType()==MachineOperand::MO_FPImmediate) {
-        // This is more naturally done in printOperand, but since the only use
-        // of such an operand is in this comment and that is temporary (and it's
-        // ugly), we prefer to keep this localized.
-        // The include of Type.h may be removable when this code is.
-        if (MI->getOperand(0).getFPImm()->getType()->isFloatTy() ||
-            MI->getOperand(0).getFPImm()->getType()->isDoubleTy())
-          MI->getOperand(0).print(O, &TM);
-        else {
-          // There is no good way to print long double.  Convert a copy to
-          // double.  Ah well, it's only a comment.
-          bool ignored;
-          APFloat APF = APFloat(MI->getOperand(0).getFPImm()->getValueAPF());
-          APF.convert(APFloat::IEEEdouble, APFloat::rmNearestTiesToEven,
-                      &ignored);
-          O << "(long double) " << APF.convertToDouble();
-        }
-      } else
-        printOperand(MI, 0);
-    } else {
-      // Frame address.  Currently handles register +- offset only.
-      assert(MI->getOperand(0).getType()==MachineOperand::MO_Register);
-      assert(MI->getOperand(3).getType()==MachineOperand::MO_Immediate);
-      O << '['; printOperand(MI, 0); O << '+'; printOperand(MI, 3); O << ']';
+  case TargetOpcode::DBG_VALUE:
+    if (isVerbose() && OutStreamer.hasRawTextSupport()) {
+      std::string TmpStr;
+      raw_string_ostream OS(TmpStr);
+      PrintDebugValueComment(MI, OS);
+      OutStreamer.EmitRawText(StringRef(OS.str()));
     }
-    O << "+";
-    printOperand(MI, NOps-2);
-    OutStreamer.AddBlankLine();
     return;
-  }
+
   case X86::MOVPC32r: {
     MCInst TmpInst;
     // This is a pseudo op for a two instruction sequence with a label, which
@@ -392,10 +405,8 @@ void X86AsmPrinter::EmitInstruction(const MachineInstr *MI) {
     // For this, we want to print something like:
     //   MYGLOBAL + (. - PICBASE)
     // However, we can't generate a ".", so just emit a new label here and refer
-    // to it.  We know that this operand flag occurs at most once per function.
-    const char *Prefix = MAI->getPrivateGlobalPrefix();
-    MCSymbol *DotSym = OutContext.GetOrCreateSymbol(Twine(Prefix)+"picbaseref"+
-                                                    Twine(getFunctionNumber()));
+    // to it.
+    MCSymbol *DotSym = OutContext.CreateTempSymbol();
     OutStreamer.EmitLabel(DotSym);
     
     // Now that we have emitted the label, lower the complex operand expression.

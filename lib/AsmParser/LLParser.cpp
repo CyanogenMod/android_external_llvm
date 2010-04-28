@@ -39,6 +39,27 @@ bool LLParser::Run() {
 /// ValidateEndOfModule - Do final validity and sanity checks at the end of the
 /// module.
 bool LLParser::ValidateEndOfModule() {
+  // Handle any instruction metadata forward references.
+  if (!ForwardRefInstMetadata.empty()) {
+    for (DenseMap<Instruction*, std::vector<MDRef> >::iterator
+         I = ForwardRefInstMetadata.begin(), E = ForwardRefInstMetadata.end();
+         I != E; ++I) {
+      Instruction *Inst = I->first;
+      const std::vector<MDRef> &MDList = I->second;
+      
+      for (unsigned i = 0, e = MDList.size(); i != e; ++i) {
+        unsigned SlotNo = MDList[i].MDSlot;
+        
+        if (SlotNo >= NumberedMetadata.size() || NumberedMetadata[SlotNo] == 0)
+          return Error(MDList[i].Loc, "use of undefined metadata '!" +
+                       utostr(SlotNo) + "'");
+        Inst->setMetadata(MDList[i].MDKind, NumberedMetadata[SlotNo]);
+      }
+    }
+    ForwardRefInstMetadata.clear();
+  }
+  
+  
   // Update auto-upgraded malloc calls to "malloc".
   // FIXME: Remove in LLVM 3.0.
   if (MallocF) {
@@ -301,9 +322,8 @@ bool LLParser::ParseUnnamedType() {
       return true;
   }
 
-  assert(Lex.getKind() == lltok::kw_type);
   LocTy TypeLoc = Lex.getLoc();
-  Lex.Lex(); // eat kw_type
+  if (ParseToken(lltok::kw_type, "expected 'type' after '='")) return true;
 
   PATypeHolder Ty(Type::getVoidTy(Context));
   if (ParseType(Ty)) return true;
@@ -472,18 +492,30 @@ bool LLParser::ParseMDString(MDString *&Result) {
 
 // MDNode:
 //   ::= '!' MDNodeNumber
+//
+/// This version of ParseMDNodeID returns the slot number and null in the case
+/// of a forward reference.
+bool LLParser::ParseMDNodeID(MDNode *&Result, unsigned &SlotNo) {
+  // !{ ..., !42, ... }
+  if (ParseUInt32(SlotNo)) return true;
+
+  // Check existing MDNode.
+  if (SlotNo < NumberedMetadata.size() && NumberedMetadata[SlotNo] != 0)
+    Result = NumberedMetadata[SlotNo];
+  else
+    Result = 0;
+  return false;
+}
+
 bool LLParser::ParseMDNodeID(MDNode *&Result) {
   // !{ ..., !42, ... }
   unsigned MID = 0;
-  if (ParseUInt32(MID)) return true;
+  if (ParseMDNodeID(Result, MID)) return true;
 
-  // Check existing MDNode.
-  if (MID < NumberedMetadata.size() && NumberedMetadata[MID] != 0) {
-    Result = NumberedMetadata[MID];
-    return false;
-  }
+  // If not a forward reference, just return it now.
+  if (Result) return false;
 
-  // Create MDNode forward reference.
+  // Otherwise, create MDNode forward reference.
 
   // FIXME: This is not unique enough!
   std::string FwdRefName = "llvm.mdnode.fwdref." + utostr(MID);
@@ -1078,9 +1110,7 @@ bool LLParser::ParseOptionalCallingConv(CallingConv::ID &CC) {
 
 /// ParseInstructionMetadata
 ///   ::= !dbg !42 (',' !dbg !57)*
-bool LLParser::
-ParseInstructionMetadata(SmallVectorImpl<std::pair<unsigned,
-                                                 MDNode *> > &Result){
+bool LLParser::ParseInstructionMetadata(Instruction *Inst) {
   do {
     if (Lex.getKind() != lltok::MetadataVar)
       return TokError("expected metadata after comma");
@@ -1089,12 +1119,21 @@ ParseInstructionMetadata(SmallVectorImpl<std::pair<unsigned,
     Lex.Lex();
 
     MDNode *Node;
+    unsigned NodeID;
+    SMLoc Loc = Lex.getLoc();
     if (ParseToken(lltok::exclaim, "expected '!' here") ||
-        ParseMDNodeID(Node))
+        ParseMDNodeID(Node, NodeID))
       return true;
 
     unsigned MDK = M->getMDKindID(Name.c_str());
-    Result.push_back(std::make_pair(MDK, Node));
+    if (Node) {
+      // If we got the node, add it to the instruction.
+      Inst->setMetadata(MDK, Node);
+    } else {
+      MDRef R = { Loc, MDK, NodeID };
+      // Otherwise, remember that this should be resolved later.
+      ForwardRefInstMetadata[Inst].push_back(R);
+    }
 
     // If this is the end of the list, we're done.
   } while (EatIfPresent(lltok::comma));
@@ -1131,10 +1170,10 @@ bool LLParser::ParseOptionalCommaAlign(unsigned &Alignment,
       return false;
     }
     
-    if (Lex.getKind() == lltok::kw_align) {
-      if (ParseOptionalAlignment(Alignment)) return true;
-    } else
-      return true;
+    if (Lex.getKind() != lltok::kw_align)
+      return Error(Lex.getLoc(), "expected metadata or 'align'");
+    
+    if (ParseOptionalAlignment(Alignment)) return true;
   }
 
   return false;
@@ -2748,6 +2787,10 @@ bool LLParser::ParseFunctionHeader(Function *&Fn, bool isDefine) {
       ForwardRefVals.find(FunctionName);
     if (FRVI != ForwardRefVals.end()) {
       Fn = M->getFunction(FunctionName);
+      if (Fn->getType() != PFT)
+        return Error(FRVI->second.second, "invalid forward reference to "
+                     "function '" + FunctionName + "' with wrong type!");
+      
       ForwardRefVals.erase(FRVI);
     } else if ((Fn = M->getFunction(FunctionName))) {
       // If this function already exists in the symbol table, then it is
@@ -2893,26 +2936,23 @@ bool LLParser::ParseBasicBlock(PerFunctionState &PFS) {
     default: assert(0 && "Unknown ParseInstruction result!");
     case InstError: return true;
     case InstNormal:
+      BB->getInstList().push_back(Inst);
+
       // With a normal result, we check to see if the instruction is followed by
       // a comma and metadata.
       if (EatIfPresent(lltok::comma))
-        if (ParseInstructionMetadata(MetadataOnInst))
+        if (ParseInstructionMetadata(Inst))
           return true;
       break;
     case InstExtraComma:
+      BB->getInstList().push_back(Inst);
+
       // If the instruction parser ate an extra comma at the end of it, it
       // *must* be followed by metadata.
-      if (ParseInstructionMetadata(MetadataOnInst))
+      if (ParseInstructionMetadata(Inst))
         return true;
       break;        
     }
-
-    // Set metadata attached with this instruction.
-    for (unsigned i = 0, e = MetadataOnInst.size(); i != e; ++i)
-      Inst->setMetadata(MetadataOnInst[i].first, MetadataOnInst[i].second);
-    MetadataOnInst.clear();
-
-    BB->getInstList().push_back(Inst);
 
     // Set the name on the instruction.
     if (PFS.SetInstName(NameID, NameStr, NameLoc, Inst)) return true;

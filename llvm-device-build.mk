@@ -6,7 +6,6 @@ LOCAL_CFLAGS :=	\
 	-DANDROID_TARGET_BUILD	\
 	-O2	\
 	-fomit-frame-pointer	\
-	-Woverloaded-virtual	\
 	-Wall	\
 	-W	\
 	-Wno-unused-parameter	\
@@ -27,6 +26,11 @@ else
 REQUIRES_RTTI := 0
 endif
 
+LOCAL_CPPFLAGS :=	\
+	$(LOCAL_CPPFLAGS)	\
+	$(LOCAL_CFLAGS)	\
+	-Woverloaded-virtual
+	
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\
 	bionic	\

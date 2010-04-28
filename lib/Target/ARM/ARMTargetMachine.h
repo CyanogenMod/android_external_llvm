@@ -23,6 +23,7 @@
 #include "ARMISelLowering.h"
 #include "Thumb1InstrInfo.h"
 #include "Thumb2InstrInfo.h"
+#include "llvm/ADT/OwningPtr.h"
 
 namespace llvm {
 
@@ -70,8 +71,8 @@ public:
     return &InstrInfo.getRegisterInfo();
   }
 
-  virtual       ARMTargetLowering *getTargetLowering() const {
-    return const_cast<ARMTargetLowering*>(&TLInfo);
+  virtual const ARMTargetLowering *getTargetLowering() const {
+    return &TLInfo;
   }
 
   virtual const ARMInstrInfo     *getInstrInfo() const { return &InstrInfo; }
@@ -83,7 +84,8 @@ public:
 ///   Thumb-1 and Thumb-2.
 ///
 class ThumbTargetMachine : public ARMBaseTargetMachine {
-  ARMBaseInstrInfo    *InstrInfo;   // either Thumb1InstrInfo or Thumb2InstrInfo
+  // Either Thumb1InstrInfo or Thumb2InstrInfo.
+  OwningPtr<ARMBaseInstrInfo> InstrInfo;
   const TargetData    DataLayout;   // Calculates type size & alignment
   ARMTargetLowering   TLInfo;
 public:
@@ -95,12 +97,14 @@ public:
     return &InstrInfo->getRegisterInfo();
   }
 
-  virtual ARMTargetLowering *getTargetLowering() const {
-    return const_cast<ARMTargetLowering*>(&TLInfo);
+  virtual const ARMTargetLowering *getTargetLowering() const {
+    return &TLInfo;
   }
 
   /// returns either Thumb1InstrInfo or Thumb2InstrInfo
-  virtual const ARMBaseInstrInfo *getInstrInfo() const { return InstrInfo; }
+  virtual const ARMBaseInstrInfo *getInstrInfo() const {
+    return InstrInfo.get();
+  }
   virtual const TargetData       *getTargetData() const { return &DataLayout; }
 };
 

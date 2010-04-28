@@ -23,6 +23,7 @@
 #include "llvm/ExecutionEngine/JITMemoryManager.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetFrameInfo.h"
@@ -51,7 +52,7 @@ unsigned char* JITDwarfEmitter::EmitDwarfTable(MachineFunction& F,
       
   unsigned char* Result = 0;
 
-  const std::vector<Function *> Personalities = MMI->getPersonalities();
+  const std::vector<const Function *> Personalities = MMI->getPersonalities();
   EHFramePtr = EmitCommonEHFrame(Personalities[MMI->getPersonalityIndex()]);
 
   Result = EmitEHFrame(Personalities[MMI->getPersonalityIndex()], EHFramePtr,
@@ -67,34 +68,29 @@ JITDwarfEmitter::EmitFrameMoves(intptr_t BaseLabelPtr,
   unsigned PointerSize = TD->getPointerSize();
   int stackGrowth = stackGrowthDirection == TargetFrameInfo::StackGrowsUp ?
           PointerSize : -PointerSize;
-  bool IsLocal = false;
-  unsigned BaseLabelID = 0;
+  MCSymbol *BaseLabel = 0;
 
   for (unsigned i = 0, N = Moves.size(); i < N; ++i) {
     const MachineMove &Move = Moves[i];
-    unsigned LabelID = Move.getLabelID();
+    MCSymbol *Label = Move.getLabel();
     
-    if (LabelID) {
-      LabelID = MMI->MappedLabel(LabelID);
-    
-      // Throw out move if the label is invalid.
-      if (!LabelID) continue;
-    }
+    // Throw out move if the label is invalid.
+    if (Label && (*JCE->getLabelLocations())[Label] == 0)
+      continue;
     
     intptr_t LabelPtr = 0;
-    if (LabelID) LabelPtr = JCE->getLabelAddress(LabelID);
+    if (Label) LabelPtr = JCE->getLabelAddress(Label);
 
     const MachineLocation &Dst = Move.getDestination();
     const MachineLocation &Src = Move.getSource();
     
     // Advance row if new location.
-    if (BaseLabelPtr && LabelID && (BaseLabelID != LabelID || !IsLocal)) {
+    if (BaseLabelPtr && Label && BaseLabel != Label) {
       JCE->emitByte(dwarf::DW_CFA_advance_loc4);
       JCE->emitInt32(LabelPtr - BaseLabelPtr);
       
-      BaseLabelID = LabelID; 
+      BaseLabel = Label; 
       BaseLabelPtr = LabelPtr;
-      IsLocal = true;
     }
     
     // If advancing cfa.
@@ -170,13 +166,6 @@ static bool PadLT(const LandingPadInfo *L, const LandingPadInfo *R) {
 
 namespace {
 
-struct KeyInfo {
-  static inline unsigned getEmptyKey() { return -1U; }
-  static inline unsigned getTombstoneKey() { return -2U; }
-  static unsigned getHashValue(const unsigned &Key) { return Key; }
-  static bool isEqual(unsigned LHS, unsigned RHS) { return LHS == RHS; }
-};
-
 /// ActionEntry - Structure describing an entry in the actions table.
 struct ActionEntry {
   int ValueForTypeID; // The value to write - may not be equal to the type id.
@@ -192,13 +181,13 @@ struct PadRange {
   unsigned RangeIndex;
 };
 
-typedef DenseMap<unsigned, PadRange, KeyInfo> RangeMapType;
+typedef DenseMap<MCSymbol*, PadRange> RangeMapType;
 
 /// CallSiteEntry - Structure describing an entry in the call-site table.
 struct CallSiteEntry {
-  unsigned BeginLabel; // zero indicates the start of the function.
-  unsigned EndLabel;   // zero indicates the end of the function.
-  unsigned PadLabel;   // zero indicates that there is no landing pad.
+  MCSymbol *BeginLabel; // zero indicates the start of the function.
+  MCSymbol *EndLabel;   // zero indicates the end of the function.
+  MCSymbol *PadLabel;   // zero indicates that there is no landing pad.
   unsigned Action;
 };
 
@@ -210,9 +199,9 @@ unsigned char* JITDwarfEmitter::EmitExceptionTable(MachineFunction* MF,
   assert(MMI && "MachineModuleInfo not registered!");
 
   // Map all labels and get rid of any dead landing pads.
-  MMI->TidyLandingPads();
+  MMI->TidyLandingPads(JCE->getLabelLocations());
 
-  const std::vector<GlobalVariable *> &TypeInfos = MMI->getTypeInfos();
+  const std::vector<const GlobalVariable *> &TypeInfos = MMI->getTypeInfos();
   const std::vector<unsigned> &FilterIds = MMI->getFilterIds();
   const std::vector<LandingPadInfo> &PadInfos = MMI->getLandingPads();
   if (PadInfos.empty()) return 0;
@@ -309,7 +298,7 @@ unsigned char* JITDwarfEmitter::EmitExceptionTable(MachineFunction* MF,
   for (unsigned i = 0, N = LandingPads.size(); i != N; ++i) {
     const LandingPadInfo *LandingPad = LandingPads[i];
     for (unsigned j=0, E = LandingPad->BeginLabels.size(); j != E; ++j) {
-      unsigned BeginLabel = LandingPad->BeginLabels[j];
+      MCSymbol *BeginLabel = LandingPad->BeginLabels[j];
       assert(!PadMap.count(BeginLabel) && "Duplicate landing pad labels!");
       PadRange P = { i, j };
       PadMap[BeginLabel] = P;
@@ -317,7 +306,7 @@ unsigned char* JITDwarfEmitter::EmitExceptionTable(MachineFunction* MF,
   }
 
   bool MayThrow = false;
-  unsigned LastLabel = 0;
+  MCSymbol *LastLabel = 0;
   for (MachineFunction::const_iterator I = MF->begin(), E = MF->end();
         I != E; ++I) {
     for (MachineBasicBlock::const_iterator MI = I->begin(), E = I->end();
@@ -327,7 +316,7 @@ unsigned char* JITDwarfEmitter::EmitExceptionTable(MachineFunction* MF,
         continue;
       }
 
-      unsigned BeginLabel = MI->getOperand(0).getImm();
+      MCSymbol *BeginLabel = MI->getOperand(0).getMCSymbol();
       assert(BeginLabel && "Invalid label!");
 
       if (BeginLabel == LastLabel)
@@ -461,7 +450,7 @@ unsigned char* JITDwarfEmitter::EmitExceptionTable(MachineFunction* MF,
 
   // Emit the type ids.
   for (unsigned M = TypeInfos.size(); M; --M) {
-    GlobalVariable *GV = TypeInfos[M - 1];
+    const GlobalVariable *GV = TypeInfos[M - 1];
     
     if (GV) {
       if (TD->getPointerSize() == sizeof(int32_t))
@@ -620,7 +609,7 @@ unsigned JITDwarfEmitter::GetDwarfTableSizeInBytes(MachineFunction& F,
   
   FinalSize += GetExceptionTableSizeInBytes(&F);
       
-  const std::vector<Function *> Personalities = MMI->getPersonalities();
+  const std::vector<const Function *> Personalities = MMI->getPersonalities();
   FinalSize += 
     GetCommonEHFrameSizeInBytes(Personalities[MMI->getPersonalityIndex()]);
 
@@ -719,23 +708,20 @@ JITDwarfEmitter::GetFrameMovesSizeInBytes(intptr_t BaseLabelPtr,
 
   for (unsigned i = 0, N = Moves.size(); i < N; ++i) {
     const MachineMove &Move = Moves[i];
-    unsigned LabelID = Move.getLabelID();
+    MCSymbol *Label = Move.getLabel();
     
-    if (LabelID) {
-      LabelID = MMI->MappedLabel(LabelID);
-    
-      // Throw out move if the label is invalid.
-      if (!LabelID) continue;
-    }
+    // Throw out move if the label is invalid.
+    if (Label && (*JCE->getLabelLocations())[Label] == 0)
+      continue;
     
     intptr_t LabelPtr = 0;
-    if (LabelID) LabelPtr = JCE->getLabelAddress(LabelID);
+    if (Label) LabelPtr = JCE->getLabelAddress(Label);
 
     const MachineLocation &Dst = Move.getDestination();
     const MachineLocation &Src = Move.getSource();
     
     // Advance row if new location.
-    if (BaseLabelPtr && LabelID && (BaseLabelPtr != LabelPtr || !IsLocal)) {
+    if (BaseLabelPtr && Label && (BaseLabelPtr != LabelPtr || !IsLocal)) {
       FinalSize++;
       FinalSize += PointerSize;
       BaseLabelPtr = LabelPtr;
@@ -794,9 +780,9 @@ JITDwarfEmitter::GetExceptionTableSizeInBytes(MachineFunction* MF) const {
   unsigned FinalSize = 0;
 
   // Map all labels and get rid of any dead landing pads.
-  MMI->TidyLandingPads();
+  MMI->TidyLandingPads(JCE->getLabelLocations());
 
-  const std::vector<GlobalVariable *> &TypeInfos = MMI->getTypeInfos();
+  const std::vector<const GlobalVariable *> &TypeInfos = MMI->getTypeInfos();
   const std::vector<unsigned> &FilterIds = MMI->getFilterIds();
   const std::vector<LandingPadInfo> &PadInfos = MMI->getLandingPads();
   if (PadInfos.empty()) return 0;
@@ -893,7 +879,7 @@ JITDwarfEmitter::GetExceptionTableSizeInBytes(MachineFunction* MF) const {
   for (unsigned i = 0, N = LandingPads.size(); i != N; ++i) {
     const LandingPadInfo *LandingPad = LandingPads[i];
     for (unsigned j=0, E = LandingPad->BeginLabels.size(); j != E; ++j) {
-      unsigned BeginLabel = LandingPad->BeginLabels[j];
+      MCSymbol *BeginLabel = LandingPad->BeginLabels[j];
       assert(!PadMap.count(BeginLabel) && "Duplicate landing pad labels!");
       PadRange P = { i, j };
       PadMap[BeginLabel] = P;
@@ -901,7 +887,7 @@ JITDwarfEmitter::GetExceptionTableSizeInBytes(MachineFunction* MF) const {
   }
 
   bool MayThrow = false;
-  unsigned LastLabel = 0;
+  MCSymbol *LastLabel = 0;
   for (MachineFunction::const_iterator I = MF->begin(), E = MF->end();
         I != E; ++I) {
     for (MachineBasicBlock::const_iterator MI = I->begin(), E = I->end();
@@ -911,9 +897,8 @@ JITDwarfEmitter::GetExceptionTableSizeInBytes(MachineFunction* MF) const {
         continue;
       }
 
-      unsigned BeginLabel = MI->getOperand(0).getImm();
-      assert(BeginLabel && "Invalid label!");
-
+      MCSymbol *BeginLabel = MI->getOperand(0).getMCSymbol();
+      
       if (BeginLabel == LastLabel)
         MayThrow = false;
 

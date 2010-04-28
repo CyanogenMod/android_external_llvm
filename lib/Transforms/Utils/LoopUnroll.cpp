@@ -105,8 +105,6 @@ static BasicBlock *FoldBlockIntoPredecessor(BasicBlock *BB, LoopInfo* LI) {
 /// If a LoopPassManager is passed in, and the loop is fully removed, it will be
 /// removed from the LoopPassManager as well. LPM can also be NULL.
 bool llvm::UnrollLoop(Loop *L, unsigned Count, LoopInfo* LI, LPPassManager* LPM) {
-  assert(L->isLCSSAForm());
-
   BasicBlock *Preheader = L->getLoopPreheader();
   if (!Preheader) {
     DEBUG(dbgs() << "  Can't unroll; loop preheader-insertion failed.\n");
@@ -185,8 +183,8 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, LoopInfo* LI, LPPassManager* LPM)
 
   // For the first iteration of the loop, we should use the precloned values for
   // PHI nodes.  Insert associations now.
-  typedef DenseMap<const Value*, Value*> ValueMapTy;
-  ValueMapTy LastValueMap;
+  typedef DenseMap<const Value*, Value*> ValueToValueMapTy;
+  ValueToValueMapTy LastValueMap;
   std::vector<PHINode*> OrigPHINode;
   for (BasicBlock::iterator I = Header->begin(); isa<PHINode>(I); ++I) {
     PHINode *PN = cast<PHINode>(I);
@@ -207,7 +205,7 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, LoopInfo* LI, LPPassManager* LPM)
     
     for (std::vector<BasicBlock*>::iterator BB = LoopBlocks.begin(),
          E = LoopBlocks.end(); BB != E; ++BB) {
-      ValueMapTy ValueMap;
+      ValueToValueMapTy ValueMap;
       BasicBlock *New = CloneBasicBlock(*BB, ValueMap, "." + Twine(It));
       Header->getParent()->getBasicBlockList().push_back(New);
 
@@ -226,7 +224,7 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, LoopInfo* LI, LPPassManager* LPM)
 
       // Update our running map of newest clones
       LastValueMap[*BB] = New;
-      for (ValueMapTy::iterator VI = ValueMap.begin(), VE = ValueMap.end();
+      for (ValueToValueMapTy::iterator VI = ValueMap.begin(), VE = ValueMap.end();
            VI != VE; ++VI)
         LastValueMap[VI->first] = VI->second;
 
@@ -369,10 +367,6 @@ bool llvm::UnrollLoop(Loop *L, unsigned Count, LoopInfo* LI, LPPassManager* LPM)
   // Remove the loop from the LoopPassManager if it's completely removed.
   if (CompletelyUnroll && LPM != NULL)
     LPM->deleteLoopFromQueue(L);
-
-  // If we didn't completely unroll the loop, it should still be in LCSSA form.
-  if (!CompletelyUnroll)
-    assert(L->isLCSSAForm());
 
   return true;
 }

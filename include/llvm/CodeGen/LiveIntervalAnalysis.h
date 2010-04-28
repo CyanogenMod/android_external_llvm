@@ -55,7 +55,7 @@ namespace llvm {
 
     /// Special pool allocator for VNInfo's (LiveInterval val#).
     ///
-    BumpPtrAllocator VNInfoAllocator;
+    VNInfo::Allocator VNInfoAllocator;
 
     typedef DenseMap<unsigned, LiveInterval*> Reg2IntervalMap;
     Reg2IntervalMap r2iMap_;
@@ -111,6 +111,12 @@ namespace llvm {
     double getScaledIntervalSize(LiveInterval& I) {
       return (1000.0 * I.getSize()) / indexes_->getIndexesLength();
     }
+
+    /// getFuncInstructionCount - Return the number of instructions in the
+    /// current function.
+    unsigned getFuncInstructionCount() {
+      return indexes_->getFunctionSize();
+    }
     
     /// getApproximateInstructionCount - computes an estimate of the number
     /// of instructions in a given LiveInterval.
@@ -127,11 +133,11 @@ namespace llvm {
     bool conflictsWithPhysReg(const LiveInterval &li, VirtRegMap &vrm,
                               unsigned reg);
 
-    /// conflictsWithPhysRegRef - Similar to conflictsWithPhysRegRef except
-    /// it can check use as well.
-    bool conflictsWithPhysRegRef(LiveInterval &li, unsigned Reg,
-                                 bool CheckUse,
-                                 SmallPtrSet<MachineInstr*,32> &JoinedCopies);
+    /// conflictsWithSubPhysRegRef - Similar to conflictsWithPhysRegRef except
+    /// it checks for sub-register reference and it can check use as well.
+    bool conflictsWithSubPhysRegRef(LiveInterval &li, unsigned Reg,
+                                    bool CheckUse,
+                                   SmallPtrSet<MachineInstr*,32> &JoinedCopies);
 
     // Interval creation
     LiveInterval &getOrCreateInterval(unsigned reg) {
@@ -221,7 +227,7 @@ namespace llvm {
       indexes_->renumberIndexes();
     }
 
-    BumpPtrAllocator& getVNInfoAllocator() { return VNInfoAllocator; }
+    VNInfo::Allocator& getVNInfoAllocator() { return VNInfoAllocator; }
 
     /// getVNInfoSourceReg - Helper function that parses the specified VNInfo
     /// copy field and returns the source register that defines it.

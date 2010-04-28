@@ -59,6 +59,7 @@ Constant *Constant::getNullValue(const Type *Ty) {
   case Type::PointerTyID:
     return ConstantPointerNull::get(cast<PointerType>(Ty));
   case Type::StructTyID:
+  case Type::UnionTyID:
   case Type::ArrayTyID:
   case Type::VectorTyID:
     return ConstantAggregateZero::get(Ty);
@@ -160,7 +161,7 @@ bool Constant::canTrap() const {
 /// isConstantUsed - Return true if the constant has users other than constant
 /// exprs and other dangling things.
 bool Constant::isConstantUsed() const {
-  for (use_const_iterator UI = use_begin(), E = use_end(); UI != E; ++UI) {
+  for (const_use_iterator UI = use_begin(), E = use_end(); UI != E; ++UI) {
     const Constant *UC = dyn_cast<Constant>(*UI);
     if (UC == 0 || isa<GlobalValue>(UC))
       return true;
@@ -944,7 +945,8 @@ bool ConstantFP::isValueValidForType(const Type *Ty, const APFloat& Val) {
 //                      Factory Function Implementation
 
 ConstantAggregateZero* ConstantAggregateZero::get(const Type* Ty) {
-  assert((Ty->isStructTy() || Ty->isArrayTy() || Ty->isVectorTy()) &&
+  assert((Ty->isStructTy() || Ty->isUnionTy()
+         || Ty->isArrayTy() || Ty->isVectorTy()) &&
          "Cannot create an aggregate zero of non-aggregate type!");
   
   LLVMContextImpl *pImpl = Ty->getContext().pImpl;
@@ -1222,20 +1224,20 @@ Constant *ConstantExpr::getCast(unsigned oc, Constant *C, const Type *Ty) {
 
 Constant *ConstantExpr::getZExtOrBitCast(Constant *C, const Type *Ty) {
   if (C->getType()->getScalarSizeInBits() == Ty->getScalarSizeInBits())
-    return getCast(Instruction::BitCast, C, Ty);
-  return getCast(Instruction::ZExt, C, Ty);
+    return getBitCast(C, Ty);
+  return getZExt(C, Ty);
 }
 
 Constant *ConstantExpr::getSExtOrBitCast(Constant *C, const Type *Ty) {
   if (C->getType()->getScalarSizeInBits() == Ty->getScalarSizeInBits())
-    return getCast(Instruction::BitCast, C, Ty);
-  return getCast(Instruction::SExt, C, Ty);
+    return getBitCast(C, Ty);
+  return getSExt(C, Ty);
 }
 
 Constant *ConstantExpr::getTruncOrBitCast(Constant *C, const Type *Ty) {
   if (C->getType()->getScalarSizeInBits() == Ty->getScalarSizeInBits())
-    return getCast(Instruction::BitCast, C, Ty);
-  return getCast(Instruction::Trunc, C, Ty);
+    return getBitCast(C, Ty);
+  return getTrunc(C, Ty);
 }
 
 Constant *ConstantExpr::getPointerCast(Constant *S, const Type *Ty) {
@@ -1243,8 +1245,8 @@ Constant *ConstantExpr::getPointerCast(Constant *S, const Type *Ty) {
   assert((Ty->isIntegerTy() || Ty->isPointerTy()) && "Invalid cast");
 
   if (Ty->isIntegerTy())
-    return getCast(Instruction::PtrToInt, S, Ty);
-  return getCast(Instruction::BitCast, S, Ty);
+    return getPtrToInt(S, Ty);
+  return getBitCast(S, Ty);
 }
 
 Constant *ConstantExpr::getIntegerCast(Constant *C, const Type *Ty, 
@@ -1521,8 +1523,8 @@ Constant* ConstantExpr::getSizeOf(const Type* Ty) {
   Constant *GEPIdx = ConstantInt::get(Type::getInt32Ty(Ty->getContext()), 1);
   Constant *GEP = getGetElementPtr(
                  Constant::getNullValue(PointerType::getUnqual(Ty)), &GEPIdx, 1);
-  return getCast(Instruction::PtrToInt, GEP, 
-                 Type::getInt64Ty(Ty->getContext()));
+  return getPtrToInt(GEP, 
+                     Type::getInt64Ty(Ty->getContext()));
 }
 
 Constant* ConstantExpr::getAlignOf(const Type* Ty) {
@@ -1535,8 +1537,8 @@ Constant* ConstantExpr::getAlignOf(const Type* Ty) {
   Constant *One = ConstantInt::get(Type::getInt32Ty(Ty->getContext()), 1);
   Constant *Indices[2] = { Zero, One };
   Constant *GEP = getGetElementPtr(NullPtr, Indices, 2);
-  return getCast(Instruction::PtrToInt, GEP,
-                 Type::getInt64Ty(Ty->getContext()));
+  return getPtrToInt(GEP,
+                     Type::getInt64Ty(Ty->getContext()));
 }
 
 Constant* ConstantExpr::getOffsetOf(const StructType* STy, unsigned FieldNo) {
@@ -1553,8 +1555,8 @@ Constant* ConstantExpr::getOffsetOf(const Type* Ty, Constant *FieldNo) {
   };
   Constant *GEP = getGetElementPtr(
                 Constant::getNullValue(PointerType::getUnqual(Ty)), GEPIdx, 2);
-  return getCast(Instruction::PtrToInt, GEP,
-                 Type::getInt64Ty(Ty->getContext()));
+  return getPtrToInt(GEP,
+                     Type::getInt64Ty(Ty->getContext()));
 }
 
 Constant *ConstantExpr::getCompare(unsigned short pred, 
@@ -1944,6 +1946,20 @@ void ConstantExpr::destroyConstant() {
 const char *ConstantExpr::getOpcodeName() const {
   return Instruction::getOpcodeName(getOpcode());
 }
+
+
+
+GetElementPtrConstantExpr::
+GetElementPtrConstantExpr(Constant *C, const std::vector<Constant*> &IdxList,
+                          const Type *DestTy)
+  : ConstantExpr(DestTy, Instruction::GetElementPtr,
+                 OperandTraits<GetElementPtrConstantExpr>::op_end(this)
+                 - (IdxList.size()+1), IdxList.size()+1) {
+  OperandList[0] = C;
+  for (unsigned i = 0, E = IdxList.size(); i != E; ++i)
+    OperandList[i+1] = IdxList[i];
+}
+
 
 //===----------------------------------------------------------------------===//
 //                replaceUsesOfWithOnConstant implementations

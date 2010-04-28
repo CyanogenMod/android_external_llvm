@@ -495,7 +495,7 @@ TailDuplicatePass::TailDuplicate(MachineBasicBlock *TailBB, MachineFunction &MF,
     if (InstrCount == MaxDuplicateCount) return false;
     // Remember if we saw a call.
     if (I->getDesc().isCall()) HasCall = true;
-    if (!I->isPHI())
+    if (!I->isPHI() && !I->isDebugValue())
       InstrCount += 1;
   }
   // Heuristically, don't tail-duplicate calls if it would expand code size,
@@ -647,17 +647,6 @@ void TailDuplicatePass::RemoveDeadBlock(MachineBasicBlock *MBB) {
   // Remove all successors.
   while (!MBB->succ_empty())
     MBB->removeSuccessor(MBB->succ_end()-1);
-
-  // If there are any labels in the basic block, unregister them from
-  // MachineModuleInfo.
-  if (MMI && !MBB->empty()) {
-    for (MachineBasicBlock::iterator I = MBB->begin(), E = MBB->end();
-         I != E; ++I) {
-      if (I->isLabel())
-        // The label ID # is always operand #0, an immediate.
-        MMI->InvalidateLabel(I->getOperand(0).getImm());
-    }
-  }
 
   // Remove the block.
   MBB->eraseFromParent();

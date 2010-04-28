@@ -60,18 +60,14 @@ MCAsmInfo::MCAsmInfo() {
   LinkOnceDirective = 0;
   HiddenVisibilityAttr = MCSA_Hidden;
   ProtectedVisibilityAttr = MCSA_Protected;
-  AbsoluteDebugSectionOffsets = false;
-  AbsoluteEHSectionOffsets = false;
   HasLEB128 = false;
   HasDotLocAndDotFile = false;
   SupportsDebugInformation = false;
   ExceptionsType = ExceptionHandling::None;
   DwarfRequiresFrameSection = true;
   DwarfUsesInlineInfoSection = false;
-  Is_EHSymbolPrivate = true;
-  GlobalEHDirective = 0;
-  SupportsWeakOmittedEHFrame = true;
   DwarfSectionOffsetDirective = 0;
+  HasMicrosoftFastStdCallMangling = false;
 
   AsmTransCBE = 0;
 }

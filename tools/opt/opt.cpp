@@ -28,7 +28,6 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/IRReader.h"
 #include "llvm/Support/ManagedStatic.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/StandardPasses.h"
@@ -142,15 +141,14 @@ struct CallGraphSCCPassPrinter : public CallGraphSCCPass {
   CallGraphSCCPassPrinter(const PassInfo *PI) :
     CallGraphSCCPass(&ID), PassToPrint(PI) {}
 
-  virtual bool runOnSCC(std::vector<CallGraphNode *>&SCC) {
+  virtual bool runOnSCC(CallGraphSCC &SCC) {
     if (!Quiet) {
       outs() << "Printing analysis '" << PassToPrint->getPassName() << "':\n";
 
-      for (unsigned i = 0, e = SCC.size(); i != e; ++i) {
-        Function *F = SCC[i]->getFunction();
-        if (F) {
+      for (CallGraphSCC::iterator I = SCC.begin(), E = SCC.end(); I != E; ++I) {
+        Function *F = (*I)->getFunction();
+        if (F)
           getAnalysisID<Pass>(PassToPrint).print(outs(), F->getParent());
-        }
       }
     }
     // Get and print pass...
@@ -424,9 +422,9 @@ int main(int argc, char **argv) {
   if (TD)
     Passes.add(TD);
 
-  FunctionPassManager *FPasses = NULL;
+  OwningPtr<FunctionPassManager> FPasses;
   if (OptLevelO1 || OptLevelO2 || OptLevelO3) {
-    FPasses = new FunctionPassManager(M.get());
+    FPasses.reset(new FunctionPassManager(M.get()));
     if (TD)
       FPasses->add(new TargetData(*TD));
   }

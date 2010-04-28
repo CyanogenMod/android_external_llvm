@@ -1,10 +1,11 @@
-# Only use this on the device or emulator.
-ifneq ($(TARGET_SIMULATOR),true)
-ifneq ($(TARGET_PRODUCT),sdk)
-
 LOCAL_PATH := $(call my-dir)
 LLVM_ROOT_PATH := $(LOCAL_PATH)
 include $(CLEAR_VARS)
+
+# Only use this on the device or emulator.
+ifeq ($(TARGET_SIMULATOR),true)
+$(error LLVM not suitable for the simulator! $(LOCAL_PATH))
+endif
 
 subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/System \
@@ -13,8 +14,11 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/VMCore	\
 		lib/Bitcode/Reader	\
 		lib/Analysis	\
+		lib/Analysis/IPA	\
+		lib/Transforms/IPO	\
 		lib/Transforms/Utils	\
 		lib/Transforms/Scalar	\
+		lib/Transforms/InstCombine	\
 		lib/CodeGen	\
 		lib/CodeGen/SelectionDAG	\
 		lib/CodeGen/AsmPrinter	\
@@ -36,6 +40,3 @@ LLVM_GEN_INTRINSICS_MK := $(LOCAL_PATH)/llvm-gen-intrinsics.mk
 LLVM_TBLGEN_RULES_MK := $(LOCAL_PATH)/tblgen-rules.mk
 
 include $(subdirs)
-
-endif # TARGET_PRODUCT != sdk
-endif # TARGET_SIMULATOR != true

@@ -17,10 +17,10 @@ entry:
         
 ; X64: t0:
 ; X64: 	movddup	(%rsi), %xmm0
-; X64:	xorl	%eax, %eax
 ; X64:  pshuflw	$0, %xmm0, %xmm0
+; X64:	xorl	%eax, %eax
 ; X64:	pinsrw	$0, %eax, %xmm0
-; X64:	movaps	%xmm0, (%rdi)
+; X64:	movdqa	%xmm0, (%rdi)
 ; X64:	ret
 }
 
@@ -32,7 +32,7 @@ define <8 x i16> @t1(<8 x i16>* %A, <8 x i16>* %B) nounwind {
         
 ; X64: t1:
 ; X64: 	movl	(%rsi), %eax
-; X64: 	movaps	(%rdi), %xmm0
+; X64: 	movdqa	(%rdi), %xmm0
 ; X64: 	pinsrw	$0, %eax, %xmm0
 ; X64: 	ret
 }
@@ -66,7 +66,7 @@ define <8 x i16> @t4(<8 x i16> %A, <8 x i16> %B) nounwind {
 ; X64: 	pshufhw	$100, %xmm0, %xmm2
 ; X64: 	pinsrw	$1, %eax, %xmm2
 ; X64: 	pextrw	$1, %xmm0, %eax
-; X64: 	movaps	%xmm2, %xmm0
+; X64: 	movdqa	%xmm2, %xmm0
 ; X64: 	pinsrw	$4, %eax, %xmm0
 ; X64: 	ret
 }
@@ -122,7 +122,7 @@ define void @t8(<2 x i64>* %res, <2 x i64>* %A) nounwind {
 ; X64: 	t8:
 ; X64: 		pshuflw	$-58, (%rsi), %xmm0
 ; X64: 		pshufhw	$-58, %xmm0, %xmm0
-; X64: 		movaps	%xmm0, (%rdi)
+; X64: 		movdqa	%xmm0, (%rdi)
 ; X64: 		ret
 }
 
@@ -169,11 +169,11 @@ define internal void @t10() nounwind {
         ret void
 ; X64: 	t10:
 ; X64: 		pextrw	$4, %xmm0, %eax
-; X64: 		pextrw	$6, %xmm0, %edx
 ; X64: 		movlhps	%xmm1, %xmm1
 ; X64: 		pshuflw	$8, %xmm1, %xmm1
 ; X64: 		pinsrw	$2, %eax, %xmm1
-; X64: 		pinsrw	$3, %edx, %xmm1
+; X64: 		pextrw	$6, %xmm0, %eax
+; X64: 		pinsrw	$3, %eax, %xmm1
 }
 
 
@@ -184,8 +184,8 @@ entry:
 	ret <8 x i16> %tmp7
 
 ; X64: t11:
-; X64:	movlhps	%xmm0, %xmm0
 ; X64:	movd	%xmm1, %eax
+; X64:	movlhps	%xmm0, %xmm0
 ; X64:	pshuflw	$1, %xmm0, %xmm0
 ; X64:	pinsrw	$1, %eax, %xmm0
 ; X64:	ret
@@ -198,8 +198,8 @@ entry:
 	ret <8 x i16> %tmp9
 
 ; X64: t12:
-; X64: 	movlhps	%xmm0, %xmm0
 ; X64: 	pextrw	$3, %xmm1, %eax
+; X64: 	movlhps	%xmm0, %xmm0
 ; X64: 	pshufhw	$3, %xmm0, %xmm0
 ; X64: 	pinsrw	$5, %eax, %xmm0
 ; X64: 	ret

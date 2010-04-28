@@ -16,6 +16,7 @@
 #include "X86InstrInfo.h"
 #include "X86GenSubtarget.inc"
 #include "llvm/GlobalValue.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/System/Host.h"
@@ -23,6 +24,10 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/ADT/SmallVector.h"
 using namespace llvm;
+
+static cl::opt<bool>
+DoPromote16Bit("promote-16bit", cl::Hidden,
+               cl::desc("Promote 16-bit instructions"));
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -259,6 +264,7 @@ void X86Subtarget::AutoDetectSubtargetFeatures() {
 
   HasFMA3 = IsIntel && ((ECX >> 12) & 0x1);
   HasAVX = ((ECX >> 28) & 0x1);
+  HasAES = IsIntel && ((ECX >> 25) & 0x1);
 
   if (IsIntel || IsAMD) {
     // Determine if bit test memory instructions are slow.
@@ -266,6 +272,9 @@ void X86Subtarget::AutoDetectSubtargetFeatures() {
     unsigned Model  = 0;
     DetectFamilyModel(EAX, Family, Model);
     IsBTMemSlow = IsAMD || (Family == 6 && Model >= 13);
+    // If it's Nehalem, unaligned memory access is fast.
+    if (Family == 15 && Model == 26)
+      IsUAMemFast = true;
 
     GetCpuIDAndInfo(0x80000001, &EAX, &EBX, &ECX, &EDX);
     HasX86_64 = (EDX >> 29) & 0x1;
@@ -283,10 +292,13 @@ X86Subtarget::X86Subtarget(const std::string &TT, const std::string &FS,
   , HasX86_64(false)
   , HasSSE4A(false)
   , HasAVX(false)
+  , HasAES(false)
   , HasFMA3(false)
   , HasFMA4(false)
   , IsBTMemSlow(false)
+  , IsUAMemFast(false)
   , HasVectorUAMem(false)
+  , Promote16Bit(DoPromote16Bit)
   , DarwinVers(0)
   , stackAlignment(8)
   // FIXME: this is a known good value for Yonah. How about others?
@@ -315,8 +327,13 @@ X86Subtarget::X86Subtarget(const std::string &TT, const std::string &FS,
 
   // If requesting codegen for X86-64, make sure that 64-bit features
   // are enabled.
-  if (Is64Bit)
+  if (Is64Bit) {
     HasX86_64 = true;
+
+    // All 64-bit cpus have cmov support.
+    HasCMov = true;
+  }
+    
 
   DEBUG(dbgs() << "Subtarget features: SSELevel " << X86SSELevel
                << ", 3DNowLevel " << X863DNowLevel
@@ -360,13 +377,4 @@ X86Subtarget::X86Subtarget(const std::string &TT, const std::string &FS,
 
   if (StackAlignment)
     stackAlignment = StackAlignment;
-}
-
-bool X86Subtarget::enablePostRAScheduler(
-            CodeGenOpt::Level OptLevel,
-            TargetSubtarget::AntiDepBreakMode& Mode,
-            RegClassVector& CriticalPathRCs) const {
-  Mode = TargetSubtarget::ANTIDEP_CRITICAL;
-  CriticalPathRCs.clear();
-  return OptLevel >= CodeGenOpt::Aggressive;
 }

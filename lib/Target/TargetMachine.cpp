@@ -11,6 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
@@ -25,6 +27,7 @@ namespace llvm {
   bool LessPreciseFPMADOption;
   bool PrintMachineCode;
   bool NoFramePointerElim;
+  bool NoFramePointerElimNonLeaf;
   bool NoExcessFPPrecision;
   bool UnsafeFPMath;
   bool FiniteOnlyFPMathOption;
@@ -56,6 +59,11 @@ static cl::opt<bool, true>
 DisableFPElim("disable-fp-elim",
   cl::desc("Disable frame pointer elimination optimization"),
   cl::location(NoFramePointerElim),
+  cl::init(false));
+static cl::opt<bool, true>
+DisableFPElimNonLeaf("disable-non-leaf-fp-elim",
+  cl::desc("Disable frame pointer elimination optimization for non-leaf funcs"),
+  cl::location(NoFramePointerElimNonLeaf),
   cl::init(false));
 static cl::opt<bool, true>
 DisableExcessPrecision("disable-excess-fp-precision",
@@ -197,7 +205,14 @@ EnableStrongPHIElim(cl::Hidden, "strong-phi-elim",
   cl::desc("Use strong PHI elimination."),
   cl::location(StrongPHIElim),
   cl::init(false));
-
+static cl::opt<bool>
+DataSections("fdata-sections",
+  cl::desc("Emit data into separate sections"),
+  cl::init(false));
+static cl::opt<bool>
+FunctionSections("ffunction-sections",
+  cl::desc("Emit functions into separate sections"),
+  cl::init(false));
 //---------------------------------------------------------------------------
 // TargetMachine Class
 //
@@ -244,7 +259,35 @@ void TargetMachine::setAsmVerbosityDefault(bool V) {
   AsmVerbosityDefault = V;
 }
 
+bool TargetMachine::getFunctionSections() {
+  return FunctionSections;
+}
+
+bool TargetMachine::getDataSections() {
+  return DataSections;
+}
+
+void TargetMachine::setFunctionSections(bool V) {
+  FunctionSections = V;
+}
+
+void TargetMachine::setDataSections(bool V) {
+  DataSections = V;
+}
+
 namespace llvm {
+  /// DisableFramePointerElim - This returns true if frame pointer elimination
+  /// optimization should be disabled for the given machine function.
+  bool DisableFramePointerElim(const MachineFunction &MF) {
+    if (NoFramePointerElim)
+      return true;
+    if (NoFramePointerElimNonLeaf) {
+      const MachineFrameInfo *MFI = MF.getFrameInfo();
+      return MFI->hasCalls();
+    }
+    return false;
+  }
+
   /// LessPreciseFPMAD - This flag return true when -enable-fp-mad option
   /// is specified on the command line.  When this flag is off(default), the
   /// code generator is not allowed to generate mad (multiply add) if the

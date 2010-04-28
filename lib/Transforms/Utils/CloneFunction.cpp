@@ -23,7 +23,7 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Metadata.h"
 #include "llvm/Support/CFG.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
+#include "ValueMapper.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/ADT/SmallVector.h"
@@ -336,14 +336,14 @@ ConstantFoldMappedInstruction(const Instruction *I) {
 
 static MDNode *UpdateInlinedAtInfo(MDNode *InsnMD, MDNode *TheCallMD) {
   DILocation ILoc(InsnMD);
-  if (ILoc.isNull()) return InsnMD;
+  if (!ILoc.Verify()) return InsnMD;
 
   DILocation CallLoc(TheCallMD);
-  if (CallLoc.isNull()) return InsnMD;
+  if (!CallLoc.Verify()) return InsnMD;
 
   DILocation OrigLocation = ILoc.getOrigLocation();
   MDNode *NewLoc = TheCallMD;
-  if (!OrigLocation.isNull())
+  if (OrigLocation.Verify())
     NewLoc = UpdateInlinedAtInfo(OrigLocation.getNode(), TheCallMD);
 
   Value *MDVs[] = {

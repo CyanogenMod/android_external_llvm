@@ -33,8 +33,14 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+
+namespace llvm {
+extern cl::opt<bool> ReuseFrameIndexVals;
+}
+
 using namespace llvm;
 
 Thumb1RegisterInfo::Thumb1RegisterInfo(const ARMBaseInstrInfo &tii,
@@ -53,7 +59,7 @@ void Thumb1RegisterInfo::emitLoadConstPool(MachineBasicBlock &MBB,
                                            unsigned PredReg) const {
   MachineFunction &MF = *MBB.getParent();
   MachineConstantPool *ConstantPool = MF.getConstantPool();
-  Constant *C = ConstantInt::get(
+  const Constant *C = ConstantInt::get(
           Type::getInt32Ty(MBB.getParent()->getFunction()->getContext()), Val);
   unsigned Idx = ConstantPool->getConstantPoolIndex(C, 4);
 
@@ -395,7 +401,7 @@ Thumb1RegisterInfo::saveScavengerRegister(MachineBasicBlock &MBB,
   // off the frame pointer (if, for example, there are alloca() calls in
   // the function, the offset will be negative. Use R12 instead since that's
   // a call clobbered register that we know won't be used in Thumb1 mode.
-  DebugLoc DL = DebugLoc::getUnknownLoc();
+  DebugLoc DL;
   BuildMI(MBB, I, DL, TII.get(ARM::tMOVtgpr2gpr)).
     addReg(ARM::R12, RegState::Define).addReg(Reg, RegState::Kill);
 
@@ -426,7 +432,7 @@ Thumb1RegisterInfo::saveScavengerRegister(MachineBasicBlock &MBB,
 
 unsigned
 Thumb1RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
-                                        int SPAdj, int *Value,
+                                        int SPAdj, FrameIndexValue *Value,
                                         RegScavenger *RS) const{
   unsigned VReg = 0;
   unsigned i = 0;
@@ -638,8 +644,10 @@ Thumb1RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   } else if (Desc.mayStore()) {
       VReg = MF.getRegInfo().createVirtualRegister(ARM::tGPRRegisterClass);
       assert (Value && "Frame index virtual allocated, but Value arg is NULL!");
-      *Value = Offset;
       bool UseRR = false;
+      bool TrackVReg = true;
+      Value->first = FrameReg; // use the frame register as a kind indicator
+      Value->second = Offset;
 
       if (Opcode == ARM::tSpill) {
         if (FrameReg == ARM::SP)
@@ -648,6 +656,7 @@ Thumb1RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
         else {
           emitLoadConstPool(MBB, II, dl, VReg, 0, Offset);
           UseRR = true;
+          TrackVReg = false;
         }
       } else
         emitThumbRegPlusImmediate(MBB, II, VReg, FrameReg, Offset, TII,
@@ -658,6 +667,8 @@ Thumb1RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
         MI.addOperand(MachineOperand::CreateReg(FrameReg, false));
       else // tSTR has an extra register operand.
         MI.addOperand(MachineOperand::CreateReg(0, false));
+      if (!ReuseFrameIndexVals || !TrackVReg)
+        VReg = 0;
   } else
     assert(false && "Unexpected opcode!");
 
@@ -677,8 +688,7 @@ void Thumb1RegisterInfo::emitPrologue(MachineFunction &MF) const {
   unsigned VARegSaveSize = AFI->getVarArgsRegSaveSize();
   unsigned NumBytes = MFI->getStackSize();
   const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
-  DebugLoc dl = (MBBI != MBB.end() ?
-                 MBBI->getDebugLoc() : DebugLoc::getUnknownLoc());
+  DebugLoc dl = MBBI != MBB.end() ? MBBI->getDebugLoc() : DebugLoc();
 
   // Thumb add/sub sp, imm8 instructions implicitly multiply the offset by 4.
   NumBytes = (NumBytes + 3) & ~3;
@@ -783,9 +793,9 @@ static bool isCSRestore(MachineInstr *MI, const unsigned *CSRegs) {
       isCalleeSavedRegister(MI->getOperand(0).getReg(), CSRegs))
     return true;
   else if (MI->getOpcode() == ARM::tPOP) {
-    // The first three operands are predicates and such. The last two are
+    // The first two operands are predicates. The last two are
     // imp-def and imp-use of SP. Check everything in between.
-    for (int i = 3, e = MI->getNumOperands() - 2; i != e; ++i)
+    for (int i = 2, e = MI->getNumOperands() - 2; i != e; ++i)
       if (!isCalleeSavedRegister(MI->getOperand(i).getReg(), CSRegs))
         return false;
     return true;
@@ -846,12 +856,16 @@ void Thumb1RegisterInfo::emitEpilogue(MachineFunction &MF,
   }
 
   if (VARegSaveSize) {
+    // Unlike T2 and ARM mode, the T1 pop instruction cannot restore
+    // to LR, and we can't pop the value directly to the PC since
+    // we need to update the SP after popping the value. Therefore, we
+    // pop the old LR into R3 as a temporary.
+
     // Move back past the callee-saved register restoration
     while (MBBI != MBB.end() && isCSRestore(MBBI, CSRegs))
       ++MBBI;
     // Epilogue for vararg functions: pop LR to R3 and branch off it.
     AddDefaultPred(BuildMI(MBB, MBBI, dl, TII.get(ARM::tPOP)))
-      .addReg(0) // No write back.
       .addReg(ARM::R3, RegState::Define);
 
     emitSPUpdate(MBB, MBBI, TII, dl, *this, VARegSaveSize);

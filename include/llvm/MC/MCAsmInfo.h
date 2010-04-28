@@ -145,6 +145,11 @@ namespace llvm {
     /// which doesn't support the '.bss' directive only.
     bool UsesELFSectionDirectiveForBSS;      // Defaults to false.
     
+    /// HasMicrosoftFastStdCallMangling - True if this target uses microsoft
+    /// style mangling for functions with X86_StdCall/X86_FastCall calling
+    /// convention.
+    bool HasMicrosoftFastStdCallMangling;    // Defaults to false.
+    
     //===--- Alignment Information ----------------------------------------===//
 
     /// AlignDirective - The directive used to emit round up to an alignment
@@ -218,14 +223,6 @@ namespace llvm {
 
     //===--- Dwarf Emission Directives -----------------------------------===//
 
-    /// AbsoluteDebugSectionOffsets - True if we should emit abolute section
-    /// offsets for debug information.
-    bool AbsoluteDebugSectionOffsets;        // Defaults to false.
-
-    /// AbsoluteEHSectionOffsets - True if we should emit abolute section
-    /// offsets for EH information. Defaults to false.
-    bool AbsoluteEHSectionOffsets;
-
     /// HasLEB128 - True if target asm supports leb128 directives.
     bool HasLEB128;                          // Defaults to false.
 
@@ -246,18 +243,6 @@ namespace llvm {
     /// DwarfUsesInlineInfoSection - True if DwarfDebugInlineSection is used to
     /// encode inline subroutine information.
     bool DwarfUsesInlineInfoSection;         // Defaults to false.
-
-    /// Is_EHSymbolPrivate - If set, the "_foo.eh" is made private so that it
-    /// doesn't show up in the symbol table of the object file.
-    bool Is_EHSymbolPrivate;                 // Defaults to true.
-
-    /// GlobalEHDirective - This is the directive used to make exception frame
-    /// tables globally visible.
-    const char *GlobalEHDirective;           // Defaults to NULL.
-
-    /// SupportsWeakEmptyEHFrame - True if target assembler and linker will
-    /// handle a weak_definition of constant 0 for an omitted EH frame.
-    bool SupportsWeakOmittedEHFrame;         // Defaults to true.
 
     /// DwarfSectionOffsetDirective - Special section offset directive.
     const char* DwarfSectionOffsetDirective; // Defaults to NULL
@@ -295,7 +280,7 @@ namespace llvm {
     /// getNonexecutableStackSection - Targets can implement this method to
     /// specify a section to switch to if the translation unit doesn't have any
     /// trampolines that require an executable stack.
-    virtual MCSection *getNonexecutableStackSection(MCContext &Ctx) const {
+    virtual const MCSection *getNonexecutableStackSection(MCContext &Ctx) const{
       return 0;
     }
     
@@ -307,6 +292,10 @@ namespace llvm {
       return UsesELFSectionDirectiveForBSS;
     }
 
+    bool hasMicrosoftFastStdCallMangling() const {
+      return HasMicrosoftFastStdCallMangling;
+    }
+    
     // Accessors.
     //
     bool hasMachoZeroFillDirective() const { return HasMachoZeroFillDirective; }
@@ -392,12 +381,6 @@ namespace llvm {
     MCSymbolAttr getProtectedVisibilityAttr() const {
       return ProtectedVisibilityAttr;
     }
-    bool isAbsoluteDebugSectionOffsets() const {
-      return AbsoluteDebugSectionOffsets;
-    }
-    bool isAbsoluteEHSectionOffsets() const {
-      return AbsoluteEHSectionOffsets;
-    }
     bool hasLEB128() const {
       return HasLEB128;
     }
@@ -418,15 +401,6 @@ namespace llvm {
     }
     bool doesDwarfUsesInlineInfoSection() const {
       return DwarfUsesInlineInfoSection;
-    }
-    bool is_EHSymbolPrivate() const {
-      return Is_EHSymbolPrivate;
-    }
-    const char *getGlobalEHDirective() const {
-      return GlobalEHDirective;
-    }
-    bool getSupportsWeakOmittedEHFrame() const {
-      return SupportsWeakOmittedEHFrame;
     }
     const char *getDwarfSectionOffsetDirective() const {
       return DwarfSectionOffsetDirective;

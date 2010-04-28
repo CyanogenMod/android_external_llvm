@@ -69,6 +69,9 @@ protected:
   /// HasAVX - Target has AVX instructions
   bool HasAVX;
 
+  /// HasAES - Target has AES instructions
+  bool HasAES;
+
   /// HasFMA3 - Target has 3-operand fused multiply-add
   bool HasFMA3;
 
@@ -78,10 +81,16 @@ protected:
   /// IsBTMemSlow - True if BT (bit test) of memory instructions are slow.
   bool IsBTMemSlow;
 
+  /// IsUAMemFast - True if unaligned memory access is fast.
+  bool IsUAMemFast;
+
   /// HasVectorUAMem - True if SIMD operations can have unaligned memory
-  ///                  operands. This may require setting a feature bit in the
-  ///                  processor.
+  /// operands. This may require setting a feature bit in the processor.
   bool HasVectorUAMem;
+
+  /// Promote16Bit - True if codegen should promote 16-bit operations to 32-bit.
+  /// This is a temporary option.
+  bool Promote16Bit;
 
   /// DarwinVers - Nonzero if this is a darwin platform: the numeric
   /// version of the platform, e.g. 8 = 10.4 (Tiger), 9 = 10.5 (Leopard), etc.
@@ -133,6 +142,7 @@ public:
   PICStyles::Style getPICStyle() const { return PICStyle; }
   void setPICStyle(PICStyles::Style Style)  { PICStyle = Style; }
 
+  bool hasCMov() const { return HasCMov; }
   bool hasMMX() const { return X86SSELevel >= MMX; }
   bool hasSSE1() const { return X86SSELevel >= SSE1; }
   bool hasSSE2() const { return X86SSELevel >= SSE2; }
@@ -144,10 +154,13 @@ public:
   bool has3DNow() const { return X863DNowLevel >= ThreeDNow; }
   bool has3DNowA() const { return X863DNowLevel >= ThreeDNowA; }
   bool hasAVX() const { return HasAVX; }
+  bool hasAES() const { return HasAES; }
   bool hasFMA3() const { return HasFMA3; }
   bool hasFMA4() const { return HasFMA4; }
   bool isBTMemSlow() const { return IsBTMemSlow; }
+  bool isUnalignedMemAccessFast() const { return IsUAMemFast; }
   bool hasVectorUAMem() const { return HasVectorUAMem; }
+  bool shouldPromote16Bit() const { return Promote16Bit; }
 
   bool isTargetDarwin() const { return TargetType == isDarwin; }
   bool isTargetELF() const { return TargetType == isELF; }
@@ -229,12 +242,6 @@ public:
   /// indicating the number of scheduling cycles of backscheduling that
   /// should be attempted.
   unsigned getSpecialAddressLatency() const;
-
-  /// enablePostRAScheduler - X86 target is enabling post-alloc scheduling
-  /// at 'More' optimization level.
-  bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                             TargetSubtarget::AntiDepBreakMode& Mode,
-                             RegClassVector& CriticalPathRCs) const;
 };
 
 } // End llvm namespace

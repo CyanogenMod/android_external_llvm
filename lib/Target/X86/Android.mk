@@ -20,6 +20,7 @@ TBLGEN_TABLES :=	\
     X86GenEDInfo.inc  
 
 LOCAL_SRC_FILES :=	\
+	SSEDomainFix.cpp	\
 	X86AsmBackend.cpp	\
 	X86COFFMachineModuleInfo.cpp	\
 	X86CodeEmitter.cpp	\
@@ -33,7 +34,6 @@ LOCAL_SRC_FILES :=	\
 	X86JITInfo.cpp	\
 	X86MCAsmInfo.cpp	\
 	X86MCCodeEmitter.cpp	\
-	X86MCTargetExpr.cpp	\
 	X86RegisterInfo.cpp	\
 	X86Subtarget.cpp	\
 	X86TargetMachine.cpp	\

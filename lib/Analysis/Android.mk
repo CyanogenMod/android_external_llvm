@@ -40,6 +40,7 @@ analysis_SRC_FILES :=	\
 	ScalarEvolution.cpp	\
 	ScalarEvolutionAliasAnalysis.cpp	\
 	ScalarEvolutionExpander.cpp	\
+	ScalarEvolutionNormalization.cpp	\
 	SparsePropagation.cpp	\
 	Trace.cpp	\
 	ValueTracking.cpp

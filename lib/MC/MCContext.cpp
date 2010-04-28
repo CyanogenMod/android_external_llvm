@@ -8,35 +8,52 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCSection.h"
+#include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCSectionMachO.h"
+#include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSymbol.h"
-#include "llvm/MC/MCValue.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Twine.h"
 using namespace llvm;
 
-MCContext::MCContext() {
+typedef StringMap<const MCSectionMachO*> MachOUniqueMapTy;
+typedef StringMap<const MCSectionELF*> ELFUniqueMapTy;
+
+
+MCContext::MCContext(const MCAsmInfo &mai) : MAI(mai), NextUniqueID(0) {
+  MachOUniquingMap = 0;
+  ELFUniquingMap = 0;
 }
 
 MCContext::~MCContext() {
-  // NOTE: The sections are all allocated out of a bump pointer allocator,
+  // NOTE: The symbols are all allocated out of a bump pointer allocator,
   // we don't need to free them here.
+  
+  // If we have the MachO uniquing map, free it.
+  delete (MachOUniqueMapTy*)MachOUniquingMap;
+  delete (ELFUniqueMapTy*)ELFUniquingMap;
 }
 
-MCSymbol *MCContext::CreateSymbol(StringRef Name) {
-  assert(Name[0] != '\0' && "Normal symbols cannot be unnamed!");
-
-  // Create and bind the symbol, and ensure that names are unique.
-  MCSymbol *&Entry = Symbols[Name];
-  assert(!Entry && "Duplicate symbol definition!");
-  return Entry = new (*this) MCSymbol(Name, false);
-}
+//===----------------------------------------------------------------------===//
+// Symbol Manipulation
+//===----------------------------------------------------------------------===//
 
 MCSymbol *MCContext::GetOrCreateSymbol(StringRef Name) {
-  MCSymbol *&Entry = Symbols[Name];
-  if (Entry) return Entry;
+  assert(!Name.empty() && "Normal symbols cannot be unnamed!");
+  
+  // Determine whether this is an assembler temporary or normal label.
+  bool isTemporary = Name.startswith(MAI.getPrivateGlobalPrefix());
+  
+  // Do the lookup and get the entire StringMapEntry.  We want access to the
+  // key if we are creating the entry.
+  StringMapEntry<MCSymbol*> &Entry = Symbols.GetOrCreateValue(Name);
+  if (Entry.getValue()) return Entry.getValue();
 
-  return Entry = new (*this) MCSymbol(Name, false);
+  // Ok, the entry doesn't already exist.  Have the MCSymbol object itself refer
+  // to the copy of the string that is embedded in the StringMapEntry.
+  MCSymbol *Result = new (*this) MCSymbol(Entry.getKey(), isTemporary);
+  Entry.setValue(Result);
+  return Result; 
 }
 
 MCSymbol *MCContext::GetOrCreateSymbol(const Twine &Name) {
@@ -45,18 +62,64 @@ MCSymbol *MCContext::GetOrCreateSymbol(const Twine &Name) {
   return GetOrCreateSymbol(NameSV.str());
 }
 
-
-MCSymbol *MCContext::CreateTemporarySymbol(StringRef Name) {
-  // If unnamed, just create a symbol.
-  if (Name.empty())
-    new (*this) MCSymbol("", true);
-    
-  // Otherwise create as usual.
-  MCSymbol *&Entry = Symbols[Name];
-  assert(!Entry && "Duplicate symbol definition!");
-  return Entry = new (*this) MCSymbol(Name, true);
+MCSymbol *MCContext::CreateTempSymbol() {
+  return GetOrCreateSymbol(Twine(MAI.getPrivateGlobalPrefix()) +
+                           "tmp" + Twine(NextUniqueID++));
 }
 
 MCSymbol *MCContext::LookupSymbol(StringRef Name) const {
   return Symbols.lookup(Name);
 }
+
+//===----------------------------------------------------------------------===//
+// Section Management
+//===----------------------------------------------------------------------===//
+
+const MCSectionMachO *MCContext::
+getMachOSection(StringRef Segment, StringRef Section,
+                unsigned TypeAndAttributes,
+                unsigned Reserved2, SectionKind Kind) {
+  
+  // We unique sections by their segment/section pair.  The returned section
+  // may not have the same flags as the requested section, if so this should be
+  // diagnosed by the client as an error.
+  
+  // Create the map if it doesn't already exist.
+  if (MachOUniquingMap == 0)
+    MachOUniquingMap = new MachOUniqueMapTy();
+  MachOUniqueMapTy &Map = *(MachOUniqueMapTy*)MachOUniquingMap;
+  
+  // Form the name to look up.
+  SmallString<64> Name;
+  Name += Segment;
+  Name.push_back(',');
+  Name += Section;
+  
+  // Do the lookup, if we have a hit, return it.
+  const MCSectionMachO *&Entry = Map[Name.str()];
+  if (Entry) return Entry;
+  
+  // Otherwise, return a new section.
+  return Entry = new (*this) MCSectionMachO(Segment, Section, TypeAndAttributes,
+                                            Reserved2, Kind);
+}
+
+
+const MCSection *MCContext::
+getELFSection(StringRef Section, unsigned Type, unsigned Flags,
+              SectionKind Kind, bool IsExplicit) {
+  if (ELFUniquingMap == 0)
+    ELFUniquingMap = new ELFUniqueMapTy();
+  ELFUniqueMapTy &Map = *(ELFUniqueMapTy*)ELFUniquingMap;
+  
+  // Do the lookup, if we have a hit, return it.
+  StringMapEntry<const MCSectionELF*> &Entry = Map.GetOrCreateValue(Section);
+  if (Entry.getValue()) return Entry.getValue();
+  
+  MCSectionELF *Result = new (*this) MCSectionELF(Entry.getKey(), Type, Flags,
+                                                  Kind, IsExplicit);
+  Entry.setValue(Result);
+  return Result;
+}
+
+

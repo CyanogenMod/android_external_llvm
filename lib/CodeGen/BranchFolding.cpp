@@ -105,17 +105,6 @@ void BranchFolder::RemoveDeadBlock(MachineBasicBlock *MBB) {
   while (!MBB->succ_empty())
     MBB->removeSuccessor(MBB->succ_end()-1);
 
-  // If there are any labels in the basic block, unregister them from
-  // MachineModuleInfo.
-  if (MMI && !MBB->empty()) {
-    for (MachineBasicBlock::iterator I = MBB->begin(), E = MBB->end();
-         I != E; ++I) {
-      if (I->isLabel())
-        // The label ID # is always operand #0, an immediate.
-        MMI->InvalidateLabel(I->getOperand(0).getImm());
-    }
-  }
-
   // Remove the block.
   MF->erase(MBB);
 }
@@ -203,7 +192,7 @@ bool BranchFolder::OptimizeFunction(MachineFunction &MF,
     MadeChange |= MadeChangeThisIteration;
   }
 
-  // See if any jump tables have become mergable or dead as the code generator
+  // See if any jump tables have become dead as the code generator
   // did its thing.
   MachineJumpTableInfo *JTI = MF.getJumpTableInfo();
   if (JTI == 0) {
@@ -211,27 +200,8 @@ bool BranchFolder::OptimizeFunction(MachineFunction &MF,
     return MadeChange;
   }
   
-  const std::vector<MachineJumpTableEntry> &JTs = JTI->getJumpTables();
-  // Figure out how these jump tables should be merged.
-  std::vector<unsigned> JTMapping;
-  JTMapping.reserve(JTs.size());
-
-  // We always keep the 0th jump table.
-  JTMapping.push_back(0);
-
-  // Scan the jump tables, seeing if there are any duplicates.  Note that this
-  // is N^2, which should be fixed someday.
-  for (unsigned i = 1, e = JTs.size(); i != e; ++i) {
-    if (JTs[i].MBBs.empty())
-      JTMapping.push_back(i);
-    else
-      JTMapping.push_back(JTI->getJumpTableIndex(JTs[i].MBBs));
-  }
-
-  // If a jump table was merge with another one, walk the function rewriting
-  // references to jump tables to reference the new JT ID's.  Keep track of
-  // whether we see a jump table idx, if not, we can delete the JT.
-  BitVector JTIsLive(JTs.size());
+  // Walk the function to find jump tables that are live.
+  BitVector JTIsLive(JTI->getJumpTables().size());
   for (MachineFunction::iterator BB = MF.begin(), E = MF.end();
        BB != E; ++BB) {
     for (MachineBasicBlock::iterator I = BB->begin(), E = BB->end();
@@ -239,17 +209,14 @@ bool BranchFolder::OptimizeFunction(MachineFunction &MF,
       for (unsigned op = 0, e = I->getNumOperands(); op != e; ++op) {
         MachineOperand &Op = I->getOperand(op);
         if (!Op.isJTI()) continue;
-        unsigned NewIdx = JTMapping[Op.getIndex()];
-        Op.setIndex(NewIdx);
 
         // Remember that this JT is live.
-        JTIsLive.set(NewIdx);
+        JTIsLive.set(Op.getIndex());
       }
   }
 
-  // Finally, remove dead jump tables.  This happens either because the
-  // indirect jump was unreachable (and thus deleted) or because the jump
-  // table was merged with some other one.
+  // Finally, remove dead jump tables.  This happens when the
+  // indirect jump was unreachable (and thus deleted).
   for (unsigned i = 0, e = JTIsLive.size(); i != e; ++i)
     if (!JTIsLive.test(i)) {
       JTI->RemoveJumpTable(i);
@@ -310,12 +277,23 @@ static unsigned HashEndOfMBB(const MachineBasicBlock *MBB,
     return 0;   // Empty MBB.
 
   --I;
+  // Skip debug info so it will not affect codegen.
+  while (I->isDebugValue()) {
+    if (I==MBB->begin())
+      return 0;      // MBB empty except for debug info.
+    --I;
+  }
   unsigned Hash = HashMachineInstr(I);
 
   if (I == MBB->begin() || minCommonTailLength == 1)
     return Hash;   // Single instr MBB.
 
   --I;
+  while (I->isDebugValue()) {
+    if (I==MBB->begin())
+      return Hash;      // MBB with single non-debug instr.
+    --I;
+  }
   // Hash in the second-to-last instruction.
   Hash ^= HashMachineInstr(I) << 2;
   return Hash;
@@ -334,9 +312,32 @@ static unsigned ComputeCommonTailLength(MachineBasicBlock *MBB1,
   unsigned TailLen = 0;
   while (I1 != MBB1->begin() && I2 != MBB2->begin()) {
     --I1; --I2;
-    // Don't merge debugging pseudos.
-    if (I1->isDebugValue() || I2->isDebugValue() ||
-        !I1->isIdenticalTo(I2) ||
+    // Skip debugging pseudos; necessary to avoid changing the code.
+    while (I1->isDebugValue()) {
+      if (I1==MBB1->begin()) {
+        while (I2->isDebugValue()) {
+          if (I2==MBB2->begin())
+            // I1==DBG at begin; I2==DBG at begin
+            return TailLen;
+          --I2;
+        }
+        ++I2;
+        // I1==DBG at begin; I2==non-DBG, or first of DBGs not at begin
+        return TailLen;
+      }
+      --I1;
+    }
+    // I1==first (untested) non-DBG preceding known match
+    while (I2->isDebugValue()) {
+      if (I2==MBB2->begin()) {
+        ++I1;
+        // I1==non-DBG, or first of DBGs not at begin; I2==DBG at begin
+        return TailLen;
+      }
+      --I2;
+    }
+    // I1, I2==first (untested) non-DBGs preceding known match
+    if (!I1->isIdenticalTo(I2) ||
         // FIXME: This check is dubious. It's used to get around a problem where
         // people incorrectly expect inline asm directives to remain in the same
         // relative order. This is untenable because normal compiler
@@ -347,6 +348,29 @@ static unsigned ComputeCommonTailLength(MachineBasicBlock *MBB1,
       break;
     }
     ++TailLen;
+  }
+  // Back past possible debugging pseudos at beginning of block.  This matters
+  // when one block differs from the other only by whether debugging pseudos
+  // are present at the beginning.  (This way, the various checks later for
+  // I1==MBB1->begin() work as expected.)
+  if (I1 == MBB1->begin() && I2 != MBB2->begin()) {
+    --I2;
+    while (I2->isDebugValue()) {
+      if (I2 == MBB2->begin()) {
+        return TailLen;
+        }
+      --I2;
+    }
+    ++I2;
+  }
+  if (I2 == MBB2->begin() && I1 != MBB1->begin()) {
+    --I1;
+    while (I1->isDebugValue()) {
+      if (I1 == MBB1->begin())
+        return TailLen;
+      --I1;
+    }
+    ++I1;
   }
   return TailLen;
 }
@@ -643,6 +667,8 @@ unsigned BranchFolder::CreateCommonTailOnlyBlock(MachineBasicBlock *&PredBB,
     SameTails[commonTailIndex].getTailStartPos();
   MachineBasicBlock *MBB = SameTails[commonTailIndex].getBlock();
 
+  // If the common tail includes any debug info we will take it pretty
+  // randomly from one of the inputs.  Might be better to remove it?
   DEBUG(dbgs() << "\nSplitting BB#" << MBB->getNumber() << ", size "
                << maxCommonTailLength);
 
@@ -912,6 +938,29 @@ bool BranchFolder::OptimizeBranches(MachineFunction &MF) {
   return MadeChange;
 }
 
+// Blocks should be considered empty if they contain only debug info;
+// else the debug info would affect codegen.
+static bool IsEmptyBlock(MachineBasicBlock *MBB) {
+  if (MBB->empty())
+    return true;
+  for (MachineBasicBlock::iterator MBBI = MBB->begin(), MBBE = MBB->end();
+       MBBI!=MBBE; ++MBBI) {
+    if (!MBBI->isDebugValue())
+      return false;
+  }
+  return true;
+}
+
+// Blocks with only debug info and branches should be considered the same
+// as blocks with only branches.
+static bool IsBranchOnlyBlock(MachineBasicBlock *MBB) {
+  MachineBasicBlock::iterator MBBI, MBBE;
+  for (MBBI = MBB->begin(), MBBE = MBB->end(); MBBI!=MBBE; ++MBBI) {
+    if (!MBBI->isDebugValue())
+      break;
+  }
+  return (MBBI->getDesc().isBranch());
+}
 
 /// IsBetterFallthrough - Return true if it would be clearly better to
 /// fall-through to MBB1 than to fall through into MBB2.  This has to return
@@ -923,15 +972,21 @@ static bool IsBetterFallthrough(MachineBasicBlock *MBB1,
   // MBB1 doesn't, we prefer to fall through into MBB1.  This allows us to
   // optimize branches that branch to either a return block or an assert block
   // into a fallthrough to the return.
-  if (MBB1->empty() || MBB2->empty()) return false;
+  if (IsEmptyBlock(MBB1) || IsEmptyBlock(MBB2)) return false;
 
   // If there is a clear successor ordering we make sure that one block
   // will fall through to the next
   if (MBB1->isSuccessor(MBB2)) return true;
   if (MBB2->isSuccessor(MBB1)) return false;
 
-  MachineInstr *MBB1I = --MBB1->end();
-  MachineInstr *MBB2I = --MBB2->end();
+  // Neither block consists entirely of debug info (per IsEmptyBlock check),
+  // so we needn't test for falling off the beginning here.
+  MachineBasicBlock::iterator MBB1I = --MBB1->end();
+  while (MBB1I->isDebugValue())
+    --MBB1I;
+  MachineBasicBlock::iterator MBB2I = --MBB2->end();
+  while (MBB2I->isDebugValue())
+    --MBB2I;
   return MBB2I->getDesc().isCall() && !MBB1I->getDesc().isCall();
 }
 
@@ -949,7 +1004,7 @@ ReoptimizeBlock:
   // explicitly.  Landing pads should not do this since the landing-pad table
   // points to this block.  Blocks with their addresses taken shouldn't be
   // optimized away.
-  if (MBB->empty() && !MBB->isLandingPad() && !MBB->hasAddressTaken()) {
+  if (IsEmptyBlock(MBB) && !MBB->isLandingPad() && !MBB->hasAddressTaken()) {
     // Dead block?  Leave for cleanup later.
     if (MBB->pred_empty()) return MadeChange;
 
@@ -1072,22 +1127,6 @@ ReoptimizeBlock:
           !IsBetterFallthrough(PriorTBB, MBB))
         DoTransform = false;
 
-      // We don't want to do this transformation if we have control flow like:
-      //   br cond BB2
-      // BB1:
-      //   ..
-      //   jmp BBX
-      // BB2:
-      //   ..
-      //   ret
-      //
-      // In this case, we could actually be moving the return block *into* a
-      // loop!
-      if (DoTransform && !MBB->succ_empty() &&
-          (!PriorTBB->canFallThrough() || PriorTBB->empty()))
-        DoTransform = false;
-
-
       if (DoTransform) {
         // Reverse the branch so we will fall through on the previous true cond.
         SmallVector<MachineOperand, 4> NewPriorCond(PriorCond);
@@ -1135,13 +1174,29 @@ ReoptimizeBlock:
     // If this branch is the only thing in its block, see if we can forward
     // other blocks across it.
     if (CurTBB && CurCond.empty() && CurFBB == 0 &&
-        MBB->begin()->getDesc().isBranch() && CurTBB != MBB &&
+        IsBranchOnlyBlock(MBB) && CurTBB != MBB &&
         !MBB->hasAddressTaken()) {
       // This block may contain just an unconditional branch.  Because there can
       // be 'non-branch terminators' in the block, try removing the branch and
       // then seeing if the block is empty.
       TII->RemoveBranch(*MBB);
-
+      // If the only things remaining in the block are debug info, remove these
+      // as well, so this will behave the same as an empty block in non-debug
+      // mode.
+      if (!MBB->empty()) {
+        bool NonDebugInfoFound = false;
+        for (MachineBasicBlock::iterator I = MBB->begin(), E = MBB->end();
+             I != E; ++I) {
+          if (!I->isDebugValue()) {
+            NonDebugInfoFound = true;
+            break;
+          }
+        }
+        if (!NonDebugInfoFound)
+          // Make the block empty, losing the debug info (we could probably
+          // improve this in some cases.)
+          MBB->erase(MBB->begin(), MBB->end());
+      }
       // If this block is just an unconditional branch to CurTBB, we can
       // usually completely eliminate the block.  The only case we cannot
       // completely eliminate the block is when the block before this one

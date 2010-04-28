@@ -1,4 +1,6 @@
 // RUN: llvm-mc -triple i386-unknown-unknown --show-encoding %s | FileCheck %s
+// XFAIL: *
+
 
 // CHECK: movb	$127, 3735928559(%ebx,%ecx,8)
 // CHECK:  encoding: [0xc6,0x84,0xcb,0xef,0xbe,0xad,0xde,0x7f]
@@ -9859,3 +9861,110 @@
 // CHECK: pcmpgtq	%xmm5, %xmm5
 // CHECK:  encoding: [0x66,0x0f,0x38,0x37,0xed]
         	pcmpgtq	%xmm5,%xmm5
+
+// CHECK: crc32b 	%bl, %eax
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf0,0xc3]
+                crc32b %bl, %eax
+
+// CHECK: crc32b 	4(%ebx), %eax
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf0,0x43,0x04]
+                crc32b 4(%ebx), %eax
+
+// CHECK: crc32w 	%bx, %eax
+// CHECK:  encoding: [0x66,0xf2,0x0f,0x38,0xf1,0xc3]
+                crc32w %bx, %eax
+
+// CHECK: crc32w 	4(%ebx), %eax
+// CHECK:  encoding: [0x66,0xf2,0x0f,0x38,0xf1,0x43,0x04]
+                crc32w 4(%ebx), %eax
+
+// CHECK: crc32l 	%ebx, %eax
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf1,0xc3]
+                crc32l %ebx, %eax
+
+// CHECK: crc32l 	4(%ebx), %eax
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf1,0x43,0x04]
+                crc32l 4(%ebx), %eax
+
+// CHECK: crc32l 	3735928559(%ebx,%ecx,8), %ecx
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf1,0x8c,0xcb,0xef,0xbe,0xad,0xde]
+                crc32l 0xdeadbeef(%ebx,%ecx,8),%ecx
+
+// CHECK: crc32l 	69, %ecx
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf1,0x0d,0x45,0x00,0x00,0x00]
+                crc32l 0x45,%ecx
+
+// CHECK: crc32l 	32493, %ecx
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf1,0x0d,0xed,0x7e,0x00,0x00]
+                crc32l 0x7eed,%ecx
+
+// CHECK: crc32l 	3133065982, %ecx
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf1,0x0d,0xfe,0xca,0xbe,0xba]
+                crc32l 0xbabecafe,%ecx
+
+// CHECK: crc32l 	%ecx, %ecx
+// CHECK:  encoding: [0xf2,0x0f,0x38,0xf1,0xc9]
+                crc32l %ecx,%ecx
+
+// CHECK: pcmpistrm	$125, %xmm1, %xmm2
+// CHECK:  encoding: [0x66,0x0f,0x3a,0x62,0xd1,0x7d]
+                pcmpistrm $125, %xmm1, %xmm2
+
+// CHECK: pcmpistrm	$125, (%edx,%eax,4), %xmm2
+// CHECK:  encoding: [0x66,0x0f,0x3a,0x62,0x14,0x82,0x7d]
+                pcmpistrm $125, (%edx,%eax,4), %xmm2
+
+// CHECK: aesimc	%xmm0, %xmm1
+// CHECK:  encoding: [0x66,0x0f,0x38,0xdb,0xc8]
+                aesimc %xmm0,%xmm1
+
+// CHECK: aesimc	(%eax), %xmm1
+// CHECK:  encoding: [0x66,0x0f,0x38,0xdb,0x08]
+                aesimc (%eax),%xmm1
+
+// CHECK: aesenc	%xmm1, %xmm2
+// CHECK:  encoding: [0x66,0x0f,0x38,0xdc,0xd1]
+                aesenc %xmm1,%xmm2
+
+// CHECK: aesenc	4(%ebx), %xmm2
+// CHECK:  encoding: [0x66,0x0f,0x38,0xdc,0x53,0x04]
+                aesenc 4(%ebx),%xmm2
+
+// CHECK: aesenclast	%xmm3, %xmm4
+// CHECK:  encoding: [0x66,0x0f,0x38,0xdd,0xe3]
+                aesenclast %xmm3,%xmm4
+
+// CHECK: aesenclast	4(%edx,%edi), %xmm4
+// CHECK:  encoding: [0x66,0x0f,0x38,0xdd,0x64,0x3a,0x04]
+                aesenclast 4(%edx,%edi),%xmm4
+
+// CHECK: aesdec	%xmm5, %xmm6
+// CHECK:  encoding: [0x66,0x0f,0x38,0xde,0xf5]
+                aesdec %xmm5,%xmm6
+
+// CHECK: aesdec	4(%ecx,%eax,8), %xmm6
+// CHECK:  encoding: [0x66,0x0f,0x38,0xde,0x74,0xc1,0x04]
+                aesdec 4(%ecx,%eax,8),%xmm6
+
+// CHECK: aesdeclast	%xmm7, %xmm0
+// CHECK:  encoding: [0x66,0x0f,0x38,0xdf,0xc7]
+                aesdeclast %xmm7,%xmm0
+
+// CHECK: aesdeclast	3405691582, %xmm0
+// CHECK:  encoding: [0x66,0x0f,0x38,0xdf,0x05,0xbe,0xba,0xfe,0xca]
+                aesdeclast 0xcafebabe,%xmm0
+
+// CHECK: aeskeygenassist	$125, %xmm1, %xmm2
+// CHECK:  encoding: [0x66,0x0f,0x3a,0xdf,0xd1,0x7d]
+                aeskeygenassist $125, %xmm1, %xmm2
+
+// CHECK: aeskeygenassist	$125, (%edx,%eax,4), %xmm2
+// CHECK:  encoding: [0x66,0x0f,0x3a,0xdf,0x14,0x82,0x7d]
+                aeskeygenassist $125, (%edx,%eax,4), %xmm2
+
+// rdar://7840289
+// CHECK: pshufb	CPI1_0(%rip), %xmm1
+// CHECK:  encoding: [0x66,0x0f,0x38,0x00,0x0d,A,A,A,A]
+// CHECK:  fixup A - offset: 5, value: CPI1_0-4
+pshufb	CPI1_0(%rip), %xmm1   
+

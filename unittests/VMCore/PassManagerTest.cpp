@@ -154,7 +154,7 @@ namespace llvm {
 
     struct CGPass : public PassTest<CallGraph, CallGraphSCCPass> {
     public:
-      virtual bool runOnSCC(std::vector<CallGraphNode*> &SCMM) {
+      virtual bool runOnSCC(CallGraphSCC &SCMM) {
         EXPECT_TRUE(getAnalysisIfAvailable<TargetData>());
         run();
         return false;
@@ -324,10 +324,10 @@ namespace llvm {
 
     template<typename T>
     void MemoryTestHelper(int run) {
-      Module *M = makeLLVMModule();
+      OwningPtr<Module> M(makeLLVMModule());
       T *P = new T();
       PassManager Passes;
-      Passes.add(new TargetData(M));
+      Passes.add(new TargetData(M.get()));
       Passes.add(P);
       Passes.run(*M);
       T::finishedOK(run);

@@ -57,6 +57,11 @@ void AbstractTypeUser::setType(Value *V, const Type *NewTy) {
 /// need for a std::vector to be used in the Type class itself. 
 /// @brief Type destruction function
 void Type::destroy() const {
+  // Nothing calls getForwardedType from here on.
+  if (ForwardType && ForwardType->isAbstract()) {
+    ForwardType->dropRef();
+    ForwardType = NULL;
+  }
 
   // Structures and Functions allocate their contained types past the end of
   // the type object itself. These need to be destroyed differently than the
@@ -254,10 +259,12 @@ const Type *Type::getForwardedTypeInternal() const {
   // Yes, it is forwarded again.  First thing, add the reference to the new
   // forward type.
   if (RealForwardedType->isAbstract())
-    cast<DerivedType>(RealForwardedType)->addRef();
+    RealForwardedType->addRef();
 
   // Now drop the old reference.  This could cause ForwardType to get deleted.
-  cast<DerivedType>(ForwardType)->dropRef();
+  // ForwardType must be abstract because only abstract types can have their own
+  // ForwardTypes.
+  ForwardType->dropRef();
 
   // Return the updated type.
   ForwardType = RealForwardedType;
@@ -373,6 +380,10 @@ const Type *Type::getPPC_FP128Ty(LLVMContext &C) {
   return &C.pImpl->PPC_FP128Ty;
 }
 
+const IntegerType *Type::getIntNTy(LLVMContext &C, unsigned N) {
+  return IntegerType::get(C, N);
+}
+
 const IntegerType *Type::getInt1Ty(LLVMContext &C) {
   return &C.pImpl->Int1Ty;
 }
@@ -411,6 +422,10 @@ const PointerType *Type::getFP128PtrTy(LLVMContext &C, unsigned AS) {
 
 const PointerType *Type::getPPC_FP128PtrTy(LLVMContext &C, unsigned AS) {
   return getPPC_FP128Ty(C)->getPointerTo(AS);
+}
+
+const PointerType *Type::getIntNPtrTy(LLVMContext &C, unsigned N, unsigned AS) {
+  return getIntNTy(C, N)->getPointerTo(AS);
 }
 
 const PointerType *Type::getInt1PtrTy(LLVMContext &C, unsigned AS) {
@@ -1142,8 +1157,8 @@ void DerivedType::unlockedRefineAbstractTypeTo(const Type *NewType) {
   // Any PATypeHolders referring to this type will now automatically forward to
   // the type we are resolved to.
   ForwardType = NewType;
-  if (NewType->isAbstract())
-    cast<DerivedType>(NewType)->addRef();
+  if (ForwardType->isAbstract())
+    ForwardType->addRef();
 
   // Add a self use of the current type so that we don't delete ourself until
   // after the function exits.

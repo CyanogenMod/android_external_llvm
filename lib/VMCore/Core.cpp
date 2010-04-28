@@ -119,6 +119,11 @@ void LLVMDumpModule(LLVMModuleRef M) {
   unwrap(M)->dump();
 }
 
+/*--.. Operations on inline assembler ......................................--*/
+void LLVMSetModuleInlineAsm(LLVMModuleRef M, const char *Asm) {
+  unwrap(M)->setModuleInlineAsm(StringRef(Asm));
+}
+
 
 /*===-- Operations on types -----------------------------------------------===*/
 
@@ -1651,7 +1656,7 @@ LLVMBasicBlockRef LLVMGetInsertBlock(LLVMBuilderRef Builder) {
 }
 
 void LLVMClearInsertionPosition(LLVMBuilderRef Builder) {
-  unwrap(Builder)->ClearInsertionPoint ();
+  unwrap(Builder)->ClearInsertionPoint();
 }
 
 void LLVMInsertIntoBuilder(LLVMBuilderRef Builder, LLVMValueRef Instr) {
@@ -1670,11 +1675,13 @@ void LLVMDisposeBuilder(LLVMBuilderRef Builder) {
 /*--.. Metadata builders ...................................................--*/
 
 void LLVMSetCurrentDebugLocation(LLVMBuilderRef Builder, LLVMValueRef L) {
-  unwrap(Builder)->SetCurrentDebugLocation(L? unwrap<MDNode>(L) : NULL);
+  MDNode *Loc = L ? unwrap<MDNode>(L) : NULL;
+  unwrap(Builder)->SetCurrentDebugLocation(DebugLoc::getFromDILocation(Loc));
 }
 
 LLVMValueRef LLVMGetCurrentDebugLocation(LLVMBuilderRef Builder) {
-  return wrap(unwrap(Builder)->getCurrentDebugLocation());
+  return wrap(unwrap(Builder)->getCurrentDebugLocation()
+              .getAsMDNode(unwrap(Builder)->getContext()));
 }
 
 void LLVMSetInstDebugLocation(LLVMBuilderRef Builder, LLVMValueRef Inst) {

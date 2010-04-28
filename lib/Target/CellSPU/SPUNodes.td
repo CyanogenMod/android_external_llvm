@@ -26,9 +26,10 @@ def callseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_SPUCallSeq,
 // Operand constraints:
 //===----------------------------------------------------------------------===//
 
-def SDT_SPUCall   : SDTypeProfile<0, -1, [SDTCisInt<0>]>;
+def SDT_SPUCall   : SDTypeProfile<0, -1, [SDTCisPtrTy<0>]>;
 def SPUcall       : SDNode<"SPUISD::CALL", SDT_SPUCall,
-                           [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag]>;
+                           [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag,
+                            SDNPVariadic]>;
 
 // Operand type constraints for vector shuffle/permute operations
 def SDT_SPUshuffle   : SDTypeProfile<1, 3, [

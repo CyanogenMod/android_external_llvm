@@ -160,11 +160,15 @@ def MMX_MOVQ2DQrr : SSDIi8<0xD6, MRMSrcReg, (outs VR128:$dst), (ins VR64:$src),
                            "movq2dq\t{$src, $dst|$dst, $src}",
           [(set VR128:$dst,
             (movl immAllZerosV,
-                  (v2i64 (scalar_to_vector (i64 (bitconvert VR64:$src))))))]>;
+                  (v2i64 (scalar_to_vector
+                              (i64 (bitconvert (v1i64 VR64:$src)))))))]>;
 
 let neverHasSideEffects = 1 in
 def MMX_MOVQ2FR64rr: SSDIi8<0xD6, MRMSrcReg, (outs FR64:$dst), (ins VR64:$src),
                            "movq2dq\t{$src, $dst|$dst, $src}", []>;
+
+def MMX_MOVFR642Qrr: SSDIi8<0xD6, MRMSrcReg, (outs VR64:$dst), (ins FR64:$src),
+                           "movdq2q\t{$src, $dst|$dst, $src}", []>;
 
 def MMX_MOVNTQmr  : MMXI<0xE7, MRMDestMem, (outs), (ins i64mem:$dst, VR64:$src),
                          "movntq\t{$src, $dst|$dst, $src}",
@@ -271,9 +275,9 @@ defm MMX_PSRAD : MMXI_binop_rmi_int<0xE2, 0x72, MRM4r, "psrad",
 
 // Shift up / down and insert zero's.
 def : Pat<(v1i64 (X86vshl     VR64:$src, (i8 imm:$amt))),
-          (v1i64 (MMX_PSLLQri VR64:$src, imm:$amt))>;
+          (MMX_PSLLQri VR64:$src, (GetLo32XForm imm:$amt))>;
 def : Pat<(v1i64 (X86vshr     VR64:$src, (i8 imm:$amt))),
-          (v1i64 (MMX_PSRLQri VR64:$src, imm:$amt))>;
+          (MMX_PSRLQri VR64:$src, (GetLo32XForm imm:$amt))>;
 
 // Comparison Instructions
 defm MMX_PCMPEQB : MMXI_binop_rm_int<0x74, "pcmpeqb", int_x86_mmx_pcmpeq_b>;
@@ -568,6 +572,14 @@ def : Pat<(f64 (bitconvert (v4i16 VR64:$src))),
           (MMX_MOVQ2FR64rr VR64:$src)>;
 def : Pat<(f64 (bitconvert (v8i8 VR64:$src))),
           (MMX_MOVQ2FR64rr VR64:$src)>;
+def : Pat<(v1i64 (bitconvert (f64 FR64:$src))),
+          (MMX_MOVFR642Qrr FR64:$src)>;
+def : Pat<(v2i32 (bitconvert (f64 FR64:$src))),
+          (MMX_MOVFR642Qrr FR64:$src)>;
+def : Pat<(v4i16 (bitconvert (f64 FR64:$src))),
+          (MMX_MOVFR642Qrr FR64:$src)>;
+def : Pat<(v8i8 (bitconvert (f64 FR64:$src))),
+          (MMX_MOVFR642Qrr FR64:$src)>;
 
 let AddedComplexity = 20 in {
   def : Pat<(v2i32 (X86vzmovl (bc_v2i32 (load_mmx addr:$src)))),
@@ -577,7 +589,7 @@ let AddedComplexity = 20 in {
 // Clear top half.
 let AddedComplexity = 15 in {
   def : Pat<(v2i32 (X86vzmovl VR64:$src)),
-            (MMX_PUNPCKLDQrr VR64:$src, (MMX_V_SET0))>;
+            (MMX_PUNPCKLDQrr VR64:$src, (v2i32 (MMX_V_SET0)))>;
 }
 
 // Patterns to perform canonical versions of vector shuffling.
@@ -604,20 +616,7 @@ let AddedComplexity = 10 in {
 def : Pat<(v1i64 (and (xor VR64:$src1, (bc_v1i64 (v2i32 immAllOnesV))),
                   VR64:$src2)),
           (MMX_PANDNrr VR64:$src1, VR64:$src2)>;
-def : Pat<(v1i64 (and (xor VR64:$src1, (bc_v1i64 (v4i16 immAllOnesV_bc))),
-                  VR64:$src2)),
-          (MMX_PANDNrr VR64:$src1, VR64:$src2)>;
-def : Pat<(v1i64 (and (xor VR64:$src1, (bc_v1i64 (v8i8  immAllOnesV_bc))),
-                  VR64:$src2)),
-          (MMX_PANDNrr VR64:$src1, VR64:$src2)>;
-
 def : Pat<(v1i64 (and (xor VR64:$src1, (bc_v1i64 (v2i32 immAllOnesV))),
-                  (load addr:$src2))),
-          (MMX_PANDNrm VR64:$src1, addr:$src2)>;
-def : Pat<(v1i64 (and (xor VR64:$src1, (bc_v1i64 (v4i16 immAllOnesV_bc))),
-                  (load addr:$src2))),
-          (MMX_PANDNrm VR64:$src1, addr:$src2)>;
-def : Pat<(v1i64 (and (xor VR64:$src1, (bc_v1i64 (v8i8  immAllOnesV_bc))),
                   (load addr:$src2))),
           (MMX_PANDNrm VR64:$src1, addr:$src2)>;
 

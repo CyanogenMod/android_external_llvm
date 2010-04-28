@@ -1,6 +1,7 @@
 LOCAL_PATH:= $(call my-dir)
 
 mc_SRC_FILES :=	\
+	MachObjectWriter.cpp	\
 	MCAsmInfo.cpp	\
 	MCAsmInfoCOFF.cpp	\
 	MCAsmInfoDarwin.cpp	\
@@ -14,6 +15,7 @@ mc_SRC_FILES :=	\
 	MCInstPrinter.cpp	\
 	MCMachOStreamer.cpp	\
 	MCNullStreamer.cpp	\
+	MCObjectWriter.cpp	\
 	MCSection.cpp	\
 	MCSectionELF.cpp	\
 	MCSectionMachO.cpp	\

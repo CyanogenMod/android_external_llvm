@@ -5,6 +5,7 @@ LOCAL_SRC_FILES :=	\
 	AsmMatcherEmitter.cpp	\
 	AsmWriterEmitter.cpp	\
 	AsmWriterInst.cpp	\
+	ARMDecoderEmitter.cpp	\
 	CallingConvEmitter.cpp	\
 	ClangDiagnosticsEmitter.cpp	\
 	CodeEmitterGen.cpp	\

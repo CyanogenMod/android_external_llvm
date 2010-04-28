@@ -110,6 +110,8 @@ cross-compile-build-tools:
 	  ENABLE_COVERAGE=$(ENABLE_COVERAGE) \
 	  DISABLE_ASSERTIONS=$(DISABLE_ASSERTIONS) \
 	  ENABLE_EXPENSIVE_CHECKS=$(ENABLE_EXPENSIVE_CHECKS) \
+	  CFLAGS= \
+	  CXXFLAGS= \
 	) || exit 1;
 endif
 
@@ -214,7 +216,7 @@ update:
 	$(SVN) $(SVN-UPDATE-OPTIONS) update $(LLVM_SRC_ROOT)
 	@ $(SVN) status $(LLVM_SRC_ROOT) | $(SUB-SVN-DIRS) | xargs $(SVN) $(SVN-UPDATE-OPTIONS) update
 
-happiness: update all check unittests
+happiness: update all check-all
 
 .PHONY: srpm rpm update happiness
 

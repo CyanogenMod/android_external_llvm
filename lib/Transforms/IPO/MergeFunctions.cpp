@@ -81,7 +81,7 @@ ModulePass *llvm::createMergeFunctionsPass() {
 // Comparison of functions
 // ===----------------------------------------------------------------------===
 
-static unsigned long hash(const Function *F) {
+static unsigned long fhash(const Function *F) {
   const FunctionType *FTy = F->getFunctionType();
 
   FoldingSetNodeID ID;
@@ -622,7 +622,7 @@ bool MergeFunctions::runOnModule(Module &M) {
     if (F->isDeclaration() || F->isIntrinsic())
       continue;
 
-    FnMap[hash(F)].push_back(F);
+    FnMap[fhash(F)].push_back(F);
   }
 
   // TODO: instead of running in a loop, we could also fold functions in
@@ -636,7 +636,7 @@ bool MergeFunctions::runOnModule(Module &M) {
     for (std::map<unsigned long, std::vector<Function *> >::iterator
          I = FnMap.begin(), E = FnMap.end(); I != E; ++I) {
       std::vector<Function *> &FnVec = I->second;
-      DEBUG(dbgs() << "hash (" << I->first << "): " << FnVec.size() << "\n");
+      DEBUG(dbgs() << "fhash (" << I->first << "): " << FnVec.size() << "\n");
 
       for (int i = 0, e = FnVec.size(); i != e; ++i) {
         for (int j = i + 1; j != e; ++j) {

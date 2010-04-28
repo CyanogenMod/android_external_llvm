@@ -2,6 +2,7 @@ LOCAL_PATH:= $(call my-dir)
 
 codegen_SRC_FILES :=	\
 	AggressiveAntiDepBreaker.cpp	\
+	Analysis.cpp	\
 	BranchFolding.cpp	\
 	CalcSpillWeights.cpp	\
 	CodePlacementOpt.cpp	\
@@ -29,6 +30,7 @@ codegen_SRC_FILES :=	\
 	MachineFunction.cpp	\
 	MachineFunctionAnalysis.cpp	\
 	MachineFunctionPass.cpp	\
+	MachineFunctionPrinterPass.cpp	\
 	MachineInstr.cpp	\
 	MachineLICM.cpp	\
 	MachineLoopInfo.cpp	\

@@ -18,6 +18,13 @@
 #include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCParser/AsmParser.h"
+#include "llvm/Target/TargetAsmBackend.h"
+#include "llvm/Target/TargetAsmParser.h"
+#include "llvm/Target/TargetData.h"
+#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Target/TargetMachine.h"  // FIXME.
+#include "llvm/Target/TargetSelect.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
@@ -26,13 +33,8 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/System/Host.h"
 #include "llvm/System/Signals.h"
-#include "llvm/Target/TargetAsmParser.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetMachine.h"  // FIXME.
-#include "llvm/Target/TargetSelect.h"
-#include "llvm/MC/MCParser/AsmParser.h"
 #include "Disassembler.h"
 using namespace llvm;
 
@@ -53,7 +55,11 @@ static cl::opt<unsigned>
 OutputAsmVariant("output-asm-variant",
                  cl::desc("Syntax variant to use for output printing"));
 
+static cl::opt<bool>
+RelaxAll("mc-relax-all", cl::desc("Relax all fixups"));
+
 enum OutputFileType {
+  OFT_Null,
   OFT_AssemblyFile,
   OFT_ObjectFile
 };
@@ -63,6 +69,8 @@ FileType("filetype", cl::init(OFT_AssemblyFile),
   cl::values(
        clEnumValN(OFT_AssemblyFile, "asm",
                   "Emit an assembly ('.s') file"),
+       clEnumValN(OFT_Null, "null",
+                  "Don't emit anything (for timing purposes)"),
        clEnumValN(OFT_ObjectFile, "obj",
                   "Emit a native object ('.o') file"),
        clEnumValEnd));
@@ -75,14 +83,22 @@ IncludeDirs("I", cl::desc("Directory of include files"),
             cl::value_desc("directory"), cl::Prefix);
 
 static cl::opt<std::string>
+ArchName("arch", cl::desc("Target arch to assemble for, "
+                            "see -version for available targets"));
+
+static cl::opt<std::string>
 TripleName("triple", cl::desc("Target triple to assemble for, "
-                              "see -version for available targets"),
-           cl::init(LLVM_HOSTTRIPLE));
+                              "see -version for available targets"));
+
+static cl::opt<bool>
+NoInitialTextSection("n", cl::desc(
+                   "Don't assume assembly file starts in the text section"));
 
 enum ActionType {
   AC_AsLex,
   AC_Assemble,
-  AC_Disassemble
+  AC_Disassemble,
+  AC_EDisassemble
 };
 
 static cl::opt<ActionType>
@@ -94,9 +110,20 @@ Action(cl::desc("Action to perform:"),
                              "Assemble a .s file (default)"),
                   clEnumValN(AC_Disassemble, "disassemble",
                              "Disassemble strings of hex bytes"),
+                  clEnumValN(AC_EDisassemble, "edis",
+                             "Enhanced disassembly of strings of hex bytes"),
                   clEnumValEnd));
 
 static const Target *GetTarget(const char *ProgName) {
+  // Figure out the target triple.
+  if (TripleName.empty())
+    TripleName = sys::getHostTriple();
+  if (!ArchName.empty()) {
+    llvm::Triple TT(TripleName);
+    TT.setArchName(ArchName);
+    TripleName = TT.str();
+  }
+
   // Get the target specific parser.
   std::string Error;
   const Target *TheTarget = TargetRegistry::lookupTarget(TripleName, Error);
@@ -134,7 +161,7 @@ static int AsLexInput(const char *ProgName) {
   if (!TheTarget)
     return 1;
 
-  const MCAsmInfo *MAI = TheTarget->createAsmInfo(TripleName);
+  llvm::OwningPtr<MCAsmInfo> MAI(TheTarget->createAsmInfo(TripleName));
   assert(MAI && "Unable to create target asm info!");
 
   AsmLexer Lexer(*MAI);
@@ -241,7 +268,11 @@ static int AssembleInput(const char *ProgName) {
   // it later.
   SrcMgr.setIncludeDirs(IncludeDirs);
   
-  MCContext Ctx;
+  
+  llvm::OwningPtr<MCAsmInfo> MAI(TheTarget->createAsmInfo(TripleName));
+  assert(MAI && "Unable to create target asm info!");
+  
+  MCContext Ctx(*MAI);
   formatted_raw_ostream *Out = GetOutputStream();
   if (!Out)
     return 1;
@@ -256,25 +287,24 @@ static int AssembleInput(const char *ProgName) {
     return 1;
   }
 
-  OwningPtr<MCInstPrinter> IP;
   OwningPtr<MCCodeEmitter> CE;
   OwningPtr<MCStreamer> Str;
-
-  const MCAsmInfo *MAI = TheTarget->createAsmInfo(TripleName);
-  assert(MAI && "Unable to create target asm info!");
+  OwningPtr<TargetAsmBackend> TAB;
 
   if (FileType == OFT_AssemblyFile) {
-    IP.reset(TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI, *Out));
+    MCInstPrinter *IP =
+      TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI);
     if (ShowEncoding)
       CE.reset(TheTarget->createCodeEmitter(*TM, Ctx));
-    Str.reset(createAsmStreamer(Ctx, *Out, *MAI,
-                                TM->getTargetData()->isLittleEndian(),
-                                /*asmverbose*/true, IP.get(), CE.get(),
-                                ShowInst));
+    Str.reset(createAsmStreamer(Ctx, *Out,TM->getTargetData()->isLittleEndian(),
+                                /*asmverbose*/true, IP, CE.get(), ShowInst));
+  } else if (FileType == OFT_Null) {
+    Str.reset(createNullStreamer(Ctx));
   } else {
     assert(FileType == OFT_ObjectFile && "Invalid file type!");
     CE.reset(TheTarget->createCodeEmitter(*TM, Ctx));
-    Str.reset(createMachOStreamer(Ctx, *Out, CE.get()));
+    TAB.reset(TheTarget->createAsmBackend(TripleName));
+    Str.reset(createMachOStreamer(Ctx, *TAB, *Out, CE.get(), RelaxAll));
   }
 
   AsmParser Parser(SrcMgr, Ctx, *Str.get(), *MAI);
@@ -287,21 +317,21 @@ static int AssembleInput(const char *ProgName) {
 
   Parser.setTargetParser(*TAP.get());
 
-  int Res = Parser.Run();
+  int Res = Parser.Run(NoInitialTextSection);
   if (Out != &fouts())
     delete Out;
+
+  // Delete output on errors.
+  if (Res && OutputFilename != "-")
+    sys::Path(OutputFilename).eraseFromDisk();
 
   return Res;
 }
 
-static int DisassembleInput(const char *ProgName) {
-  std::string Error;
-  const Target *TheTarget = TargetRegistry::lookupTarget(TripleName, Error);
-  if (TheTarget == 0) {
-    errs() << ProgName << ": error: unable to get target for '" << TripleName
-    << "', see --version and --triple.\n";
+static int DisassembleInput(const char *ProgName, bool Enhanced) {
+  const Target *TheTarget = GetTarget(ProgName);
+  if (!TheTarget)
     return 0;
-  }
   
   std::string ErrorMessage;
   
@@ -317,7 +347,10 @@ static int DisassembleInput(const char *ProgName) {
     return 1;
   }
   
-  return Disassembler::disassemble(*TheTarget, TripleName, *Buffer);
+  if (Enhanced)
+    return Disassembler::disassembleEnhanced(TripleName, *Buffer);
+  else
+    return Disassembler::disassemble(*TheTarget, TripleName, *Buffer);
 }
 
 
@@ -344,7 +377,9 @@ int main(int argc, char **argv) {
   case AC_Assemble:
     return AssembleInput(argv[0]);
   case AC_Disassemble:
-    return DisassembleInput(argv[0]);
+    return DisassembleInput(argv[0], false);
+  case AC_EDisassemble:
+    return DisassembleInput(argv[0], true);
   }
   
   return 0;

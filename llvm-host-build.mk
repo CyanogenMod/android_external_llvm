@@ -5,7 +5,6 @@ LOCAL_CFLAGS :=	\
 	-D__STDC_CONSTANT_MACROS	\
 	-O2	\
 	-fomit-frame-pointer	\
-	-Woverloaded-virtual	\
 	-Wall	\
 	-W	\
 	-Wno-unused-parameter	\
@@ -13,18 +12,23 @@ LOCAL_CFLAGS :=	\
 	$(LOCAL_CFLAGS)
 
 ifneq ($(REQUIRES_EH),1)
-LOCAL_CFLAGS +=	-fno-exceptions
+LOCAL_CFLAGS += -fno-exceptions
 else
 REQUIRES_EH := 0
 LOCAL_CFLAGS += -fexceptions
 endif
 
 ifneq ($(REQUIRES_RTTI),1)
-LOCAL_CFLAGS +=	-fno-rtti
+LOCAL_CFLAGS += -fno-rtti
 else
 REQUIRES_RTTI := 0
 endif
 
+LOCAL_CPPFLAGS :=	\
+	$(LOCAL_CPPFLAGS)	\
+	$(LOCAL_CFLAGS)	\
+	-Woverloaded-virtual
+	
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\
 	$(LLVM_ROOT_PATH)	\

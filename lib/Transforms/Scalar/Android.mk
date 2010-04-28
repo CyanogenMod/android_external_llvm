@@ -23,7 +23,6 @@ transforms_scalar_SRC_FILES :=	\
 	Reassociate.cpp	\
 	Reg2Mem.cpp	\
 	SCCP.cpp	\
-	SCCVN.cpp	\
 	Scalar.cpp	\
 	ScalarReplAggregates.cpp	\
 	SimplifyCFGPass.cpp	\

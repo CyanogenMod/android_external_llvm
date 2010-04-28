@@ -14,6 +14,7 @@
 #include "X86MCAsmInfo.h"
 #include "X86TargetMachine.h"
 #include "llvm/ADT/Triple.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/Support/CommandLine.h"
 using namespace llvm;
@@ -68,10 +69,9 @@ X86MCAsmInfoDarwin::X86MCAsmInfoDarwin(const Triple &Triple) {
 
   // Exceptions handling
   ExceptionsType = ExceptionHandling::Dwarf;
-  AbsoluteEHSectionOffsets = false;
 }
 
-X86ELFMCAsmInfo::X86ELFMCAsmInfo(const Triple &Triple) {
+X86ELFMCAsmInfo::X86ELFMCAsmInfo(const Triple &T) {
   AsmTransCBE = x86_asm_table;
   AssemblerDialect = AsmWriterFlavor;
 
@@ -85,17 +85,21 @@ X86ELFMCAsmInfo::X86ELFMCAsmInfo(const Triple &Triple) {
   HasLEB128 = true;  // Target asm supports leb128 directives (little-endian)
 
   // Debug Information
-  AbsoluteDebugSectionOffsets = true;
   SupportsDebugInformation = true;
 
   // Exceptions handling
   ExceptionsType = ExceptionHandling::Dwarf;
-  AbsoluteEHSectionOffsets = false;
+  
+  // OpenBSD has buggy support for .quad in 32-bit mode, just split into two
+  // .words.
+  if (T.getOS() == Triple::OpenBSD && T.getArch() == Triple::x86)
+    Data64bitsDirective = 0;
 }
 
-MCSection *X86ELFMCAsmInfo::getNonexecutableStackSection(MCContext &Ctx) const {
-  return MCSectionELF::Create(".note.GNU-stack", MCSectionELF::SHT_PROGBITS,
-                              0, SectionKind::getMetadata(), false, Ctx);
+const MCSection *X86ELFMCAsmInfo::
+getNonexecutableStackSection(MCContext &Ctx) const {
+  return Ctx.getELFSection(".note.GNU-stack", MCSectionELF::SHT_PROGBITS,
+                           0, SectionKind::getMetadata(), false);
 }
 
 X86MCAsmInfoCOFF::X86MCAsmInfoCOFF(const Triple &Triple) {

@@ -43,7 +43,6 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include <cstdlib>
-using namespace llvm;
 
 // FIXME This disables some code that aligns the stack to a boundary
 // bigger than the default (16 bytes on Darwin) when there is a stack local
@@ -56,14 +55,19 @@ using namespace llvm;
 #define ALIGN_STACK 0
 
 // FIXME (64-bit): Eventually enable by default.
+namespace llvm {
 cl::opt<bool> EnablePPC32RS("enable-ppc32-regscavenger",
-                            cl::init(false),
-                            cl::desc("Enable PPC32 register scavenger"),
-                            cl::Hidden);
+                                   cl::init(false),
+                                   cl::desc("Enable PPC32 register scavenger"),
+                                   cl::Hidden);
 cl::opt<bool> EnablePPC64RS("enable-ppc64-regscavenger",
-                            cl::init(false),
-                            cl::desc("Enable PPC64 register scavenger"),
-                            cl::Hidden);
+                                   cl::init(false),
+                                   cl::desc("Enable PPC64 register scavenger"),
+                                   cl::Hidden);
+}
+
+using namespace llvm;
+
 #define EnableRegisterScavenging \
   ((EnablePPC32RS && !Subtarget.isPPC64()) || \
    (EnablePPC64RS && Subtarget.isPPC64()))
@@ -405,7 +409,7 @@ PPCRegisterInfo::getCalleeSavedRegClasses(const MachineFunction *MF) const {
 //
 static bool needsFP(const MachineFunction &MF) {
   const MachineFrameInfo *MFI = MF.getFrameInfo();
-  return NoFramePointerElim || MFI->hasVarSizedObjects() ||
+  return DisableFramePointerElim(MF) || MFI->hasVarSizedObjects() ||
     (GuaranteedTailCallOpt && MF.getInfo<PPCFunctionInfo>()->hasFastCall());
 }
 
@@ -512,7 +516,7 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
       MachineInstr *MI = I;
       DebugLoc dl = MI->getDebugLoc();
 
-      if (isInt16(CalleeAmt)) {
+      if (isInt<16>(CalleeAmt)) {
         BuildMI(MBB, I, dl, TII.get(ADDIInstr), StackReg).addReg(StackReg).
           addImm(CalleeAmt);
       } else {
@@ -596,7 +600,7 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
   else
     Reg = PPC::R0;
   
-  if (MaxAlign < TargetAlign && isInt16(FrameSize)) {
+  if (MaxAlign < TargetAlign && isInt<16>(FrameSize)) {
     BuildMI(MBB, II, dl, TII.get(PPC::ADDI), Reg)
       .addReg(PPC::R31)
       .addImm(FrameSize);
@@ -713,7 +717,7 @@ void PPCRegisterInfo::lowerCRSpilling(MachineBasicBlock::iterator II,
 
 unsigned
 PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
-                                     int SPAdj, int *Value,
+                                     int SPAdj, FrameIndexValue *Value,
                                      RegScavenger *RS) const {
   assert(SPAdj == 0 && "Unexpected");
 
@@ -798,7 +802,7 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   // clear can be encoded.  This is extremely uncommon, because normally you
   // only "std" to a stack slot that is at least 4-byte aligned, but it can
   // happen in invalid code.
-  if (isInt16(Offset) && (!isIXAddr || (Offset & 3) == 0)) {
+  if (isInt<16>(Offset) && (!isIXAddr || (Offset & 3) == 0)) {
     if (isIXAddr)
       Offset >>= 2;    // The actual encoded value has the low two bits zero.
     MI.getOperand(OffsetOperandNo).ChangeToImmediate(Offset);
@@ -1280,14 +1284,14 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
   MachineBasicBlock &MBB = MF.front();   // Prolog goes in entry BB
   MachineBasicBlock::iterator MBBI = MBB.begin();
   MachineFrameInfo *MFI = MF.getFrameInfo();
-  MachineModuleInfo *MMI = MFI->getMachineModuleInfo();
-  DebugLoc dl = DebugLoc::getUnknownLoc();
-  bool needsFrameMoves = (MMI && MMI->hasDebugInfo()) ||
+  MachineModuleInfo &MMI = MF.getMMI();
+  DebugLoc dl;
+  bool needsFrameMoves = MMI.hasDebugInfo() ||
        !MF.getFunction()->doesNotThrow() ||
        UnwindTablesMandatory;
   
   // Prepare for frame info.
-  unsigned FrameLabelId = 0;
+  MCSymbol *FrameLabel = 0;
 
   // Scan the prolog, looking for an UPDATE_VRSAVE instruction.  If we find it,
   // process it.
@@ -1375,8 +1379,9 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
   if (!isPPC64) {
     // PPC32.
     if (ALIGN_STACK && MaxAlign > TargetAlign) {
-      assert(isPowerOf2_32(MaxAlign)&&isInt16(MaxAlign)&&"Invalid alignment!");
-      assert(isInt16(NegFrameSize) && "Unhandled stack size and alignment!");
+      assert(isPowerOf2_32(MaxAlign) && isInt<16>(MaxAlign) &&
+             "Invalid alignment!");
+      assert(isInt<16>(NegFrameSize) && "Unhandled stack size and alignment!");
 
       BuildMI(MBB, MBBI, dl, TII.get(PPC::RLWINM), PPC::R0)
         .addReg(PPC::R1)
@@ -1390,7 +1395,7 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
         .addReg(PPC::R1)
         .addReg(PPC::R1)
         .addReg(PPC::R0);
-    } else if (isInt16(NegFrameSize)) {
+    } else if (isInt<16>(NegFrameSize)) {
       BuildMI(MBB, MBBI, dl, TII.get(PPC::STWU), PPC::R1)
         .addReg(PPC::R1)
         .addImm(NegFrameSize)
@@ -1408,8 +1413,9 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
     }
   } else {    // PPC64.
     if (ALIGN_STACK && MaxAlign > TargetAlign) {
-      assert(isPowerOf2_32(MaxAlign)&&isInt16(MaxAlign)&&"Invalid alignment!");
-      assert(isInt16(NegFrameSize) && "Unhandled stack size and alignment!");
+      assert(isPowerOf2_32(MaxAlign) && isInt<16>(MaxAlign) &&
+             "Invalid alignment!");
+      assert(isInt<16>(NegFrameSize) && "Unhandled stack size and alignment!");
 
       BuildMI(MBB, MBBI, dl, TII.get(PPC::RLDICL), PPC::X0)
         .addReg(PPC::X1)
@@ -1422,7 +1428,7 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
         .addReg(PPC::X1)
         .addReg(PPC::X1)
         .addReg(PPC::X0);
-    } else if (isInt16(NegFrameSize)) {
+    } else if (isInt<16>(NegFrameSize)) {
       BuildMI(MBB, MBBI, dl, TII.get(PPC::STDU), PPC::X1)
         .addReg(PPC::X1)
         .addImm(NegFrameSize / 4)
@@ -1440,39 +1446,39 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
     }
   }
 
-  std::vector<MachineMove> &Moves = MMI->getFrameMoves();
+  std::vector<MachineMove> &Moves = MMI.getFrameMoves();
   
   // Add the "machine moves" for the instructions we generated above, but in
   // reverse order.
   if (needsFrameMoves) {
     // Mark effective beginning of when frame pointer becomes valid.
-    FrameLabelId = MMI->NextLabelID();
-    BuildMI(MBB, MBBI, dl, TII.get(PPC::DBG_LABEL)).addImm(FrameLabelId);
+    FrameLabel = MMI.getContext().CreateTempSymbol();
+    BuildMI(MBB, MBBI, dl, TII.get(PPC::DBG_LABEL)).addSym(FrameLabel);
   
     // Show update of SP.
     if (NegFrameSize) {
       MachineLocation SPDst(MachineLocation::VirtualFP);
       MachineLocation SPSrc(MachineLocation::VirtualFP, NegFrameSize);
-      Moves.push_back(MachineMove(FrameLabelId, SPDst, SPSrc));
+      Moves.push_back(MachineMove(FrameLabel, SPDst, SPSrc));
     } else {
       MachineLocation SP(isPPC64 ? PPC::X31 : PPC::R31);
-      Moves.push_back(MachineMove(FrameLabelId, SP, SP));
+      Moves.push_back(MachineMove(FrameLabel, SP, SP));
     }
     
     if (HasFP) {
       MachineLocation FPDst(MachineLocation::VirtualFP, FPOffset);
       MachineLocation FPSrc(isPPC64 ? PPC::X31 : PPC::R31);
-      Moves.push_back(MachineMove(FrameLabelId, FPDst, FPSrc));
+      Moves.push_back(MachineMove(FrameLabel, FPDst, FPSrc));
     }
 
     if (MustSaveLR) {
       MachineLocation LRDst(MachineLocation::VirtualFP, LROffset);
       MachineLocation LRSrc(isPPC64 ? PPC::LR8 : PPC::LR);
-      Moves.push_back(MachineMove(FrameLabelId, LRDst, LRSrc));
+      Moves.push_back(MachineMove(FrameLabel, LRDst, LRSrc));
     }
   }
 
-  unsigned ReadyLabelId = 0;
+  MCSymbol *ReadyLabel = 0;
 
   // If there is a frame pointer, copy R1 into R31
   if (HasFP) {
@@ -1487,20 +1493,20 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
     }
 
     if (needsFrameMoves) {
-      ReadyLabelId = MMI->NextLabelID();
+      ReadyLabel = MMI.getContext().CreateTempSymbol();
 
       // Mark effective beginning of when frame pointer is ready.
-      BuildMI(MBB, MBBI, dl, TII.get(PPC::DBG_LABEL)).addImm(ReadyLabelId);
+      BuildMI(MBB, MBBI, dl, TII.get(PPC::DBG_LABEL)).addSym(ReadyLabel);
 
       MachineLocation FPDst(HasFP ? (isPPC64 ? PPC::X31 : PPC::R31) :
                                     (isPPC64 ? PPC::X1 : PPC::R1));
       MachineLocation FPSrc(MachineLocation::VirtualFP);
-      Moves.push_back(MachineMove(ReadyLabelId, FPDst, FPSrc));
+      Moves.push_back(MachineMove(ReadyLabel, FPDst, FPSrc));
     }
   }
 
   if (needsFrameMoves) {
-    unsigned LabelId = HasFP ? ReadyLabelId : FrameLabelId;
+    MCSymbol *Label = HasFP ? ReadyLabel : FrameLabel;
 
     // Add callee saved registers to move list.
     const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
@@ -1510,7 +1516,7 @@ PPCRegisterInfo::emitPrologue(MachineFunction &MF) const {
       if (Reg == PPC::LR || Reg == PPC::LR8 || Reg == PPC::RM) continue;
       MachineLocation CSDst(MachineLocation::VirtualFP, Offset);
       MachineLocation CSSrc(Reg);
-      Moves.push_back(MachineMove(LabelId, CSDst, CSSrc));
+      Moves.push_back(MachineMove(Label, CSDst, CSSrc));
     }
   }
 }
@@ -1519,7 +1525,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
                                    MachineBasicBlock &MBB) const {
   MachineBasicBlock::iterator MBBI = prior(MBB.end());
   unsigned RetOpcode = MBBI->getOpcode();
-  DebugLoc dl = DebugLoc::getUnknownLoc();
+  DebugLoc dl;
 
   assert( (RetOpcode == PPC::BLR ||
            RetOpcode == PPC::TCRETURNri ||
@@ -1591,7 +1597,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
       // enabled (=> hasFastCall()==true) the fastcc call might contain a tail
       // call which invalidates the stack pointer value in SP(0). So we use the
       // value of R31 in this case.
-      if (FI->hasFastCall() && isInt16(FrameSize)) {
+      if (FI->hasFastCall() && isInt<16>(FrameSize)) {
         assert(hasFP(MF) && "Expecting a valid the frame pointer.");
         BuildMI(MBB, MBBI, dl, TII.get(PPC::ADDI), PPC::R1)
           .addReg(PPC::R31).addImm(FrameSize);
@@ -1605,7 +1611,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
           .addReg(PPC::R1)
           .addReg(PPC::R31)
           .addReg(PPC::R0);
-      } else if (isInt16(FrameSize) &&
+      } else if (isInt<16>(FrameSize) &&
                  (!ALIGN_STACK || TargetAlign >= MaxAlign) &&
                  !MFI->hasVarSizedObjects()) {
         BuildMI(MBB, MBBI, dl, TII.get(PPC::ADDI), PPC::R1)
@@ -1615,7 +1621,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
           .addImm(0).addReg(PPC::R1);
       }
     } else {
-      if (FI->hasFastCall() && isInt16(FrameSize)) {
+      if (FI->hasFastCall() && isInt<16>(FrameSize)) {
         assert(hasFP(MF) && "Expecting a valid the frame pointer.");
         BuildMI(MBB, MBBI, dl, TII.get(PPC::ADDI8), PPC::X1)
           .addReg(PPC::X31).addImm(FrameSize);
@@ -1629,7 +1635,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
           .addReg(PPC::X1)
           .addReg(PPC::X31)
           .addReg(PPC::X0);
-      } else if (isInt16(FrameSize) && TargetAlign >= MaxAlign &&
+      } else if (isInt<16>(FrameSize) && TargetAlign >= MaxAlign &&
             !MFI->hasVarSizedObjects()) {
         BuildMI(MBB, MBBI, dl, TII.get(PPC::ADDI8), PPC::X1)
            .addReg(PPC::X1).addImm(FrameSize);
@@ -1678,7 +1684,7 @@ void PPCRegisterInfo::emitEpilogue(MachineFunction &MF,
      unsigned LISInstr = isPPC64 ? PPC::LIS8 : PPC::LIS;
      unsigned ORIInstr = isPPC64 ? PPC::ORI8 : PPC::ORI;
 
-     if (CallerAllocatedAmt && isInt16(CallerAllocatedAmt)) {
+     if (CallerAllocatedAmt && isInt<16>(CallerAllocatedAmt)) {
        BuildMI(MBB, MBBI, dl, TII.get(ADDIInstr), StackReg)
          .addReg(StackReg).addImm(CallerAllocatedAmt);
      } else {

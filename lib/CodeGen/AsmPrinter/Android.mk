@@ -5,9 +5,6 @@ codegen_asmprinter_SRC_FILES :=	\
 	DIE.cpp	\
 	DwarfDebug.cpp	\
 	DwarfException.cpp	\
-	DwarfLabel.cpp	\
-	DwarfPrinter.cpp	\
-	DwarfWriter.cpp	\
 	OcamlGCPrinter.cpp
 
 # For the host

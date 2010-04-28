@@ -388,7 +388,6 @@ endif
 # If REQUIRES_RTTI=1 is specified then don't disable run-time type id.
 ifneq ($(REQUIRES_RTTI), 1)
   CXX.Flags += -fno-rtti
-  CXXFLAGS += -fno-rtti
 endif
 
 ifdef ENABLE_COVERAGE
@@ -561,7 +560,7 @@ ifeq ($(HOST_OS),Darwin)
   # Get "4" out of 10.4 for later pieces in the makefile.
   DARWIN_MAJVERS := $(shell echo $(DARWIN_VERSION)| sed -E 's/10.([0-9]).*/\1/')
 
-  SharedLinkOptions=-Wl,-flat_namespace -Wl,-undefined -Wl,suppress \
+  SharedLinkOptions=-Wl,-flat_namespace -Wl,-undefined,suppress \
                     -dynamiclib
   ifneq ($(ARCH),ARM)
     SharedLinkOptions += -mmacosx-version-min=$(DARWIN_VERSION)
@@ -578,16 +577,7 @@ endif
 ifeq ($(TARGET_OS),Darwin)
   ifneq ($(ARCH),ARM)
     TargetCommonOpts += -mmacosx-version-min=$(DARWIN_VERSION)
-  else
-    TargetCommonOpts += -marm
   endif
-endif
-
-# Adjust LD.Flags depending on the kind of library that is to be built. Note
-# that if LOADABLE_MODULE is specified then the resulting shared library can
-# be opened with dlopen.
-ifdef LOADABLE_MODULE
-  LD.Flags += -module
 endif
 
 ifdef SHARED_LIBRARY
@@ -642,6 +632,8 @@ CompileCommonOpts += -pedantic -Wno-long-long
 endif
 CompileCommonOpts += -Wall -W -Wno-unused-parameter -Wwrite-strings \
                      $(EXTRA_OPTIONS)
+# Enable cast-qual for C++; the workaround is to use const_cast.
+CXX.Flags += -Wcast-qual
 
 ifeq ($(HOST_OS),HP-UX)
   CompileCommonOpts := -D_REENTRANT -D_HPUX_SOURCE
@@ -972,6 +964,36 @@ endif
 endif
 endif
 
+# Set up the library exports file.
+ifdef EXPORTED_SYMBOL_FILE
+
+# First, set up the native export file, which may differ from the source
+# export file.
+
+ifeq ($(HOST_OS),Darwin)
+# Darwin convention prefixes symbols with underscores.
+NativeExportsFile := $(ObjDir)/$(notdir $(EXPORTED_SYMBOL_FILE)).sed
+$(NativeExportsFile): $(EXPORTED_SYMBOL_FILE) $(ObjDir)/.dir
+	$(Verb) sed -e 's/[[:<:]]/_/' < $< > $@
+clean-local::
+	-$(Verb) $(RM) -f $(NativeExportsFile)
+else
+NativeExportsFile := $(EXPORTED_SYMBOL_FILE)
+endif
+
+# Now add the linker command-line options to use the native export file.
+
+ifeq ($(HOST_OS),Darwin)
+LLVMLibsOptions += -Wl,-exported_symbols_list,$(NativeExportsFile)
+endif
+
+# gold, bfd ld, etc.
+ifeq ($(HAVE_LINK_RETAIN_SYMBOLS_FILE),1)
+LLVMLibsOptions += -Wl,-retain-symbols-file,$(NativeExportsFile)
+endif
+
+endif
+
 ###############################################################################
 # Library Build Rules: Four ways to build a library
 ###############################################################################
@@ -1061,6 +1083,10 @@ LibName.BCA:= $(LibDir)/lib$(LIBRARYNAME).bca
 ifdef SHARED_LIBRARY
 
 all-local:: $(LibName.SO)
+
+ifdef EXPORTED_SYMBOL_FILE
+$(LibName.SO): $(NativeExportsFile)
+endif
 
 ifdef LINK_LIBS_IN_SHARED
 ifdef LOADABLE_MODULE
@@ -1264,7 +1290,7 @@ ifeq ($(HOST_OS),Darwin)
 
 # Tiger tools don't support this.
 ifneq ($(DARWIN_MAJVERS),4)
-LD.Flags += -Wl,-exported_symbol -Wl,_main
+LD.Flags += -Wl,-exported_symbol,_main
 endif
 endif
 
@@ -1329,7 +1355,7 @@ uninstall-local::
 
 # TOOLALIAS install.
 ifdef TOOLALIAS
-DestToolAlias = $(PROJ_bindir)/$(TOOLALIAS)$(EXEEXT)
+DestToolAlias = $(DESTDIR)$(PROJ_bindir)/$(TOOLALIAS)$(EXEEXT)
 
 install-local:: $(DestToolAlias)
 
@@ -1613,6 +1639,11 @@ $(TARGET:%=$(ObjDir)/%GenIntrinsics.inc.tmp): \
 $(ObjDir)/%GenIntrinsics.inc.tmp : %.td $(ObjDir)/.dir
 	$(Echo) "Building $(<F) intrinsics information with tblgen"
 	$(Verb) $(TableGen) -gen-tgt-intrinsic -o $(call SYSPATH, $@) $<
+
+$(ObjDir)/ARMGenDecoderTables.inc.tmp : ARM.td $(ObjDir)/.dir
+	$(Echo) "Building $(<F) decoder tables with tblgen"
+	$(Verb) $(TableGen) -gen-arm-decoder -o $(call SYSPATH, $@) $<
+
 
 clean-local::
 	-$(Verb) $(RM) -f $(INCFiles)

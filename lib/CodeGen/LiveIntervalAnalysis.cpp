@@ -91,7 +91,7 @@ void LiveIntervals::releaseMemory() {
   r2iMap_.clear();
 
   // Release VNInfo memroy regions after all VNInfo objects are dtor'd.
-  VNInfoAllocator.Reset();
+  VNInfoAllocator.DestroyAll();
   while (!CloneMIs.empty()) {
     MachineInstr *MI = CloneMIs.back();
     CloneMIs.pop_back();
@@ -141,7 +141,7 @@ void LiveIntervals::printInstrs(raw_ostream &OS) const {
     for (MachineBasicBlock::iterator mii = mbbi->begin(),
            mie = mbbi->end(); mii != mie; ++mii) {
       if (mii->isDebugValue())
-        OS << SlotIndex::getEmptyKey() << '\t' << *mii;
+        OS << "    \t" << *mii;
       else
         OS << getInstructionIndex(mii) << '\t' << *mii;
     }
@@ -218,9 +218,9 @@ bool LiveIntervals::conflictsWithPhysReg(const LiveInterval &li,
   return false;
 }
 
-/// conflictsWithPhysRegRef - Similar to conflictsWithPhysRegRef except
-/// it can check use as well.
-bool LiveIntervals::conflictsWithPhysRegRef(LiveInterval &li,
+/// conflictsWithSubPhysRegRef - Similar to conflictsWithPhysRegRef except
+/// it checks for sub-register reference and it can check use as well.
+bool LiveIntervals::conflictsWithSubPhysRegRef(LiveInterval &li,
                                             unsigned Reg, bool CheckUse,
                                   SmallPtrSet<MachineInstr*,32> &JoinedCopies) {
   for (LiveInterval::Ranges::const_iterator
@@ -583,6 +583,16 @@ void LiveIntervals::handleLiveInRegister(MachineBasicBlock *MBB,
   // Look for kills, if it reaches a def before it's killed, then it shouldn't
   // be considered a livein.
   MachineBasicBlock::iterator mi = MBB->begin();
+  MachineBasicBlock::iterator E = MBB->end();
+  // Skip over DBG_VALUE at the start of the MBB.
+  if (mi != E && mi->isDebugValue()) {
+    while (++mi != E && mi->isDebugValue())
+      ;
+    if (mi == E)
+      // MBB is empty except for DBG_VALUE's.
+      return;
+  }
+
   SlotIndex baseIndex = MIIdx;
   SlotIndex start = baseIndex;
   if (getInstructionFromIndex(baseIndex) == 0)
@@ -591,15 +601,7 @@ void LiveIntervals::handleLiveInRegister(MachineBasicBlock *MBB,
   SlotIndex end = baseIndex;
   bool SeenDefUse = false;
 
-  MachineBasicBlock::iterator E = MBB->end();  
   while (mi != E) {
-    if (mi->isDebugValue()) {
-      ++mi;
-      if (mi != E && !mi->isDebugValue()) {
-        baseIndex = indexes_->getNextNonNullIndex(baseIndex);
-      }
-      continue;
-    }
     if (mi->killsRegister(interval.reg, tri_)) {
       DEBUG(dbgs() << " killed");
       end = baseIndex.getDefIndex();
@@ -616,10 +618,11 @@ void LiveIntervals::handleLiveInRegister(MachineBasicBlock *MBB,
       break;
     }
 
-    ++mi;
-    if (mi != E && !mi->isDebugValue()) {
+    while (++mi != E && mi->isDebugValue())
+      // Skip over DBG_VALUE.
+      ;
+    if (mi != E)
       baseIndex = indexes_->getNextNonNullIndex(baseIndex);
-    }
   }
 
   // Live-in register might not be used at all.
@@ -665,7 +668,7 @@ void LiveIntervals::computeIntervals() {
     DEBUG(dbgs() << MBB->getName() << ":\n");
 
     // Create intervals for live-ins to this BB first.
-    for (MachineBasicBlock::const_livein_iterator LI = MBB->livein_begin(),
+    for (MachineBasicBlock::livein_iterator LI = MBB->livein_begin(),
            LE = MBB->livein_end(); LI != LE; ++LI) {
       handleLiveInRegister(MBB, MIIndex, getOrCreateInterval(*LI));
       // Multiple live-ins can alias the same register.
@@ -816,8 +819,9 @@ bool LiveIntervals::isReMaterializable(const LiveInterval &li,
   unsigned ImpUse = getReMatImplicitUse(li, MI);
   if (ImpUse) {
     const LiveInterval &ImpLi = getInterval(ImpUse);
-    for (MachineRegisterInfo::use_iterator ri = mri_->use_begin(li.reg),
-           re = mri_->use_end(); ri != re; ++ri) {
+    for (MachineRegisterInfo::use_nodbg_iterator
+           ri = mri_->use_nodbg_begin(li.reg), re = mri_->use_nodbg_end();
+         ri != re; ++ri) {
       MachineInstr *UseMI = &*ri;
       SlotIndex UseIdx = getInstructionIndex(UseMI);
       if (li.FindLiveRangeContaining(UseIdx)->valno != ValNo)
@@ -1049,7 +1053,7 @@ rewriteInstructionForSpills(const LiveInterval &li, const VNInfo *VNI,
       // all of its uses are rematerialized, simply delete it.
       if (MI == ReMatOrigDefMI && CanDelete) {
         DEBUG(dbgs() << "\t\t\t\tErasing re-materializable def: "
-                     << MI << '\n');
+                     << *MI << '\n');
         RemoveMachineInstrFromMaps(MI);
         vrm.RemoveMachineInstrFromMaps(MI);
         MI->eraseFromParent();
@@ -1292,9 +1296,25 @@ rewriteInstructionsForSpills(const LiveInterval &li, bool TrySplit,
     MachineOperand &O = ri.getOperand();
     ++ri;
     if (MI->isDebugValue()) {
-      // Remove debug info for now.
-      O.setReg(0U);
+      // Modify DBG_VALUE now that the value is in a spill slot.
+      if (Slot == VirtRegMap::NO_STACK_SLOT) {
+        uint64_t Offset = MI->getOperand(1).getImm();
+        const MDNode *MDPtr = MI->getOperand(2).getMetadata();
+        DebugLoc DL = MI->getDebugLoc();
+        if (MachineInstr *NewDV = tii_->emitFrameIndexDebugValue(*mf_, Slot,
+                                                           Offset, MDPtr, DL)) {
+          DEBUG(dbgs() << "Modifying debug info due to spill:" << "\t" << *MI);
+          ReplaceMachineInstrInMaps(MI, NewDV);
+          MachineBasicBlock *MBB = MI->getParent();
+          MBB->insert(MBB->erase(MI), NewDV);
+          continue;
+        }
+      }
+
       DEBUG(dbgs() << "Removing debug info due to spill:" << "\t" << *MI);
+      RemoveMachineInstrFromMaps(MI);
+      vrm.RemoveMachineInstrFromMaps(MI);
+      MI->eraseFromParent();
       continue;
     }
     assert(!O.isImplicit() && "Spilling register that's used as implicit use?");
@@ -1517,6 +1537,12 @@ LiveIntervals::handleSpilledImpDefs(const LiveInterval &li, VirtRegMap &vrm,
     MachineOperand &O = ri.getOperand();
     MachineInstr *MI = &*ri;
     ++ri;
+    if (MI->isDebugValue()) {
+      // Remove debug info for now.
+      O.setReg(0U);
+      DEBUG(dbgs() << "Removing debug info due to spill:" << "\t" << *MI);
+      continue;
+    }
     if (O.isDef()) {
       assert(MI->isImplicitDef() &&
              "Register def was not rewritten?");
@@ -2009,6 +2035,8 @@ unsigned LiveIntervals::getNumConflictsWithPhysReg(const LiveInterval &li,
          E = mri_->reg_end(); I != E; ++I) {
     MachineOperand &O = I.getOperand();
     MachineInstr *MI = O.getParent();
+    if (MI->isDebugValue())
+      continue;
     SlotIndex Index = getInstructionIndex(MI);
     if (pli.liveAt(Index))
       ++NumConflicts;
@@ -2049,7 +2077,7 @@ bool LiveIntervals::spillPhysRegAroundRegDefsUses(const LiveInterval &li,
          E = mri_->reg_end(); I != E; ++I) {
     MachineOperand &O = I.getOperand();
     MachineInstr *MI = O.getParent();
-    if (SeenMIs.count(MI))
+    if (MI->isDebugValue() || SeenMIs.count(MI))
       continue;
     SeenMIs.insert(MI);
     SlotIndex Index = getInstructionIndex(MI);
@@ -2073,7 +2101,7 @@ bool LiveIntervals::spillPhysRegAroundRegDefsUses(const LiveInterval &li,
               << "constraints:\n";
           MI->print(Msg, tm_);
         }
-        llvm_report_error(Msg.str());
+        report_fatal_error(Msg.str());
       }
       for (const unsigned* AS = tri_->getSubRegisters(PReg); *AS; ++AS) {
         if (!hasInterval(*AS))

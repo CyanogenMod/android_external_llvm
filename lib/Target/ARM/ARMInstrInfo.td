@@ -21,7 +21,7 @@ def SDT_ARMCallSeqEnd   : SDCallSeqEnd<[ SDTCisVT<0, i32>, SDTCisVT<1, i32> ]>;
 
 def SDT_ARMSaveCallPC : SDTypeProfile<0, 1, []>;
 
-def SDT_ARMcall    : SDTypeProfile<0, -1, [SDTCisInt<0>]>;
+def SDT_ARMcall    : SDTypeProfile<0, -1, [SDTCisPtrTy<0>]>;
 
 def SDT_ARMCMov    : SDTypeProfile<1, 3,
                                    [SDTCisSameAs<0, 1>, SDTCisSameAs<0, 2>,
@@ -62,11 +62,14 @@ def ARMcallseq_end   : SDNode<"ISD::CALLSEQ_END",   SDT_ARMCallSeqEnd,
                               [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag]>;
 
 def ARMcall          : SDNode<"ARMISD::CALL", SDT_ARMcall,
-                              [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag]>;
+                              [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag,
+                               SDNPVariadic]>;
 def ARMcall_pred    : SDNode<"ARMISD::CALL_PRED", SDT_ARMcall,
-                              [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag]>;
+                              [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag,
+                               SDNPVariadic]>;
 def ARMcall_nolink   : SDNode<"ARMISD::CALL_NOLINK", SDT_ARMcall,
-                              [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag]>;
+                              [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag,
+                               SDNPVariadic]>;
 
 def ARMretflag       : SDNode<"ARMISD::RET_FLAG", SDTNone,
                               [SDNPHasChain, SDNPOptInFlag]>;
@@ -121,6 +124,7 @@ def HasV6     : Predicate<"Subtarget->hasV6Ops()">;
 def HasV6T2   : Predicate<"Subtarget->hasV6T2Ops()">;
 def NoV6T2    : Predicate<"!Subtarget->hasV6T2Ops()">;
 def HasV7     : Predicate<"Subtarget->hasV7Ops()">;
+def NoVFP     : Predicate<"!Subtarget->hasVFP2()">;
 def HasVFP2   : Predicate<"Subtarget->hasVFP2()">;
 def HasVFP3   : Predicate<"Subtarget->hasVFP3()">;
 def HasNEON   : Predicate<"Subtarget->hasNEON()">;
@@ -136,6 +140,8 @@ def IsNotDarwin : Predicate<"!Subtarget->isTargetDarwin()">;
 // FIXME: Eventually this will be just "hasV6T2Ops".
 def UseMovt   : Predicate<"Subtarget->useMovt()">;
 def DontUseMovt : Predicate<"!Subtarget->useMovt()">;
+
+def UseVMLx   : Predicate<"Subtarget->useVMLx()">;
 
 //===----------------------------------------------------------------------===//
 // ARM Flag Definitions.
@@ -282,7 +288,7 @@ def pclabel : Operand<i32> {
 
 // shifter_operand operands: so_reg and so_imm.
 def so_reg : Operand<i32>,    // reg reg imm
-            ComplexPattern<i32, 3, "SelectShifterOperandReg",
+             ComplexPattern<i32, 3, "SelectShifterOperandReg",
                             [shl,srl,sra,rotr]> {
   let PrintMethod = "printSORegOperand";
   let MIOperandInfo = (ops GPR, GPR, i32imm);
@@ -378,7 +384,7 @@ def am3offset : Operand<i32>,
 def addrmode4 : Operand<i32>,
                 ComplexPattern<i32, 2, "SelectAddrMode4", []> {
   let PrintMethod = "printAddrMode4Operand";
-  let MIOperandInfo = (ops GPR, i32imm);
+  let MIOperandInfo = (ops GPR:$addr, i32imm);
 }
 
 // addrmode5 := reg +/- imm8*4
@@ -386,15 +392,20 @@ def addrmode4 : Operand<i32>,
 def addrmode5 : Operand<i32>,
                 ComplexPattern<i32, 2, "SelectAddrMode5", []> {
   let PrintMethod = "printAddrMode5Operand";
-  let MIOperandInfo = (ops GPR, i32imm);
+  let MIOperandInfo = (ops GPR:$base, i32imm);
 }
 
 // addrmode6 := reg with optional writeback
 //
 def addrmode6 : Operand<i32>,
-                ComplexPattern<i32, 4, "SelectAddrMode6", []> {
+                ComplexPattern<i32, 2, "SelectAddrMode6", []> {
   let PrintMethod = "printAddrMode6Operand";
-  let MIOperandInfo = (ops GPR:$addr, GPR:$upd, i32imm, i32imm);
+  let MIOperandInfo = (ops GPR:$addr, i32imm);
+}
+
+def am6offset : Operand<i32> {
+  let PrintMethod = "printAddrMode6OffsetOperand";
+  let MIOperandInfo = (ops GPR);
 }
 
 // addrmodepc := pc + reg
@@ -710,7 +721,7 @@ def BKPT : AI<(outs), (ins i32imm:$val), MiscFrm, NoItinerary, "bkpt", "\t$val",
 // opt{5} = changemode from Inst{17}
 // opt{8-6} = AIF from Inst{8-6}
 // opt{10-9} = imod from Inst{19-18} with 0b10 as enable and 0b11 as disable
-def CPS : AXI<(outs),(ins i32imm:$opt), MiscFrm, NoItinerary, "cps${opt:cps}",
+def CPS : AXI<(outs), (ins cps_opt:$opt), MiscFrm, NoItinerary, "cps$opt",
               [/* For disassembly only; pattern left blank */]>,
           Requires<[IsARM]> {
   let Inst{31-28} = 0b1111;
@@ -721,9 +732,12 @@ def CPS : AXI<(outs),(ins i32imm:$opt), MiscFrm, NoItinerary, "cps${opt:cps}",
 
 // Preload signals the memory system of possible future data/instruction access.
 // These are for disassembly only.
+//
+// A8.6.117, A8.6.118.  Different instructions are generated for #0 and #-0.
+// The neg_zero operand translates -0 to -1, -1 to -2, ..., etc.
 multiclass APreLoad<bit data, bit read, string opc> {
 
-  def i : AXI<(outs), (ins GPR:$base, i32imm:$imm), MiscFrm, NoItinerary,
+  def i : AXI<(outs), (ins GPR:$base, neg_zero:$imm), MiscFrm, NoItinerary,
                !strconcat(opc, "\t[$base, $imm]"), []> {
     let Inst{31-26} = 0b111101;
     let Inst{25} = 0; // 0 for immediate form
@@ -903,10 +917,11 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
 // FIXME: Should pc be an implicit operand like PICADD, etc?
 let isReturn = 1, isTerminator = 1, isBarrier = 1, mayLoad = 1,
     hasExtraDefRegAllocReq = 1 in
-  def LDM_RET : AXI4ld<(outs),
-                    (ins addrmode4:$addr, pred:$p, reglist:$wb, variable_ops),
-                    LdStMulFrm, IIC_Br, "ldm${addr:submode}${p}\t$addr, $wb",
-                    []>;
+  def LDM_RET : AXI4ld<(outs GPR:$wb), (ins addrmode4:$addr, pred:$p,
+                                        reglist:$dsts, variable_ops),
+                       IndexModeUpd, LdStMulFrm, IIC_Br,
+                       "ldm${addr:submode}${p}\t$addr!, $dsts",
+                       "$addr.addr = $wb", []>;
 
 // On non-Darwin platforms R9 is callee-saved.
 let isCall = 1,
@@ -1217,7 +1232,7 @@ def LDRBT : AI2ldbpo<(outs GPR:$dst, GPR:$base_wb),
 }
 
 def LDRSBT : AI3ldsbpo<(outs GPR:$dst, GPR:$base_wb),
-                 (ins GPR:$base,am2offset:$offset), LdMiscFrm, IIC_iLoadru,
+                 (ins GPR:$base,am3offset:$offset), LdMiscFrm, IIC_iLoadru,
                  "ldrsbt", "\t$dst, [$base], $offset", "$base = $base_wb", []> {
   let Inst{21} = 1; // overwrite
 }
@@ -1341,17 +1356,31 @@ def STRHT: AI3sthpo<(outs GPR:$base_wb),
 //  Load / store multiple Instructions.
 //
 
-let mayLoad = 1, hasExtraDefRegAllocReq = 1 in
-def LDM : AXI4ld<(outs),
-               (ins addrmode4:$addr, pred:$p, reglist:$wb, variable_ops),
-               LdStMulFrm, IIC_iLoadm, "ldm${addr:submode}${p}\t$addr, $wb",
-               []>;
+let mayLoad = 1, hasExtraDefRegAllocReq = 1 in {
+def LDM : AXI4ld<(outs), (ins addrmode4:$addr, pred:$p,
+                          reglist:$dsts, variable_ops),
+                 IndexModeNone, LdStMulFrm, IIC_iLoadm,
+                 "ldm${addr:submode}${p}\t$addr, $dsts", "", []>;
 
-let mayStore = 1, hasExtraSrcRegAllocReq = 1 in
-def STM : AXI4st<(outs),
-               (ins addrmode4:$addr, pred:$p, reglist:$wb, variable_ops),
-               LdStMulFrm, IIC_iStorem, "stm${addr:submode}${p}\t$addr, $wb",
-               []>;
+def LDM_UPD : AXI4ld<(outs GPR:$wb), (ins addrmode4:$addr, pred:$p,
+                                      reglist:$dsts, variable_ops),
+                     IndexModeUpd, LdStMulFrm, IIC_iLoadm,
+                     "ldm${addr:submode}${p}\t$addr!, $dsts",
+                     "$addr.addr = $wb", []>;
+} // mayLoad, hasExtraDefRegAllocReq
+
+let mayStore = 1, hasExtraSrcRegAllocReq = 1 in {
+def STM : AXI4st<(outs), (ins addrmode4:$addr, pred:$p,
+                          reglist:$srcs, variable_ops),
+                 IndexModeNone, LdStMulFrm, IIC_iStorem,
+                 "stm${addr:submode}${p}\t$addr, $srcs", "", []>;
+
+def STM_UPD : AXI4st<(outs GPR:$wb), (ins addrmode4:$addr, pred:$p,
+                                      reglist:$srcs, variable_ops),
+                     IndexModeUpd, LdStMulFrm, IIC_iStorem,
+                     "stm${addr:submode}${p}\t$addr!, $srcs",
+                     "$addr.addr = $wb", []>;
+} // mayStore, hasExtraSrcRegAllocReq
 
 //===----------------------------------------------------------------------===//
 //  Move Instructions.
@@ -2505,7 +2534,23 @@ let Defs =
                                "mov\tr0, #0\n\t"
                                "add\tpc, pc, #0\n\t"
                                "mov\tr0, #1 @ eh_setjmp end", "",
-                         [(set R0, (ARMeh_sjlj_setjmp GPR:$src, GPR:$val))]>;
+                         [(set R0, (ARMeh_sjlj_setjmp GPR:$src, GPR:$val))]>,
+                           Requires<[IsARM, HasVFP2]>;
+}
+
+let Defs =
+  [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR ] in {
+  def Int_eh_sjlj_setjmp_nofp : XI<(outs), (ins GPR:$src, GPR:$val),
+                                   AddrModeNone, SizeSpecial, IndexModeNone,
+                                   Pseudo, NoItinerary,
+                                   "str\tsp, [$src, #+8] @ eh_setjmp begin\n\t"
+                                   "add\t$val, pc, #8\n\t"
+                                   "str\t$val, [$src, #+4]\n\t"
+                                   "mov\tr0, #0\n\t"
+                                   "add\tpc, pc, #0\n\t"
+                                   "mov\tr0, #1 @ eh_setjmp end", "",
+                         [(set R0, (ARMeh_sjlj_setjmp GPR:$src, GPR:$val))]>,
+                                Requires<[IsARM, NoVFP]>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2719,7 +2764,7 @@ multiclass LdStCop<bits<4> op31_28, bit load, string opc> {
 
   def L_OFFSET : ACI<(outs),
       (ins nohash_imm:$cop, nohash_imm:$CRd, addrmode2:$addr),
-      opc, "l\tp$cop, cr$CRd, $addr"> {
+      !strconcat(opc, "l"), "\tp$cop, cr$CRd, $addr"> {
     let Inst{31-28} = op31_28;
     let Inst{24} = 1; // P = 1
     let Inst{21} = 0; // W = 0
@@ -2729,7 +2774,7 @@ multiclass LdStCop<bits<4> op31_28, bit load, string opc> {
 
   def L_PRE : ACI<(outs),
       (ins nohash_imm:$cop, nohash_imm:$CRd, addrmode2:$addr),
-      opc, "l\tp$cop, cr$CRd, $addr!"> {
+      !strconcat(opc, "l"), "\tp$cop, cr$CRd, $addr!"> {
     let Inst{31-28} = op31_28;
     let Inst{24} = 1; // P = 1
     let Inst{21} = 1; // W = 1
@@ -2739,7 +2784,7 @@ multiclass LdStCop<bits<4> op31_28, bit load, string opc> {
 
   def L_POST : ACI<(outs),
       (ins nohash_imm:$cop, nohash_imm:$CRd, GPR:$base, am2offset:$offset),
-      opc, "l\tp$cop, cr$CRd, [$base], $offset"> {
+      !strconcat(opc, "l"), "\tp$cop, cr$CRd, [$base], $offset"> {
     let Inst{31-28} = op31_28;
     let Inst{24} = 0; // P = 0
     let Inst{21} = 1; // W = 1
@@ -2749,7 +2794,7 @@ multiclass LdStCop<bits<4> op31_28, bit load, string opc> {
 
   def L_OPTION : ACI<(outs),
       (ins nohash_imm:$cop, nohash_imm:$CRd, GPR:$base, nohash_imm:$option),
-      opc, "l\tp$cop, cr$CRd, [$base], $option"> {
+      !strconcat(opc, "l"), "\tp$cop, cr$CRd, [$base], $option"> {
     let Inst{31-28} = op31_28;
     let Inst{24} = 0; // P = 0
     let Inst{23} = 1; // U = 1
@@ -2844,29 +2889,29 @@ def MRSsys : ABI<0b0001,(outs GPR:$dst),(ins), NoItinerary,"mrs","\t$dst, spsr",
   let Inst{7-4} = 0b0000;
 }
 
-// FIXME: mask is ignored for the time being.
-def MSR : ABI<0b0001,(outs),(ins GPR:$src), NoItinerary, "msr", "\tcpsr, $src",
+def MSR : ABI<0b0001, (outs), (ins GPR:$src, msr_mask:$mask), NoItinerary,
+              "msr", "\tcpsr$mask, $src",
               [/* For disassembly only; pattern left blank */]> {
   let Inst{23-20} = 0b0010;
   let Inst{7-4} = 0b0000;
 }
 
-// FIXME: mask is ignored for the time being.
-def MSRi : ABI<0b0011,(outs),(ins so_imm:$a), NoItinerary, "msr", "\tcpsr, $a",
+def MSRi : ABI<0b0011, (outs), (ins so_imm:$a, msr_mask:$mask), NoItinerary,
+              "msr", "\tcpsr$mask, $a",
               [/* For disassembly only; pattern left blank */]> {
   let Inst{23-20} = 0b0010;
   let Inst{7-4} = 0b0000;
 }
 
-// FIXME: mask is ignored for the time being.
-def MSRsys : ABI<0b0001,(outs),(ins GPR:$src),NoItinerary,"msr","\tspsr, $src",
+def MSRsys : ABI<0b0001, (outs), (ins GPR:$src, msr_mask:$mask), NoItinerary,
+              "msr", "\tspsr$mask, $src",
               [/* For disassembly only; pattern left blank */]> {
   let Inst{23-20} = 0b0110;
   let Inst{7-4} = 0b0000;
 }
 
-// FIXME: mask is ignored for the time being.
-def MSRsysi : ABI<0b0011,(outs),(ins so_imm:$a),NoItinerary,"msr","\tspsr, $a",
+def MSRsysi : ABI<0b0011, (outs), (ins so_imm:$a, msr_mask:$mask), NoItinerary,
+              "msr", "\tspsr$mask, $a",
               [/* For disassembly only; pattern left blank */]> {
   let Inst{23-20} = 0b0110;
   let Inst{7-4} = 0b0000;

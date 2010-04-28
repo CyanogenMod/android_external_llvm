@@ -5,6 +5,7 @@ transforms_utils_SRC_FILES :=	\
 	BasicBlockUtils.cpp	\
 	BasicInliner.cpp	\
 	BreakCriticalEdges.cpp	\
+	BuildLibCalls.cpp	\
 	CloneFunction.cpp	\
 	CloneLoop.cpp	\
 	CloneModule.cpp	\

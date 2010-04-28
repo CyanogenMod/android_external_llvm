@@ -263,19 +263,6 @@ if anyone cared enough about sincos.
 
 //===---------------------------------------------------------------------===//
 
-Turn this into a single byte store with no load (the other 3 bytes are
-unmodified):
-
-define void @test(i32* %P) {
-	%tmp = load i32* %P
-        %tmp14 = or i32 %tmp, 3305111552
-        %tmp15 = and i32 %tmp14, 3321888767
-        store i32 %tmp15, i32* %P
-        ret void
-}
-
-//===---------------------------------------------------------------------===//
-
 quantum_sigma_x in 462.libquantum contains the following loop:
 
       for(i=0; i<reg->size; i++)
@@ -1819,3 +1806,32 @@ int test2(int mainType, int subType) {
 }
 
 //===---------------------------------------------------------------------===//
+
+The following test case (from PR6576):
+
+define i32 @mul(i32 %a, i32 %b) nounwind readnone {
+entry:
+ %cond1 = icmp eq i32 %b, 0                      ; <i1> [#uses=1]
+ br i1 %cond1, label %exit, label %bb.nph
+bb.nph:                                           ; preds = %entry
+ %tmp = mul i32 %b, %a                           ; <i32> [#uses=1]
+ ret i32 %tmp
+exit:                                             ; preds = %entry
+ ret i32 0
+}
+
+could be reduced to:
+
+define i32 @mul(i32 %a, i32 %b) nounwind readnone {
+entry:
+ %tmp = mul i32 %b, %a
+ ret i32 %tmp
+}
+
+//===---------------------------------------------------------------------===//
+
+We should use DSE + llvm.lifetime.end to delete dead vtable pointer updates.
+See GCC PR34949
+
+//===---------------------------------------------------------------------===//
+

@@ -224,7 +224,7 @@ static bool DominatesMergePoint(Value *V, BasicBlock *BB,
     if (BI->isUnconditional() && BI->getSuccessor(0) == BB) {
       if (!AggressiveInsts) return false;
       // Okay, it looks like the instruction IS in the "condition".  Check to
-      // see if its a cheap instruction to unconditionally compute, and if it
+      // see if it's a cheap instruction to unconditionally compute, and if it
       // only uses stuff defined outside of the condition.  If so, hoist it out.
       if (!I->isSafeToSpeculativelyExecute())
         return false;
@@ -1768,7 +1768,7 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
           Pred->getInstList().remove(II);   // Take out of symbol table
 
           // Insert the call now.
-          SmallVector<Value*,8> Args(II->op_begin()+3, II->op_end());
+          SmallVector<Value*,8> Args(II->op_begin(), II->op_end()-3);
           CallInst *CI = CallInst::Create(II->getCalledValue(),
                                           Args.begin(), Args.end(),
                                           II->getName(), BI);
@@ -1826,7 +1826,7 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
         // switch.
         if (BasicBlock *OnlyPred = BB->getSinglePredecessor())
           if (SimplifyEqualityComparisonWithOnlyPredecessor(BI, OnlyPred))
-            return SimplifyCFG(BB) || 1;
+            return SimplifyCFG(BB) | true;
 
         // This block must be empty, except for the setcond inst, if it exists.
         // Ignore dbg intrinsics.
@@ -1860,7 +1860,7 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
       // branches to us and one of our successors, fold the setcc into the
       // predecessor and use logical operations to pick the right destination.
       if (FoldBranchToCommonDest(BI))
-        return SimplifyCFG(BB) | 1;
+        return SimplifyCFG(BB) | true;
 
 
       // Scan predecessor blocks for conditional branches.
@@ -1970,13 +1970,13 @@ bool SimplifyCFGOpt::run(BasicBlock *BB) {
             II->removeFromParent();   // Take out of symbol table
 
             // Insert the call now...
-            SmallVector<Value*, 8> Args(II->op_begin()+3, II->op_end());
+            SmallVector<Value*, 8> Args(II->op_begin(), II->op_end()-3);
             CallInst *CI = CallInst::Create(II->getCalledValue(),
                                             Args.begin(), Args.end(),
                                             II->getName(), BI);
             CI->setCallingConv(II->getCallingConv());
             CI->setAttributes(II->getAttributes());
-            // If the invoke produced a value, the Call does now instead.
+            // If the invoke produced a value, the call does now instead.
             II->replaceAllUsesWith(CI);
             delete II;
             Changed = true;

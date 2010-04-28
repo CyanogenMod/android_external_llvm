@@ -13,8 +13,10 @@ tablegen(X86GenDAGISel.inc -gen-dag-isel)
 tablegen(X86GenFastISel.inc -gen-fast-isel)
 tablegen(X86GenCallingConv.inc -gen-callingconv)
 tablegen(X86GenSubtarget.inc -gen-subtarget)
+tablegen(X86GenEDInfo.inc -gen-enhanced-disassembly-info)
 
 set(sources
+  SSEDomainFix.cpp
   X86AsmBackend.cpp
   X86CodeEmitter.cpp
   X86COFFMachineModuleInfo.cpp
@@ -27,12 +29,12 @@ set(sources
   X86JITInfo.cpp
   X86MCAsmInfo.cpp
   X86MCCodeEmitter.cpp 
-  X86MCTargetExpr.cpp
   X86RegisterInfo.cpp
   X86Subtarget.cpp
   X86TargetMachine.cpp
   X86TargetObjectFile.cpp
   X86FastISel.cpp
+  X86SelectionDAGInfo.cpp
   )
 
 if( CMAKE_CL_64 )

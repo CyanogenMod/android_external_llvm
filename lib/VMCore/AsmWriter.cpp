@@ -227,13 +227,15 @@ void TypePrinting::CalcTypeName(const Type *Ty,
     const StructType *STy = cast<StructType>(Ty);
     if (STy->isPacked())
       OS << '<';
-    OS << "{ ";
+    OS << '{';
     for (StructType::element_iterator I = STy->element_begin(),
          E = STy->element_end(); I != E; ++I) {
-      CalcTypeName(*I, TypeStack, OS);
-      if (next(I) != STy->element_end())
-        OS << ',';
       OS << ' ';
+      CalcTypeName(*I, TypeStack, OS);
+      if (next(I) == STy->element_end())
+        OS << ' ';
+      else
+        OS << ',';
     }
     OS << '}';
     if (STy->isPacked())
@@ -242,13 +244,15 @@ void TypePrinting::CalcTypeName(const Type *Ty,
   }
   case Type::UnionTyID: {
     const UnionType *UTy = cast<UnionType>(Ty);
-    OS << "union { ";
+    OS << "union {";
     for (StructType::element_iterator I = UTy->element_begin(),
          E = UTy->element_end(); I != E; ++I) {
-      CalcTypeName(*I, TypeStack, OS);
-      if (next(I) != UTy->element_end())
-        OS << ',';
       OS << ' ';
+      CalcTypeName(*I, TypeStack, OS);
+      if (next(I) == UTy->element_end())
+        OS << ' ';
+      else
+        OS << ',';
     }
     OS << '}';
     break;
@@ -1027,6 +1031,15 @@ static void WriteConstantInt(raw_ostream &Out, const Constant *CV,
     return;
   }
 
+  if (const ConstantUnion *CU = dyn_cast<ConstantUnion>(CV)) {
+    Out << "{ ";
+    TypePrinter.print(CU->getOperand(0)->getType(), Out);
+    Out << ' ';
+    WriteAsOperandInternal(Out, CU->getOperand(0), &TypePrinter, Machine);
+    Out << " }";
+    return;
+  }
+  
   if (const ConstantVector *CP = dyn_cast<ConstantVector>(CV)) {
     const Type *ETy = CP->getType()->getElementType();
     assert(CP->getNumOperands() > 0 &&
@@ -1672,7 +1685,7 @@ void AssemblyWriter::printBasicBlock(const BasicBlock *BB) {
     // Output predecessors for the block...
     Out.PadToColumn(50);
     Out << ";";
-    pred_const_iterator PI = pred_begin(BB), PE = pred_end(BB);
+    const_pred_iterator PI = pred_begin(BB), PE = pred_end(BB);
 
     if (PI == PE) {
       Out << " No predecessors!";
@@ -1866,6 +1879,7 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
     if (PAL.getFnAttributes() != Attribute::None)
       Out << ' ' << Attribute::getAsString(PAL.getFnAttributes());
   } else if (const InvokeInst *II = dyn_cast<InvokeInst>(&I)) {
+    Operand = II->getCalledValue();
     const PointerType    *PTy = cast<PointerType>(Operand->getType());
     const FunctionType   *FTy = cast<FunctionType>(PTy->getElementType());
     const Type         *RetTy = FTy->getReturnType();
@@ -1903,10 +1917,10 @@ void AssemblyWriter::printInstruction(const Instruction &I) {
       writeOperand(Operand, true);
     }
     Out << '(';
-    for (unsigned op = 3, Eop = I.getNumOperands(); op < Eop; ++op) {
-      if (op > 3)
+    for (unsigned op = 0, Eop = I.getNumOperands() - 3; op < Eop; ++op) {
+      if (op)
         Out << ", ";
-      writeParamOperand(I.getOperand(op), PAL.getParamAttributes(op-2));
+      writeParamOperand(I.getOperand(op), PAL.getParamAttributes(op + 1));
     }
 
     Out << ')';

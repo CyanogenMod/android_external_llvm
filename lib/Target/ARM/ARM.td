@@ -40,6 +40,23 @@ def FeatureNEON : SubtargetFeature<"neon", "ARMFPUType", "NEON",
                                    "Enable NEON instructions">;
 def FeatureThumb2 : SubtargetFeature<"thumb2", "ThumbMode", "Thumb2",
                                      "Enable Thumb2 instructions">;
+def FeatureFP16   : SubtargetFeature<"fp16", "HasFP16", "true",
+                                     "Enable half-precision floating point">;
+
+// Some processors have multiply-accumulate instructions that don't
+// play nicely with other VFP instructions, and it's generally better
+// to just not use them.
+// FIXME: Currently, this is only flagged for Cortex-A8. It may be true for
+// others as well. We should do more benchmarking and confirm one way or
+// the other.
+def FeatureHasSlowVMLx   : SubtargetFeature<"vmlx", "SlowVMLx", "true",
+                                            "Disable VFP MAC instructions">;
+// Some processors benefit from using NEON instructions for scalar
+// single-precision FP operations.
+def FeatureNEONForFP : SubtargetFeature<"neonfp", "UseNEONForSinglePrecisionFP",
+                                        "true",
+                                        "Use NEON for single precision FP">;
+
 
 //===----------------------------------------------------------------------===//
 // ARM Processors supported.
@@ -90,7 +107,8 @@ def : ProcNoItin<"iwmmxt",          [ArchV5TE]>;
 
 // V6 Processors.
 def : Processor<"arm1136j-s",       ARMV6Itineraries, [ArchV6]>;
-def : Processor<"arm1136jf-s",      ARMV6Itineraries, [ArchV6, FeatureVFP2]>;
+def : Processor<"arm1136jf-s",      ARMV6Itineraries, [ArchV6, FeatureVFP2,
+                                                       FeatureHasSlowVMLx]>;
 def : Processor<"arm1176jz-s",      ARMV6Itineraries, [ArchV6]>;
 def : Processor<"arm1176jzf-s",     ARMV6Itineraries, [ArchV6, FeatureVFP2]>;
 def : Processor<"mpcorenovfp",      ARMV6Itineraries, [ArchV6]>;
@@ -104,8 +122,10 @@ def : Processor<"arm1156t2f-s",    ARMV6Itineraries,
 
 // V7 Processors.
 def : Processor<"cortex-a8",        CortexA8Itineraries,
+                [ArchV7A, FeatureThumb2, FeatureNEON, FeatureHasSlowVMLx,
+                 FeatureNEONForFP]>;
+def : Processor<"cortex-a9",        CortexA9Itineraries,
                 [ArchV7A, FeatureThumb2, FeatureNEON]>;
-def : ProcNoItin<"cortex-a9",       [ArchV7A, FeatureThumb2, FeatureNEON]>;
 
 //===----------------------------------------------------------------------===//
 // Register File Description
@@ -121,23 +141,7 @@ include "ARMCallingConv.td"
 
 include "ARMInstrInfo.td"
 
-def ARMInstrInfo : InstrInfo {
-  // Define how we want to layout our target-specific information field.
-  let TSFlagsFields = ["AddrModeBits",
-                       "SizeFlag",
-                       "IndexModeBits",
-                       "Form",
-                       "isUnaryDataProc",
-                       "canXformTo16Bit",
-                       "Dom"];
-  let TSFlagsShifts = [0,
-                       4,
-                       7,
-                       9,
-                       15,
-                       16,
-                       17];
-}
+def ARMInstrInfo : InstrInfo;
 
 //===----------------------------------------------------------------------===//
 // Declare the target which we are implementing

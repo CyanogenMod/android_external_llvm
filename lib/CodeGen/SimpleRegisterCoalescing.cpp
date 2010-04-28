@@ -31,6 +31,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/STLExtras.h"
@@ -56,11 +57,6 @@ EnableJoining("join-liveintervals",
 static cl::opt<bool>
 DisableCrossClassJoin("disable-cross-class-join",
                cl::desc("Avoid coalescing cross register class copies"),
-               cl::init(false), cl::Hidden);
-
-static cl::opt<bool>
-PhysJoinTweak("tweak-phys-join-heuristics",
-               cl::desc("Tweak heuristics for joining phys reg with vr"),
                cl::init(false), cl::Hidden);
 
 static RegisterPass<SimpleRegisterCoalescing>
@@ -808,7 +804,8 @@ SimpleRegisterCoalescing::UpdateRegDefsUses(unsigned SrcReg, unsigned DstReg,
           CopySrcReg == SrcReg && CopyDstReg != UseDstReg) {
         // If the use is a copy and it won't be coalesced away, and its source
         // is defined by a trivial computation, try to rematerialize it instead.
-        if (ReMaterializeTrivialDef(li_->getInterval(SrcReg), CopyDstReg,
+        if (!JoinedCopies.count(UseMI) &&
+            ReMaterializeTrivialDef(li_->getInterval(SrcReg), CopyDstReg,
                                     CopyDstSubIdx, UseMI))
           continue;
       }
@@ -1172,20 +1169,44 @@ SimpleRegisterCoalescing::isWinToJoinVRWithDstPhysReg(MachineInstr *CopyMI,
 /// isWinToJoinCrossClass - Return true if it's profitable to coalesce
 /// two virtual registers from different register classes.
 bool
-SimpleRegisterCoalescing::isWinToJoinCrossClass(unsigned LargeReg,
-                                                unsigned SmallReg,
-                                                unsigned Threshold) {
-  // Then make sure the intervals are *short*.
-  LiveInterval &LargeInt = li_->getInterval(LargeReg);
-  LiveInterval &SmallInt = li_->getInterval(SmallReg);
-  unsigned LargeSize = li_->getApproximateInstructionCount(LargeInt);
-  unsigned SmallSize = li_->getApproximateInstructionCount(SmallInt);
-  if (LargeSize > Threshold) {
-    unsigned SmallUses = std::distance(mri_->use_nodbg_begin(SmallReg),
-                                       mri_->use_nodbg_end());
-    unsigned LargeUses = std::distance(mri_->use_nodbg_begin(LargeReg),
-                                       mri_->use_nodbg_end());
-    if (SmallUses*LargeSize < LargeUses*SmallSize)
+SimpleRegisterCoalescing::isWinToJoinCrossClass(unsigned SrcReg,
+                                                unsigned DstReg,
+                                             const TargetRegisterClass *SrcRC,
+                                             const TargetRegisterClass *DstRC,
+                                             const TargetRegisterClass *NewRC) {
+  unsigned NewRCCount = allocatableRCRegs_[NewRC].count();
+  // This heuristics is good enough in practice, but it's obviously not *right*.
+  // 4 is a magic number that works well enough for x86, ARM, etc. It filter
+  // out all but the most restrictive register classes.
+  if (NewRCCount > 4 ||
+      // Early exit if the function is fairly small, coalesce aggressively if
+      // that's the case. For really special register classes with 3 or
+      // fewer registers, be a bit more careful.
+      (li_->getFuncInstructionCount() / NewRCCount) < 8)
+    return true;
+  LiveInterval &SrcInt = li_->getInterval(SrcReg);
+  LiveInterval &DstInt = li_->getInterval(DstReg);
+  unsigned SrcSize = li_->getApproximateInstructionCount(SrcInt);
+  unsigned DstSize = li_->getApproximateInstructionCount(DstInt);
+  if (SrcSize <= NewRCCount && DstSize <= NewRCCount)
+    return true;
+  // Estimate *register use density*. If it doubles or more, abort.
+  unsigned SrcUses = std::distance(mri_->use_nodbg_begin(SrcReg),
+                                   mri_->use_nodbg_end());
+  unsigned DstUses = std::distance(mri_->use_nodbg_begin(DstReg),
+                                   mri_->use_nodbg_end());
+  float NewDensity = ((float)(SrcUses + DstUses) / (SrcSize + DstSize)) /
+    NewRCCount;
+  if (SrcRC != NewRC && SrcSize > NewRCCount) {
+    unsigned SrcRCCount = allocatableRCRegs_[SrcRC].count();
+    float Density = ((float)SrcUses / SrcSize) / SrcRCCount;
+    if (NewDensity > Density * 2.0f)
+      return false;
+  }
+  if (DstRC != NewRC && DstSize > NewRCCount) {
+    unsigned DstRCCount = allocatableRCRegs_[DstRC].count();
+    float Density = ((float)DstUses / DstSize) / DstRCCount;
+    if (NewDensity > Density * 2.0f)
       return false;
   }
   return true;
@@ -1260,10 +1281,10 @@ SimpleRegisterCoalescing::CanJoinExtractSubRegToPhysReg(unsigned DstReg,
   RealDstReg = tri_->getMatchingSuperReg(DstReg, SubIdx, RC);
   assert(RealDstReg && "Invalid extract_subreg instruction!");
 
+  LiveInterval &RHS = li_->getInterval(SrcReg);
   // For this type of EXTRACT_SUBREG, conservatively
   // check if the live interval of the source register interfere with the
   // actual super physical register we are trying to coalesce with.
-  LiveInterval &RHS = li_->getInterval(SrcReg);
   if (li_->hasInterval(RealDstReg) &&
       RHS.overlaps(li_->getInterval(RealDstReg))) {
     DEBUG({
@@ -1273,7 +1294,11 @@ SimpleRegisterCoalescing::CanJoinExtractSubRegToPhysReg(unsigned DstReg,
     return false; // Not coalescable
   }
   for (const unsigned* SR = tri_->getSubRegisters(RealDstReg); *SR; ++SR)
-    if (li_->hasInterval(*SR) && RHS.overlaps(li_->getInterval(*SR))) {
+    // Do not check DstReg or its sub-register. JoinIntervals() will take care
+    // of that.
+    if (*SR != DstReg &&
+        !tri_->isSubRegister(DstReg, *SR) &&
+        li_->hasInterval(*SR) && RHS.overlaps(li_->getInterval(*SR))) {
       DEBUG({
           dbgs() << "Interfere with sub-register ";
           li_->getInterval(*SR).print(dbgs(), tri_);
@@ -1294,9 +1319,9 @@ SimpleRegisterCoalescing::CanJoinInsertSubRegToPhysReg(unsigned DstReg,
   RealSrcReg = tri_->getMatchingSuperReg(SrcReg, SubIdx, RC);
   assert(RealSrcReg && "Invalid extract_subreg instruction!");
 
-  LiveInterval &RHS = li_->getInterval(DstReg);
+  LiveInterval &LHS = li_->getInterval(DstReg);
   if (li_->hasInterval(RealSrcReg) &&
-      RHS.overlaps(li_->getInterval(RealSrcReg))) {
+      LHS.overlaps(li_->getInterval(RealSrcReg))) {
     DEBUG({
         dbgs() << "Interfere with register ";
         li_->getInterval(RealSrcReg).print(dbgs(), tri_);
@@ -1304,7 +1329,11 @@ SimpleRegisterCoalescing::CanJoinInsertSubRegToPhysReg(unsigned DstReg,
     return false; // Not coalescable
   }
   for (const unsigned* SR = tri_->getSubRegisters(RealSrcReg); *SR; ++SR)
-    if (li_->hasInterval(*SR) && RHS.overlaps(li_->getInterval(*SR))) {
+    // Do not check SrcReg or its sub-register. JoinIntervals() will take care
+    // of that.
+    if (*SR != SrcReg &&
+        !tri_->isSubRegister(SrcReg, *SR) &&
+        li_->hasInterval(*SR) && LHS.overlaps(li_->getInterval(*SR))) {
       DEBUG({
           dbgs() << "Interfere with sub-register ";
           li_->getInterval(*SR).print(dbgs(), tri_);
@@ -1436,7 +1465,6 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
   const TargetRegisterClass *SrcRC= SrcIsPhys ? 0 : mri_->getRegClass(SrcReg);
   const TargetRegisterClass *DstRC= DstIsPhys ? 0 : mri_->getRegClass(DstReg);
   const TargetRegisterClass *NewRC = NULL;
-  MachineBasicBlock *CopyMBB = CopyMI->getParent();
   unsigned RealDstReg = 0;
   unsigned RealSrcReg = 0;
   if (isExtSubReg || isInsSubReg || isSubRegToReg) {
@@ -1476,6 +1504,9 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
         return false; // Not coalescable.
       }
 
+      // FIXME: The following checks are somewhat conservative. Perhaps a better
+      // way to implement this is to treat this as coalescing a vr with the
+      // super physical register.
       if (isExtSubReg) {
         if (!CanJoinExtractSubRegToPhysReg(DstReg, SrcReg, SubIdx, RealDstReg))
           return false; // Not coalescable
@@ -1511,10 +1542,11 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
           return false;  // Not coalescable
         }
 
-        unsigned LargeReg = isExtSubReg ? SrcReg : DstReg;
-        unsigned SmallReg = isExtSubReg ? DstReg : SrcReg;
-        unsigned Limit= allocatableRCRegs_[mri_->getRegClass(SmallReg)].count();
-        if (!isWinToJoinCrossClass(LargeReg, SmallReg, Limit)) {
+        if (!isWinToJoinCrossClass(SrcReg, DstReg, SrcRC, DstRC, NewRC)) {
+          DEBUG(dbgs() << "\tAvoid coalescing to constrainted register class: "
+                       << SrcRC->getName() << "/"
+                       << DstRC->getName() << " -> "
+                       << NewRC->getName() << ".\n");
           Again = true;  // May be possible to coalesce later.
           return false;
         }
@@ -1562,49 +1594,40 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
       }
     }
 
-    unsigned LargeReg = SrcReg;
-    unsigned SmallReg = DstReg;
-
     // Now determine the register class of the joined register.
-    if (isExtSubReg) {
-      if (SubIdx && DstRC && DstRC->isASubClass()) {
-        // This is a move to a sub-register class. However, the source is a
-        // sub-register of a larger register class. We don't know what should
-        // the register class be. FIXME.
-        Again = true;
-        return false;
+    if (!SrcIsPhys && !DstIsPhys) {
+      if (isExtSubReg) {
+        NewRC =
+          SubIdx ? tri_->getMatchingSuperRegClass(SrcRC, DstRC, SubIdx) : SrcRC;
+      } else if (isInsSubReg) {
+        NewRC =
+          SubIdx ? tri_->getMatchingSuperRegClass(DstRC, SrcRC, SubIdx) : DstRC;
+      } else {
+        NewRC = getCommonSubClass(SrcRC, DstRC);
       }
-      if (!DstIsPhys && !SrcIsPhys)
-        NewRC = SrcRC;
-    } else if (!SrcIsPhys && !DstIsPhys) {
-      NewRC = getCommonSubClass(SrcRC, DstRC);
+
       if (!NewRC) {
         DEBUG(dbgs() << "\tDisjoint regclasses: "
                      << SrcRC->getName() << ", "
                      << DstRC->getName() << ".\n");
         return false;           // Not coalescable.
       }
-      if (DstRC->getSize() > SrcRC->getSize())
-        std::swap(LargeReg, SmallReg);
-    }
 
-    // If we are joining two virtual registers and the resulting register
-    // class is more restrictive (fewer register, smaller size). Check if it's
-    // worth doing the merge.
-    if (!SrcIsPhys && !DstIsPhys &&
-        (isExtSubReg || DstRC->isASubClass()) &&
-        !isWinToJoinCrossClass(LargeReg, SmallReg,
-                               allocatableRCRegs_[NewRC].count())) {
-      DEBUG(dbgs() << "\tSrc/Dest are different register classes: "
-                   << SrcRC->getName() << "/"
-                   << DstRC->getName() << " -> "
-                   << NewRC->getName() << ".\n");
-      // Allow the coalescer to try again in case either side gets coalesced to
-      // a physical register that's compatible with the other side. e.g.
-      // r1024 = MOV32to32_ r1025
-      // But later r1024 is assigned EAX then r1025 may be coalesced with EAX.
-      Again = true;  // May be possible to coalesce later.
-      return false;
+      // If we are joining two virtual registers and the resulting register
+      // class is more restrictive (fewer register, smaller size). Check if it's
+      // worth doing the merge.
+      if (!isWinToJoinCrossClass(SrcReg, DstReg, SrcRC, DstRC, NewRC)) {
+        DEBUG(dbgs() << "\tAvoid coalescing to constrainted register class: "
+                     << SrcRC->getName() << "/"
+                     << DstRC->getName() << " -> "
+                     << NewRC->getName() << ".\n");
+        // Allow the coalescer to try again in case either side gets coalesced to
+        // a physical register that's compatible with the other side. e.g.
+        // r1024 = MOV32to32_ r1025
+        // But later r1024 is assigned EAX then r1025 may be coalesced with EAX.
+        Again = true;  // May be possible to coalesce later.
+        return false;
+      }
     }
   }
 
@@ -1628,14 +1651,14 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
   // Save a copy of the virtual register live interval. We'll manually
   // merge this into the "real" physical register live interval this is
   // coalesced with.
-  LiveInterval *SavedLI = 0;
+  OwningPtr<LiveInterval> SavedLI;
   if (RealDstReg)
-    SavedLI = li_->dupInterval(&SrcInt);
+    SavedLI.reset(li_->dupInterval(&SrcInt));
   else if (RealSrcReg)
-    SavedLI = li_->dupInterval(&DstInt);
+    SavedLI.reset(li_->dupInterval(&DstInt));
 
-  // Check if it is necessary to propagate "isDead" property.
   if (!isExtSubReg && !isInsSubReg && !isSubRegToReg) {
+    // Check if it is necessary to propagate "isDead" property.
     MachineOperand *mopd = CopyMI->findRegisterDefOperand(DstReg, false);
     bool isDead = mopd->isDead();
 
@@ -1644,48 +1667,42 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
     // these are not spillable! If the destination interval uses are far away,
     // think twice about coalescing them!
     if (!isDead && (SrcIsPhys || DstIsPhys)) {
-      // If the copy is in a loop, take care not to coalesce aggressively if the
-      // src is coming in from outside the loop (or the dst is out of the loop).
-      // If it's not in a loop, then determine whether to join them base purely
-      // by the length of the interval.
-      if (PhysJoinTweak) {
-        if (SrcIsPhys) {
-          if (!isWinToJoinVRWithSrcPhysReg(CopyMI, CopyMBB, DstInt, SrcInt)) {
-            mri_->setRegAllocationHint(DstInt.reg, 0, SrcReg);
-            ++numAborts;
-            DEBUG(dbgs() << "\tMay tie down a physical register, abort!\n");
-            Again = true;  // May be possible to coalesce later.
-            return false;
-          }
-        } else {
-          if (!isWinToJoinVRWithDstPhysReg(CopyMI, CopyMBB, DstInt, SrcInt)) {
-            mri_->setRegAllocationHint(SrcInt.reg, 0, DstReg);
-            ++numAborts;
-            DEBUG(dbgs() << "\tMay tie down a physical register, abort!\n");
-            Again = true;  // May be possible to coalesce later.
-            return false;
-          }
-        }
-      } else {
-        // If the virtual register live interval is long but it has low use
-        // density, do not join them, instead mark the physical register as its
-        // allocation preference.
-        LiveInterval &JoinVInt = SrcIsPhys ? DstInt : SrcInt;
-        unsigned JoinVReg = SrcIsPhys ? DstReg : SrcReg;
-        unsigned JoinPReg = SrcIsPhys ? SrcReg : DstReg;
-        const TargetRegisterClass *RC = mri_->getRegClass(JoinVReg);
-        unsigned Threshold = allocatableRCRegs_[RC].count() * 2;
-        unsigned Length = li_->getApproximateInstructionCount(JoinVInt);
-        float Ratio = 1.0 / Threshold;
-        if (Length > Threshold &&
-            (((float)std::distance(mri_->use_nodbg_begin(JoinVReg),
-                                   mri_->use_nodbg_end()) / Length) < Ratio)) {
-          mri_->setRegAllocationHint(JoinVInt.reg, 0, JoinPReg);
-          ++numAborts;
-          DEBUG(dbgs() << "\tMay tie down a physical register, abort!\n");
-          Again = true;  // May be possible to coalesce later.
-          return false;
-        }
+      // If the virtual register live interval is long but it has low use
+      // density, do not join them, instead mark the physical register as its
+      // allocation preference.
+      LiveInterval &JoinVInt = SrcIsPhys ? DstInt : SrcInt;
+      LiveInterval &JoinPInt = SrcIsPhys ? SrcInt : DstInt;
+      unsigned JoinVReg = SrcIsPhys ? DstReg : SrcReg;
+      unsigned JoinPReg = SrcIsPhys ? SrcReg : DstReg;
+
+      // Don't join with physregs that have a ridiculous number of live
+      // ranges. The data structure performance is really bad when that
+      // happens.
+      if (JoinPInt.ranges.size() > 1000) {
+        mri_->setRegAllocationHint(JoinVInt.reg, 0, JoinPReg);
+        ++numAborts;
+        DEBUG(dbgs()
+              << "\tPhysical register live interval too complicated, abort!\n");
+        return false;
+      }
+
+      const TargetRegisterClass *RC = mri_->getRegClass(JoinVReg);
+      unsigned Threshold = allocatableRCRegs_[RC].count() * 2;
+      unsigned Length = li_->getApproximateInstructionCount(JoinVInt);
+      float Ratio = 1.0 / Threshold;
+      if (Length > Threshold &&
+          (((float)std::distance(mri_->use_nodbg_begin(JoinVReg),
+                                 mri_->use_nodbg_end()) / Length) < Ratio)) {
+        // Before giving up coalescing, if definition of source is defined by
+        // trivial computation, try rematerializing it.
+        if (ReMaterializeTrivialDef(SrcInt, DstReg, DstSubIdx, CopyMI))
+          return true;
+
+        mri_->setRegAllocationHint(JoinVInt.reg, 0, JoinPReg);
+        ++numAborts;
+        DEBUG(dbgs() << "\tMay tie down a physical register, abort!\n");
+        Again = true;  // May be possible to coalesce later.
+        return false;
       }
     }
   }
@@ -1696,16 +1713,15 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
   // been modified, so we can use this information below to update aliases.
   bool Swapped = false;
   // If SrcInt is implicitly defined, it's safe to coalesce.
-  bool isEmpty = SrcInt.empty();
-  if (isEmpty && !CanCoalesceWithImpDef(CopyMI, DstInt, SrcInt)) {
-    // Only coalesce an empty interval (defined by implicit_def) with
-    // another interval which has a valno defined by the CopyMI and the CopyMI
-    // is a kill of the implicit def.
-    DEBUG(dbgs() << "Not profitable!\n");
-    return false;
-  }
-
-  if (!isEmpty && !JoinIntervals(DstInt, SrcInt, Swapped)) {
+  if (SrcInt.empty()) {
+    if (!CanCoalesceWithImpDef(CopyMI, DstInt, SrcInt)) {
+      // Only coalesce an empty interval (defined by implicit_def) with
+      // another interval which has a valno defined by the CopyMI and the CopyMI
+      // is a kill of the implicit def.
+      DEBUG(dbgs() << "Not profitable!\n");
+      return false;
+    }
+  } else if (!JoinIntervals(DstInt, SrcInt, Swapped)) {
     // Coalescing failed.
 
     // If definition of source is defined by trivial computation, try
@@ -1830,7 +1846,7 @@ bool SimpleRegisterCoalescing::JoinCopy(CopyRec &TheCopy, bool &Again) {
   // Manually deleted the live interval copy.
   if (SavedLI) {
     SavedLI->clear();
-    delete SavedLI;
+    SavedLI.reset();
   }
 
   // If resulting interval has a preference that no longer fits because of subreg
@@ -2193,7 +2209,7 @@ SimpleRegisterCoalescing::JoinIntervals(LiveInterval &LHS, LiveInterval &RHS,
         li_->intervalIsInOneMBB(RHS) &&
         li_->getApproximateInstructionCount(RHS) <= 10) {
       // Perform a more exhaustive check for some common cases.
-      if (li_->conflictsWithPhysRegRef(RHS, LHS.reg, true, JoinedCopies))
+      if (li_->conflictsWithSubPhysRegRef(RHS, LHS.reg, true, JoinedCopies))
         return false;
     } else {
       for (const unsigned* SR = tri_->getSubRegisters(LHS.reg); *SR; ++SR)
@@ -2210,7 +2226,7 @@ SimpleRegisterCoalescing::JoinIntervals(LiveInterval &LHS, LiveInterval &RHS,
     if (LHS.containsOneValue() &&
         li_->getApproximateInstructionCount(LHS) <= 10) {
       // Perform a more exhaustive check for some common cases.
-      if (li_->conflictsWithPhysRegRef(LHS, RHS.reg, false, JoinedCopies))
+      if (li_->conflictsWithSubPhysRegRef(LHS, RHS.reg, false, JoinedCopies))
         return false;
     } else {
       for (const unsigned* SR = tri_->getSubRegisters(RHS.reg); *SR; ++SR)
@@ -2745,7 +2761,7 @@ bool SimpleRegisterCoalescing::runOnMachineFunction(MachineFunction &fn) {
             // delete them later.
             DoDelete = false;
         }
-        if (MI->registerDefIsDead(DstReg)) {
+        if (MI->allDefsAreDead()) {
           LiveInterval &li = li_->getInterval(DstReg);
           if (!ShortenDeadCopySrcLiveRange(li, MI))
             ShortenDeadCopyLiveRange(li, MI);
@@ -2776,7 +2792,7 @@ bool SimpleRegisterCoalescing::runOnMachineFunction(MachineFunction &fn) {
           if (MO.isDead())
             continue;
           if (TargetRegisterInfo::isPhysicalRegister(Reg) ||
-              !mri_->use_empty(Reg)) {
+              !mri_->use_nodbg_empty(Reg)) {
             isDead = false;
             break;
           }

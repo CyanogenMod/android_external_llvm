@@ -232,9 +232,7 @@ static bool FactorOutConstant(const SCEV *&S,
       const SCEVConstant *FC = cast<SCEVConstant>(Factor);
       if (const SCEVConstant *C = dyn_cast<SCEVConstant>(M->getOperand(0)))
         if (!C->getValue()->getValue().srem(FC->getValue()->getValue())) {
-          const SmallVectorImpl<const SCEV *> &MOperands = M->getOperands();
-          SmallVector<const SCEV *, 4> NewMulOps(MOperands.begin(),
-                                                 MOperands.end());
+          SmallVector<const SCEV *, 4> NewMulOps(M->op_begin(), M->op_end());
           NewMulOps[0] =
             SE.getConstant(C->getValue()->getValue().sdiv(
                                                    FC->getValue()->getValue()));
@@ -249,9 +247,7 @@ static bool FactorOutConstant(const SCEV *&S,
         const SCEV *Remainder = SE.getIntegerSCEV(0, SOp->getType());
         if (FactorOutConstant(SOp, Remainder, Factor, SE, TD) &&
             Remainder->isZero()) {
-          const SmallVectorImpl<const SCEV *> &MOperands = M->getOperands();
-          SmallVector<const SCEV *, 4> NewMulOps(MOperands.begin(),
-                                                 MOperands.end());
+          SmallVector<const SCEV *, 4> NewMulOps(M->op_begin(), M->op_end());
           NewMulOps[i] = SOp;
           S = SE.getMulExpr(NewMulOps);
           return true;
@@ -297,13 +293,11 @@ static void SimplifyAddOperands(SmallVectorImpl<const SCEV *> &Ops,
                     SE.getAddExpr(NoAddRecs);
   // If it returned an add, use the operands. Otherwise it simplified
   // the sum into a single value, so just use that.
+  Ops.clear();
   if (const SCEVAddExpr *Add = dyn_cast<SCEVAddExpr>(Sum))
-    Ops = Add->getOperands();
-  else {
-    Ops.clear();
-    if (!Sum->isZero())
-      Ops.push_back(Sum);
-  }
+    Ops.insert(Ops.end(), Add->op_begin(), Add->op_end());
+  else if (!Sum->isZero())
+    Ops.push_back(Sum);
   // Then append the addrecs.
   Ops.insert(Ops.end(), AddRecs.begin(), AddRecs.end());
 }
@@ -648,6 +642,8 @@ static const Loop *GetRelevantLoop(const SCEV *S, LoopInfo &LI,
   llvm_unreachable("Unexpected SCEV type!");
 }
 
+namespace {
+
 /// LoopCompare - Compare loops by PickMostRelevantLoop.
 class LoopCompare {
   DominatorTree &DT;
@@ -673,6 +669,8 @@ public:
     return false;
   }
 };
+
+}
 
 Value *SCEVExpander::visitAddExpr(const SCEVAddExpr *S) {
   const Type *Ty = SE.getEffectiveSCEVType(S->getType());
@@ -711,9 +709,11 @@ Value *SCEVExpander::visitAddExpr(const SCEVAddExpr *S) {
       Sum = expandAddToGEP(NewOps.begin(), NewOps.end(), PTy, Ty, Sum);
     } else if (const PointerType *PTy = dyn_cast<PointerType>(Op->getType())) {
       // The running sum is an integer, and there's a pointer at this level.
-      // Try to form a getelementptr.
+      // Try to form a getelementptr. If the running sum is instructions,
+      // use a SCEVUnknown to avoid re-analyzing them.
       SmallVector<const SCEV *, 4> NewOps;
-      NewOps.push_back(SE.getUnknown(Sum));
+      NewOps.push_back(isa<Instruction>(Sum) ? SE.getUnknown(Sum) :
+                                               SE.getSCEV(Sum));
       for (++I; I != E && I->first == CurLoop; ++I)
         NewOps.push_back(I->second);
       Sum = expandAddToGEP(NewOps.begin(), NewOps.end(), PTy, Ty, expand(Op));
@@ -972,9 +972,12 @@ Value *SCEVExpander::expandAddRecExprLiterally(const SCEVAddRecExpr *S) {
   // Determine a normalized form of this expression, which is the expression
   // before any post-inc adjustment is made.
   const SCEVAddRecExpr *Normalized = S;
-  if (L == PostIncLoop) {
-    const SCEV *Step = S->getStepRecurrence(SE);
-    Normalized = cast<SCEVAddRecExpr>(SE.getMinusSCEV(S, Step));
+  if (PostIncLoops.count(L)) {
+    PostIncLoopSet Loops;
+    Loops.insert(L);
+    Normalized =
+      cast<SCEVAddRecExpr>(TransformForPostIncUse(Normalize, S, 0, 0,
+                                                  Loops, SE, *SE.DT));
   }
 
   // Strip off any non-loop-dominating component from the addrec start.
@@ -992,8 +995,7 @@ Value *SCEVExpander::expandAddRecExprLiterally(const SCEVAddRecExpr *S) {
   // Strip off any non-loop-dominating component from the addrec step.
   const SCEV *Step = Normalized->getStepRecurrence(SE);
   const SCEV *PostLoopScale = 0;
-  if (!Step->hasComputableLoopEvolution(L) &&
-      !Step->dominates(L->getHeader(), SE.DT)) {
+  if (!Step->dominates(L->getHeader(), SE.DT)) {
     PostLoopScale = Step;
     Step = SE.getIntegerSCEV(1, Normalized->getType());
     Normalized =
@@ -1008,7 +1010,7 @@ Value *SCEVExpander::expandAddRecExprLiterally(const SCEVAddRecExpr *S) {
 
   // Accommodate post-inc mode, if necessary.
   Value *Result;
-  if (L != PostIncLoop)
+  if (!PostIncLoops.count(L))
     Result = PN;
   else {
     // In PostInc mode, use the post-incremented value.
@@ -1060,10 +1062,9 @@ Value *SCEVExpander::visitAddRecExpr(const SCEVAddRecExpr *S) {
   if (CanonicalIV &&
       SE.getTypeSizeInBits(CanonicalIV->getType()) >
       SE.getTypeSizeInBits(Ty)) {
-    const SmallVectorImpl<const SCEV *> &Ops = S->getOperands();
-    SmallVector<const SCEV *, 4> NewOps(Ops.size());
-    for (unsigned i = 0, e = Ops.size(); i != e; ++i)
-      NewOps[i] = SE.getAnyExtendExpr(Ops[i], CanonicalIV->getType());
+    SmallVector<const SCEV *, 4> NewOps(S->getNumOperands());
+    for (unsigned i = 0, e = S->getNumOperands(); i != e; ++i)
+      NewOps[i] = SE.getAnyExtendExpr(S->op_begin()[i], CanonicalIV->getType());
     Value *V = expand(SE.getAddRecExpr(NewOps, S->getLoop()));
     BasicBlock *SaveInsertBB = Builder.GetInsertBlock();
     BasicBlock::iterator SaveInsertPt = Builder.GetInsertPoint();
@@ -1078,8 +1079,7 @@ Value *SCEVExpander::visitAddRecExpr(const SCEVAddRecExpr *S) {
 
   // {X,+,F} --> X + {0,+,F}
   if (!S->getStart()->isZero()) {
-    const SmallVectorImpl<const SCEV *> &SOperands = S->getOperands();
-    SmallVector<const SCEV *, 4> NewOps(SOperands.begin(), SOperands.end());
+    SmallVector<const SCEV *, 4> NewOps(S->op_begin(), S->op_end());
     NewOps[0] = SE.getIntegerSCEV(0, Ty);
     const SCEV *Rest = SE.getAddRecExpr(NewOps, L);
 
@@ -1248,6 +1248,15 @@ Value *SCEVExpander::visitUMaxExpr(const SCEVUMaxExpr *S) {
   return LHS;
 }
 
+Value *SCEVExpander::expandCodeFor(const SCEV *SH, const Type *Ty,
+                                   Instruction *I) {
+  BasicBlock::iterator IP = I;
+  while (isInsertedInstruction(IP) || isa<DbgInfoIntrinsic>(IP))
+    ++IP;
+  Builder.SetInsertPoint(IP->getParent(), IP);
+  return expandCodeFor(SH, Ty);
+}
+
 Value *SCEVExpander::expandCodeFor(const SCEV *SH, const Type *Ty) {
   // Expand the code for this SCEV.
   Value *V = expand(SH);
@@ -1267,26 +1276,15 @@ Value *SCEVExpander::expand(const SCEV *S) {
        L = L->getParentLoop())
     if (S->isLoopInvariant(L)) {
       if (!L) break;
-      if (BasicBlock *Preheader = L->getLoopPreheader()) {
+      if (BasicBlock *Preheader = L->getLoopPreheader())
         InsertPt = Preheader->getTerminator();
-        BasicBlock::iterator IP = InsertPt;
-        // Back past any debug info instructions.  Sometimes we inserted
-        // something earlier before debug info but after any real instructions.
-        // This should behave the same as if debug info was not present.
-        while (IP != Preheader->begin()) {
-          --IP;
-          if (!isa<DbgInfoIntrinsic>(IP))
-            break;
-          InsertPt = IP;
-        }
-      }
     } else {
       // If the SCEV is computable at this level, insert it into the header
       // after the PHIs (and after any other instructions that we've inserted
       // there) so that it is guaranteed to dominate any user inside the loop.
-      if (L && S->hasComputableLoopEvolution(L) && L != PostIncLoop)
+      if (L && S->hasComputableLoopEvolution(L) && !PostIncLoops.count(L))
         InsertPt = L->getHeader()->getFirstNonPHI();
-      while (isInsertedInstruction(InsertPt))
+      while (isInsertedInstruction(InsertPt) || isa<DbgInfoIntrinsic>(InsertPt))
         InsertPt = llvm::next(BasicBlock::iterator(InsertPt));
       break;
     }
@@ -1306,7 +1304,7 @@ Value *SCEVExpander::expand(const SCEV *S) {
   Value *V = visit(S);
 
   // Remember the expanded value for this SCEV at this location.
-  if (!PostIncLoop)
+  if (PostIncLoops.empty())
     InsertedExpressions[std::make_pair(S, InsertPt)] = V;
 
   restoreInsertPoint(SaveInsertBB, SaveInsertPt);
@@ -1314,7 +1312,7 @@ Value *SCEVExpander::expand(const SCEV *S) {
 }
 
 void SCEVExpander::rememberInstruction(Value *I) {
-  if (!PostIncLoop)
+  if (PostIncLoops.empty())
     InsertedValues.insert(I);
 
   // If we just claimed an existing instruction and that instruction had
@@ -1322,7 +1320,8 @@ void SCEVExpander::rememberInstruction(Value *I) {
   // subsequently inserted code will be dominated.
   if (Builder.GetInsertPoint() == I) {
     BasicBlock::iterator It = cast<Instruction>(I);
-    do { ++It; } while (isInsertedInstruction(It));
+    do { ++It; } while (isInsertedInstruction(It) ||
+                        isa<DbgInfoIntrinsic>(It));
     Builder.SetInsertPoint(Builder.GetInsertBlock(), It);
   }
 }
@@ -1330,7 +1329,7 @@ void SCEVExpander::rememberInstruction(Value *I) {
 void SCEVExpander::restoreInsertPoint(BasicBlock *BB, BasicBlock::iterator I) {
   // If we acquired more instructions since the old insert point was saved,
   // advance past them.
-  while (isInsertedInstruction(I)) ++I;
+  while (isInsertedInstruction(I) || isa<DbgInfoIntrinsic>(I)) ++I;
 
   Builder.SetInsertPoint(BB, I);
 }

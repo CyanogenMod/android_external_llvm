@@ -70,14 +70,16 @@ struct OperandsSignature {
     for (unsigned i = 0, e = InstPatNode->getNumChildren(); i != e; ++i) {
       TreePatternNode *Op = InstPatNode->getChild(i);
       // For now, filter out any operand with a predicate.
-      if (!Op->getPredicateFns().empty())
-        return false;
       // For now, filter out any operand with multiple values.
-      if (Op->getExtTypes().size() != 1)
+      if (!Op->getPredicateFns().empty() ||
+          Op->getNumTypes() != 1)
         return false;
+      
+      assert(Op->hasTypeSet(0) && "Type infererence not done?");
       // For now, all the operands must have the same type.
-      if (Op->getTypeNum(0) != VT)
+      if (Op->getType(0) != VT)
         return false;
+      
       if (!Op->isLeaf()) {
         if (Op->getOperator()->getName() == "imm") {
           Operands.push_back("i");
@@ -255,7 +257,7 @@ void FastISelMap::CollectPatterns(CodeGenDAGPatterns &CGP) {
     Record *Op = Dst->getOperator();
     if (!Op->isSubClassOf("Instruction"))
       continue;
-    CodeGenInstruction &II = CGP.getTargetInfo().getInstruction(Op->getName());
+    CodeGenInstruction &II = CGP.getTargetInfo().getInstruction(Op);
     if (II.OperandList.empty())
       continue;
 
@@ -294,12 +296,18 @@ void FastISelMap::CollectPatterns(CodeGenDAGPatterns &CGP) {
     if (!InstPatNode) continue;
     if (InstPatNode->isLeaf()) continue;
 
+    // Ignore multiple result nodes for now.
+    if (InstPatNode->getNumTypes() > 1) continue;
+    
     Record *InstPatOp = InstPatNode->getOperator();
     std::string OpcodeName = getOpcodeName(InstPatOp, CGP);
-    MVT::SimpleValueType RetVT = InstPatNode->getTypeNum(0);
+    MVT::SimpleValueType RetVT = MVT::isVoid;
+    if (InstPatNode->getNumTypes()) RetVT = InstPatNode->getType(0);
     MVT::SimpleValueType VT = RetVT;
-    if (InstPatNode->getNumChildren())
-      VT = InstPatNode->getChild(0)->getTypeNum(0);
+    if (InstPatNode->getNumChildren()) {
+      assert(InstPatNode->getChild(0)->getNumTypes() == 1);
+      VT = InstPatNode->getChild(0)->getType(0);
+    }
 
     // For now, filter out instructions which just set a register to
     // an Operand or an immediate, like MOV32ri.

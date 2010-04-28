@@ -298,6 +298,7 @@ RecognizableInstr::filter_ret RecognizableInstr::filter() const {
      Name.find("_int") != Name.npos       ||
      Name.find("Int_") != Name.npos       ||
      Name.find("_NOREX") != Name.npos     ||
+     Name.find("_TC") != Name.npos     ||
      Name.find("EH_RETURN") != Name.npos  ||
      Name.find("V_SET") != Name.npos      ||
      Name.find("LOCK_") != Name.npos      ||
@@ -819,7 +820,7 @@ OperandType RecognizableInstr::typeFromString(const std::string &s,
   TYPE("i128mem",             TYPE_M128)
   TYPE("i64i32imm_pcrel",     TYPE_REL64)
   TYPE("i32imm_pcrel",        TYPE_REL32)
-  TYPE("SSECC",               TYPE_IMM8)
+  TYPE("SSECC",               TYPE_IMM3)
   TYPE("brtarget",            TYPE_RELv)
   TYPE("brtarget8",           TYPE_REL8)
   TYPE("f80mem",              TYPE_M80FP)

@@ -28,6 +28,7 @@
 #include "llvm/Transforms/Utils/AddrModeMatcher.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/BuildLibCalls.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/Assembly/Writer.h"
@@ -36,6 +37,7 @@
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Support/PatternMatch.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/IRBuilder.h"
 using namespace llvm;
 using namespace llvm::PatternMatch;
 
@@ -72,6 +74,7 @@ namespace {
                             DenseMap<Value*,Value*> &SunkAddrs);
     bool OptimizeInlineAsmInst(Instruction *I, CallSite CS,
                                DenseMap<Value*,Value*> &SunkAddrs);
+    bool OptimizeCallInst(CallInst *CI);
     bool MoveExtToFormExtLoad(Instruction *I);
     bool OptimizeExtUses(Instruction *I);
     void findLoopBackEdges(const Function &F);
@@ -171,7 +174,7 @@ bool CodeGenPrepare::CanMergeBlocks(const BasicBlock *BB,
   // don't mess around with them.
   BasicBlock::const_iterator BBI = BB->begin();
   while (const PHINode *PN = dyn_cast<PHINode>(BBI++)) {
-    for (Value::use_const_iterator UI = PN->use_begin(), E = PN->use_end();
+    for (Value::const_use_iterator UI = PN->use_begin(), E = PN->use_end();
          UI != E; ++UI) {
       const Instruction *User = cast<Instruction>(*UI);
       if (User->getParent() != DestBB || !isa<PHINode>(User))
@@ -537,6 +540,47 @@ static bool OptimizeCmpExpression(CmpInst *CI) {
   return MadeChange;
 }
 
+namespace {
+class CodeGenPrepareFortifiedLibCalls : public SimplifyFortifiedLibCalls {
+protected:
+  void replaceCall(Value *With) {
+    CI->replaceAllUsesWith(With);
+    CI->eraseFromParent();
+  }
+  bool isFoldable(unsigned SizeCIOp, unsigned, bool) const {
+    if (ConstantInt *SizeCI = dyn_cast<ConstantInt>(CI->getOperand(SizeCIOp)))
+      return SizeCI->isAllOnesValue();
+    return false;
+  }
+};
+} // end anonymous namespace
+
+bool CodeGenPrepare::OptimizeCallInst(CallInst *CI) {
+  // Lower all uses of llvm.objectsize.*
+  IntrinsicInst *II = dyn_cast<IntrinsicInst>(CI);
+  if (II && II->getIntrinsicID() == Intrinsic::objectsize) {
+    bool Min = (cast<ConstantInt>(II->getOperand(2))->getZExtValue() == 1);
+    const Type *ReturnTy = CI->getType();
+    Constant *RetVal = ConstantInt::get(ReturnTy, Min ? 0 : -1ULL);    
+    CI->replaceAllUsesWith(RetVal);
+    CI->eraseFromParent();
+    return true;
+  }
+
+  // From here on out we're working with named functions.
+  if (CI->getCalledFunction() == 0) return false;
+  
+  // We'll need TargetData from here on out.
+  const TargetData *TD = TLI ? TLI->getTargetData() : 0;
+  if (!TD) return false;
+  
+  // Lower all default uses of _chk calls.  This is very similar
+  // to what InstCombineCalls does, but here we are only lowering calls
+  // that have the default "don't know" as the objectsize.  Anything else
+  // should be left alone.
+  CodeGenPrepareFortifiedLibCalls Simplifier;
+  return Simplifier.fold(CI, TD);
+}
 //===----------------------------------------------------------------------===//
 // Memory Optimization
 //===----------------------------------------------------------------------===//
@@ -670,8 +714,12 @@ bool CodeGenPrepare::OptimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
 
   MemoryInst->replaceUsesOfWith(Addr, SunkAddr);
 
-  if (Addr->use_empty())
+  if (Addr->use_empty()) {
     RecursivelyDeleteTriviallyDeadInstructions(Addr);
+    // This address is now available for reassignment, so erase the table entry;
+    // we don't want to match some completely different instruction.
+    SunkAddrs[Addr] = 0;
+  }
   return true;
 }
 
@@ -913,6 +961,10 @@ bool CodeGenPrepare::OptimizeBlock(BasicBlock &BB) {
         } else
           // Sink address computing for memory operands into the block.
           MadeChange |= OptimizeInlineAsmInst(I, &(*CI), SunkAddrs);
+      } else {
+        // Other CallInst optimizations that don't need to muck with the
+        // enclosing iterator here.
+        MadeChange |= OptimizeCallInst(CI);
       }
     }
   }

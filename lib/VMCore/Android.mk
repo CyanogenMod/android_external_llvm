@@ -8,6 +8,7 @@ vmcore_SRC_FILES :=	\
 	ConstantFold.cpp	\
 	Constants.cpp	\
 	Core.cpp	\
+	DebugLoc.cpp	\
 	Dominators.cpp	\
 	Function.cpp	\
 	GVMaterializer.cpp	\
@@ -18,6 +19,7 @@ vmcore_SRC_FILES :=	\
 	Instructions.cpp	\
 	IntrinsicInst.cpp	\
 	LLVMContext.cpp	\
+	LLVMContextImpl.cpp	\
 	LeakDetector.cpp	\
 	Metadata.cpp	\
 	Module.cpp	\

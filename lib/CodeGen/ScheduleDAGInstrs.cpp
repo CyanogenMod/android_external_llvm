@@ -34,6 +34,7 @@ ScheduleDAGInstrs::ScheduleDAGInstrs(MachineFunction &mf,
                                      const MachineDominatorTree &mdt)
   : ScheduleDAG(mf), MLI(mli), MDT(mdt), LoopRegs(MLI, MDT) {
   MFI = mf.getFrameInfo();
+  DbgValueVec.clear();
 }
 
 /// Run - perform scheduling.
@@ -157,6 +158,10 @@ void ScheduleDAGInstrs::BuildSchedGraph(AliasAnalysis *AA) {
   std::map<const Value *, SUnit *> AliasMemDefs, NonAliasMemDefs;
   std::map<const Value *, std::vector<SUnit *> > AliasMemUses, NonAliasMemUses;
 
+  // Keep track of dangling debug references to registers.
+  std::pair<MachineInstr*, unsigned>
+        DanglingDebugValue[TargetRegisterInfo::FirstVirtualRegister];
+
   // Check to see if the scheduler cares about latencies.
   bool UnitLatencies = ForceUnitLatencies();
 
@@ -164,10 +169,25 @@ void ScheduleDAGInstrs::BuildSchedGraph(AliasAnalysis *AA) {
   const TargetSubtarget &ST = TM.getSubtarget<TargetSubtarget>();
   unsigned SpecialAddressLatency = ST.getSpecialAddressLatency();
 
+  // Remove any stale debug info; sometimes BuildSchedGraph is called again
+  // without emitting the info from the previous call.
+  DbgValueVec.clear();
+  std::memset(DanglingDebugValue, 0, sizeof(DanglingDebugValue));
+
   // Walk the list of instructions, from bottom moving up.
   for (MachineBasicBlock::iterator MII = InsertPos, MIE = Begin;
        MII != MIE; --MII) {
     MachineInstr *MI = prior(MII);
+    // DBG_VALUE does not have SUnit's built, so just remember these for later
+    // reinsertion.
+    if (MI->isDebugValue()) {
+      if (MI->getNumOperands()==3 && MI->getOperand(0).isReg() &&
+          MI->getOperand(0).getReg())
+        DanglingDebugValue[MI->getOperand(0).getReg()] =
+             std::make_pair(MI, DbgValueVec.size());
+      DbgValueVec.push_back(MI);
+      continue;
+    }
     const TargetInstrDesc &TID = MI->getDesc();
     assert(!TID.isTerminator() && !MI->isLabel() &&
            "Cannot schedule terminators or labels!");
@@ -188,6 +208,13 @@ void ScheduleDAGInstrs::BuildSchedGraph(AliasAnalysis *AA) {
       if (Reg == 0) continue;
 
       assert(TRI->isPhysicalRegister(Reg) && "Virtual register encountered!");
+
+      if (MO.isDef() && DanglingDebugValue[Reg].first!=0) {
+        SU->setDbgInstr(DanglingDebugValue[Reg].first);
+        DbgValueVec[DanglingDebugValue[Reg].second] = 0;
+        DanglingDebugValue[Reg] = std::make_pair((MachineInstr*)0, 0);
+      }
+
       std::vector<SUnit *> &UseList = Uses[Reg];
       std::vector<SUnit *> &DefList = Defs[Reg];
       // Optionally add output and anti dependencies. For anti
@@ -221,48 +248,47 @@ void ScheduleDAGInstrs::BuildSchedGraph(AliasAnalysis *AA) {
         unsigned DataLatency = SU->Latency;
         for (unsigned i = 0, e = UseList.size(); i != e; ++i) {
           SUnit *UseSU = UseList[i];
-          if (UseSU != SU) {
-            unsigned LDataLatency = DataLatency;
-            // Optionally add in a special extra latency for nodes that
-            // feed addresses.
-            // TODO: Do this for register aliases too.
-            // TODO: Perhaps we should get rid of
-            // SpecialAddressLatency and just move this into
-            // adjustSchedDependency for the targets that care about
-            // it.
-            if (SpecialAddressLatency != 0 && !UnitLatencies) {
-              MachineInstr *UseMI = UseSU->getInstr();
-              const TargetInstrDesc &UseTID = UseMI->getDesc();
-              int RegUseIndex = UseMI->findRegisterUseOperandIdx(Reg);
-              assert(RegUseIndex >= 0 && "UseMI doesn's use register!");
-              if ((UseTID.mayLoad() || UseTID.mayStore()) &&
-                  (unsigned)RegUseIndex < UseTID.getNumOperands() &&
-                  UseTID.OpInfo[RegUseIndex].isLookupPtrRegClass())
-                LDataLatency += SpecialAddressLatency;
-            }
-            // Adjust the dependence latency using operand def/use
-            // information (if any), and then allow the target to
-            // perform its own adjustments.
-            const SDep& dep = SDep(SU, SDep::Data, LDataLatency, Reg);
-            if (!UnitLatencies) {
-              ComputeOperandLatency(SU, UseSU, (SDep &)dep);
-              ST.adjustSchedDependency(SU, UseSU, (SDep &)dep);
-            }
-            UseSU->addPred(dep);
+          if (UseSU == SU)
+            continue;
+          unsigned LDataLatency = DataLatency;
+          // Optionally add in a special extra latency for nodes that
+          // feed addresses.
+          // TODO: Do this for register aliases too.
+          // TODO: Perhaps we should get rid of
+          // SpecialAddressLatency and just move this into
+          // adjustSchedDependency for the targets that care about it.
+          if (SpecialAddressLatency != 0 && !UnitLatencies) {
+            MachineInstr *UseMI = UseSU->getInstr();
+            const TargetInstrDesc &UseTID = UseMI->getDesc();
+            int RegUseIndex = UseMI->findRegisterUseOperandIdx(Reg);
+            assert(RegUseIndex >= 0 && "UseMI doesn's use register!");
+            if ((UseTID.mayLoad() || UseTID.mayStore()) &&
+                (unsigned)RegUseIndex < UseTID.getNumOperands() &&
+                UseTID.OpInfo[RegUseIndex].isLookupPtrRegClass())
+              LDataLatency += SpecialAddressLatency;
           }
+          // Adjust the dependence latency using operand def/use
+          // information (if any), and then allow the target to
+          // perform its own adjustments.
+          const SDep& dep = SDep(SU, SDep::Data, LDataLatency, Reg);
+          if (!UnitLatencies) {
+            ComputeOperandLatency(SU, UseSU, const_cast<SDep &>(dep));
+            ST.adjustSchedDependency(SU, UseSU, const_cast<SDep &>(dep));
+          }
+          UseSU->addPred(dep);
         }
         for (const unsigned *Alias = TRI->getAliasSet(Reg); *Alias; ++Alias) {
           std::vector<SUnit *> &UseList = Uses[*Alias];
           for (unsigned i = 0, e = UseList.size(); i != e; ++i) {
             SUnit *UseSU = UseList[i];
-            if (UseSU != SU) {
-              const SDep& dep = SDep(SU, SDep::Data, DataLatency, *Alias);
-              if (!UnitLatencies) {
-                ComputeOperandLatency(SU, UseSU, (SDep &)dep);
-                ST.adjustSchedDependency(SU, UseSU, (SDep &)dep);
-              }
-              UseSU->addPred(dep);
+            if (UseSU == SU)
+              continue;
+            const SDep& dep = SDep(SU, SDep::Data, DataLatency, *Alias);
+            if (!UnitLatencies) {
+              ComputeOperandLatency(SU, UseSU, const_cast<SDep &>(dep));
+              ST.adjustSchedDependency(SU, UseSU, const_cast<SDep &>(dep));
             }
+            UseSU->addPred(dep);
           }
         }
 
@@ -501,7 +527,8 @@ void ScheduleDAGInstrs::ComputeOperandLatency(SUnit *Def, SUnit *Use,
   MachineInstr *DefMI = Def->getInstr();
   int DefIdx = DefMI->findRegisterDefOperandIdx(Reg);
   if (DefIdx != -1) {
-    int DefCycle = InstrItins.getOperandCycle(DefMI->getDesc().getSchedClass(), DefIdx);
+    int DefCycle = InstrItins.getOperandCycle(DefMI->getDesc().getSchedClass(),
+                                              DefIdx);
     if (DefCycle >= 0) {
       MachineInstr *UseMI = Use->getInstr();
       const unsigned UseClass = UseMI->getDesc().getSchedClass();
@@ -555,6 +582,14 @@ EmitSchedule(DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) {
     BB->remove(I);
   }
 
+  // First reinsert any remaining debug_values; these are either constants,
+  // or refer to live-in registers.  The beginning of the block is the right
+  // place for the latter.  The former might reasonably be placed elsewhere
+  // using some kind of ordering algorithm, but right now it doesn't matter.
+  for (int i = DbgValueVec.size()-1; i>=0; --i)
+    if (DbgValueVec[i])
+      BB->insert(InsertPos, DbgValueVec[i]);
+
   // Then re-insert them according to the given schedule.
   for (unsigned i = 0, e = Sequence.size(); i != e; i++) {
     SUnit *SU = Sequence[i];
@@ -565,12 +600,21 @@ EmitSchedule(DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) {
     }
 
     BB->insert(InsertPos, SU->getInstr());
+    if (SU->getDbgInstr())
+      BB->insert(InsertPos, SU->getDbgInstr());
   }
 
   // Update the Begin iterator, as the first instruction in the block
   // may have been scheduled later.
-  if (!Sequence.empty())
+  if (!DbgValueVec.empty()) {
+    for (int i = DbgValueVec.size()-1; i>=0; --i)
+      if (DbgValueVec[i]!=0) {
+        Begin = DbgValueVec[DbgValueVec.size()-1];
+        break;
+      }
+  } else if (!Sequence.empty())
     Begin = Sequence[0]->getInstr();
 
+  DbgValueVec.clear();
   return BB;
 }

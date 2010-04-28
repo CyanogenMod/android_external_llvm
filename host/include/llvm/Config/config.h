@@ -245,7 +245,7 @@
 /* #undef HAVE_MMAP_ANONYMOUS */
 
 /* Define if mmap() can map files into memory */
-#define HAVE_MMAP_FILE 
+#define HAVE_MMAP_FILE
 
 /* Define to 1 if you have the <ndir.h> header file, and it defines `DIR'. */
 /* #undef HAVE_NDIR_H */
@@ -445,7 +445,7 @@
 #define LLVM_BINDIR "/usr/local/google/llvm/bin"
 
 /* Time at which LLVM was configured */
-#define LLVM_CONFIGTIME "Fri Feb 26 12:17:10 CST 2010"
+#define LLVM_CONFIGTIME "Tue Apr 27 18:30:43 CST 2010"
 
 /* Installation directory for data files */
 #define LLVM_DATADIR "/usr/local/google/llvm/share/llvm"
@@ -541,13 +541,13 @@
 #define PACKAGE_NAME "llvm"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "llvm 2.7svn"
+#define PACKAGE_STRING "llvm 2.8svn"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "-llvm-"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.7svn"
+#define PACKAGE_VERSION "2.8svn"
 
 /* Define as the return type of signal handlers (`int' or `void'). */
 #define RETSIGTYPE void

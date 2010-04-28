@@ -86,6 +86,7 @@
   <li><a href="#targetimpls">Target-specific Implementation Notes</a>
     <ul>
     <li><a href="#tailcallopt">Tail call optimization</a></li>
+    <li><a href="#sibcallopt">Sibling call optimization</a></li>
     <li><a href="#x86">The X86 backend</a></li>
     <li><a href="#ppc">The PowerPC backend</a>
       <ul>
@@ -1089,8 +1090,8 @@ def FADDS : AForm_2&lt;59, 21,
 <p>The portion of the instruction definition in bold indicates the pattern used
    to match the instruction.  The DAG operators
    (like <tt>fmul</tt>/<tt>fadd</tt>) are defined in
-   the <tt>lib/Target/TargetSelectionDAG.td</tt> file.  "<tt>F4RC</tt>" is the
-   register class of the input and result values.</p>
+   the <tt>include/llvm/Target/TargetSelectionDAG.td</tt> file.  "
+   <tt>F4RC</tt>" is the register class of the input and result values.</p>
 
 <p>The TableGen DAG instruction selector generator reads the instruction
    patterns in the <tt>.td</tt> file and automatically builds parts of the
@@ -1429,7 +1430,7 @@ bool RegMapping_Fer::compatible_class(MachineFunction &amp;mf,
    instruction,
    use <tt>TargetInstrInfo::get(opcode)::ImplicitUses</tt>. Pre-colored
    registers impose constraints on any register allocation algorithm. The
-   register allocator must make sure that none of them is been overwritten by
+   register allocator must make sure that none of them are overwritten by
    the values of virtual registers while still alive.</p>
 
 </div>
@@ -1678,7 +1679,8 @@ $ llc -regalloc=linearscan file.bc -o ln.s;
    supported on x86/x86-64 and PowerPC. It is performed if:</p>
 
 <ul>
-  <li>Caller and callee have the calling convention <tt>fastcc</tt>.</li>
+  <li>Caller and callee have the calling convention <tt>fastcc</tt> or
+       <tt>cc 10</tt> (GHC call convention).</li>
 
   <li>The call is a tail call - in tail position (ret immediately follows call
       and ret uses value of call or is void).</li>
@@ -1730,6 +1732,50 @@ define fastcc i32 @tailcaller(i32 %in1, i32 %in2) {
    currently causes each <tt>fastcc</tt> call that is not tail call optimized
    (because one or more of above constraints are not met) to be followed by a
    readjustment of the stack. So performance might be worse in such cases.</p>
+
+</div>
+<!-- ======================================================================= -->
+<div class="doc_subsection">
+  <a name="sibcallopt">Sibling call optimization</a>
+</div>
+
+<div class="doc_text">
+
+<p>Sibling call optimization is a restricted form of tail call optimization.
+   Unlike tail call optimization described in the previous section, it can be
+   performed automatically on any tail calls when <tt>-tailcallopt</tt> option
+   is not specified.</p>
+
+<p>Sibling call optimization is currently performed on x86/x86-64 when the
+   following constraints are met:</p>
+
+<ul>
+  <li>Caller and callee have the same calling convention. It can be either
+      <tt>c</tt> or <tt>fastcc</tt>.
+
+  <li>The call is a tail call - in tail position (ret immediately follows call
+      and ret uses value of call or is void).</li>
+
+  <li>Caller and callee have matching return type or the callee result is not
+      used.
+
+  <li>If any of the callee arguments are being passed in stack, they must be
+      available in caller's own incoming argument stack and the frame offsets
+      must be the same.
+</ul>
+
+<p>Example:</p>
+<div class="doc_code">
+<pre>
+declare i32 @bar(i32, i32)
+
+define i32 @foo(i32 %a, i32 %b, i32 %c) {
+entry:
+  %0 = tail call i32 @bar(i32 %a, i32 %b)
+  ret i32 %0
+}
+</pre>
+</div>
 
 </div>
 <!-- ======================================================================= -->

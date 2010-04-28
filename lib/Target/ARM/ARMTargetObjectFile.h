@@ -11,29 +11,19 @@
 #define LLVM_TARGET_ARM_TARGETOBJECTFILE_H
 
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
-#include "llvm/MC/MCSectionELF.h"
 
 namespace llvm {
 
-  class ARMElfTargetObjectFile : public TargetLoweringObjectFileELF {
-  public:
-    ARMElfTargetObjectFile() : TargetLoweringObjectFileELF() {}
+class MCContext;
+class TargetMachine;
 
-    void Initialize(MCContext &Ctx, const TargetMachine &TM) {
-      TargetLoweringObjectFileELF::Initialize(Ctx, TM);
+class ARMElfTargetObjectFile : public TargetLoweringObjectFileELF {
+public:
+  ARMElfTargetObjectFile() : TargetLoweringObjectFileELF() {}
 
-      if (TM.getSubtarget<ARMSubtarget>().isAAPCS_ABI()) {
-        StaticCtorSection =
-          getELFSection(".init_array", MCSectionELF::SHT_INIT_ARRAY,
-                        MCSectionELF::SHF_WRITE | MCSectionELF::SHF_ALLOC,
-                        SectionKind::getDataRel());
-        StaticDtorSection =
-          getELFSection(".fini_array", MCSectionELF::SHT_FINI_ARRAY,
-                        MCSectionELF::SHF_WRITE | MCSectionELF::SHF_ALLOC,
-                        SectionKind::getDataRel());
-      }
-    }
-  };
+  virtual void Initialize(MCContext &Ctx, const TargetMachine &TM);
+};
+
 } // end namespace llvm
 
 #endif

@@ -51,8 +51,8 @@ public:
   virtual const TargetFrameInfo  *getFrameInfo() const { return &FrameInfo; }
   virtual       X86JITInfo       *getJITInfo()         { return &JITInfo; }
   virtual const X86Subtarget     *getSubtargetImpl() const{ return &Subtarget; }
-  virtual       X86TargetLowering *getTargetLowering() const { 
-    return const_cast<X86TargetLowering*>(&TLInfo); 
+  virtual const X86TargetLowering *getTargetLowering() const { 
+    return &TLInfo;
   }
   virtual const X86RegisterInfo  *getRegisterInfo() const {
     return &InstrInfo.getRegisterInfo();
@@ -66,6 +66,7 @@ public:
   virtual bool addInstSelector(PassManagerBase &PM, CodeGenOpt::Level OptLevel);
   virtual bool addPreRegAlloc(PassManagerBase &PM, CodeGenOpt::Level OptLevel);
   virtual bool addPostRegAlloc(PassManagerBase &PM, CodeGenOpt::Level OptLevel);
+  virtual bool addPreEmitPass(PassManagerBase &PM, CodeGenOpt::Level OptLevel);
   virtual bool addCodeEmitter(PassManagerBase &PM, CodeGenOpt::Level OptLevel,
                               JITCodeEmitter &JCE);
 };

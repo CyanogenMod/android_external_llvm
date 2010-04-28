@@ -32,6 +32,7 @@ LOCAL_SRC_FILES :=	\
 	ARMRegisterInfo.cpp	\
 	ARMSubtarget.cpp	\
 	ARMTargetMachine.cpp	\
+	ARMTargetObjectFile.cpp	\
 	NEONMoveFix.cpp	\
 	NEONPreAllocPass.cpp	\
 	Thumb1InstrInfo.cpp	\

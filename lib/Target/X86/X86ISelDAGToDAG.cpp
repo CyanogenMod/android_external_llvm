@@ -15,12 +15,10 @@
 #define DEBUG_TYPE "x86-isel"
 #include "X86.h"
 #include "X86InstrBuilder.h"
-#include "X86ISelLowering.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86RegisterInfo.h"
 #include "X86Subtarget.h"
 #include "X86TargetMachine.h"
-#include "llvm/GlobalValue.h"
 #include "llvm/Instructions.h"
 #include "llvm/Intrinsics.h"
 #include "llvm/Support/CFG.h"
@@ -66,9 +64,9 @@ namespace {
     SDValue IndexReg; 
     int32_t Disp;
     SDValue Segment;
-    GlobalValue *GV;
-    Constant *CP;
-    BlockAddress *BlockAddr;
+    const GlobalValue *GV;
+    const Constant *CP;
+    const BlockAddress *BlockAddr;
     const char *ES;
     int JT;
     unsigned Align;    // CP alignment.
@@ -140,6 +138,21 @@ namespace {
 }
 
 namespace {
+  class X86ISelListener : public SelectionDAG::DAGUpdateListener {
+    SmallSet<SDNode*, 4> Deletes;
+  public:
+    explicit X86ISelListener() {}
+    virtual void NodeDeleted(SDNode *N, SDNode *E) {
+      Deletes.insert(N);
+    }
+    virtual void NodeUpdated(SDNode *N) {
+      // Ignore updates.
+    }
+    bool IsDeleted(SDNode *N) {
+      return Deletes.count(N);
+    }
+  };
+
   //===--------------------------------------------------------------------===//
   /// ISel - X86 specific code to select X86 machine instructions for
   /// SelectionDAG operations.
@@ -147,7 +160,7 @@ namespace {
   class X86DAGToDAGISel : public SelectionDAGISel {
     /// X86Lowering - This object fully describes how to lower LLVM code to an
     /// X86-specific SelectionDAG.
-    X86TargetLowering &X86Lowering;
+    const X86TargetLowering &X86Lowering;
 
     /// Subtarget - Keep a pointer to the X86Subtarget around so that we can
     /// make the right decision when generating code for different targets.
@@ -168,7 +181,7 @@ namespace {
       return "X86 DAG->DAG Instruction Selection";
     }
 
-    virtual void EmitFunctionEntryCode(Function &Fn, MachineFunction &MF);
+    virtual void EmitFunctionEntryCode();
 
     virtual bool IsProfitableToFold(SDValue N, SDNode *U, SDNode *Root) const;
 
@@ -187,6 +200,7 @@ namespace {
     bool MatchWrapper(SDValue N, X86ISelAddressMode &AM);
     bool MatchAddress(SDValue N, X86ISelAddressMode &AM);
     bool MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
+                                 X86ISelListener &DeadNodes,
                                  unsigned Depth);
     bool MatchAddressBase(SDValue N, X86ISelAddressMode &AM);
     bool SelectAddr(SDNode *Op, SDValue N, SDValue &Base,
@@ -349,17 +363,17 @@ X86DAGToDAGISel::IsProfitableToFold(SDValue N, SDNode *U, SDNode *Root) const {
   return true;
 }
 
-/// MoveBelowCallSeqStart - Replace CALLSEQ_START operand with load's chain
-/// operand and move load below the call's chain operand.
-static void MoveBelowCallSeqStart(SelectionDAG *CurDAG, SDValue Load,
-                                  SDValue Call, SDValue CallSeqStart) {
+/// MoveBelowCallOrigChain - Replace the original chain operand of the call with
+/// load's chain operand and move load below the call's chain operand.
+static void MoveBelowOrigChain(SelectionDAG *CurDAG, SDValue Load,
+                                  SDValue Call, SDValue OrigChain) {
   SmallVector<SDValue, 8> Ops;
-  SDValue Chain = CallSeqStart.getOperand(0);
+  SDValue Chain = OrigChain.getOperand(0);
   if (Chain.getNode() == Load.getNode())
     Ops.push_back(Load.getOperand(0));
   else {
     assert(Chain.getOpcode() == ISD::TokenFactor &&
-           "Unexpected CallSeqStart chain operand");
+           "Unexpected chain operand");
     for (unsigned i = 0, e = Chain.getNumOperands(); i != e; ++i)
       if (Chain.getOperand(i).getNode() == Load.getNode())
         Ops.push_back(Load.getOperand(0));
@@ -371,9 +385,9 @@ static void MoveBelowCallSeqStart(SelectionDAG *CurDAG, SDValue Load,
     Ops.clear();
     Ops.push_back(NewChain);
   }
-  for (unsigned i = 1, e = CallSeqStart.getNumOperands(); i != e; ++i)
-    Ops.push_back(CallSeqStart.getOperand(i));
-  CurDAG->UpdateNodeOperands(CallSeqStart, &Ops[0], Ops.size());
+  for (unsigned i = 1, e = OrigChain.getNumOperands(); i != e; ++i)
+    Ops.push_back(OrigChain.getOperand(i));
+  CurDAG->UpdateNodeOperands(OrigChain, &Ops[0], Ops.size());
   CurDAG->UpdateNodeOperands(Load, Call.getOperand(0),
                              Load.getOperand(1), Load.getOperand(2));
   Ops.clear();
@@ -386,7 +400,9 @@ static void MoveBelowCallSeqStart(SelectionDAG *CurDAG, SDValue Load,
 /// isCalleeLoad - Return true if call address is a load and it can be
 /// moved below CALLSEQ_START and the chains leading up to the call.
 /// Return the CALLSEQ_START by reference as a second output.
-static bool isCalleeLoad(SDValue Callee, SDValue &Chain) {
+/// In the case of a tail call, there isn't a callseq node between the call
+/// chain and the load.
+static bool isCalleeLoad(SDValue Callee, SDValue &Chain, bool HasCallSeq) {
   if (Callee.getNode() == Chain.getNode() || !Callee.hasOneUse())
     return false;
   LoadSDNode *LD = dyn_cast<LoadSDNode>(Callee.getNode());
@@ -397,12 +413,14 @@ static bool isCalleeLoad(SDValue Callee, SDValue &Chain) {
     return false;
 
   // Now let's find the callseq_start.
-  while (Chain.getOpcode() != ISD::CALLSEQ_START) {
+  while (HasCallSeq && Chain.getOpcode() != ISD::CALLSEQ_START) {
     if (!Chain.hasOneUse())
       return false;
     Chain = Chain.getOperand(0);
   }
-  
+
+  if (!Chain.getNumOperands())
+    return false;
   if (Chain.getOperand(0).getNode() == Callee.getNode())
     return true;
   if (Chain.getOperand(0).getOpcode() == ISD::TokenFactor &&
@@ -420,7 +438,9 @@ void X86DAGToDAGISel::PreprocessISelDAG() {
        E = CurDAG->allnodes_end(); I != E; ) {
     SDNode *N = I++;  // Preincrement iterator to avoid invalidation issues.
 
-    if (OptLevel != CodeGenOpt::None && N->getOpcode() == X86ISD::CALL) {
+    if (OptLevel != CodeGenOpt::None &&
+        (N->getOpcode() == X86ISD::CALL ||
+         N->getOpcode() == X86ISD::TC_RETURN)) {
       /// Also try moving call address load from outside callseq_start to just
       /// before the call to allow it to be folded.
       ///
@@ -440,11 +460,12 @@ void X86DAGToDAGISel::PreprocessISelDAG() {
       ///      \        /
       ///       \      /
       ///       [CALL]
+      bool HasCallSeq = N->getOpcode() == X86ISD::CALL;
       SDValue Chain = N->getOperand(0);
       SDValue Load  = N->getOperand(1);
-      if (!isCalleeLoad(Load, Chain))
+      if (!isCalleeLoad(Load, Chain, HasCallSeq))
         continue;
-      MoveBelowCallSeqStart(CurDAG, Load, SDValue(N, 0), Chain);
+      MoveBelowOrigChain(CurDAG, Load, SDValue(N, 0), Chain);
       ++NumLoadMoved;
       continue;
     }
@@ -519,15 +540,15 @@ void X86DAGToDAGISel::EmitSpecialCodeForMain(MachineBasicBlock *BB,
                                              MachineFrameInfo *MFI) {
   const TargetInstrInfo *TII = TM.getInstrInfo();
   if (Subtarget->isTargetCygMing())
-    BuildMI(BB, DebugLoc::getUnknownLoc(),
+    BuildMI(BB, DebugLoc(),
             TII->get(X86::CALLpcrel32)).addExternalSymbol("__main");
 }
 
-void X86DAGToDAGISel::EmitFunctionEntryCode(Function &Fn, MachineFunction &MF) {
+void X86DAGToDAGISel::EmitFunctionEntryCode() {
   // If this is main, emit special code for main.
-  MachineBasicBlock *BB = MF.begin();
-  if (Fn.hasExternalLinkage() && Fn.getName() == "main")
-    EmitSpecialCodeForMain(BB, MF.getFrameInfo());
+  if (const Function *Fn = MF->getFunction())
+    if (Fn->hasExternalLinkage() && Fn->getName() == "main")
+      EmitSpecialCodeForMain(MF->begin(), MF->getFrameInfo());
 }
 
 
@@ -644,7 +665,8 @@ bool X86DAGToDAGISel::MatchWrapper(SDValue N, X86ISelAddressMode &AM) {
 /// returning true if it cannot be done.  This just pattern matches for the
 /// addressing mode.
 bool X86DAGToDAGISel::MatchAddress(SDValue N, X86ISelAddressMode &AM) {
-  if (MatchAddressRecursively(N, AM, 0))
+  X86ISelListener DeadNodes;
+  if (MatchAddressRecursively(N, AM, DeadNodes, 0))
     return true;
 
   // Post-processing: Convert lea(,%reg,2) to lea(%reg,%reg), which has
@@ -672,7 +694,27 @@ bool X86DAGToDAGISel::MatchAddress(SDValue N, X86ISelAddressMode &AM) {
   return false;
 }
 
+/// isLogicallyAddWithConstant - Return true if this node is semantically an
+/// add of a value with a constantint.
+static bool isLogicallyAddWithConstant(SDValue V, SelectionDAG *CurDAG) {
+  // Check for (add x, Cst)
+  if (V->getOpcode() == ISD::ADD)
+    return isa<ConstantSDNode>(V->getOperand(1));
+
+  // Check for (or x, Cst), where Cst & x == 0.
+  if (V->getOpcode() != ISD::OR ||
+      !isa<ConstantSDNode>(V->getOperand(1)))
+    return false;
+  
+  // Handle "X | C" as "X + C" iff X is known to have C bits clear.
+  ConstantSDNode *CN = cast<ConstantSDNode>(V->getOperand(1));
+    
+  // Check to see if the LHS & C is zero.
+  return CurDAG->MaskedValueIsZero(V->getOperand(0), CN->getAPIntValue());
+}
+
 bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
+                                              X86ISelListener &DeadNodes,
                                               unsigned Depth) {
   bool is64Bit = Subtarget->is64Bit();
   DebugLoc dl = N.getDebugLoc();
@@ -762,8 +804,7 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
         // Okay, we know that we have a scale by now.  However, if the scaled
         // value is an add of something and a constant, we can fold the
         // constant into the disp field here.
-        if (ShVal.getNode()->getOpcode() == ISD::ADD &&
-            isa<ConstantSDNode>(ShVal.getNode()->getOperand(1))) {
+        if (isLogicallyAddWithConstant(ShVal, CurDAG)) {
           AM.IndexReg = ShVal.getNode()->getOperand(0);
           ConstantSDNode *AddVal =
             cast<ConstantSDNode>(ShVal.getNode()->getOperand(1));
@@ -838,7 +879,11 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
 
     // Test if the LHS of the sub can be folded.
     X86ISelAddressMode Backup = AM;
-    if (MatchAddressRecursively(N.getNode()->getOperand(0), AM, Depth+1)) {
+    if (MatchAddressRecursively(N.getNode()->getOperand(0), AM,
+                                DeadNodes, Depth+1) ||
+        // If it is successful but the recursive update causes N to be deleted,
+        // then it's not safe to continue.
+        DeadNodes.IsDeleted(N.getNode())) {
       AM = Backup;
       break;
     }
@@ -847,6 +892,7 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
       AM = Backup;
       break;
     }
+
     int Cost = 0;
     SDValue RHS = N.getNode()->getOperand(1);
     // If the RHS involves a register with multiple uses, this
@@ -900,13 +946,33 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
 
   case ISD::ADD: {
     X86ISelAddressMode Backup = AM;
-    if (!MatchAddressRecursively(N.getNode()->getOperand(0), AM, Depth+1) &&
-        !MatchAddressRecursively(N.getNode()->getOperand(1), AM, Depth+1))
-      return false;
+    if (!MatchAddressRecursively(N.getNode()->getOperand(0), AM,
+                                 DeadNodes, Depth+1)) {
+      if (DeadNodes.IsDeleted(N.getNode()))
+        // If it is successful but the recursive update causes N to be deleted,
+        // then it's not safe to continue.
+        return true;
+      if (!MatchAddressRecursively(N.getNode()->getOperand(1), AM,
+                                   DeadNodes, Depth+1))
+        // If it is successful but the recursive update causes N to be deleted,
+        // then it's not safe to continue.
+        return DeadNodes.IsDeleted(N.getNode());
+    }
+
+    // Try again after commuting the operands.
     AM = Backup;
-    if (!MatchAddressRecursively(N.getNode()->getOperand(1), AM, Depth+1) &&
-        !MatchAddressRecursively(N.getNode()->getOperand(0), AM, Depth+1))
-      return false;
+    if (!MatchAddressRecursively(N.getNode()->getOperand(1), AM,
+                                 DeadNodes, Depth+1)) {
+      if (DeadNodes.IsDeleted(N.getNode()))
+        // If it is successful but the recursive update causes N to be deleted,
+        // then it's not safe to continue.
+        return true;
+      if (!MatchAddressRecursively(N.getNode()->getOperand(0), AM,
+                                   DeadNodes, Depth+1))
+        // If it is successful but the recursive update causes N to be deleted,
+        // then it's not safe to continue.
+        return DeadNodes.IsDeleted(N.getNode());
+    }
     AM = Backup;
 
     // If we couldn't fold both operands into the address at the same time,
@@ -925,19 +991,19 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
 
   case ISD::OR:
     // Handle "X | C" as "X + C" iff X is known to have C bits clear.
-    if (ConstantSDNode *CN = dyn_cast<ConstantSDNode>(N.getOperand(1))) {
+    if (isLogicallyAddWithConstant(N, CurDAG)) {
       X86ISelAddressMode Backup = AM;
+      ConstantSDNode *CN = cast<ConstantSDNode>(N.getOperand(1));
       uint64_t Offset = CN->getSExtValue();
+
       // Start with the LHS as an addr mode.
-      if (!MatchAddressRecursively(N.getOperand(0), AM, Depth+1) &&
+      if (!MatchAddressRecursively(N.getOperand(0), AM, DeadNodes, Depth+1) &&
           // Address could not have picked a GV address for the displacement.
           AM.GV == NULL &&
           // On x86-64, the resultant disp must fit in 32-bits.
           (!is64Bit ||
            X86::isOffsetSuitableForCodeModel(AM.Disp + Offset, M,
-                                             AM.hasSymbolicDisplacement())) &&
-          // Check to see if the LHS & C is zero.
-          CurDAG->MaskedValueIsZero(N.getOperand(0), CN->getAPIntValue())) {
+                                             AM.hasSymbolicDisplacement()))) {
         AM.Disp += Offset;
         return false;
       }
@@ -1008,7 +1074,7 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
           CurDAG->RepositionNode(N.getNode(), Shl.getNode());
           Shl.getNode()->setNodeId(N.getNode()->getNodeId());
         }
-        CurDAG->ReplaceAllUsesWith(N, Shl);
+        CurDAG->ReplaceAllUsesWith(N, Shl, &DeadNodes);
         AM.IndexReg = And;
         AM.Scale = (1 << ScaleLog);
         return false;
@@ -1059,7 +1125,7 @@ bool X86DAGToDAGISel::MatchAddressRecursively(SDValue N, X86ISelAddressMode &AM,
       NewSHIFT.getNode()->setNodeId(N.getNode()->getNodeId());
     }
 
-    CurDAG->ReplaceAllUsesWith(N, NewSHIFT);
+    CurDAG->ReplaceAllUsesWith(N, NewSHIFT, &DeadNodes);
     
     AM.Scale = 1 << ShiftCst;
     AM.IndexReg = NewAND;
@@ -1132,7 +1198,7 @@ bool X86DAGToDAGISel::SelectScalarSSELoad(SDNode *Root,
     if (ISD::isNON_EXTLoad(PatternNodeWithChain.getNode()) &&
         PatternNodeWithChain.hasOneUse() &&
         IsProfitableToFold(N.getOperand(0), N.getNode(), Root) &&
-        IsLegalToFold(N.getOperand(0), N.getNode(), Root)) {
+        IsLegalToFold(N.getOperand(0), N.getNode(), Root, OptLevel)) {
       LoadSDNode *LD = cast<LoadSDNode>(PatternNodeWithChain);
       if (!SelectAddr(Root, LD->getBasePtr(), Base, Scale, Index, Disp,Segment))
         return false;
@@ -1149,7 +1215,7 @@ bool X86DAGToDAGISel::SelectScalarSSELoad(SDNode *Root,
       ISD::isNON_EXTLoad(N.getOperand(0).getOperand(0).getNode()) &&
       N.getOperand(0).getOperand(0).hasOneUse() &&
       IsProfitableToFold(N.getOperand(0), N.getNode(), Root) &&
-      IsLegalToFold(N.getOperand(0), N.getNode(), Root)) {
+      IsLegalToFold(N.getOperand(0), N.getNode(), Root, OptLevel)) {
     // Okay, this is a zero extending load.  Fold it.
     LoadSDNode *LD = cast<LoadSDNode>(N.getOperand(0).getOperand(0));
     if (!SelectAddr(Root, LD->getBasePtr(), Base, Scale, Index, Disp, Segment))
@@ -1256,7 +1322,7 @@ bool X86DAGToDAGISel::TryFoldLoad(SDNode *P, SDValue N,
                                   SDValue &Segment) {
   if (!ISD::isNON_EXTLoad(N.getNode()) ||
       !IsProfitableToFold(N, P, P) ||
-      !IsLegalToFold(N, P, P))
+      !IsLegalToFold(N, P, P, OptLevel))
     return false;
   
   return SelectAddr(P, N.getOperand(1), Base, Scale, Index, Disp, Segment);

@@ -16,7 +16,8 @@ system_SRC_FILES :=	\
 	Signals.cpp	\
 	ThreadLocal.cpp	\
 	Threading.cpp	\
-	TimeValue.cpp
+	TimeValue.cpp	\
+	Valgrind.cpp
 
 # For the host
 # =====================================================

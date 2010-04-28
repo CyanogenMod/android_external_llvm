@@ -8,10 +8,10 @@ target triple = "x86_64-unknown-unknown"
 
 ; CHECK: full_me_0:
 ; CHECK: movsd   (%rsi), %xmm0
-; CHECK: addq    $8, %rsi
 ; CHECK: mulsd   (%rdx), %xmm0
-; CHECK: addq    $8, %rdx
 ; CHECK: movsd   %xmm0, (%rdi)
+; CHECK: addq    $8, %rsi
+; CHECK: addq    $8, %rdx
 ; CHECK: addq    $8, %rdi
 ; CHECK: decq    %rcx
 ; CHECK: jne
@@ -53,10 +53,10 @@ return:
 ; CHECK: mulsd   -2048(%rdx), %xmm0
 ; CHECK: movsd   %xmm0, -2048(%rdi)
 ; CHECK: movsd   (%rsi), %xmm0
-; CHECK: addq    $8, %rsi
 ; CHECK: divsd   (%rdx), %xmm0
-; CHECK: addq    $8, %rdx
 ; CHECK: movsd   %xmm0, (%rdi)
+; CHECK: addq    $8, %rsi
+; CHECK: addq    $8, %rdx
 ; CHECK: addq    $8, %rdi
 ; CHECK: decq    %rcx
 ; CHECK: jne
@@ -99,10 +99,10 @@ return:
 ; CHECK: mulsd   (%rdx), %xmm0
 ; CHECK: movsd   %xmm0, (%rdi)
 ; CHECK: movsd   -2048(%rsi), %xmm0
-; CHECK: addq    $8, %rsi
 ; CHECK: divsd   -2048(%rdx), %xmm0
-; CHECK: addq    $8, %rdx
 ; CHECK: movsd   %xmm0, -2048(%rdi)
+; CHECK: addq    $8, %rsi
+; CHECK: addq    $8, %rdx
 ; CHECK: addq    $8, %rdi
 ; CHECK: decq    %rcx
 ; CHECK: jne
@@ -144,10 +144,10 @@ return:
 ; CHECK: mulsd   (%rdx), %xmm0
 ; CHECK: movsd   %xmm0, (%rdi)
 ; CHECK: movsd   -4096(%rsi), %xmm0
-; CHECK: addq    $8, %rsi
 ; CHECK: divsd   -4096(%rdx), %xmm0
-; CHECK: addq    $8, %rdx
 ; CHECK: movsd   %xmm0, -4096(%rdi)
+; CHECK: addq    $8, %rsi
+; CHECK: addq    $8, %rdx
 ; CHECK: addq    $8, %rdi
 ; CHECK: decq    %rcx
 ; CHECK: jne
@@ -260,7 +260,7 @@ return:
 ; CHECK: count_me_2:
 ; CHECK: movl    $10, %eax
 ; CHECK: align
-; CHECK: BB7_1:
+; CHECK: BB6_1:
 ; CHECK: movsd   -40(%rdi,%rax,8), %xmm0
 ; CHECK: addsd   -40(%rsi,%rax,8), %xmm0
 ; CHECK: movsd   %xmm0, -40(%rdx,%rax,8)
@@ -305,15 +305,15 @@ return:
 
 ; CHECK: full_me_1:
 ; CHECK: align
-; CHECK: BB8_1:
+; CHECK: BB7_1:
 ; CHECK: movsd   (%rdi), %xmm0
 ; CHECK: addsd   (%rsi), %xmm0
 ; CHECK: movsd   %xmm0, (%rdx)
 ; CHECK: movsd   40(%rdi), %xmm0
-; CHECK: addq    $8, %rdi
 ; CHECK: subsd   40(%rsi), %xmm0
-; CHECK: addq    $8, %rsi
 ; CHECK: movsd   %xmm0, 40(%rdx)
+; CHECK: addq    $8, %rdi
+; CHECK: addq    $8, %rsi
 ; CHECK: addq    $8, %rdx
 ; CHECK: decq    %rcx
 ; CHECK: jne
@@ -389,7 +389,7 @@ return:
 ; rdar://7657764
 
 ; CHECK: asd:
-; CHECK: BB10_5:
+; CHECK: BB9_5:
 ; CHECK-NEXT: addl  (%r{{[^,]*}},%rdi,4), %e
 ; CHECK-NEXT: incq  %rdi
 ; CHECK-NEXT: cmpq  %rdi, %r{{[^,]*}}

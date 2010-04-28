@@ -14,25 +14,33 @@
 #ifndef LLVM_CODEGEN_ASMPRINTER_DWARFEXCEPTION_H
 #define LLVM_CODEGEN_ASMPRINTER_DWARFEXCEPTION_H
 
-#include "DIE.h"
-#include "DwarfPrinter.h"
-#include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/ADT/DenseMap.h"
-#include <string>
+#include <vector>
 
 namespace llvm {
 
+template <typename T> class SmallVectorImpl;
 struct LandingPadInfo;
 class MachineModuleInfo;
+class MachineMove;
+class MachineInstr;
+class MachineFunction;
 class MCAsmInfo;
 class MCExpr;
-class Timer;
-class raw_ostream;
+class MCSymbol;
+class Function;
+class AsmPrinter;
 
 //===----------------------------------------------------------------------===//
 /// DwarfException - Emits Dwarf exception handling directives.
 ///
-class DwarfException : public DwarfPrinter {
+class DwarfException {
+  /// Asm - Target of Dwarf emission.
+  AsmPrinter *Asm;
+
+  /// MMI - Collected machine module information.
+  MachineModuleInfo *MMI;
+
   struct FunctionEHFrameInfo {
     MCSymbol *FunctionEHSym;  // L_foo.eh
     unsigned Number;
@@ -73,9 +81,6 @@ class DwarfException : public DwarfPrinter {
   /// should be emitted.
   bool shouldEmitMovesModule;
 
-  /// ExceptionTimer - Timer for the Dwarf exception writer.
-  Timer *ExceptionTimer;
-
   /// EmitCIE - Emit a Common Information Entry (CIE). This holds information
   /// that is shared among many Frame Description Entries.  There is at least
   /// one CIE in every non-empty .debug_frame section.
@@ -111,13 +116,6 @@ class DwarfException : public DwarfPrinter {
   /// PadLT - Order landing pads lexicographically by type id.
   static bool PadLT(const LandingPadInfo *L, const LandingPadInfo *R);
 
-  struct KeyInfo {
-    static inline unsigned getEmptyKey() { return -1U; }
-    static inline unsigned getTombstoneKey() { return -2U; }
-    static unsigned getHashValue(const unsigned &Key) { return Key; }
-    static bool isEqual(unsigned LHS, unsigned RHS) { return LHS == RHS; }
-  };
-
   /// PadRange - Structure holding a try-range and the associated landing pad.
   struct PadRange {
     // The index of the landing pad.
@@ -126,7 +124,7 @@ class DwarfException : public DwarfPrinter {
     unsigned RangeIndex;
   };
 
-  typedef DenseMap<unsigned, PadRange, KeyInfo> RangeMapType;
+  typedef DenseMap<MCSymbol *, PadRange> RangeMapType;
 
   /// ActionEntry - Structure describing an entry in the actions table.
   struct ActionEntry {
@@ -138,11 +136,11 @@ class DwarfException : public DwarfPrinter {
   /// CallSiteEntry - Structure describing an entry in the call-site table.
   struct CallSiteEntry {
     // The 'try-range' is BeginLabel .. EndLabel.
-    unsigned BeginLabel; // zero indicates the start of the function.
-    unsigned EndLabel;   // zero indicates the end of the function.
+    MCSymbol *BeginLabel; // zero indicates the start of the function.
+    MCSymbol *EndLabel;   // zero indicates the end of the function.
 
     // The landing pad starts at PadLabel.
-    unsigned PadLabel;   // zero indicates that there is no landing pad.
+    MCSymbol *PadLabel;   // zero indicates that there is no landing pad.
     unsigned Action;
   };
 
@@ -169,24 +167,12 @@ class DwarfException : public DwarfPrinter {
                             const SmallVectorImpl<unsigned> &FirstActions);
   void EmitExceptionTable();
 
-  /// CreateLabelDiff - Emit a label and subtract it from the expression we
-  /// already have.  This is equivalent to emitting "foo - .", but we have to
-  /// emit the label for "." directly.
-  const MCExpr *CreateLabelDiff(const MCExpr *ExprRef, const char *LabelName,
-                                unsigned Index);
 public:
   //===--------------------------------------------------------------------===//
   // Main entry points.
   //
-  DwarfException(raw_ostream &OS, AsmPrinter *A, const MCAsmInfo *T);
-  virtual ~DwarfException();
-
-  /// BeginModule - Emit all exception information that should come prior to the
-  /// content.
-  void BeginModule(Module *m, MachineModuleInfo *mmi) {
-    this->M = m;
-    this->MMI = mmi;
-  }
+  DwarfException(AsmPrinter *A);
+  ~DwarfException();
 
   /// EndModule - Emit all exception information that should come after the
   /// content.
