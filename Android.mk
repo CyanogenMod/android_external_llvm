@@ -24,11 +24,16 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/CodeGen/AsmPrinter	\
 		lib/Target	\
 		lib/Target/ARM	\
+		lib/Target/ARM/AsmPrinter	\
+		lib/Target/ARM/Disassembler	\
 		lib/Target/ARM/TargetInfo	\
 		lib/Target/X86	\
+		lib/Target/X86/AsmPrinter	\
+		lib/Target/X86/Disassembler	\
 		lib/Target/X86/TargetInfo	\
 		lib/ExecutionEngine/JIT	\
 		lib/MC	\
+		lib/MC/MCParser	\
 	))
 
 TBLGEN := $(HOST_OUT_EXECUTABLES)/tblgen$(HOST_EXECUTABLE_SUFFIX)

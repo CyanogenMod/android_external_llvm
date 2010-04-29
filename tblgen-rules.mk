@@ -105,4 +105,9 @@ $(intermediates)/%GenIntrinsics.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,tgt_intrinsics)
 endif
 
+ifneq ($(findstring ARMGenDecoderTables.inc,$(tblgen_gen_tables)),)
+$(intermediates)/ARMGenDecoderTables.inc: $(tblgen_source_dir)/ARM.td $(TBLGEN)
+	$(call transform-td-to-out,arm-decoder)
+endif
+
 endif

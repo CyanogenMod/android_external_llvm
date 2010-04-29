@@ -13,8 +13,10 @@
 
 #define DEBUG_TYPE "asm-printer"
 #include "llvm/CodeGen/AsmPrinter.h"
-#include "DwarfDebug.h"
-#include "DwarfException.h"
+#ifndef ANDROID_TARGET_BUILD
+#   include "DwarfDebug.h"
+#   include "DwarfException.h"
+#endif // ANDROID_TARGET_BUILD
 #include "llvm/Module.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
@@ -155,11 +157,13 @@ bool AsmPrinter::doInitialization(Module &M) {
     OutStreamer.AddBlankLine();
   }
 
+#ifndef ANDROID_TARGET_BUILD
   if (MAI->doesSupportDebugInformation())
     DD = new DwarfDebug(this, &M);
     
   if (MAI->doesSupportExceptionHandling())
     DE = new DwarfException(this);
+#endif // ANDROID_TARGET_BUILD
 
   return false;
 }
@@ -361,6 +365,7 @@ void AsmPrinter::EmitFunctionHeader() {
   }
   
   // Emit pre-function debug and/or EH information.
+#ifndef ANDROID_TARGET_BUILD
   if (DE) {
     if (TimePassesIsEnabled) {
       NamedRegionTimer T(EHTimerName, DWARFGroupName);
@@ -377,6 +382,7 @@ void AsmPrinter::EmitFunctionHeader() {
       DD->beginFunction(MF);
     }
   }
+#endif // ANDROID_TARGET_BUILD
 }
 
 /// EmitFunctionEntryLabel - Emit the label that is the entrypoint for the
@@ -535,6 +541,7 @@ void AsmPrinter::EmitFunctionBody() {
       
       ++EmittedInsts;
       
+#ifndef ANDROID_TARGET_BUILD
       if (ShouldPrintDebugScopes) {
 	if (TimePassesIsEnabled) {
 	  NamedRegionTimer T(DbgTimerName, DWARFGroupName);
@@ -543,6 +550,7 @@ void AsmPrinter::EmitFunctionBody() {
 	  DD->beginScope(II);
 	}
       }
+#endif // ANDROID_TARGET_BUILD
       
       if (isVerbose())
         EmitComments(*II, OutStreamer.GetCommentOS());
@@ -573,6 +581,7 @@ void AsmPrinter::EmitFunctionBody() {
         break;
       }
       
+#ifndef ANDROID_TARGET_BUILD
       if (ShouldPrintDebugScopes) {
 	if (TimePassesIsEnabled) {
 	  NamedRegionTimer T(DbgTimerName, DWARFGroupName);
@@ -581,6 +590,7 @@ void AsmPrinter::EmitFunctionBody() {
 	  DD->endScope(II);
 	}
       }
+#endif // ANDROID_TARGET_BUILD
     }
   }
   
@@ -616,6 +626,7 @@ void AsmPrinter::EmitFunctionBody() {
   }
   
   // Emit post-function debug information.
+#ifndef ANDROID_TARGET_BUILD
   if (DD) {
     if (TimePassesIsEnabled) {
       NamedRegionTimer T(DbgTimerName, DWARFGroupName);
@@ -632,6 +643,7 @@ void AsmPrinter::EmitFunctionBody() {
       DE->EndFunction();
     }
   }
+#endif // ANDROID_TARGET_BUILD
   MMI->EndFunction();
   
   // Print out jump tables referenced by the function.
@@ -648,6 +660,7 @@ bool AsmPrinter::doFinalization(Module &M) {
     EmitGlobalVariable(I);
   
   // Finalize debug and EH information.
+#ifndef ANDROID_TARGET_BUILD
   if (DE) {
     if (TimePassesIsEnabled) {
       NamedRegionTimer T(EHTimerName, DWARFGroupName);
@@ -666,6 +679,7 @@ bool AsmPrinter::doFinalization(Module &M) {
     }
     delete DD; DD = 0;
   }
+#endif // ANDROID_TARGET_BUILD
   
   // If the target wants to know about weak references, print them all.
   if (MAI->getWeakRefDirective()) {
