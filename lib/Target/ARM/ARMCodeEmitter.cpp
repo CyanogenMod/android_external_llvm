@@ -798,6 +798,11 @@ unsigned ARMCodeEmitter::getAddrModeSBit(const MachineInstr &MI,
   return 0;
 }
 
+static inline unsigned rotr32(unsigned Val, unsigned Amt) {
+  assert(Amt < 32 && "Invalid rotate amount");
+  return (Val >> Amt) | (Val << ((32-Amt)&31));
+}
+
 void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
                                                    unsigned ImplicitRd,
                                                    unsigned ImplicitRn) {
@@ -807,8 +812,32 @@ void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
     report_fatal_error("ARMv6t2 JIT is not yet supported.");
   }
 
+  unsigned Binary;
+  const MachineOperand &MO1 = MI.getOperand(1);
+  unsigned Lo16 = getMovi32Value(MI, MO1, ARM::reloc_arm_movw) & 0xFFFF;
+  if (Lo16) {
+    unsigned TZ = CountTrailingZeros_32(Lo16);
+    unsigned RotAmt = TZ & ~1;
+    if ((rotr32(Lo16, RotAmt) & ~255U) != 0) {
+      const MachineOperand &MO0 = MI.getOperand(0);
+      Binary = 0x30 << 20;  // mov: Insts{27-20} = 0b00110000
+
+      // Set the conditional execution predicate.
+      Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+      
+      // Encode Rd.
+      Binary |= getMachineOpValue(MI, MO0) << ARMII::RegRdShift;
+      
+      // Encode imm.
+      Binary |= Lo16 & 0xFFF;
+      Binary |= ((Lo16 >> 12) & 0xF) << 16; // imm4:imm12, Insts[19-16] = imm4, Insts[11-0] = imm12
+      emitWordLE(Binary);
+      return;
+    }
+  }
+  
   // Part of binary is determined by TableGn.
-  unsigned Binary = getBinaryCodeForInstr(MI);
+  Binary = getBinaryCodeForInstr(MI);
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
