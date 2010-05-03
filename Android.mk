@@ -3,9 +3,7 @@ LLVM_ROOT_PATH := $(LOCAL_PATH)
 include $(CLEAR_VARS)
 
 # Only use this on the device or emulator.
-ifeq ($(TARGET_SIMULATOR),true)
-$(error LLVM not suitable for the simulator! $(LOCAL_PATH))
-endif
+ifneq ($(TARGET_SIMULATOR),true)
 
 subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/System \
@@ -45,3 +43,5 @@ LLVM_GEN_INTRINSICS_MK := $(LOCAL_PATH)/llvm-gen-intrinsics.mk
 LLVM_TBLGEN_RULES_MK := $(LOCAL_PATH)/tblgen-rules.mk
 
 include $(subdirs)
+
+endif
