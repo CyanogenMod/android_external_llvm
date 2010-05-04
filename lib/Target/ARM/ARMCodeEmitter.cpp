@@ -146,11 +146,11 @@ namespace {
       return getMachineOpValue(MI, MI.getOperand(OpIdx));
     }
 
-    /// getMovi32Value - Return binary encoding of operand for movw/movt. If the 
+    /// getMovi32Value - Return binary encoding of operand for movw/movt. If the
     /// machine operand requires relocation, record the relocation and return zero.
-    unsigned getMovi32Value(const MachineInstr &MI,const MachineOperand &MO, 
+    unsigned getMovi32Value(const MachineInstr &MI,const MachineOperand &MO,
                             unsigned Reloc);
-    unsigned getMovi32Value(const MachineInstr &MI, unsigned OpIdx, 
+    unsigned getMovi32Value(const MachineInstr &MI, unsigned OpIdx,
                             unsigned Reloc) {
       return getMovi32Value(MI, MI.getOperand(OpIdx), Reloc);
     }
@@ -227,12 +227,12 @@ unsigned ARMCodeEmitter::getShiftOp(unsigned Imm) const {
   return 0;
 }
 
-/// getMovi32Value - Return binary encoding of operand for movw/movt. If the 
+/// getMovi32Value - Return binary encoding of operand for movw/movt. If the
 /// machine operand requires relocation, record the relocation and return zero.
 unsigned ARMCodeEmitter::getMovi32Value(const MachineInstr &MI,
-                                        const MachineOperand &MO, 
+                                        const MachineOperand &MO,
                                         unsigned Reloc) {
-  assert(((Reloc == ARM::reloc_arm_movt) || (Reloc == ARM::reloc_arm_movw)) 
+  assert(((Reloc == ARM::reloc_arm_movt) || (Reloc == ARM::reloc_arm_movw))
       && "Relocation to this function should be for movt or movw");
   switch(MO.getType()) {
   case MachineOperand::MO_Register:
@@ -824,10 +824,10 @@ void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
 
       // Set the conditional execution predicate.
       Binary |= II->getPredicate(&MI) << ARMII::CondShift;
-      
+
       // Encode Rd.
       Binary |= getMachineOpValue(MI, MO0) << ARMII::RegRdShift;
-      
+
       // Encode imm.
       Binary |= Lo16 & 0xFFF;
       Binary |= ((Lo16 >> 12) & 0xF) << 16; // imm4:imm12, Insts[19-16] = imm4, Insts[11-0] = imm12
@@ -835,7 +835,7 @@ void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
       return;
     }
   }
-  
+
   // Part of binary is determined by TableGn.
   Binary = getBinaryCodeForInstr(MI);
 
@@ -1498,11 +1498,56 @@ ARMCodeEmitter::emitVFPLoadStoreMultipleInstruction(const MachineInstr &MI) {
 }
 
 void ARMCodeEmitter::emitMiscInstruction(const MachineInstr &MI) {
+  unsigned Opcode = MI.getDesc().Opcode;
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+
+  if(Opcode != ARM::FMSTAT) {
+    switch(Opcode) {
+    default:
+      llvm_unreachable("ARMCodeEmitter::emitMiscInstruction");
+
+    case ARM::VMRS:
+    case ARM::VMSR: {
+      const MachineOperand &MO0 = MI.getOperand(0);
+      // Encode Rt.
+      Binary |= ARMRegisterInfo::getRegisterNumbering(MO0.getReg())
+                  << ARMII::RegRdShift;
+      break;
+    }
+
+    case ARM::FCONSTD:
+    case ARM::FCONSTS: {
+      // Encode Dd / Sd.
+      Binary |= encodeVFPRd(MI, 0);
+
+      // Encode imm., Table A7-18
+      const MachineOperand &MO1 = MI.getOperand(1);
+      unsigned Imm = static_cast<unsigned>(MO1.getFPImm()->getValueAPF()
+                        .bitcastToAPInt().getHiBits(32).getLimitedValue());
+      unsigned ModifiedImm;
+
+      if(Opcode == ARM::FCONSTS)
+        ModifiedImm = (Imm & 0x80000000) >> 24 | /* a */
+                      (Imm & 0x20000000) >> 23 | /* b */
+                      (Imm & 0x01000000) >> 19 | /* c */
+                      (Imm & 0x00f80000) >> 19;  /* defgh */
+      else // Opcode == ARM::FCONSTD
+        ModifiedImm = (Imm & 0x80000000) >> 24 | /* a */
+                      (Imm & 0x20000000) >> 23 | /* b */
+                      (Imm & 0x003f0000) >> 16;  /* cdefgh */
+
+      // abcdefgh, Insts[19-16] = abcd, Insts[3-0] = efgh
+      Binary |= ((ModifiedImm & 0xF0) >> 4) << 16;
+      Binary |= (ModifiedImm & 0xF);
+      break;
+    }
+
+    }
+  }
 
   emitWordLE(Binary);
 }
