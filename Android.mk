@@ -1,5 +1,6 @@
 LOCAL_PATH := $(call my-dir)
 LLVM_ROOT_PATH := $(LOCAL_PATH)
+LLVM_ENABLE_ASSERTION := true
 include $(CLEAR_VARS)
 
 # Only use this on the device or emulator.

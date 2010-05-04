@@ -1,5 +1,4 @@
 LOCAL_CFLAGS :=	\
-	-D_DEBUG	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
 	-D__STDC_CONSTANT_MACROS	\
@@ -10,6 +9,13 @@ LOCAL_CFLAGS :=	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
 	$(LOCAL_CFLAGS)
+
+ifeq ($(LLVM_ENABLE_ASSERTION),true)
+LOCAL_CFLAGS :=	\
+	-D_DEBUG	\
+	-UNDEBUG	\
+	$(LOCAL_CFLAGS)
+endif
 
 ifneq ($(REQUIRES_EH),1)
 LOCAL_CFLAGS += -fno-exceptions
