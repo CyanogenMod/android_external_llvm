@@ -27,14 +27,13 @@ REQUIRES_EH := 0
 endif
 
 ifneq ($(REQUIRES_RTTI),1)
-LOCAL_CFLAGS +=	-fno-rtti
+LOCAL_CPPFLAGS +=	-fno-rtti
 else
 REQUIRES_RTTI := 0
 endif
 
 LOCAL_CPPFLAGS :=	\
 	$(LOCAL_CPPFLAGS)	\
-	$(LOCAL_CFLAGS)	\
 	-Woverloaded-virtual
 	
 # Make sure bionic is first so we can include system headers.
