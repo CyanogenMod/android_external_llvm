@@ -41,6 +41,8 @@ REQUIRES_RTTI := 1
 
 LOCAL_SRC_FILES := $(system_SRC_FILES)
 
+LOCAL_CFLAGS += -I bionic/libc/include
+
 LOCAL_MODULE:= libLLVMSystem
 
 include $(LLVM_DEVICE_BUILD_MK)
