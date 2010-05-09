@@ -476,7 +476,6 @@
 
 /* Build multithreading support into LLVM */
 /* #undef LLVM_MULTITHREADED */
-//#define LLVM_MULTITHREADED 1
 
 /* LLVM architecture name for the native architecture, if available */
 #define LLVM_NATIVE_ARCH ARMTarget

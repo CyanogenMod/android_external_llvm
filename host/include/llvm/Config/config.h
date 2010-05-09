@@ -472,7 +472,7 @@
 #define LLVM_MANDIR "/usr/local/google/llvm/man"
 
 /* Build multithreading support into LLVM */
-#define LLVM_MULTITHREADED 1
+#define LLVM_MULTITHREADED 0
 
 /* LLVM architecture name for the native architecture, if available */
 #define LLVM_NATIVE_ARCH X86Target
