@@ -87,9 +87,13 @@ namespace {
 
     void emitWordLE(unsigned Binary);
     void emitDWordLE(uint64_t Binary);
+
+    void emitConstantToMemory(unsigned CPI, const Constant* CV);
     void emitConstPoolInstruction(const MachineInstr &MI);
+
     void emitMOVi32immInstruction(const MachineInstr &MI);
     void emitMOVi2piecesInstruction(const MachineInstr &MI);
+    void emitLEApcrelInstruction(const MachineInstr &MI);
     void emitLEApcrelJTInstruction(const MachineInstr &MI);
     void emitPseudoMoveInstruction(const MachineInstr &MI);
     void addPCLabel(unsigned LabelID);
@@ -146,11 +150,11 @@ namespace {
       return getMachineOpValue(MI, MI.getOperand(OpIdx));
     }
 
-    /// getMovi32Value - Return binary encoding of operand for movw/movt. If the
+    /// getMovi32Value - Return binary encoding of operand for movw/movt. If the 
     /// machine operand requires relocation, record the relocation and return zero.
-    unsigned getMovi32Value(const MachineInstr &MI,const MachineOperand &MO,
+    unsigned getMovi32Value(const MachineInstr &MI,const MachineOperand &MO, 
                             unsigned Reloc);
-    unsigned getMovi32Value(const MachineInstr &MI, unsigned OpIdx,
+    unsigned getMovi32Value(const MachineInstr &MI, unsigned OpIdx, 
                             unsigned Reloc) {
       return getMovi32Value(MI, MI.getOperand(OpIdx), Reloc);
     }
@@ -227,12 +231,12 @@ unsigned ARMCodeEmitter::getShiftOp(unsigned Imm) const {
   return 0;
 }
 
-/// getMovi32Value - Return binary encoding of operand for movw/movt. If the
+/// getMovi32Value - Return binary encoding of operand for movw/movt. If the 
 /// machine operand requires relocation, record the relocation and return zero.
 unsigned ARMCodeEmitter::getMovi32Value(const MachineInstr &MI,
-                                        const MachineOperand &MO,
+                                        const MachineOperand &MO, 
                                         unsigned Reloc) {
-  assert(((Reloc == ARM::reloc_arm_movt) || (Reloc == ARM::reloc_arm_movw))
+  assert(((Reloc == ARM::reloc_arm_movt) || (Reloc == ARM::reloc_arm_movw)) 
       && "Relocation to this function should be for movt or movw");
   switch(MO.getType()) {
   case MachineOperand::MO_Register:
@@ -434,6 +438,44 @@ void ARMCodeEmitter::emitInstruction(const MachineInstr &MI) {
   MCE.processDebugLoc(MI.getDebugLoc(), false);
 }
 
+void ARMCodeEmitter::emitConstantToMemory(unsigned CPI, const Constant* C) {
+  DEBUG({
+      errs() << "  ** Constant pool #" << CPI << " @ "
+             << (void*)MCE.getCurrentPCValue() << " ";
+      if (const Function *F = dyn_cast<Function>(C))
+        errs() << F->getName();
+      else
+        errs() << *C;
+      errs() << '\n';
+    });
+
+  if (const GlobalValue *GV = dyn_cast<GlobalValue>(C)) {
+    emitGlobalAddress(GV, ARM::reloc_arm_absolute, isa<Function>(GV), false);
+    emitWordLE(0);
+  } else if (const ConstantInt *CI = dyn_cast<ConstantInt>(C)) {
+    uint32_t Val = *(uint32_t*)CI->getValue().getRawData();
+    emitWordLE(Val);
+  } else if (const ConstantFP *CFP = dyn_cast<ConstantFP>(C)) {
+    if (CFP->getType()->isFloatTy())
+      emitWordLE(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
+    else if (CFP->getType()->isDoubleTy())
+      emitDWordLE(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
+    else {
+      llvm_unreachable("Unable to handle this constantpool entry!");
+    }
+  } else if (const ConstantVector* CV = dyn_cast<ConstantVector>(C)) {
+    for (unsigned i=0;i<CV->getNumOperands();i++)
+      emitConstantToMemory(CPI, CV->getOperand(i));
+  } else if (const ConstantArray* CA = dyn_cast<ConstantArray>(C)) {
+    for (unsigned i=0;i<CA->getNumOperands();i++)
+      emitConstantToMemory(CPI, CA->getOperand(i));
+  } else {
+    llvm_unreachable("Unable to handle this constantpool entry!");
+  }
+
+  return;
+}
+
 void ARMCodeEmitter::emitConstPoolInstruction(const MachineInstr &MI) {
   unsigned CPI = MI.getOperand(0).getImm();       // CP instruction index.
   unsigned CPIndex = MI.getOperand(1).getIndex(); // Actual cp entry index.
@@ -464,35 +506,7 @@ void ARMCodeEmitter::emitConstPoolInstruction(const MachineInstr &MI) {
     }
     emitWordLE(0);
   } else {
-    const Constant *CV = MCPE.Val.ConstVal;
-
-    DEBUG({
-        errs() << "  ** Constant pool #" << CPI << " @ "
-               << (void*)MCE.getCurrentPCValue() << " ";
-        if (const Function *F = dyn_cast<Function>(CV))
-          errs() << F->getName();
-        else
-          errs() << *CV;
-        errs() << '\n';
-      });
-
-    if (const GlobalValue *GV = dyn_cast<GlobalValue>(CV)) {
-      emitGlobalAddress(GV, ARM::reloc_arm_absolute, isa<Function>(GV), false);
-      emitWordLE(0);
-    } else if (const ConstantInt *CI = dyn_cast<ConstantInt>(CV)) {
-      uint32_t Val = *(uint32_t*)CI->getValue().getRawData();
-      emitWordLE(Val);
-    } else if (const ConstantFP *CFP = dyn_cast<ConstantFP>(CV)) {
-      if (CFP->getType()->isFloatTy())
-        emitWordLE(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
-      else if (CFP->getType()->isDoubleTy())
-        emitDWordLE(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
-      else {
-        llvm_unreachable("Unable to handle this constantpool entry!");
-      }
-    } else {
-      llvm_unreachable("Unable to handle this constantpool entry!");
-    }
+    emitConstantToMemory(CPI, MCPE.Val.ConstVal);
   }
 }
 
@@ -570,6 +584,37 @@ void ARMCodeEmitter::emitMOVi2piecesInstruction(const MachineInstr &MI) {
   // Set bit I(25) to identify this is the immediate form of <shifter_op>
   Binary |= 1 << ARMII::I_BitShift;
   Binary |= getMachineSoImmOpValue(V2);
+  emitWordLE(Binary);
+}
+
+void ARMCodeEmitter::emitLEApcrelInstruction(const MachineInstr &MI) {
+  // It's basically add r, pc, (LCPI - $+8)
+
+  const TargetInstrDesc &TID = MI.getDesc();
+
+  // Emit the 'add' instruction.
+  unsigned Binary = 0x4 << 21;  // add: Insts{24-31} = 0b0100
+
+  // For VFP load, the immediate offset is multiplied by 4.
+  unsigned Reloc =  ((TID.TSFlags & ARMII::FormMask) == ARMII::VFPLdStFrm)
+   ? ARM::reloc_arm_vfp_cp_entry : ARM::reloc_arm_cp_entry;
+
+  // Set the conditional execution predicate
+  Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+
+  // Encode S bit if MI modifies CPSR.
+  Binary |= getAddrModeSBit(MI, TID);
+
+  // Encode Rd.
+  Binary |= getMachineOpValue(MI, 0) << ARMII::RegRdShift;
+
+  // Encode Rn which is PC.
+  Binary |= ARMRegisterInfo::getRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
+
+  // Encode the displacement.
+  Binary |= 1 << ARMII::I_BitShift;
+  emitConstPoolAddress(MI.getOperand(1).getIndex(), Reloc);
+
   emitWordLE(Binary);
 }
 
@@ -705,6 +750,10 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
     // Two instructions to materialize a constant.
     emitMOVi2piecesInstruction(MI);
     break;
+  case ARM::LEApcrel:
+    // Materialize contant pool index address.
+    emitLEApcrelInstruction(MI);
+    break;
   case ARM::LEApcrelJT:
     // Materialize jumptable address.
     emitLEApcrelJTInstruction(MI);
@@ -798,46 +847,13 @@ unsigned ARMCodeEmitter::getAddrModeSBit(const MachineInstr &MI,
   return 0;
 }
 
-static inline unsigned rotr32(unsigned Val, unsigned Amt) {
-  assert(Amt < 32 && "Invalid rotate amount");
-  return (Val >> Amt) | (Val << ((32-Amt)&31));
-}
-
 void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
                                                    unsigned ImplicitRd,
                                                    unsigned ImplicitRn) {
   const TargetInstrDesc &TID = MI.getDesc();
 
-  if (TID.Opcode == ARM::BFC) {
-    report_fatal_error("ARMv6t2 JIT is not yet supported.");
-  }
-
-  unsigned Binary;
-  const MachineOperand &MO1 = MI.getOperand(1);
-  unsigned Lo16 = getMovi32Value(MI, MO1, ARM::reloc_arm_movw) & 0xFFFF;
-  if (Lo16) {
-    unsigned TZ = CountTrailingZeros_32(Lo16);
-    unsigned RotAmt = TZ & ~1;
-    if ((rotr32(Lo16, RotAmt) & ~255U) != 0) {
-      const MachineOperand &MO0 = MI.getOperand(0);
-      Binary = 0x30 << 20;  // mov: Insts{27-20} = 0b00110000
-
-      // Set the conditional execution predicate.
-      Binary |= II->getPredicate(&MI) << ARMII::CondShift;
-
-      // Encode Rd.
-      Binary |= getMachineOpValue(MI, MO0) << ARMII::RegRdShift;
-
-      // Encode imm.
-      Binary |= Lo16 & 0xFFF;
-      Binary |= ((Lo16 >> 12) & 0xF) << 16; // imm4:imm12, Insts[19-16] = imm4, Insts[11-0] = imm12
-      emitWordLE(Binary);
-      return;
-    }
-  }
-
   // Part of binary is determined by TableGn.
-  Binary = getBinaryCodeForInstr(MI);
+  unsigned Binary = getBinaryCodeForInstr(MI);
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
@@ -854,6 +870,31 @@ void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
     // Special handling for implicit use (e.g. PC).
     Binary |= (ARMRegisterInfo::getRegisterNumbering(ImplicitRd)
                << ARMII::RegRdShift);
+
+  if (TID.Opcode == ARM::MOVi16) {
+      unsigned Lo16 = getMovi32Value(MI, MI.getOperand(OpIdx),
+                      ARM::reloc_arm_movw) & 0xFFFF;
+      Binary |= Lo16 & 0xFFF;
+      Binary |= ((Lo16 >> 12) & 0xF) << 16;
+      emitWordLE(Binary);
+      return;
+  } else if(TID.Opcode == ARM::MOVTi16) {
+      unsigned Hi16 = (getMovi32Value(MI, MI.getOperand(OpIdx),
+                       ARM::reloc_arm_movt) >> 16) & 0xFFFF;
+      Binary |= Hi16 & 0xFFF;
+      Binary |= ((Hi16 >> 12) & 0xF) << 16;
+      emitWordLE(Binary);
+      return;
+  } else if((TID.Opcode == ARM::BFC) || (TID.Opcode == ARM::BFI)) {
+      uint32_t v = ~MI.getOperand(2).getImm();
+      int32_t lsb = CountTrailingZeros_32(v);
+      int32_t msb = (32 - CountLeadingZeros_32(v)) - 1;
+      // Insts[20-16] = msb, Insts[11-7] = lsb
+      Binary |= (msb & 0x1F) << 16;
+      Binary |= (lsb & 0x1F) << 7;
+      emitWordLE(Binary);
+      return;
+  }
 
   // If this is a two-address operand, skip it. e.g. MOVCCr operand 1.
   if (TID.getOperandConstraint(OpIdx, TOI::TIED_TO) != -1)
