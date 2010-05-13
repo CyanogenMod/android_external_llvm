@@ -1533,7 +1533,7 @@ ARMCodeEmitter::emitVFPLoadStoreMultipleInstruction(const MachineInstr &MI) {
       break;
     ++NumRegs;
   }
-  Binary |= NumRegs * 2;
+  Binary |= NumRegs;
 
   emitWordLE(Binary);
 }
