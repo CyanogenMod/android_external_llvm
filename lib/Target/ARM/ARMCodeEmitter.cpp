@@ -894,6 +894,18 @@ void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
       Binary |= (lsb & 0x1F) << 7;
       emitWordLE(Binary);
       return;
+  } else if ((TID.Opcode == ARM::UBFX) || (TID.Opcode == ARM::SBFX)) {
+      // Encode Rn in Insts[0-3]
+      Binary |= getMachineOpValue(MI, OpIdx++) << 0;
+
+      uint32_t lsb = MI.getOperand(OpIdx++).getImm();
+      uint32_t widthm1 = MI.getOperand(OpIdx++).getImm() - 1;
+
+      // Insts[20-16] = widthm1, Insts[11-7] = lsb
+      Binary |= (widthm1 & 0x1F) << 16;
+      Binary |= (lsb & 0x1F) << 7;
+      emitWordLE(Binary);
+      return;
   }
 
   // If this is a two-address operand, skip it. e.g. MOVCCr operand 1.
@@ -1533,7 +1545,13 @@ ARMCodeEmitter::emitVFPLoadStoreMultipleInstruction(const MachineInstr &MI) {
       break;
     ++NumRegs;
   }
-  Binary |= NumRegs * 2;
+
+  // bit 8 will be set if <list> is consecutive 64-bit registers (e.g., d0)
+  // FIXME: Should distinguish them in ARMInstFormat.td
+  if(Binary & 0x100)
+    Binary |= NumRegs * 2;
+  else
+    Binary |= NumRegs;
 
   emitWordLE(Binary);
 }
