@@ -262,6 +262,9 @@
 /* Define to 1 if you have the `opendir' function. */
 #define HAVE_OPENDIR 1
 
+/* Define to 1 if you have the `posix_spawn' function. */
+/* #undef HAVE_POSIX_SPAWN */
+
 /* Define to 1 if you have the `powf' function. */
 #define HAVE_POWF 1
 
@@ -437,6 +440,9 @@
 
 /* Define to 1 if the system has the type `u_int64_t'. */
 /* #undef HAVE_U_INT64_T */
+
+/* Define to 1 if you have the <valgrind/valgrind.h> header file. */
+/* #undef HAVE_VALGRIND_VALGRIND_H */
 
 /* Define to 1 if you have the <windows.h> header file. */
 /* #undef HAVE_WINDOWS_H */

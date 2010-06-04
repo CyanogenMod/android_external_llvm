@@ -259,6 +259,9 @@
 /* Define to 1 if you have the `opendir' function. */
 #define HAVE_OPENDIR 1
 
+/* Define to 1 if you have the `posix_spawn' function. */
+/*#define HAVE_POSIX_SPAWN 1*/
+
 /* Define to 1 if you have the `powf' function. */
 #define HAVE_POWF 1
 
