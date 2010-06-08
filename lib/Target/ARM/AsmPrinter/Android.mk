@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH := $(call my-dir)
 
 arm_asm_printer_TBLGEN_TABLES :=	\
@@ -10,7 +13,7 @@ arm_asm_printer_SRC_FILES :=	\
 	ARMAsmPrinter.cpp	\
 	ARMInstPrinter.cpp	\
 	ARMMCInstLower.cpp
-	
+
 # For the host
 # =====================================================
 include $(CLEAR_VARS)
@@ -50,3 +53,5 @@ LOCAL_MODULE:= libLLVMARMAsmPrinter
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_STATIC_LIBRARY)
+
+endif

@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH:= $(call my-dir)
 
 transforms_inst_combine_SRC_FILES :=	\
@@ -36,3 +39,5 @@ LOCAL_MODULE:= libLLVMInstCombine
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
+
+endif

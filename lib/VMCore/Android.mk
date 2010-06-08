@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH:= $(call my-dir)
 
 vmcore_SRC_FILES :=	\
@@ -61,3 +64,5 @@ LOCAL_MODULE:= libLLVMCore
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
+
+endif

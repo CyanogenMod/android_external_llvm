@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
@@ -33,7 +36,7 @@ endif
 LOCAL_CPPFLAGS :=	\
 	$(LOCAL_CPPFLAGS)	\
 	-Woverloaded-virtual
-	
+
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\
 	$(LLVM_ROOT_PATH)	\
@@ -57,3 +60,5 @@ $(hide) $(TBLGEN) \
     -gen-$(strip $(1)) \
     -o $@ $<
 endef
+
+endif

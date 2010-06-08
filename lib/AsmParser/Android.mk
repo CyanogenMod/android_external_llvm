@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH:= $(call my-dir)
 
 asm_parser_SRC_FILES :=	\
@@ -26,3 +29,5 @@ LOCAL_MODULE:= libLLVMAsmParser
 
 include $(LOCAL_PATH)/../../llvm-device-build.mk
 include $(BUILD_STATIC_LIBRARY)
+
+endif

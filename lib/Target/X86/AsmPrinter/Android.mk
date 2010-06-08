@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH := $(call my-dir)
 
 # For the device only
@@ -19,7 +22,7 @@ LOCAL_SRC_FILES :=	\
 	X86AsmPrinter.cpp	\
 	X86IntelInstPrinter.cpp	\
 	X86MCInstLower.cpp
-	
+
 LOCAL_C_INCLUDES +=	\
 	$(LOCAL_PATH)/..
 
@@ -28,3 +31,5 @@ LOCAL_MODULE:= libLLVMX86AsmPrinter
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
+
+endif

@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
@@ -21,7 +24,7 @@ endif
 ifneq ($(REQUIRES_EH),1)
 LOCAL_CFLAGS +=	-fno-exceptions
 else
-# No action. The device target should not have exception enabled since bionic 
+# No action. The device target should not have exception enabled since bionic
 # doesn't support it
 REQUIRES_EH := 0
 endif
@@ -35,7 +38,7 @@ endif
 LOCAL_CPPFLAGS :=	\
 	$(LOCAL_CPPFLAGS)	\
 	-Woverloaded-virtual
-	
+
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\
 	bionic	\
@@ -59,3 +62,5 @@ $(hide) $(TBLGEN) \
     -gen-$(strip $(1)) \
     -o $@ $<
 endef
+
+endif

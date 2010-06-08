@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH:= $(call my-dir)
 
 codegen_selectiondag_SRC_FILES :=	\
@@ -21,7 +24,7 @@ codegen_selectiondag_SRC_FILES :=	\
 	SelectionDAGBuilder.cpp	\
 	SelectionDAGISel.cpp	\
 	SelectionDAGPrinter.cpp	\
-	TargetLowering.cpp  
+	TargetLowering.cpp
 
 # For the host
 # =====================================================
@@ -46,3 +49,5 @@ LOCAL_MODULE:= libLLVMSelectionDAG
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
+
+endif

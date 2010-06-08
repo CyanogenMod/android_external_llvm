@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 ###########################################################
 ## Commands for running tblgen to compile a td file
 ##########################################################
@@ -11,7 +14,7 @@ endef
 ## TableGen: Compile .td files to .inc.
 ###########################################################
 
-# Set LOCAL_MODULE_CLASS to STATIC_LIBRARIES default (require 
+# Set LOCAL_MODULE_CLASS to STATIC_LIBRARIES default (require
 # for macro local-intermediates-dir)
 ifeq ($(LOCAL_MODULE_CLASS),)
 	LOCAL_MODULE_CLASS := STATIC_LIBRARIES
@@ -111,6 +114,8 @@ endif
 ifneq ($(findstring ARMGenDecoderTables.inc,$(tblgen_gen_tables)),)
 $(intermediates)/ARMGenDecoderTables.inc: $(tblgen_source_dir)/ARM.td $(TBLGEN)
 	$(call transform-td-to-out,arm-decoder)
+endif
+
 endif
 
 endif

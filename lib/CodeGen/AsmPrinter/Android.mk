@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH := $(call my-dir)
 
 codegen_asmprinter_SRC_FILES :=	\
@@ -10,11 +13,11 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES :=	\
 	AsmPrinter.cpp	\
 	AsmPrinterDwarf.cpp	\
-   	AsmPrinterInlineAsm.cpp	\
+	AsmPrinterInlineAsm.cpp	\
 	DIE.cpp	\
 	DwarfDebug.cpp	\
 	DwarfException.cpp	\
-	OcamlGCPrinter.cpp  
+	OcamlGCPrinter.cpp
 
 LOCAL_MODULE:= libLLVMAsmPrinter
 
@@ -26,10 +29,12 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES :=	\
-  	AsmPrinter.cpp	\
-   	AsmPrinterInlineAsm.cpp
+	AsmPrinter.cpp	\
+	AsmPrinterInlineAsm.cpp
 
 LOCAL_MODULE:= libLLVMAsmPrinter
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_STATIC_LIBRARY)
+
+endif

@@ -1,3 +1,6 @@
+# Only use this on the device or emulator.
+ifneq ($(TARGET_ARCH),arm)
+
 LOCAL_PATH:= $(call my-dir)
 
 support_SRC_FILES :=	\
@@ -70,3 +73,5 @@ LOCAL_MODULE:= libLLVMSupport
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_STATIC_LIBRARY)
+
+endif
