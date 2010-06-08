@@ -1,5 +1,5 @@
 # Only use this on the device or emulator.
-ifneq ($(TARGET_ARCH),arm)
+ifeq ($(TARGET_ARCH),arm)
 
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\

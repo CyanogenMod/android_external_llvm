@@ -1,5 +1,5 @@
 # Only use this on the device or emulator.
-ifneq ($(TARGET_ARCH),arm)
+ifeq ($(TARGET_ARCH),arm)
 
 # We treat Intrinsics.td as a very special target just like what lib/VMCore/Makefile does
 INTRINSICTD := $(LLVM_ROOT_PATH)/include/llvm/Intrinsics.td

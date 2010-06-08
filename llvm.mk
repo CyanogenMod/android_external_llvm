@@ -1,5 +1,5 @@
 # Only use this on the device or emulator.
-ifneq ($(TARGET_ARCH),arm)
+ifeq ($(TARGET_ARCH),arm)
 
 ifeq ($(LLVM_ROOT_PATH),)
 $(error Must set variable LLVM_ROOT_PATH before including this! $(LOCAL_PATH))
