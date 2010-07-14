@@ -28,7 +28,10 @@ include $(CLEAR_VARS)
 
 REQUIRES_RTTI := 1
 
-LOCAL_SRC_FILES := $(system_SRC_FILES)
+LOCAL_SRC_FILES := $(system_SRC_FILES) \
+                   DynamicLibrary.cpp  \
+                   SearchForAddressOfSpecialSymbol.cpp
+
 LOCAL_CFLAGS +=	-march=i686
 
 LOCAL_MODULE:= libLLVMSystem
