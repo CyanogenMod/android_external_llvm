@@ -11,6 +11,7 @@ LOCAL_SRC_FILES :=	  \
 
 LOCAL_STATIC_LIBRARIES := libLLVMipo libLLVMScalarOpts libLLVMInstCombine libLLVMInstrumentation libLLVMTransformUtils libLLVMipa libLLVMAnalysis libLLVMTarget libLLVMMC libLLVMAsmParser libLLVMBitWriter libLLVMBitReader libLLVMCore libLLVMSupport libLLVMSystem
 LOCAL_MODULE := opt
+LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_LDLIBS += -lpthread -lm -ldl
 
 include $(LLVM_HOST_BUILD_MK)
