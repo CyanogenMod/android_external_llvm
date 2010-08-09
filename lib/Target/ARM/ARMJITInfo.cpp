@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "jit"
+#include "ARMAddressingModes.h"
 #include "ARMJITInfo.h"
 #include "ARMInstrInfo.h"
 #include "ARMConstantPoolValue.h"
@@ -50,7 +51,7 @@ static TargetJITInfo::JITCompilerFn JITCompilerFunction;
 extern "C" {
     // We don't need this on Android (generally on hand-held devices). This
     // function is for the purpose of supporting "lazy symbol lookup" (lookup
-    // undefined symbol at runtime) (Actually, if you tried to remove the 
+    // undefined symbol at runtime) (Actually, if you tried to remove the
     // !defined(ANDROID) guard, you'll get compilation error since Android's
     // toolchain choose armv5te as its CPU architecture which does not support
     // instruction 'stmdb' and 'ldmia' within the function)
@@ -325,15 +326,35 @@ void ARMJITInfo::relocate(void *Function, MachineRelocation *MR,
       break;
     }
     case ARM::reloc_arm_movw: {
-      ResultPtr = ResultPtr & 0xFFFF; 
+      ResultPtr = ResultPtr & 0xFFFF;
       *((intptr_t*)RelocPos) |= ResultPtr & 0xFFF;
       *((intptr_t*)RelocPos) |= ((ResultPtr >> 12) & 0xF) << 16; // imm4:imm12, Insts[19-16] = imm4, Insts[11-0] = imm12
       break;
     }
     case ARM::reloc_arm_movt: {
-      ResultPtr = (ResultPtr >> 16) & 0xFFFF; 
+      ResultPtr = (ResultPtr >> 16) & 0xFFFF;
       *((intptr_t*)RelocPos) |= ResultPtr & 0xFFF;
       *((intptr_t*)RelocPos) |= ((ResultPtr >> 12) & 0xF) << 16; // imm4:imm12, Insts[19-16] = imm4, Insts[11-0] = imm12
+      break;
+    }
+    case ARM::reloc_arm_so_imm: {
+      ResultPtr = ResultPtr - (intptr_t)RelocPos - 8;
+      // If the result is positive, set bit 22 to 0 and bit 23 to 1.
+      if (ResultPtr >= 0) {
+        *((intptr_t*)RelocPos) &= ~(1 << 22);
+        *((intptr_t*)RelocPos) |= 1 << 23;
+      } else {
+        // Otherwise, obtain the absolute value and set bit 22 to 1 and bit 23 to 0.
+        *((intptr_t*)RelocPos) |= 1 << 22;
+        *((intptr_t*)RelocPos) &= ~(1 << 23);
+        ResultPtr = - ResultPtr;
+      }
+
+      int SoImmVal = ARM_AM::getSOImmVal(ResultPtr);
+      assert(SoImmVal != -1 && "Not a valid so_imm value!");
+      *((intptr_t*)RelocPos) |= (ARM_AM::getSOImmValRot((unsigned)SoImmVal) >> 1)
+            << ARMII::SoRotImmShift;
+      *((intptr_t*)RelocPos) |= ARM_AM::getSOImmValImm((unsigned)SoImmVal);
       break;
     }
     }
