@@ -596,8 +596,8 @@ void ARMCodeEmitter::emitLEApcrelInstruction(const MachineInstr &MI) {
   unsigned Binary = 0x4 << 21;  // add: Insts{24-31} = 0b0100
 
   // For VFP load, the immediate offset is multiplied by 4.
-  unsigned Reloc =  ((TID.TSFlags & ARMII::FormMask) == ARMII::VFPLdStFrm)
-   ? ARM::reloc_arm_vfp_cp_entry : ARM::reloc_arm_cp_entry;
+  //  unsigned Reloc =  ((TID.TSFlags & ARMII::FormMask) == ARMII::VFPLdStFrm)
+  //   ? ARM::reloc_arm_vfp_cp_entry : ARM::reloc_arm_cp_entry;
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
@@ -611,9 +611,9 @@ void ARMCodeEmitter::emitLEApcrelInstruction(const MachineInstr &MI) {
   // Encode Rn which is PC.
   Binary |= ARMRegisterInfo::getRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
 
-  // Encode the displacement.
+  // Encode the displacement which is a so_imm
   Binary |= 1 << ARMII::I_BitShift;
-  emitConstPoolAddress(MI.getOperand(1).getIndex(), Reloc);
+  emitConstPoolAddress(MI.getOperand(1).getIndex(), ARM::reloc_arm_so_imm);
 
   emitWordLE(Binary);
 }
