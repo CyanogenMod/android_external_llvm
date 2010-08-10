@@ -252,6 +252,7 @@ intptr_t ARMJITInfo::resolveRelocDestAddr(MachineRelocation *MR) const {
   case ARM::reloc_arm_jt_base:
     // Jump table base address.
     return getJumpTableBaseAddr(MR->getJumpTableIndex());
+  case ARM::reloc_arm_so_imm:
   case ARM::reloc_arm_cp_entry:
   case ARM::reloc_arm_vfp_cp_entry:
     // Constant pool entry address.
