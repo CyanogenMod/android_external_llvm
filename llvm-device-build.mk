@@ -2,7 +2,6 @@ LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
 	-D__STDC_CONSTANT_MACROS	\
-	-DANDROID_TARGET_BUILD	\
 	-O2	\
 	-fomit-frame-pointer	\
 	-Wall	\
@@ -10,6 +9,10 @@ LOCAL_CFLAGS :=	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
 	$(LOCAL_CFLAGS)
+
+ifneq ($(TARGET_SIMULATOR),true)
+LOCAL_CFLAGS := -DANDROID_TARGET_BUILD $(LOCAL_CFLAGS)
+endif
 
 ifeq ($(LLVM_ENABLE_ASSERTION),true)
 LOCAL_CFLAGS :=	\
@@ -38,12 +41,17 @@ LOCAL_CPPFLAGS :=	\
 
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\
-	bionic	\
-	external/stlport/stlport	\
 	$(LLVM_ROOT_PATH)	\
 	$(LLVM_ROOT_PATH)/include	\
 	$(LLVM_ROOT_PATH)/device/include	\
 	$(LOCAL_C_INCLUDES)
+
+ifneq ($(TARGET_SIMULATOR),true)
+LOCAL_C_INCLUDES := \
+	bionic \
+	external/stlport/stlport \
+	$(LOCAL_C_INCLUDES)
+endif
 
 ###########################################################
 ## Commands for running tblgen to compile a td file

@@ -44,7 +44,9 @@ REQUIRES_RTTI := 1
 
 LOCAL_SRC_FILES := $(system_SRC_FILES)
 
+ifneq ($(TARGET_SIMULATOR),true)
 LOCAL_CFLAGS += -I bionic/libc/include
+endif
 
 LOCAL_MODULE:= libLLVMSystem
 
