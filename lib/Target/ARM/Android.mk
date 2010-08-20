@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_PATH := $(call my-dir)
 
 arm_codegen_TBLGEN_TABLES :=	\
@@ -71,5 +68,3 @@ include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
-
-endif

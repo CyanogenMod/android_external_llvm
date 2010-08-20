@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 ifeq ($(LLVM_ROOT_PATH),)
 $(error Must set variable LLVM_ROOT_PATH before including this! $(LOCAL_PATH))
 endif
@@ -16,5 +13,3 @@ LLVM_TBLGEN_RULES_MK := $(LLVM_ROOT_PATH)/llvm-tblgen-rules.mk
 CLANG_ROOT_PATH := $(LLVM_ROOT_PATH)/tools/clang
 
 include $(CLANG_ROOT_PATH)/clang.mk
-
-endif

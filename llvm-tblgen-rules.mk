@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 ###########################################################
 ## Commands for running tblgen to compile a td file
 ##########################################################
@@ -114,8 +111,6 @@ endif
 ifneq ($(findstring ARMGenDecoderTables.inc,$(tblgen_gen_tables)),)
 $(intermediates)/ARMGenDecoderTables.inc: $(tblgen_source_dir)/ARM.td $(TBLGEN)
 	$(call transform-td-to-out,arm-decoder)
-endif
-
 endif
 
 endif

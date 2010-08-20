@@ -1,5 +1,3 @@
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_PATH:= $(call my-dir)
 
 # For the host
@@ -15,5 +13,3 @@ LOCAL_MODULE:= libLLVMInstrumentation
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
-
-endif

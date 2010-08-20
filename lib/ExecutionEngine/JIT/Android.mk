@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_PATH:= $(call my-dir)
 
 # For the host
@@ -33,5 +30,3 @@ LOCAL_MODULE:= libLLVMJIT
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_STATIC_LIBRARY)
-
-endif

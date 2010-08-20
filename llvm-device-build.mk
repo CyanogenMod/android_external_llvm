@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
@@ -62,5 +59,3 @@ $(hide) $(TBLGEN) \
     -gen-$(strip $(1)) \
     -o $@ $<
 endef
-
-endif

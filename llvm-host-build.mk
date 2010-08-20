@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
@@ -18,6 +15,12 @@ LOCAL_CFLAGS :=	\
 	-D_DEBUG	\
 	-UNDEBUG	\
 	$(LOCAL_CFLAGS)
+endif
+
+# force 32 bit code for sim build
+ifeq ($(TARGET_SIMULATOR),true)
+LOCAL_CFLAGS += -m32
+LOCAL_LDFLAGS += -m32
 endif
 
 ifneq ($(REQUIRES_EH),1)
@@ -60,5 +63,3 @@ $(hide) $(TBLGEN) \
     -gen-$(strip $(1)) \
     -o $@ $<
 endef
-
-endif

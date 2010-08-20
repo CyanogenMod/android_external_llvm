@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_PATH := $(call my-dir)
 
 # For the device only
@@ -28,5 +25,3 @@ LOCAL_MODULE:= libLLVMX86Disassembler
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
-
-endif

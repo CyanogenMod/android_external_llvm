@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_PATH := $(call my-dir)
 LLVM_ROOT_PATH := $(LOCAL_PATH)
 LLVM_ENABLE_ASSERTION := true
@@ -44,5 +41,3 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 include $(LOCAL_PATH)/llvm.mk
 
 include $(subdirs)
-
-endif

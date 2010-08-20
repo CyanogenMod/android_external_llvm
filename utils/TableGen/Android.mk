@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
@@ -48,5 +45,3 @@ LOCAL_LDLIBS += -lpthread -lm -ldl
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_EXECUTABLE)
-
-endif

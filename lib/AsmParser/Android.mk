@@ -1,6 +1,3 @@
-# Only use this on the device or emulator.
-ifeq ($(TARGET_ARCH),arm)
-
 LOCAL_PATH:= $(call my-dir)
 
 asm_parser_SRC_FILES :=	\
@@ -29,5 +26,3 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 #
 #include $(LOCAL_PATH)/../../llvm-device-build.mk
 #include $(BUILD_STATIC_LIBRARY)
-
-endif
