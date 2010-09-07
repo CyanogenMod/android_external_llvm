@@ -32,7 +32,6 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/ExecutionEngine/JIT	\
 		lib/MC	\
 		lib/MC/MCParser	\
-                tools/clang     \
                 lib/Linker      \
                 lib/AsmParser   \
                 lib/Transforms/Instrumentation \
