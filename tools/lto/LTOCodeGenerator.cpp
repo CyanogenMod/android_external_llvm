@@ -119,11 +119,24 @@ bool LTOCodeGenerator::setCodePICModel(lto_codegen_model model,
     return true;
 }
 
+void LTOCodeGenerator::setCpu(const char* mCpu)
+{
+  _mCpu = mCpu;
+}
+
 void LTOCodeGenerator::setAssemblerPath(const char* path)
 {
     if ( _assemblerPath )
         delete _assemblerPath;
     _assemblerPath = new sys::Path(path);
+}
+
+void LTOCodeGenerator::setAssemblerArgs(const char** args, int nargs)
+{
+  for (int i = 0; i < nargs; ++i) {
+    const char *arg = args[i];
+    _assemblerArgs.push_back(arg);
+  }
 }
 
 void LTOCodeGenerator::addMustPreserveSymbol(const char* sym)
@@ -142,8 +155,8 @@ bool LTOCodeGenerator::writeMergedModules(const char *path,
 
   // create output file
   std::string ErrInfo;
-  raw_fd_ostream Out(path, ErrInfo,
-                     raw_fd_ostream::F_Binary);
+  tool_output_file Out(path, ErrInfo,
+                       raw_fd_ostream::F_Binary);
   if (!ErrInfo.empty()) {
     errMsg = "could not open bitcode file for writing: ";
     errMsg += path;
@@ -152,13 +165,16 @@ bool LTOCodeGenerator::writeMergedModules(const char *path,
     
   // write bitcode to it
   WriteBitcodeToFile(_linker.getModule(), Out);
-  
+  Out.close();
+
   if (Out.has_error()) {
     errMsg = "could not write bitcode file: ";
     errMsg += path;
+    Out.clear_error();
     return true;
   }
   
+  Out.keep();
   return false;
 }
 
@@ -174,23 +190,27 @@ const void* LTOCodeGenerator::compile(size_t* length, std::string& errMsg)
     // generate assembly code
     bool genResult = false;
     {
-      raw_fd_ostream asmFD(uniqueAsmPath.c_str(), errMsg);
-      formatted_raw_ostream asmFile(asmFD);
+      tool_output_file asmFD(uniqueAsmPath.c_str(), errMsg);
+      formatted_tool_output_file asmFile(asmFD);
       if (!errMsg.empty())
         return NULL;
       genResult = this->generateAssemblyCode(asmFile, errMsg);
+      asmFile.close();
+      if (asmFile.has_error()) {
+        asmFile.clear_error();
+        return NULL;
+      }
+      asmFile.keep();
     }
     if ( genResult ) {
-        if ( uniqueAsmPath.exists() )
-            uniqueAsmPath.eraseFromDisk();
+        uniqueAsmPath.eraseFromDisk();
         return NULL;
     }
     
     // make unique temp .o file to put generated object file
     sys::PathWithStatus uniqueObjPath("lto-llvm.o");
     if ( uniqueObjPath.createTemporaryFileOnDisk(true, &errMsg) ) {
-        if ( uniqueAsmPath.exists() )
-            uniqueAsmPath.eraseFromDisk();
+        uniqueAsmPath.eraseFromDisk();
         return NULL;
     }
     sys::RemoveFileOnSignal(uniqueObjPath);
@@ -257,6 +277,11 @@ bool LTOCodeGenerator::assemble(const std::string& asmPath,
         args.push_back("-c");
         args.push_back("-x");
         args.push_back("assembler");
+    } else {
+        for (std::vector<std::string>::iterator I = _assemblerArgs.begin(),
+               E = _assemblerArgs.end(); I != E; ++I) {
+            args.push_back(I->c_str());
+        }
     }
     args.push_back("-o");
     args.push_back(objPath.c_str());
@@ -300,8 +325,9 @@ bool LTOCodeGenerator::determineTarget(std::string& errMsg)
         }
 
         // construct LTModule, hand over ownership of module and target
-        const std::string FeatureStr =
-           SubtargetFeatures::getDefaultSubtargetFeatures(llvm::Triple(Triple));
+        SubtargetFeatures Features;
+        Features.getDefaultSubtargetFeatures(_mCpu, llvm::Triple(Triple));
+        std::string FeatureStr = Features.getString();
         _target = march->createTargetMachine(Triple, FeatureStr);
     }
     return false;
@@ -352,20 +378,6 @@ bool LTOCodeGenerator::generateAssemblyCode(formatted_raw_ostream& out,
     this->applyScopeRestrictions();
 
     Module* mergedModule = _linker.getModule();
-
-    // If target supports exception handling then enable it now.
-    switch (_target->getMCAsmInfo()->getExceptionHandlingType()) {
-    case ExceptionHandling::Dwarf:
-      llvm::DwarfExceptionHandling = true;
-      break;
-    case ExceptionHandling::SjLj:
-      llvm::SjLjExceptionHandling = true;
-      break;
-    case ExceptionHandling::None:
-      break;
-    default:
-      assert (0 && "Unknown exception handling model!");
-    }
 
     // if options were requested, set them
     if ( !_codegenOptions.empty() )

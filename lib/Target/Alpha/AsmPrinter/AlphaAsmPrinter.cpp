@@ -53,8 +53,6 @@ namespace {
 
     void printOp(const MachineOperand &MO, raw_ostream &O);
     void printOperand(const MachineInstr *MI, int opNum, raw_ostream &O);
-    void printBaseOffsetPair(const MachineInstr *MI, int i, raw_ostream &O,
-                             bool brackets=true);
     virtual void EmitFunctionBodyStart();
     virtual void EmitFunctionBodyEnd(); 
     void EmitStartOfAsmFile(Module &M);
@@ -73,7 +71,7 @@ namespace {
 void AlphaAsmPrinter::printOperand(const MachineInstr *MI, int opNum,
                                    raw_ostream &O) {
   const MachineOperand &MO = MI->getOperand(opNum);
-  if (MO.getType() == MachineOperand::MO_Register) {
+  if (MO.isReg()) {
     assert(TargetRegisterInfo::isPhysicalRegister(MO.getReg()) &&
            "Not physreg??");
     O << getRegisterName(MO.getReg());

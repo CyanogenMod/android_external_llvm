@@ -4,6 +4,8 @@ add_executable(tblgen
   AsmWriterEmitter.cpp
   AsmWriterInst.cpp
   CallingConvEmitter.cpp
+  ClangASTNodesEmitter.cpp
+  ClangAttrEmitter.cpp
   ClangDiagnosticsEmitter.cpp
   CodeEmitterGen.cpp
   CodeGenDAGPatterns.cpp
@@ -21,6 +23,7 @@ add_executable(tblgen
   InstrInfoEmitter.cpp
   IntrinsicEmitter.cpp
   LLVMCConfigurationEmitter.cpp
+  NeonEmitter.cpp
   OptParserEmitter.cpp
   Record.cpp
   RegisterInfoEmitter.cpp
@@ -38,6 +41,6 @@ target_link_libraries(tblgen LLVMSupport LLVMSystem)
 if( MINGW )
   target_link_libraries(tblgen imagehlp psapi)
 endif( MINGW )
-if( LLVM_ENABLE_THREADS AND HAVE_LIBPTHREAD )
+if( LLVM_ENABLE_THREADS AND HAVE_LIBPTHREAD AND NOT BEOS )
   target_link_libraries(tblgen pthread)
 endif()

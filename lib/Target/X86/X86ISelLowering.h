@@ -196,6 +196,10 @@ namespace llvm {
 
       // TLSADDR - Thread Local Storage.
       TLSADDR,
+      
+      // TLSCALL - Thread Local Storage.  When calling to an OS provided
+      // thunk at the address from an earlier relocation.
+      TLSCALL,
 
       // SegmentBaseAddress - The address segment:0
       SegmentBaseAddress,
@@ -244,6 +248,46 @@ namespace llvm {
       // PTEST - Vector bitwise comparisons
       PTEST,
 
+      // TESTP - Vector packed fp sign bitwise comparisons
+      TESTP,
+
+      // Several flavors of instructions with vector shuffle behaviors.
+      PALIGN,
+      PSHUFD,
+      PSHUFHW,
+      PSHUFLW,
+      PSHUFHW_LD,
+      PSHUFLW_LD,
+      SHUFPD,
+      SHUFPS,
+      MOVDDUP,
+      MOVSHDUP,
+      MOVSLDUP,
+      MOVSHDUP_LD,
+      MOVSLDUP_LD,
+      MOVLHPS,
+      MOVHLPS,
+      MOVLHPD,
+      MOVHLPD,
+      MOVHPS,
+      MOVHPD,
+      MOVLPS,
+      MOVLPD,
+      MOVSD,
+      MOVSS,
+      UNPCKLPS,
+      UNPCKLPD,
+      UNPCKHPS,
+      UNPCKHPD,
+      PUNPCKLBW,
+      PUNPCKLWD,
+      PUNPCKLDQ,
+      PUNPCKLQDQ,
+      PUNPCKHBW,
+      PUNPCKHWD,
+      PUNPCKHDQ,
+      PUNPCKHQDQ,
+
       // VASTART_SAVE_XMM_REGS - Save xmm argument registers to the stack,
       // according to %al. An operator is needed so that this can be expanded
       // with control flow.
@@ -261,7 +305,13 @@ namespace llvm {
       ATOMXOR64_DAG,
       ATOMAND64_DAG,
       ATOMNAND64_DAG,
-      ATOMSWAP64_DAG
+      ATOMSWAP64_DAG,
+      
+      // Memory barrier
+      MEMBARRIER,
+      MFENCE,
+      SFENCE,
+      LFENCE
 
       // WARNING: Do not add anything in the end unless you want the node to
       // have memop! In fact, starting from ATOMADD64_DAG all opcodes will be
@@ -453,9 +503,9 @@ namespace llvm {
     /// and some i16 instructions are slow.
     virtual bool IsDesirableToPromoteOp(SDValue Op, EVT &PVT) const;
 
-    virtual MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr *MI,
-                                                         MachineBasicBlock *MBB,
-                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
+    virtual MachineBasicBlock *
+      EmitInstrWithCustomInserter(MachineInstr *MI,
+                                  MachineBasicBlock *MBB) const;
 
  
     /// getTargetNodeName - This method returns the name of a target specific
@@ -496,7 +546,6 @@ namespace llvm {
     /// being processed is 'm'.
     virtual void LowerAsmOperandForConstraint(SDValue Op,
                                               char ConstraintLetter,
-                                              bool hasMemory,
                                               std::vector<SDValue> &Ops,
                                               SelectionDAG &DAG) const;
     
@@ -563,7 +612,7 @@ namespace llvm {
       return !X86ScalarSSEf64 || VT == MVT::f80;
     }
     
-    virtual const X86Subtarget* getSubtarget() const {
+    const X86Subtarget* getSubtarget() const {
       return Subtarget;
     }
 
@@ -576,19 +625,23 @@ namespace llvm {
 
     /// createFastISel - This method returns a target specific FastISel object,
     /// or null if the target does not support "fast" ISel.
-    virtual FastISel *
-    createFastISel(MachineFunction &mf,
-                   DenseMap<const Value *, unsigned> &,
-                   DenseMap<const BasicBlock *, MachineBasicBlock *> &,
-                   DenseMap<const AllocaInst *, int> &,
-                   std::vector<std::pair<MachineInstr*, unsigned> > &
-#ifndef NDEBUG
-                   , SmallSet<const Instruction *, 8> &
-#endif
-                   ) const;
+    virtual FastISel *createFastISel(FunctionLoweringInfo &funcInfo) const;
 
     /// getFunctionAlignment - Return the Log2 alignment of this function.
     virtual unsigned getFunctionAlignment(const Function *F) const;
+
+    unsigned getRegPressureLimit(const TargetRegisterClass *RC,
+                                 MachineFunction &MF) const;
+
+    /// getStackCookieLocation - Return true if the target stores stack
+    /// protector cookies at a fixed offset in some non-standard address
+    /// space, and populates the address space and offset as
+    /// appropriate.
+    virtual bool getStackCookieLocation(unsigned &AddressSpace, unsigned &Offset) const;
+
+  protected:
+    std::pair<const TargetRegisterClass*, uint8_t>
+    findRepresentativeClass(EVT VT) const;
 
   private:
     /// Subtarget - Keep a pointer to the X86Subtarget around so that we can
@@ -643,6 +696,7 @@ namespace llvm {
                                            bool isCalleeStructRet,
                                            bool isCallerStructRet,
                                     const SmallVectorImpl<ISD::OutputArg> &Outs,
+                                    const SmallVectorImpl<SDValue> &OutVals,
                                     const SmallVectorImpl<ISD::InputArg> &Ins,
                                            SelectionDAG& DAG) const;
     bool IsCalleePop(bool isVarArg, CallingConv::ID CallConv) const;
@@ -677,6 +731,7 @@ namespace llvm {
     SDValue LowerShift(SDValue Op, SelectionDAG &DAG) const;
     SDValue BuildFILD(SDValue Op, EVT SrcVT, SDValue Chain, SDValue StackSlot,
                       SelectionDAG &DAG) const;
+    SDValue LowerBIT_CONVERT(SDValue op, SelectionDAG &DAG) const;
     SDValue LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP_i64(SDValue Op, SelectionDAG &DAG) const;
@@ -708,11 +763,16 @@ namespace llvm {
     SDValue LowerCTLZ(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerCTTZ(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerMUL_V2I64(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSHL(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerXALUO(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue LowerCMP_SWAP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerLOAD_SUB(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerREADCYCLECOUNTER(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerMEMBARRIER(SDValue Op, SelectionDAG &DAG) const;
+
+    // Utility functions to help LowerVECTOR_SHUFFLE
+    SDValue LowerVECTOR_SHUFFLEv8i16(SDValue Op, SelectionDAG &DAG) const;
 
     virtual SDValue
       LowerFormalArguments(SDValue Chain,
@@ -724,6 +784,7 @@ namespace llvm {
       LowerCall(SDValue Chain, SDValue Callee,
                 CallingConv::ID CallConv, bool isVarArg, bool &isTailCall,
                 const SmallVectorImpl<ISD::OutputArg> &Outs,
+                const SmallVectorImpl<SDValue> &OutVals,
                 const SmallVectorImpl<ISD::InputArg> &Ins,
                 DebugLoc dl, SelectionDAG &DAG,
                 SmallVectorImpl<SDValue> &InVals) const;
@@ -732,34 +793,17 @@ namespace llvm {
       LowerReturn(SDValue Chain,
                   CallingConv::ID CallConv, bool isVarArg,
                   const SmallVectorImpl<ISD::OutputArg> &Outs,
+                  const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
 
     virtual bool
       CanLowerReturn(CallingConv::ID CallConv, bool isVarArg,
-                     const SmallVectorImpl<EVT> &OutTys,
-                     const SmallVectorImpl<ISD::ArgFlagsTy> &ArgsFlags,
-                     SelectionDAG &DAG) const;
+                     const SmallVectorImpl<ISD::OutputArg> &Outs,
+                     LLVMContext &Context) const;
 
     void ReplaceATOMIC_BINARY_64(SDNode *N, SmallVectorImpl<SDValue> &Results,
                                  SelectionDAG &DAG, unsigned NewOp) const;
 
-    SDValue EmitTargetCodeForMemset(SelectionDAG &DAG, DebugLoc dl,
-                                    SDValue Chain,
-                                    SDValue Dst, SDValue Src,
-                                    SDValue Size, unsigned Align,
-                                    bool isVolatile,
-                                    const Value *DstSV,
-                                    uint64_t DstSVOff) const;
-    SDValue EmitTargetCodeForMemcpy(SelectionDAG &DAG, DebugLoc dl,
-                                    SDValue Chain,
-                                    SDValue Dst, SDValue Src,
-                                    SDValue Size, unsigned Align,
-                                    bool isVolatile, bool AlwaysInline,
-                                    const Value *DstSV,
-                                    uint64_t DstSVOff,
-                                    const Value *SrcSV,
-                                    uint64_t SrcSVOff) const;
-    
     /// Utility function to emit string processing sse4.2 instructions
     /// that return in xmm0.
     /// This takes the instruction to expand, the associated machine basic
@@ -778,7 +822,6 @@ namespace llvm {
                                                     unsigned immOpc,
                                                     unsigned loadOpc,
                                                     unsigned cxchgOpc,
-                                                    unsigned copyOpc,
                                                     unsigned notOpc,
                                                     unsigned EAXreg,
                                                     TargetRegisterClass *RC,
@@ -806,12 +849,13 @@ namespace llvm {
                                                    MachineBasicBlock *BB) const;
 
     MachineBasicBlock *EmitLoweredSelect(MachineInstr *I,
-                                         MachineBasicBlock *BB,
-                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
+                                         MachineBasicBlock *BB) const;
 
     MachineBasicBlock *EmitLoweredMingwAlloca(MachineInstr *MI,
-                                              MachineBasicBlock *BB,
-                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
+                                              MachineBasicBlock *BB) const;
+    
+    MachineBasicBlock *EmitLoweredTLSCall(MachineInstr *MI,
+                                          MachineBasicBlock *BB) const;
 
     /// Emit nodes that will be selected as "test Op0,Op0", or something
     /// equivalent, for use with the given x86 condition code.
@@ -824,15 +868,7 @@ namespace llvm {
   };
 
   namespace X86 {
-    FastISel *createFastISel(MachineFunction &mf,
-                           DenseMap<const Value *, unsigned> &,
-                           DenseMap<const BasicBlock *, MachineBasicBlock *> &,
-                           DenseMap<const AllocaInst *, int> &,
-                           std::vector<std::pair<MachineInstr*, unsigned> > &
-#ifndef NDEBUG
-                           , SmallSet<const Instruction*, 8> &
-#endif
-                           );
+    FastISel *createFastISel(FunctionLoweringInfo &funcInfo);
   }
 }
 

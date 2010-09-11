@@ -31,7 +31,6 @@ static MCAsmInfo *createMCAsmInfo(const Target &T, StringRef TT) {
   }
 }
 
-
 extern "C" void LLVMInitializeARMTarget() {
   // Register the target.
   RegisterTargetMachine<ARMTargetMachine> X(TheARMTarget);
@@ -60,9 +59,15 @@ ARMTargetMachine::ARMTargetMachine(const Target &T, const std::string &TT,
                                    const std::string &FS)
   : ARMBaseTargetMachine(T, TT, FS, false), InstrInfo(Subtarget),
     DataLayout(Subtarget.isAPCS_ABI() ?
-               std::string("e-p:32:32-f64:32:32-i64:32:32-n32") :
-               std::string("e-p:32:32-f64:64:64-i64:64:64-n32")),
-    TLInfo(*this) {
+               std::string("e-p:32:32-f64:32:32-i64:32:32-"
+                           "v128:32:128-v64:32:64-n32") :
+               std::string("e-p:32:32-f64:64:64-i64:64:64-"
+                           "v128:64:128-v64:64:64-n32")),
+    TLInfo(*this),
+    TSInfo(*this) {
+  if (!Subtarget.hasARMOps())
+    report_fatal_error("CPU: '" + Subtarget.getCPUString() + "' does not "
+                       "support ARM mode execution!");
 }
 
 ThumbTargetMachine::ThumbTargetMachine(const Target &T, const std::string &TT,
@@ -73,15 +78,24 @@ ThumbTargetMachine::ThumbTargetMachine(const Target &T, const std::string &TT,
               : ((ARMBaseInstrInfo*)new Thumb1InstrInfo(Subtarget))),
     DataLayout(Subtarget.isAPCS_ABI() ?
                std::string("e-p:32:32-f64:32:32-i64:32:32-"
-                           "i16:16:32-i8:8:32-i1:8:32-a:0:32-n32") :
+                           "i16:16:32-i8:8:32-i1:8:32-"
+                           "v128:32:128-v64:32:64-a:0:32-n32") :
                std::string("e-p:32:32-f64:64:64-i64:64:64-"
-                           "i16:16:32-i8:8:32-i1:8:32-a:0:32-n32")),
-    TLInfo(*this) {
+                           "i16:16:32-i8:8:32-i1:8:32-"
+                           "v128:64:128-v64:64:64-a:0:32-n32")),
+    TLInfo(*this),
+    TSInfo(*this) {
 }
 
-
-
 // Pass Pipeline Configuration
+bool ARMBaseTargetMachine::addPreISel(PassManagerBase &PM,
+                                      CodeGenOpt::Level OptLevel) {
+  if (OptLevel != CodeGenOpt::None)
+    PM.add(createARMGlobalMergePass(getTargetLowering()));
+
+  return false;
+}
+
 bool ARMBaseTargetMachine::addInstSelector(PassManagerBase &PM,
                                            CodeGenOpt::Level OptLevel) {
   PM.add(createARMISelDag(*this, OptLevel));
@@ -96,6 +110,7 @@ bool ARMBaseTargetMachine::addPreRegAlloc(PassManagerBase &PM,
   // FIXME: temporarily disabling load / store optimization pass for Thumb1.
   if (OptLevel != CodeGenOpt::None && !Subtarget.isThumb1Only())
     PM.add(createARMLoadStoreOptimizationPass(true));
+
   return true;
 }
 
@@ -113,21 +128,20 @@ bool ARMBaseTargetMachine::addPreSched2(PassManagerBase &PM,
   // proper scheduling.
   PM.add(createARMExpandPseudoPass());
 
+  if (OptLevel != CodeGenOpt::None) {
+    if (!Subtarget.isThumb1Only())
+      PM.add(createIfConverterPass());
+  }
+  if (Subtarget.isThumb2())
+    PM.add(createThumb2ITBlockPass());
+
   return true;
 }
 
 bool ARMBaseTargetMachine::addPreEmitPass(PassManagerBase &PM,
                                           CodeGenOpt::Level OptLevel) {
-  // FIXME: temporarily disabling load / store optimization pass for Thumb1.
-  if (OptLevel != CodeGenOpt::None) {
-    if (!Subtarget.isThumb1Only())
-      PM.add(createIfConverterPass());
-  }
-
-  if (Subtarget.isThumb2()) {
-    PM.add(createThumb2ITBlockPass());
+  if (Subtarget.isThumb2() && !Subtarget.prefers32BitThumb())
     PM.add(createThumb2SizeReductionPass());
-  }
 
   PM.add(createARMConstantIslandPass());
   return true;

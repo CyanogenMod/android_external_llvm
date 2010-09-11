@@ -1,5 +1,15 @@
 // RUN: llvm-mc -triple x86_64-unknown-unknown --show-encoding %s | FileCheck %s
 
+// PR7195
+// CHECK: callw 42
+// CHECK: encoding: [0x66,0xe8,A,A]
+       callw 42
+
+// rdar://8127102
+// CHECK: movq	%gs:(%rdi), %rax
+// CHECK: encoding: [0x65,0x48,0x8b,0x07]
+movq	%gs:(%rdi), %rax
+
 // CHECK: crc32b 	%bl, %eax
 // CHECK:  encoding: [0xf2,0x0f,0x38,0xf0,0xc3]
         crc32b	%bl, %eax
@@ -71,3 +81,62 @@
 // CHECK: crc32q 	4(%rbx), %rax
 // CHECK:  encoding: [0xf2,0x48,0x0f,0x38,0xf1,0x43,0x04]
         crc32q	4(%rbx), %rax
+
+// CHECK: movd %r8, %mm1
+// CHECK:  encoding: [0x49,0x0f,0x6e,0xc8]
+movd %r8, %mm1
+
+// CHECK: movd %r8d, %mm1
+// CHECK:  encoding: [0x41,0x0f,0x6e,0xc8]
+movd %r8d, %mm1
+
+// CHECK: movd %rdx, %mm1
+// CHECK:  encoding: [0x48,0x0f,0x6e,0xca]
+movd %rdx, %mm1
+
+// CHECK: movd %edx, %mm1
+// CHECK:  encoding: [0x0f,0x6e,0xca]
+movd %edx, %mm1
+
+// CHECK: movd %mm1, %r8
+// CHECK:  encoding: [0x49,0x0f,0x7e,0xc8]
+movd %mm1, %r8
+
+// CHECK: movd %mm1, %r8d
+// CHECK:  encoding: [0x41,0x0f,0x7e,0xc8]
+movd %mm1, %r8d
+
+// CHECK: movd %mm1, %rdx
+// CHECK:  encoding: [0x48,0x0f,0x7e,0xca]
+movd %mm1, %rdx
+
+// CHECK: movd %mm1, %edx
+// CHECK:  encoding: [0x0f,0x7e,0xca]
+movd %mm1, %edx
+
+// rdar://7840289
+// CHECK: pshufb	CPI1_0(%rip), %xmm1
+// CHECK:  encoding: [0x66,0x0f,0x38,0x00,0x0d,A,A,A,A]
+// CHECK:  fixup A - offset: 5, value: CPI1_0-4
+pshufb	CPI1_0(%rip), %xmm1
+
+// CHECK: movq  57005(,%riz), %rbx
+// CHECK: encoding: [0x48,0x8b,0x1c,0x25,0xad,0xde,0x00,0x00]
+          movq  57005(,%riz), %rbx
+
+// CHECK: movq  48879(,%riz), %rax
+// CHECK: encoding: [0x48,0x8b,0x04,0x25,0xef,0xbe,0x00,0x00]
+          movq  48879(,%riz), %rax
+
+// CHECK: movq  -4(,%riz,8), %rax
+// CHECK: encoding: [0x48,0x8b,0x04,0xe5,0xfc,0xff,0xff,0xff]
+          movq  -4(,%riz,8), %rax
+
+// CHECK: movq  (%rcx,%riz), %rax
+// CHECK: encoding: [0x48,0x8b,0x04,0x21]
+          movq  (%rcx,%riz), %rax
+
+// CHECK: movq  (%rcx,%riz,8), %rax
+// CHECK: encoding: [0x48,0x8b,0x04,0xe1]
+          movq  (%rcx,%riz,8), %rax
+

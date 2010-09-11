@@ -28,6 +28,7 @@
 
 namespace llvm {
 
+template <typename T> class SmallVectorImpl;
 class AliasAnalysis;
 class TargetInstrDesc;
 class TargetInstrInfo;
@@ -200,12 +201,14 @@ public:
   /// isLabel - Returns true if the MachineInstr represents a label.
   ///
   bool isLabel() const {
-    return getOpcode() == TargetOpcode::DBG_LABEL ||
+    return getOpcode() == TargetOpcode::PROLOG_LABEL ||
            getOpcode() == TargetOpcode::EH_LABEL ||
            getOpcode() == TargetOpcode::GC_LABEL;
   }
   
-  bool isDebugLabel() const { return getOpcode() == TargetOpcode::DBG_LABEL; }
+  bool isPrologLabel() const {
+    return getOpcode() == TargetOpcode::PROLOG_LABEL;
+  }
   bool isEHLabel() const { return getOpcode() == TargetOpcode::EH_LABEL; }
   bool isGCLabel() const { return getOpcode() == TargetOpcode::GC_LABEL; }
   bool isDebugValue() const { return getOpcode() == TargetOpcode::DBG_VALUE; }
@@ -214,22 +217,53 @@ public:
   bool isKill() const { return getOpcode() == TargetOpcode::KILL; }
   bool isImplicitDef() const { return getOpcode()==TargetOpcode::IMPLICIT_DEF; }
   bool isInlineAsm() const { return getOpcode() == TargetOpcode::INLINEASM; }
-  bool isExtractSubreg() const {
-    return getOpcode() == TargetOpcode::EXTRACT_SUBREG;
-  }
   bool isInsertSubreg() const {
     return getOpcode() == TargetOpcode::INSERT_SUBREG;
   }
   bool isSubregToReg() const {
     return getOpcode() == TargetOpcode::SUBREG_TO_REG;
   }
-  
+  bool isRegSequence() const {
+    return getOpcode() == TargetOpcode::REG_SEQUENCE;
+  }
+  bool isCopy() const {
+    return getOpcode() == TargetOpcode::COPY;
+  }
+
+  /// isCopyLike - Return true if the instruction behaves like a copy.
+  /// This does not include native copy instructions.
+  bool isCopyLike() const {
+    return isCopy() || isSubregToReg();
+  }
+
+  /// isIdentityCopy - Return true is the instruction is an identity copy.
+  bool isIdentityCopy() const {
+    return isCopy() && getOperand(0).getReg() == getOperand(1).getReg() &&
+      getOperand(0).getSubReg() == getOperand(1).getSubReg();
+  }
+
   /// readsRegister - Return true if the MachineInstr reads the specified
   /// register. If TargetRegisterInfo is passed, then it also checks if there
   /// is a read of a super-register.
+  /// This does not count partial redefines of virtual registers as reads:
+  ///   %reg1024:6 = OP.
   bool readsRegister(unsigned Reg, const TargetRegisterInfo *TRI = NULL) const {
     return findRegisterUseOperandIdx(Reg, false, TRI) != -1;
   }
+
+  /// readsVirtualRegister - Return true if the MachineInstr reads the specified
+  /// virtual register. Take into account that a partial define is a
+  /// read-modify-write operation.
+  bool readsVirtualRegister(unsigned Reg) const {
+    return readsWritesVirtualRegister(Reg).first;
+  }
+
+  /// readsWritesVirtualRegister - Return a pair of bools (reads, writes)
+  /// indicating if this instruction reads or writes Reg. This also considers
+  /// partial defines.
+  /// If Ops is not null, all operand indices for Reg are added.
+  std::pair<bool,bool> readsWritesVirtualRegister(unsigned Reg,
+                                      SmallVectorImpl<unsigned> *Ops = 0) const;
 
   /// killsRegister - Return true if the MachineInstr kills the specified
   /// register. If TargetRegisterInfo is passed, then it also checks if there is
@@ -238,12 +272,19 @@ public:
     return findRegisterUseOperandIdx(Reg, true, TRI) != -1;
   }
 
-  /// modifiesRegister - Return true if the MachineInstr modifies the
+  /// definesRegister - Return true if the MachineInstr fully defines the
   /// specified register. If TargetRegisterInfo is passed, then it also checks
   /// if there is a def of a super-register.
-  bool modifiesRegister(unsigned Reg,
-                        const TargetRegisterInfo *TRI = NULL) const {
-    return findRegisterDefOperandIdx(Reg, false, TRI) != -1;
+  /// NOTE: It's ignoring subreg indices on virtual registers.
+  bool definesRegister(unsigned Reg, const TargetRegisterInfo *TRI=NULL) const {
+    return findRegisterDefOperandIdx(Reg, false, false, TRI) != -1;
+  }
+
+  /// modifiesRegister - Return true if the MachineInstr modifies (fully define
+  /// or partially define) the specified register.
+  /// NOTE: It's ignoring subreg indices on virtual registers.
+  bool modifiesRegister(unsigned Reg, const TargetRegisterInfo *TRI) const {
+    return findRegisterDefOperandIdx(Reg, false, true, TRI) != -1;
   }
 
   /// registerDefIsDead - Returns true if the register is dead in this machine
@@ -251,7 +292,7 @@ public:
   /// if there is a dead def of a super-register.
   bool registerDefIsDead(unsigned Reg,
                          const TargetRegisterInfo *TRI = NULL) const {
-    return findRegisterDefOperandIdx(Reg, true, TRI) != -1;
+    return findRegisterDefOperandIdx(Reg, true, false, TRI) != -1;
   }
 
   /// findRegisterUseOperandIdx() - Returns the operand index that is a use of
@@ -270,16 +311,18 @@ public:
   
   /// findRegisterDefOperandIdx() - Returns the operand index that is a def of
   /// the specified register or -1 if it is not found. If isDead is true, defs
-  /// that are not dead are skipped. If TargetRegisterInfo is non-null, then it
-  /// also checks if there is a def of a super-register.
-  int findRegisterDefOperandIdx(unsigned Reg, bool isDead = false,
+  /// that are not dead are skipped. If Overlap is true, then it also looks for
+  /// defs that merely overlap the specified register. If TargetRegisterInfo is
+  /// non-null, then it also checks if there is a def of a super-register.
+  int findRegisterDefOperandIdx(unsigned Reg,
+                                bool isDead = false, bool Overlap = false,
                                 const TargetRegisterInfo *TRI = NULL) const;
 
   /// findRegisterDefOperand - Wrapper for findRegisterDefOperandIdx, it returns
   /// a pointer to the MachineOperand rather than an index.
   MachineOperand *findRegisterDefOperand(unsigned Reg, bool isDead = false,
                                          const TargetRegisterInfo *TRI = NULL) {
-    int Idx = findRegisterDefOperandIdx(Reg, isDead, TRI);
+    int Idx = findRegisterDefOperandIdx(Reg, isDead, false, TRI);
     return (Idx == -1) ? NULL : &getOperand(Idx);
   }
 
@@ -299,12 +342,21 @@ public:
   /// reference if DefOpIdx is not null.
   bool isRegTiedToDefOperand(unsigned UseOpIdx, unsigned *DefOpIdx = 0) const;
 
+  /// clearKillInfo - Clears kill flags on all operands.
+  ///
+  void clearKillInfo();
+
   /// copyKillDeadInfo - Copies kill / dead operand properties from MI.
   ///
   void copyKillDeadInfo(const MachineInstr *MI);
 
   /// copyPredicates - Copies predicate operand(s) from MI.
   void copyPredicates(const MachineInstr *MI);
+
+  /// substituteRegister - Replace all occurrences of FromReg with ToReg:SubIdx,
+  /// properly composing subreg indices where necessary.
+  void substituteRegister(unsigned FromReg, unsigned ToReg, unsigned SubIdx,
+                          const TargetRegisterInfo &RegInfo);
 
   /// addRegisterKilled - We have determined MI kills a register. Look for the
   /// operand that uses it and mark it as IsKill. If AddIfNotFound is true,
@@ -324,7 +376,12 @@ public:
   /// addRegisterDefined - We have determined MI defines a register. Make sure
   /// there is an operand defining Reg.
   void addRegisterDefined(unsigned IncomingReg,
-                          const TargetRegisterInfo *RegInfo);
+                          const TargetRegisterInfo *RegInfo = 0);
+
+  /// setPhysRegsDeadExcept - Mark every physreg used by this instruction as dead
+  /// except those in the UsedRegs list.
+  void setPhysRegsDeadExcept(const SmallVectorImpl<unsigned> &UsedRegs,
+                             const TargetRegisterInfo &TRI);
 
   /// isSafeToMove - Return true if it is safe to move this instruction. If
   /// SawStore is set to true, it means that there is a store (or call) between

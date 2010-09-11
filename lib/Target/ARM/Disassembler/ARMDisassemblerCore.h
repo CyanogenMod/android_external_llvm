@@ -23,7 +23,8 @@
 
 #include "llvm/MC/MCInst.h"
 #include "llvm/Target/TargetInstrInfo.h"
-#include "ARMInstrInfo.h"
+#include "ARMBaseInstrInfo.h"
+#include "ARMRegisterInfo.h"
 #include "ARMDisassembler.h"
 
 namespace llvm {
@@ -53,36 +54,35 @@ public:
   ENTRY(ARM_FORMAT_LDSTMULFRM,    10) \
   ENTRY(ARM_FORMAT_LDSTEXFRM,     11) \
   ENTRY(ARM_FORMAT_ARITHMISCFRM,  12) \
-  ENTRY(ARM_FORMAT_EXTFRM,        13) \
-  ENTRY(ARM_FORMAT_VFPUNARYFRM,   14) \
-  ENTRY(ARM_FORMAT_VFPBINARYFRM,  15) \
-  ENTRY(ARM_FORMAT_VFPCONV1FRM,   16) \
-  ENTRY(ARM_FORMAT_VFPCONV2FRM,   17) \
-  ENTRY(ARM_FORMAT_VFPCONV3FRM,   18) \
-  ENTRY(ARM_FORMAT_VFPCONV4FRM,   19) \
-  ENTRY(ARM_FORMAT_VFPCONV5FRM,   20) \
-  ENTRY(ARM_FORMAT_VFPLDSTFRM,    21) \
-  ENTRY(ARM_FORMAT_VFPLDSTMULFRM, 22) \
-  ENTRY(ARM_FORMAT_VFPMISCFRM,    23) \
-  ENTRY(ARM_FORMAT_THUMBFRM,      24) \
-  ENTRY(ARM_FORMAT_NEONFRM,       25) \
-  ENTRY(ARM_FORMAT_NEONGETLNFRM,  26) \
-  ENTRY(ARM_FORMAT_NEONSETLNFRM,  27) \
-  ENTRY(ARM_FORMAT_NEONDUPFRM,    28) \
-  ENTRY(ARM_FORMAT_MISCFRM,       29) \
-  ENTRY(ARM_FORMAT_THUMBMISCFRM,  30) \
-  ENTRY(ARM_FORMAT_NLdSt,         31) \
-  ENTRY(ARM_FORMAT_N1RegModImm,   32) \
-  ENTRY(ARM_FORMAT_N2Reg,         33) \
-  ENTRY(ARM_FORMAT_NVCVT,         34) \
-  ENTRY(ARM_FORMAT_NVecDupLn,     35) \
-  ENTRY(ARM_FORMAT_N2RegVecShL,   36) \
-  ENTRY(ARM_FORMAT_N2RegVecShR,   37) \
-  ENTRY(ARM_FORMAT_N3Reg,         38) \
-  ENTRY(ARM_FORMAT_N3RegVecSh,    39) \
-  ENTRY(ARM_FORMAT_NVecExtract,   40) \
-  ENTRY(ARM_FORMAT_NVecMulScalar, 41) \
-  ENTRY(ARM_FORMAT_NVTBL,         42)
+  ENTRY(ARM_FORMAT_SATFRM,        13) \
+  ENTRY(ARM_FORMAT_EXTFRM,        14) \
+  ENTRY(ARM_FORMAT_VFPUNARYFRM,   15) \
+  ENTRY(ARM_FORMAT_VFPBINARYFRM,  16) \
+  ENTRY(ARM_FORMAT_VFPCONV1FRM,   17) \
+  ENTRY(ARM_FORMAT_VFPCONV2FRM,   18) \
+  ENTRY(ARM_FORMAT_VFPCONV3FRM,   19) \
+  ENTRY(ARM_FORMAT_VFPCONV4FRM,   20) \
+  ENTRY(ARM_FORMAT_VFPCONV5FRM,   21) \
+  ENTRY(ARM_FORMAT_VFPLDSTFRM,    22) \
+  ENTRY(ARM_FORMAT_VFPLDSTMULFRM, 23) \
+  ENTRY(ARM_FORMAT_VFPMISCFRM,    24) \
+  ENTRY(ARM_FORMAT_THUMBFRM,      25) \
+  ENTRY(ARM_FORMAT_MISCFRM,       26) \
+  ENTRY(ARM_FORMAT_NEONGETLNFRM,  27) \
+  ENTRY(ARM_FORMAT_NEONSETLNFRM,  28) \
+  ENTRY(ARM_FORMAT_NEONDUPFRM,    29) \
+  ENTRY(ARM_FORMAT_NLdSt,         30) \
+  ENTRY(ARM_FORMAT_N1RegModImm,   31) \
+  ENTRY(ARM_FORMAT_N2Reg,         32) \
+  ENTRY(ARM_FORMAT_NVCVT,         33) \
+  ENTRY(ARM_FORMAT_NVecDupLn,     34) \
+  ENTRY(ARM_FORMAT_N2RegVecShL,   35) \
+  ENTRY(ARM_FORMAT_N2RegVecShR,   36) \
+  ENTRY(ARM_FORMAT_N3Reg,         37) \
+  ENTRY(ARM_FORMAT_N3RegVecSh,    38) \
+  ENTRY(ARM_FORMAT_NVecExtract,   39) \
+  ENTRY(ARM_FORMAT_NVecMulScalar, 40) \
+  ENTRY(ARM_FORMAT_NVTBL,         41)
 
 // ARM instruction format specifies the encoding used by the instruction.
 #define ENTRY(n, v) n = v,
@@ -137,25 +137,25 @@ static inline void setSlice(uint32_t &Bits, unsigned From, unsigned To,
 /// Various utilities for checking the target specific flags.
 
 /// A unary data processing instruction doesn't have an Rn operand.
-static inline bool isUnaryDP(unsigned TSFlags) {
+static inline bool isUnaryDP(uint64_t TSFlags) {
   return (TSFlags & ARMII::UnaryDP);
 }
 
 /// This four-bit field describes the addressing mode used.
 /// See also ARMBaseInstrInfo.h.
-static inline unsigned getAddrMode(unsigned TSFlags) {
+static inline unsigned getAddrMode(uint64_t TSFlags) {
   return (TSFlags & ARMII::AddrModeMask);
 }
 
 /// {IndexModePre, IndexModePost}
 /// Only valid for load and store ops.
 /// See also ARMBaseInstrInfo.h.
-static inline unsigned getIndexMode(unsigned TSFlags) {
+static inline unsigned getIndexMode(uint64_t TSFlags) {
   return (TSFlags & ARMII::IndexModeMask) >> ARMII::IndexModeShift;
 }
 
 /// Pre-/post-indexed operations define an extra $base_wb in the OutOperandList.
-static inline bool isPrePostLdSt(unsigned TSFlags) {
+static inline bool isPrePostLdSt(uint64_t TSFlags) {
   return (TSFlags & ARMII::IndexModeMask) != 0;
 }
 

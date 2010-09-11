@@ -22,6 +22,7 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSectionELF.h"
+#include "llvm/MC/MCSectionCOFF.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetData.h"
@@ -460,6 +461,26 @@ void TargetLoweringObjectFileMachO::Initialize(MCContext &Ctx,
     = getContext().getMachOSection("__DATA", "__data", 0,
                                    SectionKind::getDataRel());
 
+  TLSDataSection // .tdata
+    = getContext().getMachOSection("__DATA", "__thread_data",
+                                   MCSectionMachO::S_THREAD_LOCAL_REGULAR,
+                                   SectionKind::getDataRel());
+  TLSBSSSection // .tbss
+    = getContext().getMachOSection("__DATA", "__thread_bss",
+                                   MCSectionMachO::S_THREAD_LOCAL_ZEROFILL,
+                                   SectionKind::getThreadBSS());
+                                   
+  // TODO: Verify datarel below.
+  TLSTLVSection // .tlv
+    = getContext().getMachOSection("__DATA", "__thread_vars",
+                                   MCSectionMachO::S_THREAD_LOCAL_VARIABLES,
+                                   SectionKind::getDataRel());
+                                   
+  TLSThreadInitSection
+    = getContext().getMachOSection("__DATA", "__thread_init",
+                          MCSectionMachO::S_THREAD_LOCAL_INIT_FUNCTION_POINTERS,
+                          SectionKind::getDataRel());
+                                   
   CStringSection // .cstring
     = getContext().getMachOSection("__TEXT", "__cstring", 
                                    MCSectionMachO::S_CSTRING_LITERALS,
@@ -497,12 +518,13 @@ void TargetLoweringObjectFileMachO::Initialize(MCContext &Ctx,
                                    SectionKind::getText());
   ConstTextCoalSection
     = getContext().getMachOSection("__TEXT", "__const_coal", 
-                                   MCSectionMachO::S_COALESCED,
+                                   MCSectionMachO::S_COALESCED |
+                                   MCSectionMachO::S_ATTR_PURE_INSTRUCTIONS,
                                    SectionKind::getText());
   ConstDataCoalSection
     = getContext().getMachOSection("__DATA","__const_coal",
                                    MCSectionMachO::S_COALESCED,
-                                   SectionKind::getText());
+                                   SectionKind::getReadOnly());
   ConstDataSection  // .const_data
     = getContext().getMachOSection("__DATA", "__const", 0,
                                    SectionKind::getReadOnlyWithRel());
@@ -606,6 +628,8 @@ void TargetLoweringObjectFileMachO::Initialize(MCContext &Ctx,
     getContext().getMachOSection("__DWARF", "__debug_inlined",
                                  MCSectionMachO::S_ATTR_DEBUG,
                                  SectionKind::getMetadata());
+                                 
+  TLSExtraDataSection = TLSTLVSection;
 }
 
 const MCSection *TargetLoweringObjectFileMachO::
@@ -646,7 +670,10 @@ getExplicitSectionGlobal(const GlobalValue *GV, SectionKind Kind,
 const MCSection *TargetLoweringObjectFileMachO::
 SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
                        Mangler *Mang, const TargetMachine &TM) const {
-  assert(!Kind.isThreadLocal() && "Darwin doesn't support TLS");
+  
+  // Handle thread local data.
+  if (Kind.isThreadBSS()) return TLSBSSSection;
+  if (Kind.isThreadData()) return TLSDataSection;
 
   if (Kind.isText())
     return GV->isWeakForLinker() ? TextCoalSection : TextSection;
@@ -794,94 +821,160 @@ unsigned TargetLoweringObjectFileMachO::getTTypeEncoding() const {
 //                                  COFF
 //===----------------------------------------------------------------------===//
 
-typedef StringMap<const MCSectionCOFF*> COFFUniqueMapTy;
-
-TargetLoweringObjectFileCOFF::~TargetLoweringObjectFileCOFF() {
-  delete (COFFUniqueMapTy*)UniquingMap;
-}
-
-
-const MCSection *TargetLoweringObjectFileCOFF::
-getCOFFSection(StringRef Name, bool isDirective, SectionKind Kind) const {
-  // Create the map if it doesn't already exist.
-  if (UniquingMap == 0)
-    UniquingMap = new COFFUniqueMapTy();
-  COFFUniqueMapTy &Map = *(COFFUniqueMapTy*)UniquingMap;
-
-  // Do the lookup, if we have a hit, return it.
-  const MCSectionCOFF *&Entry = Map[Name];
-  if (Entry) return Entry;
-
-  return Entry = MCSectionCOFF::Create(Name, isDirective, Kind, getContext());
-}
-
 void TargetLoweringObjectFileCOFF::Initialize(MCContext &Ctx,
                                               const TargetMachine &TM) {
-  if (UniquingMap != 0)
-    ((COFFUniqueMapTy*)UniquingMap)->clear();
   TargetLoweringObjectFile::Initialize(Ctx, TM);
-  TextSection = getCOFFSection("\t.text", true, SectionKind::getText());
-  DataSection = getCOFFSection("\t.data", true, SectionKind::getDataRel());
+  TextSection =
+    getContext().getCOFFSection(".text",
+                                COFF::IMAGE_SCN_CNT_CODE |
+                                COFF::IMAGE_SCN_MEM_EXECUTE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getText());
+  DataSection =
+    getContext().getCOFFSection(".data",
+                                COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                COFF::IMAGE_SCN_MEM_READ |
+                                COFF::IMAGE_SCN_MEM_WRITE,
+                                SectionKind::getDataRel());
+  ReadOnlySection =
+    getContext().getCOFFSection(".rdata",
+                                COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getReadOnly());
   StaticCtorSection =
-    getCOFFSection(".ctors", false, SectionKind::getDataRel());
+    getContext().getCOFFSection(".ctors",
+                                COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                COFF::IMAGE_SCN_MEM_READ |
+                                COFF::IMAGE_SCN_MEM_WRITE,
+                                SectionKind::getDataRel());
   StaticDtorSection =
-    getCOFFSection(".dtors", false, SectionKind::getDataRel());
+    getContext().getCOFFSection(".dtors",
+                                COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                COFF::IMAGE_SCN_MEM_READ |
+                                COFF::IMAGE_SCN_MEM_WRITE,
+                                SectionKind::getDataRel());
 
   // FIXME: We're emitting LSDA info into a readonly section on COFF, even
   // though it contains relocatable pointers.  In PIC mode, this is probably a
   // big runtime hit for C++ apps.  Either the contents of the LSDA need to be
   // adjusted or this should be a data section.
   LSDASection =
-    getCOFFSection(".gcc_except_table", false, SectionKind::getReadOnly());
+    getContext().getCOFFSection(".gcc_except_table",
+                                COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getReadOnly());
   EHFrameSection =
-    getCOFFSection(".eh_frame", false, SectionKind::getDataRel());
+    getContext().getCOFFSection(".eh_frame",
+                                COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                COFF::IMAGE_SCN_MEM_READ |
+                                COFF::IMAGE_SCN_MEM_WRITE,
+                                SectionKind::getDataRel());
 
   // Debug info.
-  // FIXME: Don't use 'directive' mode here.
   DwarfAbbrevSection =
-    getCOFFSection("\t.section\t.debug_abbrev,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_abbrev",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfInfoSection =
-    getCOFFSection("\t.section\t.debug_info,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_info",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfLineSection =
-    getCOFFSection("\t.section\t.debug_line,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_line",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfFrameSection =
-    getCOFFSection("\t.section\t.debug_frame,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_frame",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfPubNamesSection =
-    getCOFFSection("\t.section\t.debug_pubnames,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_pubnames",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfPubTypesSection =
-    getCOFFSection("\t.section\t.debug_pubtypes,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_pubtypes",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfStrSection =
-    getCOFFSection("\t.section\t.debug_str,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_str",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfLocSection =
-    getCOFFSection("\t.section\t.debug_loc,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_loc",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfARangesSection =
-    getCOFFSection("\t.section\t.debug_aranges,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_aranges",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfRangesSection =
-    getCOFFSection("\t.section\t.debug_ranges,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_ranges",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
   DwarfMacroInfoSection =
-    getCOFFSection("\t.section\t.debug_macinfo,\"dr\"",
-                   true, SectionKind::getMetadata());
+    getContext().getCOFFSection(".debug_macinfo",
+                                COFF::IMAGE_SCN_MEM_DISCARDABLE |
+                                COFF::IMAGE_SCN_MEM_READ,
+                                SectionKind::getMetadata());
+
+  DrectveSection =
+    getContext().getCOFFSection(".drectve",
+                                COFF::IMAGE_SCN_LNK_INFO,
+                                SectionKind::getMetadata());
+}
+
+static unsigned
+getCOFFSectionFlags(SectionKind K) {
+  unsigned Flags = 0;
+
+  if (K.isMetadata())
+    Flags |=
+      COFF::IMAGE_SCN_MEM_DISCARDABLE;
+  else if (K.isText())
+    Flags |=
+      COFF::IMAGE_SCN_MEM_EXECUTE |
+      COFF::IMAGE_SCN_CNT_CODE;
+  else if (K.isBSS ())
+    Flags |=
+      COFF::IMAGE_SCN_CNT_UNINITIALIZED_DATA |
+      COFF::IMAGE_SCN_MEM_READ |
+      COFF::IMAGE_SCN_MEM_WRITE;
+  else if (K.isReadOnly())
+    Flags |=
+      COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+      COFF::IMAGE_SCN_MEM_READ;
+  else if (K.isWriteable())
+    Flags |=
+      COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+      COFF::IMAGE_SCN_MEM_READ |
+      COFF::IMAGE_SCN_MEM_WRITE;
+
+  return Flags;
 }
 
 const MCSection *TargetLoweringObjectFileCOFF::
 getExplicitSectionGlobal(const GlobalValue *GV, SectionKind Kind,
                          Mangler *Mang, const TargetMachine &TM) const {
-  return getCOFFSection(GV->getSection(), false, Kind);
+  return getContext().getCOFFSection(GV->getSection(),
+                                     getCOFFSectionFlags(Kind),
+                                     Kind);
 }
 
 static const char *getCOFFSectionPrefixForUniqueGlobal(SectionKind Kind) {
   if (Kind.isText())
     return ".text$linkonce";
+  if (Kind.isBSS ())
+    return ".bss$linkonce";
   if (Kind.isWriteable())
     return ".data$linkonce";
   return ".rdata$linkonce";
@@ -900,7 +993,13 @@ SelectSectionForGlobal(const GlobalValue *GV, SectionKind Kind,
     SmallString<128> Name(Prefix, Prefix+strlen(Prefix));
     MCSymbol *Sym = Mang->getSymbol(GV);
     Name.append(Sym->getName().begin(), Sym->getName().end());
-    return getCOFFSection(Name.str(), false, Kind);
+
+    unsigned Characteristics = getCOFFSectionFlags(Kind);
+
+    Characteristics |= COFF::IMAGE_SCN_LNK_COMDAT;
+
+    return getContext().getCOFFSection(Name.str(), Characteristics,
+                          COFF::IMAGE_COMDAT_SELECT_EXACT_MATCH, Kind);
   }
 
   if (Kind.isText())

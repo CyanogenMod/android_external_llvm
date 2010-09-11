@@ -4,7 +4,7 @@ include(CheckSymbolExists)
 include(CheckFunctionExists)
 include(CheckCXXSourceCompiles)
 
-if( UNIX )
+if( UNIX AND NOT BEOS )
   # Used by check_symbol_exists:
   set(CMAKE_REQUIRED_LIBRARIES m)
 endif()
@@ -207,6 +207,7 @@ else ()
 endif ()
   
 if (LLVM_NATIVE_ARCH)
+  set(LLVM_NATIVE_ARCHNAME ${LLVM_NATIVE_ARCH})
   list(FIND LLVM_TARGETS_TO_BUILD ${LLVM_NATIVE_ARCH} NATIVE_ARCH_IDX)
   if (NATIVE_ARCH_IDX EQUAL -1)
     message(STATUS 
@@ -259,9 +260,16 @@ else( ENABLE_THREADS )
   message(STATUS "Threads disabled.")
 endif()
 
+set(LLVM_PREFIX ${CMAKE_INSTALL_PREFIX})
+
 configure_file(
   ${LLVM_MAIN_INCLUDE_DIR}/llvm/Config/config.h.cmake
   ${LLVM_BINARY_DIR}/include/llvm/Config/config.h
+  )
+
+configure_file(
+  ${LLVM_MAIN_INCLUDE_DIR}/llvm/Config/llvm-config.h.cmake
+  ${LLVM_BINARY_DIR}/include/llvm/Config/llvm-config.h
   )
 
 configure_file(

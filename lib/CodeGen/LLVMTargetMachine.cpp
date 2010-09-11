@@ -65,6 +65,12 @@ static cl::opt<bool> PrintISelInput("print-isel-input", cl::Hidden,
     cl::desc("Print LLVM IR input to isel pass"));
 static cl::opt<bool> PrintGCInfo("print-gc", cl::Hidden,
     cl::desc("Dump garbage collector data"));
+static cl::opt<bool> ShowMCEncoding("show-mc-encoding", cl::Hidden,
+    cl::desc("Show encoding in .s output"));
+static cl::opt<bool> ShowMCInst("show-mc-inst", cl::Hidden,
+    cl::desc("Show instruction structure in .s output"));
+static cl::opt<bool> EnableMCLogging("enable-mc-api-logging", cl::Hidden,
+    cl::desc("Enable MC API logging"));
 static cl::opt<bool> VerifyMachineCode("verify-machineinstrs", cl::Hidden,
     cl::desc("Verify generated machine code"),
     cl::init(getenv("LLVM_VERIFY_MACHINEINSTRS")!=NULL));
@@ -79,7 +85,7 @@ static bool getVerboseAsm() {
   case cl::BOU_UNSET: return TargetMachine::getAsmVerbosityDefault();
   case cl::BOU_TRUE:  return true;
   case cl::BOU_FALSE: return false;
-  }      
+  }
 }
 
 // Enable or disable FastISel. Both options are needed, because
@@ -131,10 +137,16 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
   case CGFT_AssemblyFile: {
     MCInstPrinter *InstPrinter =
       getTarget().createMCInstPrinter(MAI.getAssemblerDialect(), MAI);
+
+    // Create a code emitter if asked to show the encoding.
+    MCCodeEmitter *MCE = 0;
+    if (ShowMCEncoding)
+      MCE = getTarget().createCodeEmitter(*this, *Context);
+
     AsmStreamer.reset(createAsmStreamer(*Context, Out,
                                         getTargetData()->isLittleEndian(),
                                         getVerboseAsm(), InstPrinter,
-                                        /*codeemitter*/0));
+                                        MCE, ShowMCInst));
     break;
   }
   case CGFT_ObjectFile: {
@@ -144,8 +156,10 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     TargetAsmBackend *TAB = getTarget().createAsmBackend(TargetTriple);
     if (MCE == 0 || TAB == 0)
       return true;
-    
-    AsmStreamer.reset(createMachOStreamer(*Context, *TAB, Out, MCE));
+
+    AsmStreamer.reset(getTarget().createObjectStreamer(TargetTriple, *Context,
+                                                       *TAB, Out, MCE,
+                                                       hasMCRelaxAll()));
     break;
   }
   case CGFT_Null:
@@ -154,17 +168,20 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     AsmStreamer.reset(createNullStreamer(*Context));
     break;
   }
-  
+
+  if (EnableMCLogging)
+    AsmStreamer.reset(createLoggingStreamer(AsmStreamer.take(), errs()));
+
   // Create the AsmPrinter, which takes ownership of AsmStreamer if successful.
   FunctionPass *Printer = getTarget().createAsmPrinter(*this, *AsmStreamer);
   if (Printer == 0)
     return true;
-  
+
   // If successful, createAsmPrinter took ownership of AsmStreamer.
   AsmStreamer.take();
-  
+
   PM.add(Printer);
-  
+
   // Make sure the code model is set.
   setCodeModelForStatic();
   PM.add(createGCInfoDeleter());
@@ -183,7 +200,7 @@ bool LLVMTargetMachine::addPassesToEmitMachineCode(PassManagerBase &PM,
                                                    bool DisableVerify) {
   // Make sure the code model is set.
   setCodeModelForJIT();
-  
+
   // Add common CodeGen passes.
   MCContext *Ctx = 0;
   if (addCommonCodeGenPasses(PM, OptLevel, DisableVerify, Ctx))
@@ -195,19 +212,36 @@ bool LLVMTargetMachine::addPassesToEmitMachineCode(PassManagerBase &PM,
   return false; // success!
 }
 
+/// addPassesToEmitMC - Add passes to the specified pass manager to get
+/// machine code emitted with the MCJIT. This method returns true if machine
+/// code is not supported. It fills the MCContext Ctx pointer which can be
+/// used to build custom MCStreamer.
+///
+bool LLVMTargetMachine::addPassesToEmitMC(PassManagerBase &PM,
+                                          MCContext *&Ctx,
+                                          CodeGenOpt::Level OptLevel,
+                                          bool DisableVerify) {
+  // Add common CodeGen passes.
+  if (addCommonCodeGenPasses(PM, OptLevel, DisableVerify, Ctx))
+    return true;
+  // Make sure the code model is set.
+  setCodeModelForJIT();
+
+  return false; // success!
+}
+
 static void printNoVerify(PassManagerBase &PM, const char *Banner) {
   if (PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(dbgs(), Banner));
 }
 
 static void printAndVerify(PassManagerBase &PM,
-                           const char *Banner,
-                           bool allowDoubleDefs = false) {
+                           const char *Banner) {
   if (PrintMachineCode)
     PM.add(createMachineFunctionPrinterPass(dbgs(), Banner));
 
   if (VerifyMachineCode)
-    PM.add(createMachineVerifierPass(allowDoubleDefs));
+    PM.add(createMachineVerifierPass());
 }
 
 /// addCommonCodeGenPasses - Add standard LLVM codegen passes used for both
@@ -237,6 +271,11 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
       PM.add(createPrintFunctionPass("\n\n*** Code after LSR ***\n", &dbgs()));
   }
 
+  PM.add(createGCLoweringPass());
+
+  // Make sure that no unreachable blocks are instruction selected.
+  PM.add(createUnreachableBlockEliminationPass());
+
   // Turn exception handling constructs into something the code generators can
   // handle.
   switch (getMCAsmInfo()->getExceptionHandlingType()) {
@@ -248,25 +287,24 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     // pad is shared by multiple invokes and is also a target of a normal
     // edge from elsewhere.
     PM.add(createSjLjEHPass(getTargetLowering()));
-    PM.add(createDwarfEHPass(this, OptLevel==CodeGenOpt::None));
-    break;
+    // FALLTHROUGH
   case ExceptionHandling::Dwarf:
     PM.add(createDwarfEHPass(this, OptLevel==CodeGenOpt::None));
     break;
   case ExceptionHandling::None:
     PM.add(createLowerInvokePass(getTargetLowering()));
+
+    // The lower invoke pass may create unreachable code. Remove it.
+    PM.add(createUnreachableBlockEliminationPass());
     break;
   }
-
-  PM.add(createGCLoweringPass());
-
-  // Make sure that no unreachable blocks are instruction selected.
-  PM.add(createUnreachableBlockEliminationPass());
 
   if (OptLevel != CodeGenOpt::None && !DisableCGP)
     PM.add(createCodeGenPreparePass(getTargetLowering()));
 
   PM.add(createStackProtectorPass(getTargetLowering()));
+
+  addPreISel(PM, OptLevel);
 
   if (PrintISelInput)
     PM.add(createPrintFunctionPass("\n\n"
@@ -279,13 +317,12 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     PM.add(createVerifierPass());
 
   // Standard Lower-Level Passes.
-  
+
   // Install a MachineModuleInfo class, which is an immutable pass that holds
   // all the per-module stuff we're generating, including MCContext.
   MachineModuleInfo *MMI = new MachineModuleInfo(*getMCAsmInfo());
   PM.add(MMI);
   OutContext = &MMI->getContext(); // Return the MCContext specifically by-ref.
-  
 
   // Set up a MachineFunction for the rest of CodeGen to work on.
   PM.add(new MachineFunctionAnalysis(*this, OptLevel));
@@ -300,44 +337,46 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     return true;
 
   // Print the instruction selected machine code...
-  printAndVerify(PM, "After Instruction Selection",
-                 /* allowDoubleDefs= */ true);
+  printAndVerify(PM, "After Instruction Selection");
 
   // Optimize PHIs before DCE: removing dead PHI cycles may make more
   // instructions dead.
   if (OptLevel != CodeGenOpt::None)
     PM.add(createOptimizePHIsPass());
 
-  // Delete dead machine instructions regardless of optimization level.
-  PM.add(createDeadMachineInstructionElimPass());
-  printAndVerify(PM, "After codegen DCE pass",
-                 /* allowDoubleDefs= */ true);
+  // If the target requests it, assign local variables to stack slots relative
+  // to one another and simplify frame index references where possible.
+  PM.add(createLocalStackSlotAllocationPass());
 
   if (OptLevel != CodeGenOpt::None) {
-    PM.add(createOptimizeExtsPass());
+    // With optimization, dead code should already be eliminated. However
+    // there is one known exception: lowered code for arguments that are only
+    // used by tail calls, where the tail calls reuse the incoming stack
+    // arguments directly (see t11 in test/CodeGen/X86/sibcall.ll).
+    PM.add(createDeadMachineInstructionElimPass());
+    printAndVerify(PM, "After codegen DCE pass");
+
+    PM.add(createPeepholeOptimizerPass());
     if (!DisableMachineLICM)
       PM.add(createMachineLICMPass());
     PM.add(createMachineCSEPass());
     if (!DisableMachineSink)
       PM.add(createMachineSinkingPass());
-    printAndVerify(PM, "After Machine LICM, CSE and Sinking passes",
-                   /* allowDoubleDefs= */ true);
+    printAndVerify(PM, "After Machine LICM, CSE and Sinking passes");
   }
 
   // Pre-ra tail duplication.
   if (OptLevel != CodeGenOpt::None && !DisableEarlyTailDup) {
     PM.add(createTailDuplicatePass(true));
-    printAndVerify(PM, "After Pre-RegAlloc TailDuplicate",
-                   /* allowDoubleDefs= */ true);
+    printAndVerify(PM, "After Pre-RegAlloc TailDuplicate");
   }
 
   // Run pre-ra passes.
   if (addPreRegAlloc(PM, OptLevel))
-    printAndVerify(PM, "After PreRegAlloc passes",
-                   /* allowDoubleDefs= */ true);
+    printAndVerify(PM, "After PreRegAlloc passes");
 
   // Perform register allocation.
-  PM.add(createRegisterAllocator());
+  PM.add(createRegisterAllocator(OptLevel));
   printAndVerify(PM, "After Register Allocation");
 
   // Perform stack slot coloring and post-ra machine LICM.

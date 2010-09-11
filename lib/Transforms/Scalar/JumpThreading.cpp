@@ -18,6 +18,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/LazyValueInfo.h"
+#include "llvm/Analysis/Loads.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
@@ -44,7 +45,10 @@ Threshold("jump-threading-threshold",
 
 // Turn on use of LazyValueInfo.
 static cl::opt<bool>
-EnableLVI("enable-jump-threading-lvi", cl::ReallyHidden);
+EnableLVI("enable-jump-threading-lvi",
+          cl::desc("Use LVI for jump threading"),
+          cl::init(true),
+          cl::ReallyHidden);
 
 
 
@@ -75,7 +79,7 @@ namespace {
 #endif
   public:
     static char ID; // Pass identification
-    JumpThreading() : FunctionPass(&ID) {}
+    JumpThreading() : FunctionPass(ID) {}
 
     bool runOnFunction(Function &F);
     
@@ -110,8 +114,8 @@ namespace {
 }
 
 char JumpThreading::ID = 0;
-static RegisterPass<JumpThreading>
-X("jump-threading", "Jump Threading");
+INITIALIZE_PASS(JumpThreading, "jump-threading",
+                "Jump Threading", false, false);
 
 // Public interface to the Jump Threading pass
 FunctionPass *llvm::createJumpThreadingPass() { return new JumpThreading(); }
@@ -143,6 +147,7 @@ bool JumpThreading::runOnFunction(Function &F) {
         DEBUG(dbgs() << "  JT: Deleting dead block '" << BB->getName()
               << "' with terminator: " << *BB->getTerminator() << '\n');
         LoopHeaders.erase(BB);
+        if (LVI) LVI->eraseBlock(BB);
         DeleteDeadBlock(BB);
         Changed = true;
       } else if (BranchInst *BI = dyn_cast<BranchInst>(BB->getTerminator())) {
@@ -163,6 +168,11 @@ bool JumpThreading::runOnFunction(Function &F) {
             bool ErasedFromLoopHeaders = LoopHeaders.erase(BB);
             BasicBlock *Succ = BI->getSuccessor(0);
             
+            // FIXME: It is always conservatively correct to drop the info
+            // for a block even if it doesn't get erased.  This isn't totally
+            // awesome, but it allows us to use AssertingVH to prevent nasty
+            // dangling pointer issues within LazyValueInfo.
+            if (LVI) LVI->eraseBlock(BB);
             if (TryToSimplifyUncondBranchFromEmptyBlock(BB)) {
               Changed = true;
               // If we deleted BB and BB was the header of a loop, then the
@@ -288,14 +298,15 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB,PredValueInfo &Result){
       // Perhaps getConstantOnEdge should be smart enough to do this?
       
       for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
+        BasicBlock *P = *PI;
         // If the value is known by LazyValueInfo to be a constant in a
         // predecessor, use that information to try to thread this block.
-        Constant *PredCst = LVI->getConstantOnEdge(V, *PI, BB);
+        Constant *PredCst = LVI->getConstantOnEdge(V, P, BB);
         if (PredCst == 0 ||
             (!isa<ConstantInt>(PredCst) && !isa<UndefValue>(PredCst)))
           continue;
         
-        Result.push_back(std::make_pair(dyn_cast<ConstantInt>(PredCst), *PI));
+        Result.push_back(std::make_pair(dyn_cast<ConstantInt>(PredCst), P));
       }
       
       return !Result.empty();
@@ -311,6 +322,12 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB,PredValueInfo &Result){
       if (isa<ConstantInt>(InVal) || isa<UndefValue>(InVal)) {
         ConstantInt *CI = dyn_cast<ConstantInt>(InVal);
         Result.push_back(std::make_pair(CI, PN->getIncomingBlock(i)));
+      } else if (LVI) {
+        Constant *CI = LVI->getConstantOnEdge(InVal,
+                                              PN->getIncomingBlock(i), BB);
+        ConstantInt *CInt = dyn_cast_or_null<ConstantInt>(CI);
+        if (CInt)
+          Result.push_back(std::make_pair(CInt, PN->getIncomingBlock(i)));
       }
     }
     return !Result.empty();
@@ -336,19 +353,30 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB,PredValueInfo &Result){
       else
         InterestingVal = ConstantInt::getFalse(I->getContext());
       
+      SmallPtrSet<BasicBlock*, 4> LHSKnownBBs;
+      
       // Scan for the sentinel.  If we find an undef, force it to the
       // interesting value: x|undef -> true and x&undef -> false.
       for (unsigned i = 0, e = LHSVals.size(); i != e; ++i)
         if (LHSVals[i].first == InterestingVal || LHSVals[i].first == 0) {
           Result.push_back(LHSVals[i]);
           Result.back().first = InterestingVal;
+          LHSKnownBBs.insert(LHSVals[i].second);
         }
       for (unsigned i = 0, e = RHSVals.size(); i != e; ++i)
         if (RHSVals[i].first == InterestingVal || RHSVals[i].first == 0) {
-          Result.push_back(RHSVals[i]);
-          Result.back().first = InterestingVal;
+          // If we already inferred a value for this block on the LHS, don't
+          // re-add it.
+          if (!LHSKnownBBs.count(RHSVals[i].second)) {
+            Result.push_back(RHSVals[i]);
+            Result.back().first = InterestingVal;
+          }
         }
       return !Result.empty();
+    
+    // Try to process a few other binary operator patterns.
+    } else if (isa<BinaryOperator>(I)) {
+      
     }
     
     // Handle the NOT form of XOR.
@@ -365,6 +393,21 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB,PredValueInfo &Result){
           Result[i].first =
             cast<ConstantInt>(ConstantExpr::getNot(Result[i].first));
       return true;
+    }
+  
+  // Try to simplify some other binary operator values.
+  } else if (BinaryOperator *BO = dyn_cast<BinaryOperator>(I)) {
+    // AND or OR of a value with itself is that value.
+    ConstantInt *CI = dyn_cast<ConstantInt>(BO->getOperand(1));
+    if (CI && (BO->getOpcode() == Instruction::And ||
+         BO->getOpcode() == Instruction::Or)) {
+      SmallVector<std::pair<ConstantInt*, BasicBlock*>, 8> LHSVals;
+      ComputeValueKnownInPredecessors(BO->getOperand(0), BB, LHSVals);
+      for (unsigned i = 0, e = LHSVals.size(); i != e; ++i) 
+        if (LHSVals[i].first == CI)
+        Result.push_back(std::make_pair(CI, LHSVals[i].second));
+      
+      return !Result.empty();
     }
   }
   
@@ -405,27 +448,63 @@ ComputeValueKnownInPredecessors(Value *V, BasicBlock *BB,PredValueInfo &Result){
     // If comparing a live-in value against a constant, see if we know the
     // live-in value on any predecessors.
     if (LVI && isa<Constant>(Cmp->getOperand(1)) &&
-        Cmp->getType()->isIntegerTy() && // Not vector compare.
-        (!isa<Instruction>(Cmp->getOperand(0)) ||
-         cast<Instruction>(Cmp->getOperand(0))->getParent() != BB)) {
-      Constant *RHSCst = cast<Constant>(Cmp->getOperand(1));
-      
-      for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
-        // If the value is known by LazyValueInfo to be a constant in a
-        // predecessor, use that information to try to thread this block.
-        LazyValueInfo::Tristate
-          Res = LVI->getPredicateOnEdge(Cmp->getPredicate(), Cmp->getOperand(0),
-                                        RHSCst, *PI, BB);
-        if (Res == LazyValueInfo::Unknown)
-          continue;
+        Cmp->getType()->isIntegerTy()) {
+      if (!isa<Instruction>(Cmp->getOperand(0)) ||
+           cast<Instruction>(Cmp->getOperand(0))->getParent() != BB) {
+        Constant *RHSCst = cast<Constant>(Cmp->getOperand(1));
 
-        Constant *ResC = ConstantInt::get(Cmp->getType(), Res);
-        Result.push_back(std::make_pair(cast<ConstantInt>(ResC), *PI));
+        for (pred_iterator PI = pred_begin(BB), E = pred_end(BB);PI != E; ++PI){
+          BasicBlock *P = *PI;
+          // If the value is known by LazyValueInfo to be a constant in a
+          // predecessor, use that information to try to thread this block.
+          LazyValueInfo::Tristate Res =
+            LVI->getPredicateOnEdge(Cmp->getPredicate(), Cmp->getOperand(0),
+                                    RHSCst, P, BB);
+          if (Res == LazyValueInfo::Unknown)
+            continue;
+
+          Constant *ResC = ConstantInt::get(Cmp->getType(), Res);
+          Result.push_back(std::make_pair(cast<ConstantInt>(ResC), P));
+        }
+
+        return !Result.empty();
       }
       
-      return !Result.empty();
+      // Try to find a constant value for the LHS of an equality comparison,
+      // and evaluate it statically if we can.
+      if (Cmp->getPredicate() == CmpInst::ICMP_EQ || 
+          Cmp->getPredicate() == CmpInst::ICMP_NE) {
+        SmallVector<std::pair<ConstantInt*, BasicBlock*>, 8> LHSVals;
+        ComputeValueKnownInPredecessors(I->getOperand(0), BB, LHSVals);
+        
+        ConstantInt *True = ConstantInt::getTrue(I->getContext());
+        ConstantInt *False = ConstantInt::getFalse(I->getContext());
+        if (Cmp->getPredicate() == CmpInst::ICMP_NE) std::swap(True, False);
+        
+        for (unsigned i = 0, e = LHSVals.size(); i != e; ++i) {
+          if (LHSVals[i].first == Cmp->getOperand(1))
+            Result.push_back(std::make_pair(True, LHSVals[i].second));
+          else 
+            Result.push_back(std::make_pair(False, LHSVals[i].second));
+        }
+        
+        return !Result.empty();
+      }
     }
   }
+  
+  if (LVI) {
+    // If all else fails, see if LVI can figure out a constant value for us.
+    Constant *CI = LVI->getConstant(V, BB);
+    ConstantInt *CInt = dyn_cast_or_null<ConstantInt>(CI);
+    if (CInt) {
+      for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI)
+        Result.push_back(std::make_pair(CInt, *PI));
+    }
+    
+    return !Result.empty();
+  }
+  
   return false;
 }
 
@@ -476,6 +555,7 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
       // Remember if SinglePred was the entry block of the function.  If so, we
       // will need to move BB back to the entry position.
       bool isEntry = SinglePred == &SinglePred->getParent()->getEntryBlock();
+      if (LVI) LVI->eraseBlock(SinglePred);
       MergeBasicBlockIntoOnlyPred(BB);
       
       if (isEntry && BB != &BB->getParent()->getEntryBlock())
@@ -538,18 +618,22 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
       (CondInst == 0 || CondInst->getParent() != BB)) { // Non-local definition.
     pred_iterator PI = pred_begin(BB), E = pred_end(BB);
     if (isa<BranchInst>(BB->getTerminator())) {
-      for (; PI != E; ++PI)
-        if (BranchInst *PBI = dyn_cast<BranchInst>((*PI)->getTerminator()))
+      for (; PI != E; ++PI) {
+        BasicBlock *P = *PI;
+        if (BranchInst *PBI = dyn_cast<BranchInst>(P->getTerminator()))
           if (PBI->isConditional() && PBI->getCondition() == Condition &&
-              ProcessBranchOnDuplicateCond(*PI, BB))
+              ProcessBranchOnDuplicateCond(P, BB))
             return true;
+      }
     } else {
       assert(isa<SwitchInst>(BB->getTerminator()) && "Unknown jump terminator");
-      for (; PI != E; ++PI)
-        if (SwitchInst *PSI = dyn_cast<SwitchInst>((*PI)->getTerminator()))
+      for (; PI != E; ++PI) {
+        BasicBlock *P = *PI;
+        if (SwitchInst *PSI = dyn_cast<SwitchInst>(P->getTerminator()))
           if (PSI->getCondition() == Condition &&
-              ProcessSwitchOnDuplicateCond(*PI, BB))
+              ProcessSwitchOnDuplicateCond(P, BB))
             return true;
+      }
     }
   }
 
@@ -569,19 +653,60 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
       // If we have a comparison, loop over the predecessors to see if there is
       // a condition with a lexically identical value.
       pred_iterator PI = pred_begin(BB), E = pred_end(BB);
-      for (; PI != E; ++PI)
-        if (BranchInst *PBI = dyn_cast<BranchInst>((*PI)->getTerminator()))
-          if (PBI->isConditional() && *PI != BB) {
+      for (; PI != E; ++PI) {
+        BasicBlock *P = *PI;
+        if (BranchInst *PBI = dyn_cast<BranchInst>(P->getTerminator()))
+          if (PBI->isConditional() && P != BB) {
             if (CmpInst *CI = dyn_cast<CmpInst>(PBI->getCondition())) {
               if (CI->getOperand(0) == CondCmp->getOperand(0) &&
                   CI->getOperand(1) == CondCmp->getOperand(1) &&
                   CI->getPredicate() == CondCmp->getPredicate()) {
                 // TODO: Could handle things like (x != 4) --> (x == 17)
-                if (ProcessBranchOnDuplicateCond(*PI, BB))
+                if (ProcessBranchOnDuplicateCond(P, BB))
                   return true;
               }
             }
           }
+      }
+    }
+    
+    // For a comparison where the LHS is outside this block, it's possible
+    // that we've branched on it before.  Used LVI to see if we can simplify
+    // the branch based on that.
+    BranchInst *CondBr = dyn_cast<BranchInst>(BB->getTerminator());
+    Constant *CondConst = dyn_cast<Constant>(CondCmp->getOperand(1));
+    if (LVI && CondBr && CondConst && CondBr->isConditional() &&
+        (!isa<Instruction>(CondCmp->getOperand(0)) ||
+         cast<Instruction>(CondCmp->getOperand(0))->getParent() != BB)) {
+      // For predecessor edge, determine if the comparison is true or false
+      // on that edge.  If they're all true or all false, we can simplify the
+      // branch.
+      // FIXME: We could handle mixed true/false by duplicating code.
+      unsigned Trues = 0, Falses = 0, predcount = 0;
+      for (pred_iterator PI = pred_begin(BB), PE = pred_end(BB);PI != PE; ++PI){
+        ++predcount;
+        LazyValueInfo::Tristate Ret =
+          LVI->getPredicateOnEdge(CondCmp->getPredicate(), 
+                                  CondCmp->getOperand(0), CondConst, *PI, BB);
+        if (Ret == LazyValueInfo::True)
+          ++Trues;
+        else if (Ret == LazyValueInfo::False)
+          ++Falses;
+      }
+      
+      // If we can determine the branch direction statically, convert
+      // the conditional branch to an unconditional one.
+      if (Trues && Trues == predcount) {
+        RemovePredecessorAndSimplify(CondBr->getSuccessor(1), BB, TD);
+        BranchInst::Create(CondBr->getSuccessor(0), CondBr);
+        CondBr->eraseFromParent();
+        return true;
+      } else if (Falses && Falses == predcount) {
+        RemovePredecessorAndSimplify(CondBr->getSuccessor(0), BB, TD);
+        BranchInst::Create(CondBr->getSuccessor(1), CondBr);
+        CondBr->eraseFromParent();
+        return true;
+      }
     }
   }
 
@@ -869,9 +994,15 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
 
     // Add all the unavailable predecessors to the PredsToSplit list.
     for (pred_iterator PI = pred_begin(LoadBB), PE = pred_end(LoadBB);
-         PI != PE; ++PI)
-      if (!AvailablePredSet.count(*PI))
-        PredsToSplit.push_back(*PI);
+         PI != PE; ++PI) {
+      BasicBlock *P = *PI;
+      // If the predecessor is an indirect goto, we can't split the edge.
+      if (isa<IndirectBrInst>(P->getTerminator()))
+        return false;
+      
+      if (!AvailablePredSet.count(P))
+        PredsToSplit.push_back(P);
+    }
     
     // Split them out to their own block.
     UnavailablePred =
@@ -903,11 +1034,12 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
   // have multiple entries here.
   for (pred_iterator PI = pred_begin(LoadBB), E = pred_end(LoadBB); PI != E;
        ++PI) {
+    BasicBlock *P = *PI;
     AvailablePredsTy::iterator I = 
       std::lower_bound(AvailablePreds.begin(), AvailablePreds.end(),
-                       std::make_pair(*PI, (Value*)0));
+                       std::make_pair(P, (Value*)0));
     
-    assert(I != AvailablePreds.end() && I->first == *PI &&
+    assert(I != AvailablePreds.end() && I->first == P &&
            "Didn't find entry for predecessor!");
     
     PN->addIncoming(I->second, I->first);
@@ -1286,6 +1418,9 @@ bool JumpThreading::ThreadEdge(BasicBlock *BB,
         << SuccBB->getName() << "' with cost: " << JumpThreadCost
         << ", across block:\n    "
         << *BB << "\n");
+  
+  if (LVI)
+    LVI->threadEdge(PredBB, BB, SuccBB);
   
   // We are going to have to map operands from the original BB block to the new
   // copy of the block 'NewBB'.  If there are PHI nodes in BB, evaluate them to

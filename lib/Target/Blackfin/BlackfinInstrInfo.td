@@ -301,9 +301,9 @@ def LOAD32p_8z: F1<(outs D:$dst), (ins P:$ptr),
 
 def : Pat<(i32 (extloadi8 P:$ptr)), (LOAD32p_8z P:$ptr)>;
 def : Pat<(i16 (extloadi8 P:$ptr)),
-          (EXTRACT_SUBREG (LOAD32p_8z P:$ptr), bfin_subreg_lo16)>;
+          (EXTRACT_SUBREG (LOAD32p_8z P:$ptr), lo16)>;
 def : Pat<(i16 (zextloadi8 P:$ptr)),
-          (EXTRACT_SUBREG (LOAD32p_8z P:$ptr), bfin_subreg_lo16)>;
+          (EXTRACT_SUBREG (LOAD32p_8z P:$ptr), lo16)>;
 
 def LOAD32p_imm16_8z: F1<(outs D:$dst), (ins P:$ptr, i32imm:$off),
                          "$dst = b[$ptr + $off] (z);",
@@ -313,17 +313,17 @@ def : Pat<(i32 (extloadi8 (add P:$ptr, imm16:$off))),
           (LOAD32p_imm16_8z P:$ptr, imm:$off)>;
 def : Pat<(i16 (extloadi8 (add P:$ptr, imm16:$off))),
           (EXTRACT_SUBREG (LOAD32p_imm16_8z P:$ptr, imm:$off),
-                           bfin_subreg_lo16)>;
+                           lo16)>;
 def : Pat<(i16 (zextloadi8 (add P:$ptr, imm16:$off))),
           (EXTRACT_SUBREG (LOAD32p_imm16_8z P:$ptr, imm:$off),
-                           bfin_subreg_lo16)>;
+                           lo16)>;
 
 def LOAD32p_8s: F1<(outs D:$dst), (ins P:$ptr),
                    "$dst = b[$ptr] (x);",
                    [(set D:$dst, (sextloadi8 P:$ptr))]>;
 
 def : Pat<(i16 (sextloadi8 P:$ptr)),
-          (EXTRACT_SUBREG (LOAD32p_8s P:$ptr), bfin_subreg_lo16)>;
+          (EXTRACT_SUBREG (LOAD32p_8s P:$ptr), lo16)>;
 
 def LOAD32p_imm16_8s: F1<(outs D:$dst), (ins P:$ptr, i32imm:$off),
                          "$dst = b[$ptr + $off] (x);",
@@ -331,7 +331,7 @@ def LOAD32p_imm16_8s: F1<(outs D:$dst), (ins P:$ptr, i32imm:$off),
 
 def : Pat<(i16 (sextloadi8 (add P:$ptr, imm16:$off))),
           (EXTRACT_SUBREG (LOAD32p_imm16_8s P:$ptr, imm:$off),
-                           bfin_subreg_lo16)>;
+                           lo16)>;
 // Memory loads without patterns
 
 let mayLoad = 1 in {
@@ -468,16 +468,16 @@ def STORE32i_post: F1<(outs I:$ptr_wb), (ins D:$val, I:$ptr, M:$off),
 
 def : Pat<(truncstorei16 D:$val, PI:$ptr),
           (STORE16pi (EXTRACT_SUBREG (i32 (COPY_TO_REGCLASS D:$val, D)),
-                                     bfin_subreg_lo16), PI:$ptr)>;
+                                     lo16), PI:$ptr)>;
 
 def : Pat<(truncstorei16 (srl D:$val, (i16 16)), PI:$ptr),
           (STORE16pi (EXTRACT_SUBREG (i32 (COPY_TO_REGCLASS D:$val, D)),
-                                     bfin_subreg_hi16), PI:$ptr)>;
+                                     hi16), PI:$ptr)>;
 
 def : Pat<(truncstorei8 D16L:$val, P:$ptr),
           (STORE8p (INSERT_SUBREG (i32 (IMPLICIT_DEF)),
                                   (i16 (COPY_TO_REGCLASS D16L:$val, D16L)),
-                                  bfin_subreg_lo16),
+                                  lo16),
                    P:$ptr)>;
 
 //===----------------------------------------------------------------------===//
@@ -488,7 +488,7 @@ def MOVE: F1<(outs ALL:$dst), (ins ALL:$src),
              "$dst = $src;",
              []>;
 
-let isTwoAddress = 1 in
+let Constraints = "$src1 = $dst" in
 def MOVEcc: F1<(outs DP:$dst), (ins DP:$src1, DP:$src2, AnyCC:$cc),
                "if $cc $dst = $src2;",
                [(set DP:$dst, (select AnyCC:$cc, DP:$src2, DP:$src1))]>;
@@ -516,19 +516,19 @@ def : Pat<(sext_inreg D16L:$src, i8),
           (EXTRACT_SUBREG (MOVEsext8
                            (INSERT_SUBREG (i32 (IMPLICIT_DEF)),
                                           D16L:$src,
-                                          bfin_subreg_lo16)),
-                          bfin_subreg_lo16)>;
+                                          lo16)),
+                          lo16)>;
 
 def : Pat<(sext_inreg D:$src, i16),
-          (MOVEsext (EXTRACT_SUBREG D:$src, bfin_subreg_lo16))>;
+          (MOVEsext (EXTRACT_SUBREG D:$src, lo16))>;
 
 def : Pat<(and D:$src, 0xffff),
-          (MOVEzext (EXTRACT_SUBREG D:$src, bfin_subreg_lo16))>;
+          (MOVEzext (EXTRACT_SUBREG D:$src, lo16))>;
 
 def : Pat<(i32 (anyext D16L:$src)),
           (INSERT_SUBREG (i32 (IMPLICIT_DEF)),
                          (i16 (COPY_TO_REGCLASS D16L:$src, D16L)),
-                         bfin_subreg_lo16)>;
+                         lo16)>;
 
 // TODO Dreg = Dreg_byte (X/Z)
 
@@ -645,7 +645,7 @@ def XOR: F1<(outs D:$dst), (ins D:$src1, D:$src2),
 // Table C-15. Bit Operations Instructions
 //===----------------------------------------------------------------------===//
 
-let isTwoAddress = 1 in {
+let Constraints = "$src1 = $dst" in {
 def BITCLR: F1<(outs D:$dst), (ins D:$src1, uimm5imask:$src2),
               "bitclr($dst, $src2);",
               [(set D:$dst, (and D:$src1, uimm5imask:$src2))]>;
@@ -691,7 +691,7 @@ multiclass SHIFT32<SDNode opnode, string ops> {
 }
 
 let Defs = [AZ, AN, V, VS],
-    isTwoAddress = 1 in {
+    Constraints = "$src = $dst" in {
 defm SRA : SHIFT32<sra, ">>>">;
 defm SRL : SHIFT32<srl, ">>">;
 defm SLL : SHIFT32<shl, "<<">;
@@ -748,7 +748,7 @@ def ADD16: F2<(outs D16:$dst), (ins D16:$src1, D16:$src2),
               "$dst = $src1 + $src2;",
               [(set D16:$dst, (add D16:$src1, D16:$src2))]>;
 
-let isTwoAddress = 1 in
+let Constraints = "$src1 = $dst" in
 def ADDimm7: F1<(outs D:$dst), (ins D:$src1, i32imm:$src2),
                 "$dst += $src2;",
                 [(set D:$dst, (add D:$src1, imm7:$src2))]>;
@@ -775,7 +775,7 @@ def NEG: F1<(outs D:$dst), (ins D:$src),
 def ADDpp: F1<(outs P:$dst), (ins P:$src1, P:$src2),
               "$dst = $src1 + $src2;", []>;
 
-let isTwoAddress = 1 in
+let Constraints = "$src1 = $dst" in
 def ADDpp_imm7: F1<(outs P:$dst), (ins P:$src1, i32imm:$src2),
                 "$dst += $src2;", []>;
 
@@ -802,7 +802,7 @@ def MULhh32u: F2<(outs D:$dst), (ins D16:$src1, D16:$src2),
 }
 
 
-let isTwoAddress = 1 in
+let Constraints = "$src1 = $dst" in
 def MUL32: F1<(outs D:$dst), (ins D:$src1, D:$src2),
             "$dst *= $src2;",
             [(set D:$dst, (mul D:$src1, D:$src2))]>;
@@ -859,4 +859,4 @@ def : Pat<(BfinCall (i32 tglobaladdr:$dst)),
 def : Pat<(BfinCall (i32 texternalsym:$dst)),
           (CALLa texternalsym:$dst)>;
 def : Pat<(i16 (trunc D:$src)),
-          (EXTRACT_SUBREG (i32 (COPY_TO_REGCLASS D:$src, D)), bfin_subreg_lo16)>;
+          (EXTRACT_SUBREG (i32 (COPY_TO_REGCLASS D:$src, D)), lo16)>;

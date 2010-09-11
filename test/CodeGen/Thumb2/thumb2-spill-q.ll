@@ -7,19 +7,19 @@
 %quux = type { i32 (...)**, %baz*, i32 }
 %quuz = type { %quux, i32, %bar, [128 x i8], [16 x %foo], %foo, %foo, %foo }
 
-declare <4 x float> @llvm.arm.neon.vld1.v4f32(i8*) nounwind readonly
+declare <4 x float> @llvm.arm.neon.vld1.v4f32(i8*, i32) nounwind readonly
 
-define arm_apcscc void @aaa(%quuz* %this, i8* %block) {
+define void @aaa(%quuz* %this, i8* %block) {
 ; CHECK: aaa:
 ; CHECK: bic r4, r4, #15
 ; CHECK: vst1.64 {{.*}}[{{.*}}, :128]
 ; CHECK: vld1.64 {{.*}}[{{.*}}, :128]
 entry:
-  %0 = call <4 x float> @llvm.arm.neon.vld1.v4f32(i8* undef) nounwind ; <<4 x float>> [#uses=1]
+  %0 = call <4 x float> @llvm.arm.neon.vld1.v4f32(i8* undef, i32 1) nounwind ; <<4 x float>> [#uses=1]
   store float 6.300000e+01, float* undef, align 4
-  %1 = call <4 x float> @llvm.arm.neon.vld1.v4f32(i8* undef) nounwind ; <<4 x float>> [#uses=1]
+  %1 = call <4 x float> @llvm.arm.neon.vld1.v4f32(i8* undef, i32 1) nounwind ; <<4 x float>> [#uses=1]
   store float 0.000000e+00, float* undef, align 4
-  %2 = call <4 x float> @llvm.arm.neon.vld1.v4f32(i8* undef) nounwind ; <<4 x float>> [#uses=1]
+  %2 = call <4 x float> @llvm.arm.neon.vld1.v4f32(i8* undef, i32 1) nounwind ; <<4 x float>> [#uses=1]
   %val173 = load <4 x float>* undef               ; <<4 x float>> [#uses=1]
   br label %bb4
 
@@ -46,7 +46,8 @@ bb4:                                              ; preds = %bb193, %entry
   %20 = shufflevector <2 x float> %19, <2 x float> undef, <4 x i32> zeroinitializer ; <<4 x float>> [#uses=1]
   %21 = fadd <4 x float> zeroinitializer, %20     ; <<4 x float>> [#uses=2]
   %22 = fcmp ogt <4 x float> %besterror.0.2264, %21 ; <<4 x i1>> [#uses=0]
-  br i1 undef, label %bb193, label %bb186
+  %tmp = extractelement <4 x i1> %22, i32 0
+  br i1 %tmp, label %bb193, label %bb186
 
 bb186:                                            ; preds = %bb4
   br label %bb193

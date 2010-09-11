@@ -20,7 +20,7 @@ using namespace llvm;
 MachineRegisterInfo::MachineRegisterInfo(const TargetRegisterInfo &TRI) {
   VRegInfo.reserve(256);
   RegAllocHints.reserve(256);
-  RegClass2VRegMap.resize(TRI.getNumRegClasses()+1); // RC ID starts at 1.
+  RegClass2VRegMap = new std::vector<unsigned>[TRI.getNumRegClasses()];
   UsedPhysRegs.resize(TRI.getNumRegs());
   
   // Create the physreg use/def lists.
@@ -37,6 +37,7 @@ MachineRegisterInfo::~MachineRegisterInfo() {
            "PhysRegUseDefLists has entries after all instructions are deleted");
 #endif
   delete [] PhysRegUseDefLists;
+  delete [] RegClass2VRegMap;
 }
 
 /// setRegClass - Set the register class of the specified virtual register.
@@ -52,7 +53,7 @@ MachineRegisterInfo::setRegClass(unsigned Reg, const TargetRegisterClass *RC) {
   // Remove from old register class's vregs list. This may be slow but
   // fortunately this operation is rarely needed.
   std::vector<unsigned> &VRegs = RegClass2VRegMap[OldRC->getID()];
-  std::vector<unsigned>::iterator I=std::find(VRegs.begin(), VRegs.end(), VR);
+  std::vector<unsigned>::iterator I = std::find(VRegs.begin(), VRegs.end(), VR);
   VRegs.erase(I);
 
   // Add to new register class's vregs list.
@@ -133,6 +134,15 @@ bool MachineRegisterInfo::hasOneNonDBGUse(unsigned RegNo) const {
   return ++UI == use_nodbg_end();
 }
 
+/// clearKillFlags - Iterate over all the uses of the given register and
+/// clear the kill flag from the MachineOperand. This function is used by
+/// optimization passes which extend register lifetimes and need only
+/// preserve conservative kill flag information.
+void MachineRegisterInfo::clearKillFlags(unsigned Reg) const {
+  for (use_iterator UI = use_begin(Reg), UE = use_end(); UI != UE; ++UI)
+    UI.getOperand().setIsKill(false);
+}
+
 bool MachineRegisterInfo::isLiveIn(unsigned Reg) const {
   for (livein_iterator I = livein_begin(), E = livein_end(); I != E; ++I)
     if (I->first == Reg || I->second == Reg)
@@ -147,101 +157,22 @@ bool MachineRegisterInfo::isLiveOut(unsigned Reg) const {
   return false;
 }
 
-static cl::opt<bool>
-SchedLiveInCopies("schedule-livein-copies", cl::Hidden,
-                  cl::desc("Schedule copies of livein registers"),
-                  cl::init(false));
-
-/// EmitLiveInCopy - Emit a copy for a live in physical register. If the
-/// physical register has only a single copy use, then coalesced the copy
-/// if possible.
-static void EmitLiveInCopy(MachineBasicBlock *MBB,
-                           MachineBasicBlock::iterator &InsertPos,
-                           unsigned VirtReg, unsigned PhysReg,
-                           const TargetRegisterClass *RC,
-                           DenseMap<MachineInstr*, unsigned> &CopyRegMap,
-                           const MachineRegisterInfo &MRI,
-                           const TargetRegisterInfo &TRI,
-                           const TargetInstrInfo &TII) {
-  unsigned NumUses = 0;
-  MachineInstr *UseMI = NULL;
-  for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(VirtReg),
-         UE = MRI.use_end(); UI != UE; ++UI) {
-    UseMI = &*UI;
-    if (++NumUses > 1)
-      break;
-  }
-
-  // If the number of uses is not one, or the use is not a move instruction,
-  // don't coalesce. Also, only coalesce away a virtual register to virtual
-  // register copy.
-  bool Coalesced = false;
-  unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
-  if (NumUses == 1 &&
-      TII.isMoveInstr(*UseMI, SrcReg, DstReg, SrcSubReg, DstSubReg) &&
-      TargetRegisterInfo::isVirtualRegister(DstReg)) {
-    VirtReg = DstReg;
-    Coalesced = true;
-  }
-
-  // Now find an ideal location to insert the copy.
-  MachineBasicBlock::iterator Pos = InsertPos;
-  while (Pos != MBB->begin()) {
-    MachineInstr *PrevMI = prior(Pos);
-    DenseMap<MachineInstr*, unsigned>::iterator RI = CopyRegMap.find(PrevMI);
-    // copyRegToReg might emit multiple instructions to do a copy.
-    unsigned CopyDstReg = (RI == CopyRegMap.end()) ? 0 : RI->second;
-    if (CopyDstReg && !TRI.regsOverlap(CopyDstReg, PhysReg))
-      // This is what the BB looks like right now:
-      // r1024 = mov r0
-      // ...
-      // r1    = mov r1024
-      //
-      // We want to insert "r1025 = mov r1". Inserting this copy below the
-      // move to r1024 makes it impossible for that move to be coalesced.
-      //
-      // r1025 = mov r1
-      // r1024 = mov r0
-      // ...
-      // r1    = mov 1024
-      // r2    = mov 1025
-      break; // Woot! Found a good location.
-    --Pos;
-  }
-
-  bool Emitted = TII.copyRegToReg(*MBB, Pos, VirtReg, PhysReg, RC, RC);
-  assert(Emitted && "Unable to issue a live-in copy instruction!\n");
-  (void) Emitted;
-
-  CopyRegMap.insert(std::make_pair(prior(Pos), VirtReg));
-  if (Coalesced) {
-    if (&*InsertPos == UseMI) ++InsertPos;
-    MBB->erase(UseMI);
-  }
+/// getLiveInPhysReg - If VReg is a live-in virtual register, return the
+/// corresponding live-in physical register.
+unsigned MachineRegisterInfo::getLiveInPhysReg(unsigned VReg) const {
+  for (livein_iterator I = livein_begin(), E = livein_end(); I != E; ++I)
+    if (I->second == VReg)
+      return I->first;
+  return 0;
 }
 
-/// InsertLiveInDbgValue - Insert a DBG_VALUE instruction for each live-in
-/// register that has a corresponding source information metadata. e.g.
-/// function parameters.
-static void InsertLiveInDbgValue(MachineBasicBlock *MBB,
-                                 MachineBasicBlock::iterator InsertPos,
-                                 unsigned LiveInReg, unsigned VirtReg,
-                                 const MachineRegisterInfo &MRI,
-                                 const TargetInstrInfo &TII) {
-  for (MachineRegisterInfo::use_iterator UI = MRI.use_begin(VirtReg),
-         UE = MRI.use_end(); UI != UE; ++UI) {
-    MachineInstr *UseMI = &*UI;
-    if (!UseMI->isDebugValue() || UseMI->getParent() != MBB)
-      continue;
-    // Found local dbg_value. FIXME: Verify it's not possible to have multiple
-    // dbg_value's which reference the vr in the same mbb.
-    uint64_t Offset = UseMI->getOperand(1).getImm();
-    const MDNode *MDPtr = UseMI->getOperand(2).getMetadata();    
-    BuildMI(*MBB, InsertPos, InsertPos->getDebugLoc(),
-            TII.get(TargetOpcode::DBG_VALUE))
-      .addReg(LiveInReg).addImm(Offset).addMetadata(MDPtr);
-    return;
-  }
+/// getLiveInVirtReg - If PReg is a live-in physical register, return the
+/// corresponding live-in physical register.
+unsigned MachineRegisterInfo::getLiveInVirtReg(unsigned PReg) const {
+  for (livein_iterator I = livein_begin(), E = livein_end(); I != E; ++I)
+    if (I->first == PReg)
+      return I->second;
+  return 0;
 }
 
 /// EmitLiveInCopies - Emit copies to initialize livein virtual registers
@@ -250,38 +181,39 @@ void
 MachineRegisterInfo::EmitLiveInCopies(MachineBasicBlock *EntryMBB,
                                       const TargetRegisterInfo &TRI,
                                       const TargetInstrInfo &TII) {
-  if (SchedLiveInCopies) {
-    // Emit the copies at a heuristically-determined location in the block.
-    DenseMap<MachineInstr*, unsigned> CopyRegMap;
-    MachineBasicBlock::iterator InsertPos = EntryMBB->begin();
-    for (MachineRegisterInfo::livein_iterator LI = livein_begin(),
-           E = livein_end(); LI != E; ++LI)
-      if (LI->second) {
-        const TargetRegisterClass *RC = getRegClass(LI->second);
-        EmitLiveInCopy(EntryMBB, InsertPos, LI->second, LI->first,
-                       RC, CopyRegMap, *this, TRI, TII);
-        InsertLiveInDbgValue(EntryMBB, InsertPos,
-                             LI->first, LI->second, *this, TII);
-      }
-  } else {
-    // Emit the copies into the top of the block.
-    for (MachineRegisterInfo::livein_iterator LI = livein_begin(),
-           E = livein_end(); LI != E; ++LI)
-      if (LI->second) {
-        const TargetRegisterClass *RC = getRegClass(LI->second);
-        bool Emitted = TII.copyRegToReg(*EntryMBB, EntryMBB->begin(),
-                                        LI->second, LI->first, RC, RC);
-        assert(Emitted && "Unable to issue a live-in copy instruction!\n");
-        (void) Emitted;
-        InsertLiveInDbgValue(EntryMBB, EntryMBB->begin(),
-                             LI->first, LI->second, *this, TII);
-      }
-  }
+  // Emit the copies into the top of the block.
+  for (unsigned i = 0, e = LiveIns.size(); i != e; ++i)
+    if (LiveIns[i].second) {
+      if (use_empty(LiveIns[i].second)) {
+        // The livein has no uses. Drop it.
+        //
+        // It would be preferable to have isel avoid creating live-in
+        // records for unused arguments in the first place, but it's
+        // complicated by the debug info code for arguments.
+        LiveIns.erase(LiveIns.begin() + i);
+        --i; --e;
+      } else {
+        // Emit a copy.
+        BuildMI(*EntryMBB, EntryMBB->begin(), DebugLoc(),
+                TII.get(TargetOpcode::COPY), LiveIns[i].second)
+          .addReg(LiveIns[i].first);
 
-  // Add function live-ins to entry block live-in set.
-  for (MachineRegisterInfo::livein_iterator I = livein_begin(),
-       E = livein_end(); I != E; ++I)
-    EntryMBB->addLiveIn(I->first);
+        // Add the register to the entry block live-in set.
+        EntryMBB->addLiveIn(LiveIns[i].first);
+      }
+    } else {
+      // Add the register to the entry block live-in set.
+      EntryMBB->addLiveIn(LiveIns[i].first);
+    }
+}
+
+void MachineRegisterInfo::closePhysRegsUsed(const TargetRegisterInfo &TRI) {
+  for (int i = UsedPhysRegs.find_first(); i >= 0;
+       i = UsedPhysRegs.find_next(i))
+         for (const unsigned *SS = TRI.getSubRegisters(i);
+              unsigned SubReg = *SS; ++SS)
+           if (SubReg > unsigned(i))
+             UsedPhysRegs.set(SubReg);
 }
 
 #ifndef NDEBUG

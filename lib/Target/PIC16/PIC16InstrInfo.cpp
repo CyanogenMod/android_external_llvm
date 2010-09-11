@@ -70,7 +70,8 @@ unsigned PIC16InstrInfo::isLoadFromStackSlot(const MachineInstr *MI,
 void PIC16InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB, 
                                          MachineBasicBlock::iterator I,
                                          unsigned SrcReg, bool isKill, int FI,
-                                         const TargetRegisterClass *RC) const {
+                                         const TargetRegisterClass *RC,
+                                         const TargetRegisterInfo *TRI) const {
   const PIC16TargetLowering *PTLI = TM.getTargetLowering();
   DebugLoc DL;
   if (I != MBB.end()) DL = I->getDebugLoc();
@@ -112,7 +113,8 @@ void PIC16InstrInfo::storeRegToStackSlot(MachineBasicBlock &MBB,
 void PIC16InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB, 
                                           MachineBasicBlock::iterator I,
                                           unsigned DestReg, int FI,
-                                          const TargetRegisterClass *RC) const {
+                                          const TargetRegisterClass *RC,
+                                          const TargetRegisterInfo *TRI) const {
   const PIC16TargetLowering *PTLI = TM.getTargetLowering();
   DebugLoc DL;
   if (I != MBB.end()) DL = I->getDebugLoc();
@@ -149,41 +151,20 @@ void PIC16InstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
     llvm_unreachable("Can't load this register from stack slot");
 }
 
-bool PIC16InstrInfo::copyRegToReg (MachineBasicBlock &MBB,
-                                   MachineBasicBlock::iterator I,
-                                   unsigned DestReg, unsigned SrcReg,
-                                   const TargetRegisterClass *DestRC,
-                                   const TargetRegisterClass *SrcRC) const {
-  DebugLoc DL;
-  if (I != MBB.end()) DL = I->getDebugLoc();
+void PIC16InstrInfo::copyPhysReg(MachineBasicBlock &MBB,
+                                 MachineBasicBlock::iterator I, DebugLoc DL,
+                                 unsigned DestReg, unsigned SrcReg,
+                                 bool KillSrc) const {
+  unsigned Opc;
+  if (PIC16::FSR16RegClass.contains(DestReg, SrcReg))
+    Opc = PIC16::copy_fsr;
+  else if (PIC16::GPRRegClass.contains(DestReg, SrcReg))
+    Opc = PIC16::copy_w;
+  else
+    llvm_unreachable("Impossible reg-to-reg copy");
 
-  if (DestRC == PIC16::FSR16RegisterClass) {
-    BuildMI(MBB, I, DL, get(PIC16::copy_fsr), DestReg).addReg(SrcReg);
-    return true;
-  }
-
-  if (DestRC == PIC16::GPRRegisterClass) {
-    BuildMI(MBB, I, DL, get(PIC16::copy_w), DestReg).addReg(SrcReg);
-    return true;
-  }
-
-  // Not yet supported.
-  return false;
-}
-
-bool PIC16InstrInfo::isMoveInstr(const MachineInstr &MI,
-                                 unsigned &SrcReg, unsigned &DestReg,
-                                 unsigned &SrcSubIdx, unsigned &DstSubIdx) const {
-  SrcSubIdx = DstSubIdx = 0; // No sub-registers.
-
-  if (MI.getOpcode() == PIC16::copy_fsr
-      || MI.getOpcode() == PIC16::copy_w) {
-    DestReg = MI.getOperand(0).getReg();
-    SrcReg = MI.getOperand(1).getReg();
-    return true;
-  }
-
-  return false;
+  BuildMI(MBB, I, DL, get(Opc), DestReg)
+    .addReg(SrcReg, getKillRegState(KillSrc));
 }
 
 /// InsertBranch - Insert a branch into the end of the specified
@@ -195,15 +176,15 @@ bool PIC16InstrInfo::isMoveInstr(const MachineInstr &MI,
 unsigned PIC16InstrInfo::
 InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB, 
              MachineBasicBlock *FBB,
-             const SmallVectorImpl<MachineOperand> &Cond) const {
+             const SmallVectorImpl<MachineOperand> &Cond,
+             DebugLoc DL) const {
   // Shouldn't be a fall through.
   assert(TBB && "InsertBranch must not be told to insert a fallthrough");
 
   if (FBB == 0) { // One way branch.
     if (Cond.empty()) {
       // Unconditional branch?
-      DebugLoc dl;
-      BuildMI(&MBB, dl, get(PIC16::br_uncond)).addMBB(TBB);
+      BuildMI(&MBB, DL, get(PIC16::br_uncond)).addMBB(TBB);
     }
     return 1;
   }

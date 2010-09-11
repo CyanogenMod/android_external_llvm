@@ -1,5 +1,5 @@
-; RUN: llc < %s -march=cellspu -asm-verbose=0 > %t1.s
-; RUN: llc < %s -march=cellspu -mattr=large_mem -asm-verbose=0 > %t2.s
+; RUN: llc < %s -march=cellspu -asm-verbose=0 -regalloc=linearscan > %t1.s
+; RUN: llc < %s -march=cellspu -mattr=large_mem -asm-verbose=0 -regalloc=linearscan > %t2.s
 ; RUN: grep bisl    %t1.s | count 7
 ; RUN: grep ila     %t1.s | count 1
 ; RUN: grep rotqby  %t1.s | count 5
@@ -12,7 +12,7 @@
 ; RUN: grep rotqby  %t2.s | count 5
 ; RUN: grep lqd     %t2.s | count 13
 ; RUN: grep ilhu    %t2.s | count 2
-; RUN: grep ai      %t2.s | count 8
+; RUN: grep ai      %t2.s | count 9
 ; RUN: grep dispatch_tab %t2.s | count 6
 
 ; ModuleID = 'call_indirect.bc'

@@ -60,14 +60,11 @@ public:
   ///
   virtual const SystemZRegisterInfo &getRegisterInfo() const { return RI; }
 
-  bool copyRegToReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
-                    unsigned DestReg, unsigned SrcReg,
-                    const TargetRegisterClass *DestRC,
-                    const TargetRegisterClass *SrcRC) const;
+  virtual void copyPhysReg(MachineBasicBlock &MBB,
+                           MachineBasicBlock::iterator I, DebugLoc DL,
+                           unsigned DestReg, unsigned SrcReg,
+                           bool KillSrc) const;
 
-  bool isMoveInstr(const MachineInstr& MI,
-                   unsigned &SrcReg, unsigned &DstReg,
-                   unsigned &SrcSubIdx, unsigned &DstSubIdx) const;
   unsigned isLoadFromStackSlot(const MachineInstr *MI, int &FrameIndex) const;
   unsigned isStoreToStackSlot(const MachineInstr *MI, int &FrameIndex) const;
 
@@ -75,18 +72,22 @@ public:
                                    MachineBasicBlock::iterator MI,
                                    unsigned SrcReg, bool isKill,
                                    int FrameIndex,
-                                   const TargetRegisterClass *RC) const;
+                                   const TargetRegisterClass *RC,
+                                   const TargetRegisterInfo *TRI) const;
   virtual void loadRegFromStackSlot(MachineBasicBlock &MBB,
                                     MachineBasicBlock::iterator MI,
                                     unsigned DestReg, int FrameIdx,
-                                    const TargetRegisterClass *RC) const;
+                                    const TargetRegisterClass *RC,
+                                    const TargetRegisterInfo *TRI) const;
 
   virtual bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
                                          MachineBasicBlock::iterator MI,
-                                 const std::vector<CalleeSavedInfo> &CSI) const;
+                                        const std::vector<CalleeSavedInfo> &CSI,
+                                         const TargetRegisterInfo *TRI) const;
   virtual bool restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
                                            MachineBasicBlock::iterator MI,
-                                 const std::vector<CalleeSavedInfo> &CSI) const;
+                                        const std::vector<CalleeSavedInfo> &CSI,
+                                           const TargetRegisterInfo *TRI) const;
 
   bool ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const;
   virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const;
@@ -97,7 +98,8 @@ public:
                              bool AllowModify) const;
   virtual unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                                 MachineBasicBlock *FBB,
-                             const SmallVectorImpl<MachineOperand> &Cond) const;
+                                const SmallVectorImpl<MachineOperand> &Cond,
+                                DebugLoc DL) const;
   virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const;
 
   SystemZCC::CondCodes getOppositeCondition(SystemZCC::CondCodes CC) const;

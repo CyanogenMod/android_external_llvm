@@ -11,15 +11,21 @@
 #define LLVM_MC_MCCONTEXT_H
 
 #include "llvm/MC/SectionKind.h"
+#include "llvm/MC/MCDwarf.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/Support/raw_ostream.h"
+#include <vector> // FIXME: Shouldn't be needed.
 
 namespace llvm {
   class MCAsmInfo;
   class MCExpr;
   class MCSection;
   class MCSymbol;
+  class MCLabel;
+  class MCDwarfFile;
+  class MCDwarfLoc;
   class StringRef;
   class Twine;
   class MCSectionMachO;
@@ -33,9 +39,6 @@ namespace llvm {
 
     /// The MCAsmInfo for this target.
     const MCAsmInfo &MAI;
-    
-    /// Sections - Bindings of names to allocated sections.
-    StringMap<MCSection*> Sections;
 
     /// Symbols - Bindings of names to symbols.
     StringMap<MCSymbol*> Symbols;
@@ -43,14 +46,42 @@ namespace llvm {
     /// NextUniqueID - The next ID to dole out to an unnamed assembler temporary
     /// symbol.
     unsigned NextUniqueID;
+
+    /// Instances of directional local labels.
+    DenseMap<unsigned, MCLabel *> Instances;
+    /// NextInstance() creates the next instance of the directional local label
+    /// for the LocalLabelVal and adds it to the map if needed.
+    unsigned NextInstance(int64_t LocalLabelVal);
+    /// GetInstance() gets the current instance of the directional local label
+    /// for the LocalLabelVal and adds it to the map if needed.
+    unsigned GetInstance(int64_t LocalLabelVal);
     
+    /// The file name of the log file from the enviromment variable
+    /// AS_SECURE_LOG_FILE.  Which must be set before the .secure_log_unique
+    /// directive is used or it is an error.
+    char *SecureLogFile;
+    /// The stream that gets written to for the .secure_log_unique directive.
+    raw_ostream *SecureLog;
+    /// Boolean toggled when .secure_log_unique / .secure_log_reset is seen to
+    /// catch errors if .secure_log_unique appears twice without
+    /// .secure_log_reset appearing between them.
+    bool SecureLogUsed;
+
+    /// The dwarf file and directory tables from the dwarf .file directive.
+    std::vector<MCDwarfFile *> MCDwarfFiles;
+    std::vector<StringRef> MCDwarfDirs;
+
+    /// The current dwarf line information from the last dwarf .loc directive.
+    MCDwarfLoc CurrentDwarfLoc;
+    bool DwarfLocSeen;
+
     /// Allocator - Allocator object used for creating machine code objects.
     ///
     /// We use a bump pointer allocator to avoid the need to track all allocated
     /// objects.
     BumpPtrAllocator Allocator;
     
-    void *MachOUniquingMap, *ELFUniquingMap;
+    void *MachOUniquingMap, *ELFUniquingMap, *COFFUniquingMap;
   public:
     explicit MCContext(const MCAsmInfo &MAI);
     ~MCContext();
@@ -63,6 +94,14 @@ namespace llvm {
     /// CreateTempSymbol - Create and return a new assembler temporary symbol
     /// with a unique but unspecified name.
     MCSymbol *CreateTempSymbol();
+
+    /// CreateDirectionalLocalSymbol - Create the defintion of a directional
+    /// local symbol for numbered label (used for "1:" defintions).
+    MCSymbol *CreateDirectionalLocalSymbol(int64_t LocalLabelVal);
+
+    /// GetDirectionalLocalSymbol - Create and return a directional local
+    /// symbol for numbered label (used for "1b" or 1f" references).
+    MCSymbol *GetDirectionalLocalSymbol(int64_t LocalLabelVal, int bORf);
 
     /// GetOrCreateSymbol - Lookup the symbol inside with the specified
     /// @p Name.  If it exists, return it.  If not, create a forward
@@ -96,9 +135,59 @@ namespace llvm {
     
     const MCSection *getELFSection(StringRef Section, unsigned Type,
                                    unsigned Flags, SectionKind Kind,
-                                   bool IsExplicit = false);
+                                   bool IsExplicit = false,
+                                   unsigned EntrySize = 0);
+
+    const MCSection *getCOFFSection(StringRef Section, unsigned Characteristics,
+                                    int Selection, SectionKind Kind);
+
+    const MCSection *getCOFFSection(StringRef Section, unsigned Characteristics,
+                                    SectionKind Kind) {
+      return getCOFFSection (Section, Characteristics, 0, Kind);
+    }
+
     
     /// @}
+
+    /// @name Dwarf Managment
+    /// @{
+
+    /// GetDwarfFile - creates an entry in the dwarf file and directory tables.
+    unsigned GetDwarfFile(StringRef FileName, unsigned FileNumber);
+
+    bool ValidateDwarfFileNumber(unsigned FileNumber);
+
+    const std::vector<MCDwarfFile *> &getMCDwarfFiles() {
+      return MCDwarfFiles;
+    }
+    const std::vector<StringRef> &getMCDwarfDirs() {
+      return MCDwarfDirs;
+    }
+
+    /// setCurrentDwarfLoc - saves the information from the currently parsed
+    /// dwarf .loc directive and sets DwarfLocSeen.  When the next instruction      /// is assembled an entry in the line number table with this information and
+    /// the address of the instruction will be created.
+    void setCurrentDwarfLoc(unsigned FileNum, unsigned Line, unsigned Column,
+                            unsigned Flags, unsigned Isa) {
+      CurrentDwarfLoc.setFileNum(FileNum);
+      CurrentDwarfLoc.setLine(Line);
+      CurrentDwarfLoc.setColumn(Column);
+      CurrentDwarfLoc.setFlags(Flags);
+      CurrentDwarfLoc.setIsa(Isa);
+      DwarfLocSeen = true;
+    }
+
+    /// @}
+
+    char *getSecureLogFile() { return SecureLogFile; }
+    raw_ostream *getSecureLog() { return SecureLog; }
+    bool getSecureLogUsed() { return SecureLogUsed; }
+    void setSecureLog(raw_ostream *Value) {
+      SecureLog = Value;
+    }
+    void setSecureLogUsed(bool Value) {
+      SecureLogUsed = Value;
+    }
 
     void *Allocate(unsigned Size, unsigned Align = 8) {
       return Allocator.Allocate(Size, Align);

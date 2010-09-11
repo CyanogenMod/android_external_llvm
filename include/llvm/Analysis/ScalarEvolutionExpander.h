@@ -18,6 +18,7 @@
 #include "llvm/Analysis/ScalarEvolutionNormalization.h"
 #include "llvm/Support/IRBuilder.h"
 #include "llvm/Support/TargetFolder.h"
+#include "llvm/Support/ValueHandle.h"
 #include <set>
 
 namespace llvm {
@@ -31,7 +32,8 @@ namespace llvm {
     ScalarEvolution &SE;
     std::map<std::pair<const SCEV *, Instruction *>, AssertingVH<Value> >
       InsertedExpressions;
-    std::set<Value*> InsertedValues;
+    std::set<AssertingVH<Value> > InsertedValues;
+    std::set<AssertingVH<Value> > InsertedPostIncValues;
 
     /// PostIncLoops - Addrecs referring to any of the given loops are expanded
     /// in post-inc mode. For example, expanding {1,+,1}<L> in post-inc mode
@@ -69,13 +71,18 @@ namespace llvm {
     /// clear - Erase the contents of the InsertedExpressions map so that users
     /// trying to expand the same expression into multiple BasicBlocks or
     /// different places within the same BasicBlock can do so.
-    void clear() { InsertedExpressions.clear(); }
+    void clear() {
+      InsertedExpressions.clear();
+      InsertedValues.clear();
+      InsertedPostIncValues.clear();
+    }
 
     /// getOrInsertCanonicalInductionVariable - This method returns the
     /// canonical induction variable of the specified type for the specified
     /// loop (inserting one if there is none).  A canonical induction variable
     /// starts at zero and steps by one on each iteration.
-    Value *getOrInsertCanonicalInductionVariable(const Loop *L, const Type *Ty);
+    PHINode *getOrInsertCanonicalInductionVariable(const Loop *L,
+                                                   const Type *Ty);
 
     /// expandCodeFor - Insert code to directly compute the specified SCEV
     /// expression into the program.  The inserted code is inserted into the
@@ -102,6 +109,10 @@ namespace llvm {
     /// clearPostInc - Disable all post-inc expansion.
     void clearPostInc() {
       PostIncLoops.clear();
+
+      // When we change the post-inc loop set, cached expansions may no
+      // longer be valid.
+      InsertedPostIncValues.clear();
     }
 
     /// disableCanonicalMode - Disable the behavior of expanding expressions in
@@ -122,6 +133,14 @@ namespace llvm {
     /// InsertBinop - Insert the specified binary operator, doing a small amount
     /// of work to avoid inserting an obviously redundant operation.
     Value *InsertBinop(Instruction::BinaryOps Opcode, Value *LHS, Value *RHS);
+
+    /// ReuseOrCreateCast - Arange for there to be a cast of V to Ty at IP,
+    /// reusing an existing cast if a suitable one exists, moving an existing
+    /// cast if a suitable one exists but isn't in the right place, or
+    /// or creating a new one.
+    Value *ReuseOrCreateCast(Value *V, const Type *Ty,
+                             Instruction::CastOps Op,
+                             BasicBlock::iterator IP);
 
     /// InsertNoopCastOfTo - Insert a cast of V to the specified type,
     /// which must be possible with a noop cast, doing what we can to
@@ -146,7 +165,7 @@ namespace llvm {
     /// inserted by the code rewriter.  If so, the client should not modify the
     /// instruction.
     bool isInsertedInstruction(Instruction *I) const {
-      return InsertedValues.count(I);
+      return InsertedValues.count(I) || InsertedPostIncValues.count(I);
     }
 
     Value *visitConstant(const SCEVConstant *S) {

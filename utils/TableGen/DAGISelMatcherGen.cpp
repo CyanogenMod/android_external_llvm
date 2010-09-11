@@ -224,6 +224,7 @@ void MatcherGen::EmitLeafMatchCode(const TreePatternNode *N) {
   if (// Handle register references.  Nothing to do here, they always match.
       LeafRec->isSubClassOf("RegisterClass") || 
       LeafRec->isSubClassOf("PointerLikeRegClass") ||
+      LeafRec->isSubClassOf("SubRegIndex") ||
       // Place holder for SRCVALUE nodes. Nothing to do here.
       LeafRec->getName() == "srcvalue")
     return;
@@ -597,6 +598,14 @@ void MatcherGen::EmitResultLeafAsOperand(const TreePatternNode *N,
       ResultOps.push_back(NextRecordedOperandNo++);
       return;
     }
+
+    // Handle a subregister index. This is used for INSERT_SUBREG etc.
+    if (DI->getDef()->isSubClassOf("SubRegIndex")) {
+      std::string Value = getQualifiedName(DI->getDef());
+      AddMatcher(new EmitStringIntegerMatcher(Value, MVT::i32));
+      ResultOps.push_back(NextRecordedOperandNo++);
+      return;
+    }
   }
   
   errs() << "unhandled leaf node: \n";
@@ -680,8 +689,8 @@ EmitResultInstructionAsOperand(const TreePatternNode *N,
         !CGP.getDefaultOperand(OperandNode).DefaultOps.empty()) {
       // This is a predicate or optional def operand; emit the
       // 'default ops' operands.
-      const DAGDefaultOperand &DefaultOp =
-        CGP.getDefaultOperand(II.OperandList[InstOpNo].Rec);
+      const DAGDefaultOperand &DefaultOp
+	= CGP.getDefaultOperand(OperandNode);
       for (unsigned i = 0, e = DefaultOp.DefaultOps.size(); i != e; ++i)
         EmitResultOperand(DefaultOp.DefaultOps[i], InstOps);
       continue;
@@ -899,6 +908,3 @@ Matcher *llvm::ConvertPatternToMatcher(const PatternToMatch &Pattern,
   // Unconditional match.
   return Gen.GetMatcher();
 }
-
-
-

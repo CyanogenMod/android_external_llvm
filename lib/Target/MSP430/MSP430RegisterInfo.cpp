@@ -71,48 +71,6 @@ MSP430RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
 
 }
 
-const TargetRegisterClass *const *
-MSP430RegisterInfo::getCalleeSavedRegClasses(const MachineFunction *MF) const {
-  const Function* F = MF->getFunction();
-  static const TargetRegisterClass * const CalleeSavedRegClasses[] = {
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    0
-  };
-  static const TargetRegisterClass * const CalleeSavedRegClassesFP[] = {
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, 0
-  };
-  static const TargetRegisterClass * const CalleeSavedRegClassesIntr[] = {
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    0
-  };
-  static const TargetRegisterClass * const CalleeSavedRegClassesIntrFP[] = {
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, &MSP430::GR16RegClass,
-    &MSP430::GR16RegClass, 0
-  };
-
-  if (hasFP(*MF))
-    return (F->getCallingConv() == CallingConv::MSP430_INTR ?
-            CalleeSavedRegClassesIntrFP : CalleeSavedRegClassesFP);
-  else
-    return (F->getCallingConv() == CallingConv::MSP430_INTR ?
-            CalleeSavedRegClassesIntr : CalleeSavedRegClasses);
-}
-
 BitVector MSP430RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
 
@@ -143,7 +101,7 @@ bool MSP430RegisterInfo::hasFP(const MachineFunction &MF) const {
           MFI->isFrameAddressTaken());
 }
 
-bool MSP430RegisterInfo::hasReservedCallFrame(MachineFunction &MF) const {
+bool MSP430RegisterInfo::hasReservedCallFrame(const MachineFunction &MF) const {
   return !MF.getFrameInfo()->hasVarSizedObjects();
 }
 
@@ -205,10 +163,9 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
   MBB.erase(I);
 }
 
-unsigned
+void
 MSP430RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
-                                        int SPAdj, FrameIndexValue *Value,
-                                        RegScavenger *RS) const {
+                                        int SPAdj, RegScavenger *RS) const {
   assert(SPAdj == 0 && "Unexpected");
 
   unsigned i = 0;
@@ -246,7 +203,7 @@ MSP430RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
     MI.getOperand(i).ChangeToRegister(BasePtr, false);
 
     if (Offset == 0)
-      return 0;
+      return;
 
     // We need to materialize the offset via add instruction.
     unsigned DstReg = MI.getOperand(0).getReg();
@@ -257,12 +214,11 @@ MSP430RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
       BuildMI(MBB, llvm::next(II), dl, TII.get(MSP430::ADD16ri), DstReg)
         .addReg(DstReg).addImm(Offset);
 
-    return 0;
+    return;
   }
 
   MI.getOperand(i).ChangeToRegister(BasePtr, false);
   MI.getOperand(i+1).ChangeToImmediate(Offset);
-  return 0;
 }
 
 void
@@ -270,8 +226,8 @@ MSP430RegisterInfo::processFunctionBeforeFrameFinalized(MachineFunction &MF)
                                                                          const {
   // Create a frame entry for the FPW register that must be saved.
   if (hasFP(MF)) {
-    int ATTRIBUTE_UNUSED FrameIdx =
-      MF.getFrameInfo()->CreateFixedObject(2, -4, true, false);
+    int FrameIdx = MF.getFrameInfo()->CreateFixedObject(2, -4, true);
+    (void)FrameIdx;
     assert(FrameIdx == MF.getFrameInfo()->getObjectIndexBegin() &&
            "Slot for FPW register must be last in order to be found!");
   }

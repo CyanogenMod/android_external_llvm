@@ -43,6 +43,7 @@
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegistry.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -200,7 +201,7 @@ namespace {
                           raw_ostream &O) {
       const MachineOperand &MO = MI->getOperand(OpNo);
       if (TM.getRelocationModel() != Reloc::Static) {
-        if (MO.getType() == MachineOperand::MO_GlobalAddress) {
+        if (MO.isGlobal()) {
           const GlobalValue *GV = MO.getGlobal();
           if (GV->isDeclaration() || GV->isWeakForLinker()) {
             // Dynamically-resolved functions need a stub for the function.
@@ -214,7 +215,7 @@ namespace {
             return;
           }
         }
-        if (MO.getType() == MachineOperand::MO_ExternalSymbol) {
+        if (MO.isSymbol()) {
           SmallString<128> TempNameStr;
           TempNameStr += StringRef(MO.getSymbolName());
           TempNameStr += StringRef("$stub");
@@ -312,7 +313,7 @@ namespace {
     void printTOCEntryLabel(const MachineInstr *MI, unsigned OpNo,
                             raw_ostream &O) {
       const MachineOperand &MO = MI->getOperand(OpNo);
-      assert(MO.getType() == MachineOperand::MO_GlobalAddress);
+      assert(MO.isGlobal());
       MCSymbol *Sym = Mang->getSymbol(MO.getGlobal());
 
       // Map symbol -> label of TOC entry.
@@ -327,6 +328,19 @@ namespace {
 
     void printPredicateOperand(const MachineInstr *MI, unsigned OpNo,
                                raw_ostream &O, const char *Modifier);
+
+    MachineLocation getDebugValueLocation(const MachineInstr *MI) const {
+
+      MachineLocation Location;
+      assert (MI->getNumOperands() == 4 && "Invalid no. of machine operands!");
+      // Frame address.  Currently handles register +- offset only.
+      if (MI->getOperand(0).isReg() && MI->getOperand(2).isImm())
+        Location.set(MI->getOperand(0).getReg(), MI->getOperand(2).getImm());
+      else {
+        DEBUG(dbgs() << "DBG_VALUE instruction ignored! " << *MI << "\n");
+      }
+      return Location;
+    }
   };
 
   /// PPCLinuxAsmPrinter - PowerPC assembly printer, customized for Linux

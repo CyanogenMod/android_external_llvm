@@ -49,31 +49,31 @@ public:
   ///
   virtual const TargetRegisterInfo &getRegisterInfo() const { return RI; }
 
-  bool copyRegToReg(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
-                    unsigned DestReg, unsigned SrcReg,
-                    const TargetRegisterClass *DestRC,
-                    const TargetRegisterClass *SrcRC) const;
-
-  bool isMoveInstr(const MachineInstr& MI,
-                   unsigned &SrcReg, unsigned &DstReg,
-                   unsigned &SrcSubIdx, unsigned &DstSubIdx) const;
+  void copyPhysReg(MachineBasicBlock &MBB,
+                   MachineBasicBlock::iterator I, DebugLoc DL,
+                   unsigned DestReg, unsigned SrcReg,
+                   bool KillSrc) const;
 
   virtual void storeRegToStackSlot(MachineBasicBlock &MBB,
                                    MachineBasicBlock::iterator MI,
                                    unsigned SrcReg, bool isKill,
                                    int FrameIndex,
-                                   const TargetRegisterClass *RC) const;
+                                   const TargetRegisterClass *RC,
+                                   const TargetRegisterInfo *TRI) const;
   virtual void loadRegFromStackSlot(MachineBasicBlock &MBB,
                                     MachineBasicBlock::iterator MI,
                                     unsigned DestReg, int FrameIdx,
-                                    const TargetRegisterClass *RC) const;
+                                    const TargetRegisterClass *RC,
+                                    const TargetRegisterInfo *TRI) const;
 
   virtual bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
                                          MachineBasicBlock::iterator MI,
-                                 const std::vector<CalleeSavedInfo> &CSI) const;
+                                        const std::vector<CalleeSavedInfo> &CSI,
+                                         const TargetRegisterInfo *TRI) const;
   virtual bool restoreCalleeSavedRegisters(MachineBasicBlock &MBB,
                                            MachineBasicBlock::iterator MI,
-                                 const std::vector<CalleeSavedInfo> &CSI) const;
+                                        const std::vector<CalleeSavedInfo> &CSI,
+                                           const TargetRegisterInfo *TRI) const;
 
   unsigned GetInstSizeInBytes(const MachineInstr *MI) const;
 
@@ -88,7 +88,8 @@ public:
   unsigned RemoveBranch(MachineBasicBlock &MBB) const;
   unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                         MachineBasicBlock *FBB,
-                        const SmallVectorImpl<MachineOperand> &Cond) const;
+                        const SmallVectorImpl<MachineOperand> &Cond,
+                        DebugLoc DL) const;
 
 };
 

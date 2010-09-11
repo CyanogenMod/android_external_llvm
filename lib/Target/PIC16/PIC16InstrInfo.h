@@ -49,25 +49,23 @@ public:
   virtual void storeRegToStackSlot(MachineBasicBlock &MBB,
                                    MachineBasicBlock::iterator MBBI,
                                    unsigned SrcReg, bool isKill, int FrameIndex,
-                                   const TargetRegisterClass *RC) const;
+                                   const TargetRegisterClass *RC,
+                                   const TargetRegisterInfo *TRI) const;
                                                                                
   virtual void loadRegFromStackSlot(MachineBasicBlock &MBB,
                                     MachineBasicBlock::iterator MBBI,
                                     unsigned DestReg, int FrameIndex,
-                                    const TargetRegisterClass *RC) const;
-  virtual bool copyRegToReg(MachineBasicBlock &MBB,
-                            MachineBasicBlock::iterator MBBI,
-                            unsigned DestReg, unsigned SrcReg,
-                            const TargetRegisterClass *DestRC,
-                            const TargetRegisterClass *SrcRC) const;
-  virtual bool isMoveInstr(const MachineInstr &MI,
-                           unsigned &SrcReg, unsigned &DstReg,
-                           unsigned &SrcSubIdx, unsigned &DstSubIdx) const;
-
+                                    const TargetRegisterClass *RC,
+                                    const TargetRegisterInfo *TRI) const;
+  virtual void copyPhysReg(MachineBasicBlock &MBB,
+                           MachineBasicBlock::iterator I, DebugLoc DL,
+                           unsigned DestReg, unsigned SrcReg,
+                           bool KillSrc) const;
   virtual 
   unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                         MachineBasicBlock *FBB,
-                        const SmallVectorImpl<MachineOperand> &Cond) const; 
+                        const SmallVectorImpl<MachineOperand> &Cond,
+                        DebugLoc DL) const; 
   virtual bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                              MachineBasicBlock *&FBB,
                              SmallVectorImpl<MachineOperand> &Cond,

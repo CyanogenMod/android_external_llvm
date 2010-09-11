@@ -19,11 +19,13 @@
 #include "llvm/ADT/SmallSet.h"
 #endif
 #include "llvm/CodeGen/ValueTypes.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
 
 namespace llvm {
 
 class AllocaInst;
 class ConstantFP;
+class FunctionLoweringInfo;
 class Instruction;
 class MachineBasicBlock;
 class MachineConstantPool;
@@ -36,22 +38,15 @@ class TargetInstrInfo;
 class TargetLowering;
 class TargetMachine;
 class TargetRegisterClass;
+class TargetRegisterInfo;
 
 /// FastISel - This is a fast-path instruction selection class that
 /// generates poor code and doesn't support illegal types or non-trivial
 /// lowering, but runs quickly.
 class FastISel {
 protected:
-  MachineBasicBlock *MBB;
   DenseMap<const Value *, unsigned> LocalValueMap;
-  DenseMap<const Value *, unsigned> &ValueMap;
-  DenseMap<const BasicBlock *, MachineBasicBlock *> &MBBMap;
-  DenseMap<const AllocaInst *, int> &StaticAllocaMap;
-  std::vector<std::pair<MachineInstr*, unsigned> > &PHINodesToUpdate;
-#ifndef NDEBUG
-  SmallSet<const Instruction *, 8> &CatchInfoLost;
-#endif
-  MachineFunction &MF;
+  FunctionLoweringInfo &FuncInfo;
   MachineRegisterInfo &MRI;
   MachineFrameInfo &MFI;
   MachineConstantPool &MCP;
@@ -60,22 +55,22 @@ protected:
   const TargetData &TD;
   const TargetInstrInfo &TII;
   const TargetLowering &TLI;
+  const TargetRegisterInfo &TRI;
+  MachineInstr *LastLocalValue;
 
 public:
+  /// getLastLocalValue - Return the position of the last instruction
+  /// emitted for materializing constants for use in the current block.
+  MachineInstr *getLastLocalValue() { return LastLocalValue; }
+
+  /// setLastLocalValue - Update the position of the last instruction
+  /// emitted for materializing constants for use in the current block.
+  void setLastLocalValue(MachineInstr *I) { LastLocalValue = I; }
+
   /// startNewBlock - Set the current block to which generated machine
   /// instructions will be appended, and clear the local CSE map.
   ///
-  void startNewBlock(MachineBasicBlock *mbb) {
-    setCurrentBlock(mbb);
-    LocalValueMap.clear();
-  }
-
-  /// setCurrentBlock - Set the current block to which generated machine
-  /// instructions will be appended.
-  ///
-  void setCurrentBlock(MachineBasicBlock *mbb) {
-    MBB = mbb;
-  }
+  void startNewBlock();
 
   /// getCurDebugLoc() - Return current debug location information.
   DebugLoc getCurDebugLoc() const { return DL; }
@@ -105,20 +100,28 @@ public:
   /// getRegForGEPIndex - This is a wrapper around getRegForValue that also
   /// takes care of truncating or sign-extending the given getelementptr
   /// index value.
-  unsigned getRegForGEPIndex(const Value *V);
+  std::pair<unsigned, bool> getRegForGEPIndex(const Value *V);
+
+  /// recomputeInsertPt - Reset InsertPt to prepare for insterting instructions
+  /// into the current block.
+  void recomputeInsertPt();
+
+  struct SavePoint {
+    MachineBasicBlock::iterator InsertPt;
+    DebugLoc DL;
+  };
+
+  /// enterLocalValueArea - Prepare InsertPt to begin inserting instructions
+  /// into the local value area and return the old insert position.
+  SavePoint enterLocalValueArea();
+
+  /// leaveLocalValueArea - Reset InsertPt to the given old insert position.
+  void leaveLocalValueArea(SavePoint Old);
 
   virtual ~FastISel();
 
 protected:
-  FastISel(MachineFunction &mf,
-           DenseMap<const Value *, unsigned> &vm,
-           DenseMap<const BasicBlock *, MachineBasicBlock *> &bm,
-           DenseMap<const AllocaInst *, int> &am,
-           std::vector<std::pair<MachineInstr*, unsigned> > &PHINodesToUpdate
-#ifndef NDEBUG
-           , SmallSet<const Instruction *, 8> &cil
-#endif
-           );
+  explicit FastISel(FunctionLoweringInfo &funcInfo);
 
   /// TargetSelectInstruction - This method is called by target-independent
   /// code when the normal FastISel process fails to select an instruction.
@@ -141,7 +144,8 @@ protected:
   ///
   virtual unsigned FastEmit_r(MVT VT,
                               MVT RetVT,
-                              unsigned Opcode, unsigned Op0);
+                              unsigned Opcode,
+                              unsigned Op0, bool Op0IsKill);
 
   /// FastEmit_rr - This method is called by target-independent code
   /// to request that an instruction with the given type, opcode, and
@@ -150,7 +154,8 @@ protected:
   virtual unsigned FastEmit_rr(MVT VT,
                                MVT RetVT,
                                unsigned Opcode,
-                               unsigned Op0, unsigned Op1);
+                               unsigned Op0, bool Op0IsKill,
+                               unsigned Op1, bool Op1IsKill);
 
   /// FastEmit_ri - This method is called by target-independent code
   /// to request that an instruction with the given type, opcode, and
@@ -159,7 +164,8 @@ protected:
   virtual unsigned FastEmit_ri(MVT VT,
                                MVT RetVT,
                                unsigned Opcode,
-                               unsigned Op0, uint64_t Imm);
+                               unsigned Op0, bool Op0IsKill,
+                               uint64_t Imm);
 
   /// FastEmit_rf - This method is called by target-independent code
   /// to request that an instruction with the given type, opcode, and
@@ -168,7 +174,8 @@ protected:
   virtual unsigned FastEmit_rf(MVT VT,
                                MVT RetVT,
                                unsigned Opcode,
-                               unsigned Op0, const ConstantFP *FPImm);
+                               unsigned Op0, bool Op0IsKill,
+                               const ConstantFP *FPImm);
 
   /// FastEmit_rri - This method is called by target-independent code
   /// to request that an instruction with the given type, opcode, and
@@ -177,7 +184,9 @@ protected:
   virtual unsigned FastEmit_rri(MVT VT,
                                 MVT RetVT,
                                 unsigned Opcode,
-                                unsigned Op0, unsigned Op1, uint64_t Imm);
+                                unsigned Op0, bool Op0IsKill,
+                                unsigned Op1, bool Op1IsKill,
+                                uint64_t Imm);
 
   /// FastEmit_ri_ - This method is a wrapper of FastEmit_ri. It first tries
   /// to emit an instruction with an immediate operand using FastEmit_ri.
@@ -185,8 +194,8 @@ protected:
   /// FastEmit_rr instead.
   unsigned FastEmit_ri_(MVT VT,
                         unsigned Opcode,
-                        unsigned Op0, uint64_t Imm,
-                        MVT ImmType);
+                        unsigned Op0, bool Op0IsKill,
+                        uint64_t Imm, MVT ImmType);
   
   /// FastEmit_rf_ - This method is a wrapper of FastEmit_rf. It first tries
   /// to emit an instruction with an immediate operand using FastEmit_rf.
@@ -194,8 +203,8 @@ protected:
   /// FastEmit_rr instead.
   unsigned FastEmit_rf_(MVT VT,
                         unsigned Opcode,
-                        unsigned Op0, const ConstantFP *FPImm,
-                        MVT ImmType);
+                        unsigned Op0, bool Op0IsKill,
+                        const ConstantFP *FPImm, MVT ImmType);
   
   /// FastEmit_i - This method is called by target-independent code
   /// to request that an instruction with the given type, opcode, and
@@ -224,35 +233,40 @@ protected:
   ///
   unsigned FastEmitInst_r(unsigned MachineInstOpcode,
                           const TargetRegisterClass *RC,
-                          unsigned Op0);
+                          unsigned Op0, bool Op0IsKill);
 
   /// FastEmitInst_rr - Emit a MachineInstr with two register operands
   /// and a result register in the given register class.
   ///
   unsigned FastEmitInst_rr(unsigned MachineInstOpcode,
                            const TargetRegisterClass *RC,
-                           unsigned Op0, unsigned Op1);
+                           unsigned Op0, bool Op0IsKill,
+                           unsigned Op1, bool Op1IsKill);
 
   /// FastEmitInst_ri - Emit a MachineInstr with two register operands
   /// and a result register in the given register class.
   ///
   unsigned FastEmitInst_ri(unsigned MachineInstOpcode,
                            const TargetRegisterClass *RC,
-                           unsigned Op0, uint64_t Imm);
+                           unsigned Op0, bool Op0IsKill,
+                           uint64_t Imm);
 
   /// FastEmitInst_rf - Emit a MachineInstr with two register operands
   /// and a result register in the given register class.
   ///
   unsigned FastEmitInst_rf(unsigned MachineInstOpcode,
                            const TargetRegisterClass *RC,
-                           unsigned Op0, const ConstantFP *FPImm);
+                           unsigned Op0, bool Op0IsKill,
+                           const ConstantFP *FPImm);
 
   /// FastEmitInst_rri - Emit a MachineInstr with two register operands,
   /// an immediate, and a result register in the given register class.
   ///
   unsigned FastEmitInst_rri(unsigned MachineInstOpcode,
                             const TargetRegisterClass *RC,
-                            unsigned Op0, unsigned Op1, uint64_t Imm);
+                            unsigned Op0, bool Op0IsKill,
+                            unsigned Op1, bool Op1IsKill,
+                            uint64_t Imm);
   
   /// FastEmitInst_i - Emit a MachineInstr with a single immediate
   /// operand, and a result register in the given register class.
@@ -263,17 +277,18 @@ protected:
   /// FastEmitInst_extractsubreg - Emit a MachineInstr for an extract_subreg
   /// from a specified index of a superregister to a specified type.
   unsigned FastEmitInst_extractsubreg(MVT RetVT,
-                                      unsigned Op0, uint32_t Idx);
+                                      unsigned Op0, bool Op0IsKill,
+                                      uint32_t Idx);
 
   /// FastEmitZExtFromI1 - Emit MachineInstrs to compute the value of Op
   /// with all but the least significant bit set to zero.
   unsigned FastEmitZExtFromI1(MVT VT,
-                              unsigned Op);
+                              unsigned Op0, bool Op0IsKill);
 
   /// FastEmitBranch - Emit an unconditional branch to the given block,
   /// unless it is the immediate (fall-through) successor, and update
   /// the CFG.
-  void FastEmitBranch(MachineBasicBlock *MBB);
+  void FastEmitBranch(MachineBasicBlock *MBB, DebugLoc DL);
 
   unsigned UpdateValueMap(const Value* I, unsigned Reg);
 
@@ -311,6 +326,14 @@ private:
   /// might result in multiple MBB's for one BB.  As such, the start of the
   /// BB might correspond to a different MBB than the end.
   bool HandlePHINodesInSuccessorBlocks(const BasicBlock *LLVMBB);
+
+  /// materializeRegForValue - Helper for getRegForVale. This function is
+  /// called when the value isn't already available in a register and must
+  /// be materialized with new instructions.
+  unsigned materializeRegForValue(const Value *V, MVT VT);
+
+  /// hasTrivialKill - Test whether the given value has exactly one use.
+  bool hasTrivialKill(const Value *V) const;
 };
 
 }

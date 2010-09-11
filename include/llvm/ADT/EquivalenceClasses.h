@@ -169,7 +169,7 @@ public:
   /// getOrInsertLeaderValue - Return the leader for the specified value that is
   /// in the set.  If the member is not in the set, it is inserted, then
   /// returned.
-  const ElemTy &getOrInsertLeaderValue(const ElemTy &V) const {
+  const ElemTy &getOrInsertLeaderValue(const ElemTy &V) {
     member_iterator MI = findLeader(insert(V));
     assert(MI != member_end() && "Value is not in the set!");
     return *MI;
@@ -191,7 +191,7 @@ public:
   /// insert - Insert a new value into the union/find set, ignoring the request
   /// if the value already exists.
   iterator insert(const ElemTy &Data) {
-    return TheMapping.insert(Data).first;
+    return TheMapping.insert(ECValue(Data)).first;
   }
 
   /// findLeader - Given a value in the set, return a member iterator for the

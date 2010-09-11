@@ -67,27 +67,11 @@ namespace {
     return isInt<10>(CN->getSExtValue());
   }
 
-  //! SDNode predicate for i16 sign-extended, 10-bit immediate values
-  bool
-  isI16IntS10Immediate(SDNode *N)
-  {
-    ConstantSDNode *CN = dyn_cast<ConstantSDNode>(N);
-    return (CN != 0 && isI16IntS10Immediate(CN));
-  }
-
   //! ConstantSDNode predicate for i16 unsigned 10-bit immediate values
   bool
   isI16IntU10Immediate(ConstantSDNode *CN)
   {
     return isUInt<10>((short) CN->getZExtValue());
-  }
-
-  //! SDNode predicate for i16 sign-extended, 10-bit immediate values
-  bool
-  isI16IntU10Immediate(SDNode *N)
-  {
-    return (N->getOpcode() == ISD::Constant
-            && isI16IntU10Immediate(cast<ConstantSDNode>(N)));
   }
 
   //! ConstantSDNode predicate for signed 16-bit values
@@ -119,14 +103,6 @@ namespace {
     return false;
   }
 
-  //! SDNode predicate for signed 16-bit values.
-  bool
-  isIntS16Immediate(SDNode *N, short &Imm)
-  {
-    return (N->getOpcode() == ISD::Constant
-            && isIntS16Immediate(cast<ConstantSDNode>(N), Imm));
-  }
-
   //! ConstantFPSDNode predicate for representing floats as 16-bit sign ext.
   static bool
   isFPS16Immediate(ConstantFPSDNode *FPN, short &Imm)
@@ -140,16 +116,6 @@ namespace {
     }
 
     return false;
-  }
-
-  bool
-  isHighLow(const SDValue &Op)
-  {
-    return (Op.getOpcode() == SPUISD::IndirectAddr
-            && ((Op.getOperand(0).getOpcode() == SPUISD::Hi
-                 && Op.getOperand(1).getOpcode() == SPUISD::Lo)
-                || (Op.getOperand(0).getOpcode() == SPUISD::Lo
-                    && Op.getOperand(1).getOpcode() == SPUISD::Hi)));
   }
 
   //===------------------------------------------------------------------===//
@@ -275,7 +241,6 @@ namespace {
 
     SDNode *emitBuildVector(SDNode *bvNode) {
       EVT vecVT = bvNode->getValueType(0);
-      EVT eltVT = vecVT.getVectorElementType();
       DebugLoc dl = bvNode->getDebugLoc();
 
       // Check to see if this vector can be represented as a CellSPU immediate
@@ -606,18 +571,15 @@ SPUDAGToDAGISel::DFormAddressPredicate(SDNode *Op, SDValue N, SDValue &Base,
     Base = CurDAG->getTargetConstant(0, N.getValueType());
     Index = N;
     return true;
-  } else if (Opc == ISD::Register || Opc == ISD::CopyFromReg) {
+  } else if (Opc == ISD::Register 
+           ||Opc == ISD::CopyFromReg 
+           ||Opc == ISD::UNDEF
+           ||Opc == ISD::Constant) {
     unsigned OpOpc = Op->getOpcode();
 
     if (OpOpc == ISD::STORE || OpOpc == ISD::LOAD) {
       // Direct load/store without getelementptr
-      SDValue Addr, Offs;
-
-      // Get the register from CopyFromReg
-      if (Opc == ISD::CopyFromReg)
-        Addr = N.getOperand(1);
-      else
-        Addr = N;                       // Register
+      SDValue Offs;
 
       Offs = ((OpOpc == ISD::STORE) ? Op->getOperand(3) : Op->getOperand(2));
 
@@ -626,7 +588,7 @@ SPUDAGToDAGISel::DFormAddressPredicate(SDNode *Op, SDValue N, SDValue &Base,
           Offs = CurDAG->getTargetConstant(0, Offs.getValueType());
 
         Base = Offs;
-        Index = Addr;
+        Index = N;
         return true;
       }
     } else {
@@ -941,13 +903,21 @@ SPUDAGToDAGISel::Select(SDNode *N) {
             && ((RN = dyn_cast<RegisterSDNode>(Op0.getNode())) != 0
                 && RN->getReg() != SPU::R1))) {
       NewOpc = SPU::Ar32;
+      Ops[1] = Op1;
       if (Op1.getOpcode() == ISD::Constant) {
         ConstantSDNode *CN = cast<ConstantSDNode>(Op1);
         Op1 = CurDAG->getTargetConstant(CN->getSExtValue(), VT);
-        NewOpc = (isI32IntS10Immediate(CN) ? SPU::AIr32 : SPU::Ar32);
+        if (isInt<10>(CN->getSExtValue())) {
+          NewOpc = SPU::AIr32;
+          Ops[1] = Op1;
+        } else {
+          Ops[1] = SDValue(CurDAG->getMachineNode(SPU::ILr32, dl, 
+                                                  N->getValueType(0), 
+                                                  Op1),
+                           0); 
+        }
       }
       Ops[0] = Op0;
-      Ops[1] = Op1;
       n_ops = 2;
     }
   }

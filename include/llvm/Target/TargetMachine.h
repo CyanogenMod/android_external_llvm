@@ -70,6 +70,16 @@ namespace CodeGenOpt {
   };
 }
 
+namespace Sched {
+  enum Preference {
+    None,             // No preference
+    Latency,          // Scheduling for shortest total latency.
+    RegPressure,      // Scheduling for lowest register pressure.
+    Hybrid,           // Scheduling for both latency and register pressure.
+    ILP               // Scheduling for ILP in low register pressure mode.
+  };
+}
+
 //===----------------------------------------------------------------------===//
 ///
 /// TargetMachine - Primary interface to the complete machine description for
@@ -92,7 +102,9 @@ protected: // Can only create subclasses.
   /// AsmInfo - Contains target specific asm information.
   ///
   const MCAsmInfo *AsmInfo;
-  
+
+  unsigned MCRelaxAll : 1;
+
 public:
   virtual ~TargetMachine();
 
@@ -148,6 +160,14 @@ public:
   /// information for it, otherwise return null.
   /// 
   virtual const TargetELFWriterInfo *getELFWriterInfo() const { return 0; }
+
+  /// hasMCRelaxAll - Check whether all machine code instructions should be
+  /// relaxed.
+  bool hasMCRelaxAll() const { return MCRelaxAll; }
+
+  /// setMCRelaxAll - Set whether all machine code instructions should be
+  /// relaxed.
+  void setMCRelaxAll(bool Value) { MCRelaxAll = Value; }
 
   /// getRelocationModel - Returns the code generation relocation model. The
   /// choices are static, PIC, and dynamic-no-pic, and target default.
@@ -226,14 +246,15 @@ public:
     return true;
   }
 
-  /// addPassesToEmitWholeFile - This method can be implemented by targets that 
-  /// require having the entire module at once.  This is not recommended, do not
-  /// use this.
-  virtual bool WantsWholeFile() const { return false; }
-  virtual bool addPassesToEmitWholeFile(PassManager &, formatted_raw_ostream &,
-                                        CodeGenFileType,
-                                        CodeGenOpt::Level,
-                                        bool = true) {
+  /// addPassesToEmitMC - Add passes to the specified pass manager to get
+  /// machine code emitted with the MCJIT. This method returns true if machine
+  /// code is not supported. It fills the MCContext Ctx pointer which can be
+  /// used to build custom MCStreamer.
+  ///
+  virtual bool addPassesToEmitMC(PassManagerBase &,
+                                 MCContext *&,
+                                 CodeGenOpt::Level,
+                                 bool = true) {
     return true;
   }
 };
@@ -279,12 +300,27 @@ public:
                                           JITCodeEmitter &MCE,
                                           CodeGenOpt::Level,
                                           bool DisableVerify = true);
+
+  /// addPassesToEmitMC - Add passes to the specified pass manager to get
+  /// machine code emitted with the MCJIT. This method returns true if machine
+  /// code is not supported. It fills the MCContext Ctx pointer which can be
+  /// used to build custom MCStreamer.
+  ///
+  virtual bool addPassesToEmitMC(PassManagerBase &PM,
+                                 MCContext *&Ctx,
+                                 CodeGenOpt::Level OptLevel,
+                                 bool DisableVerify = true);
   
   /// Target-Independent Code Generator Pass Configuration Options.
-  
-  /// addInstSelector - This method should add any "last minute" LLVM->LLVM
-  /// passes, then install an instruction selector pass, which converts from
-  /// LLVM code to machine instructions.
+
+  /// addPreISelPasses - This method should add any "last minute" LLVM->LLVM
+  /// passes (which are run just before instruction selector).
+  virtual bool addPreISel(PassManagerBase &, CodeGenOpt::Level) {
+    return true;
+  }
+
+  /// addInstSelector - This method should install an instruction selector pass,
+  /// which converts from LLVM code to machine instructions.
   virtual bool addInstSelector(PassManagerBase &, CodeGenOpt::Level) {
     return true;
   }

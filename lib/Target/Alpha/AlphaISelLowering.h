@@ -91,9 +91,9 @@ namespace llvm {
       getRegClassForInlineAsmConstraint(const std::string &Constraint,
                                         EVT VT) const;
 
-    MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr *MI,
-                                                   MachineBasicBlock *BB,
-                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
+    MachineBasicBlock *
+      EmitInstrWithCustomInserter(MachineInstr *MI,
+                                  MachineBasicBlock *BB) const;
 
     virtual bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const;
 
@@ -121,6 +121,7 @@ namespace llvm {
       LowerCall(SDValue Chain, SDValue Callee,
                 CallingConv::ID CallConv, bool isVarArg, bool &isTailCall,
                 const SmallVectorImpl<ISD::OutputArg> &Outs,
+                const SmallVectorImpl<SDValue> &OutVals,
                 const SmallVectorImpl<ISD::InputArg> &Ins,
                 DebugLoc dl, SelectionDAG &DAG,
                 SmallVectorImpl<SDValue> &InVals) const;
@@ -129,6 +130,7 @@ namespace llvm {
       LowerReturn(SDValue Chain,
                   CallingConv::ID CallConv, bool isVarArg,
                   const SmallVectorImpl<ISD::OutputArg> &Outs,
+                  const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
   };
 }

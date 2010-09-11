@@ -116,34 +116,6 @@ getCalleeSavedRegs(const MachineFunction *MF) const
     return BitMode32CalleeSavedRegs;
 }
 
-/// Mips Callee Saved Register Classes
-const TargetRegisterClass* const* 
-MipsRegisterInfo::getCalleeSavedRegClasses(const MachineFunction *MF) const 
-{
-  static const TargetRegisterClass * const SingleFloatOnlyCalleeSavedRC[] = {
-    &Mips::CPURegsRegClass, &Mips::CPURegsRegClass, &Mips::CPURegsRegClass, 
-    &Mips::CPURegsRegClass, &Mips::CPURegsRegClass, &Mips::CPURegsRegClass,
-    &Mips::CPURegsRegClass, &Mips::CPURegsRegClass,
-    &Mips::FGR32RegClass, &Mips::FGR32RegClass, &Mips::FGR32RegClass, 
-    &Mips::FGR32RegClass, &Mips::FGR32RegClass, &Mips::FGR32RegClass, 
-    &Mips::FGR32RegClass, &Mips::FGR32RegClass, &Mips::FGR32RegClass, 
-    &Mips::FGR32RegClass, &Mips::FGR32RegClass, 0
-  };
-
-  static const TargetRegisterClass * const BitMode32CalleeSavedRC[] = {
-    &Mips::CPURegsRegClass, &Mips::CPURegsRegClass, &Mips::CPURegsRegClass, 
-    &Mips::CPURegsRegClass, &Mips::CPURegsRegClass, &Mips::CPURegsRegClass,
-    &Mips::CPURegsRegClass, &Mips::CPURegsRegClass,
-    &Mips::FGR32RegClass, &Mips::FGR32RegClass, &Mips::FGR32RegClass, 
-    &Mips::FGR32RegClass, &Mips::FGR32RegClass, &Mips::FGR32RegClass, 0
-  };
-
-  if (Subtarget.isSingleFloat())
-    return SingleFloatOnlyCalleeSavedRC;
-  else
-    return BitMode32CalleeSavedRC;
-}
-
 BitVector MipsRegisterInfo::
 getReservedRegs(const MachineFunction &MF) const
 {
@@ -279,7 +251,8 @@ void MipsRegisterInfo::adjustMipsStackFrame(MachineFunction &MF) const
   StackOffset = ((StackOffset+StackAlign-1)/StackAlign*StackAlign);
 
   for (unsigned i = 0, e = CSI.size(); i != e ; ++i) {
-    if (CSI[i].getRegClass() != Mips::CPURegsRegisterClass)
+    unsigned Reg = CSI[i].getReg();
+    if (!Mips::CPURegsRegisterClass->contains(Reg))
       break;
     MFI->setObjectOffset(CSI[i].getFrameIdx(), StackOffset);
     TopCPUSavedRegOff = StackOffset;
@@ -288,7 +261,7 @@ void MipsRegisterInfo::adjustMipsStackFrame(MachineFunction &MF) const
 
   // Stack locations for FP and RA. If only one of them is used, 
   // the space must be allocated for both, otherwise no space at all.
-  if (hasFP(MF) || MFI->hasCalls()) {
+  if (hasFP(MF) || MFI->adjustsStack()) {
     // FP stack location
     MFI->setObjectOffset(MFI->CreateStackObject(RegSize, RegSize, true), 
                          StackOffset);
@@ -302,7 +275,7 @@ void MipsRegisterInfo::adjustMipsStackFrame(MachineFunction &MF) const
     MipsFI->setRAStackOffset(StackOffset);
     StackOffset += RegSize;
 
-    if (MFI->hasCalls())
+    if (MFI->adjustsStack())
       TopCPUSavedRegOff += RegSize;
   }
 
@@ -311,7 +284,8 @@ void MipsRegisterInfo::adjustMipsStackFrame(MachineFunction &MF) const
   // Adjust FPU Callee Saved Registers Area. This Area must be 
   // aligned to the default Stack Alignment requirements.
   for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
-    if (CSI[i].getRegClass() == Mips::CPURegsRegisterClass)
+    unsigned Reg = CSI[i].getReg();
+    if (Mips::CPURegsRegisterClass->contains(Reg))
       continue;
     MFI->setObjectOffset(CSI[i].getFrameIdx(), StackOffset);
     TopFPUSavedRegOff = StackOffset;
@@ -353,10 +327,9 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
 // FrameIndex represent objects inside a abstract stack.
 // We must replace FrameIndex with an stack/frame pointer
 // direct reference.
-unsigned MipsRegisterInfo::
+void MipsRegisterInfo::
 eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
-                    FrameIndexValue *Value, RegScavenger *RS) const
-{
+                    RegScavenger *RS) const {
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
 
@@ -387,7 +360,6 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
 
   MI.getOperand(i-1).ChangeToImmediate(Offset);
   MI.getOperand(i).ChangeToRegister(getFrameRegister(MF), false);
-  return 0;
 }
 
 void MipsRegisterInfo::
@@ -407,7 +379,7 @@ emitPrologue(MachineFunction &MF) const
   unsigned StackSize = MFI->getStackSize();
 
   // No need to allocate space on the stack.
-  if (StackSize == 0 && !MFI->hasCalls()) return;
+  if (StackSize == 0 && !MFI->adjustsStack()) return;
 
   int FPOffset = MipsFI->getFPStackOffset();
   int RAOffset = MipsFI->getRAStackOffset();
@@ -425,7 +397,7 @@ emitPrologue(MachineFunction &MF) const
 
   // Save the return address only if the function isnt a leaf one.
   // sw  $ra, stack_loc($sp)
-  if (MFI->hasCalls()) { 
+  if (MFI->adjustsStack()) { 
     BuildMI(MBB, MBBI, dl, TII.get(Mips::SW))
         .addReg(Mips::RA).addImm(RAOffset).addReg(Mips::SP);
   }
@@ -477,7 +449,7 @@ emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const
 
   // Restore the return address only if the function isnt a leaf one.
   // lw  $ra, stack_loc($sp)
-  if (MFI->hasCalls()) { 
+  if (MFI->adjustsStack()) { 
     BuildMI(MBB, MBBI, dl, TII.get(Mips::LW), Mips::RA)
       .addImm(RAOffset).addReg(Mips::SP);
   }
@@ -528,4 +500,3 @@ getDwarfRegNum(unsigned RegNum, bool isEH) const {
 }
 
 #include "MipsGenRegisterInfo.inc"
-

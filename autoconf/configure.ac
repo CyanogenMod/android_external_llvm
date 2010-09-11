@@ -101,7 +101,6 @@ for i in `ls ${srcdir}/projects`
 do
   if test -d ${srcdir}/projects/${i} ; then
     case ${i} in
-      CVS) ;;
       sample)       AC_CONFIG_SUBDIRS([projects/sample])    ;;
       privbracket)  AC_CONFIG_SUBDIRS([projects/privbracket]) ;;
       llvm-stacker) AC_CONFIG_SUBDIRS([projects/llvm-stacker]) ;;
@@ -299,7 +298,7 @@ dnl Set the LINKALL and NOLINKALL Makefile variables based on the platform
 AC_SUBST(LINKALL,$llvm_cv_link_all_option)
 AC_SUBST(NOLINKALL,$llvm_cv_no_link_all_option)
 
-dnl Set the "LLVM_ON_*" variables based on llvm_cvs_platform_type
+dnl Set the "LLVM_ON_*" variables based on llvm_cv_platform_type
 dnl This is used by lib/System to determine the basic kind of implementation
 dnl to use.
 case $llvm_cv_platform_type in
@@ -369,13 +368,13 @@ else
   AC_SUBST(LLVM_CROSS_COMPILING, [0])
 fi
 
-dnl Check to see if there's a "CVS" (or .svn or .git) directory indicating
-dnl that this build is being done from a checkout. This sets up several
-dnl defaults for the command line switches. When we build with a CVS directory,
+dnl Check to see if there's a .svn or .git directory indicating that this
+dnl build is being done from a checkout. This sets up several defaults for
+dnl the command line switches. When we build with a checkout directory,
 dnl we get a debug with assertions turned on. Without, we assume a source
 dnl release and we get an optimized build without assertions.
 dnl See --enable-optimized and --enable-assertions below
-if test -d "CVS" -o -d "${srcdir}/CVS" -o -d ".svn" -o -d "${srcdir}/.svn" -o -d ".git" -o -d "${srcdir}/.git"; then
+if test -d ".svn" -o -d "${srcdir}/.svn" -o -d ".git" -o -d "${srcdir}/.git"; then
   cvsbuild="yes"
   optimize="no"
   AC_SUBST(CVSBUILD,[[CVSBUILD=1]])
@@ -525,6 +524,20 @@ case "$enableval" in
   *) AC_MSG_ERROR([Invalid setting for --enable-shared. Use "yes" or "no"]) ;;
 esac
 
+dnl Enable embedding timestamp information into build.
+AC_ARG_ENABLE(timestamps,
+  AS_HELP_STRING([--enable-timestamps],
+                 [Enable embedding timestamp information in build (default is YES)]),,
+                 enableval=default)
+case "$enableval" in
+  yes) AC_SUBST(ENABLE_TIMESTAMPS,[1]) ;;
+  no)  AC_SUBST(ENABLE_TIMESTAMPS,[0]) ;;
+  default) AC_SUBST(ENABLE_TIMESTAMPS,[1]) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-timestamps. Use "yes" or "no"]) ;;
+esac
+AC_DEFINE_UNQUOTED([ENABLE_TIMESTAMPS],$ENABLE_TIMESTAMPS,
+                   [Define if timestamp information (e.g., __DATE___) is allowed])
+
 dnl Allow specific targets to be specified for building (or not)
 TARGETS_TO_BUILD=""
 AC_ARG_ENABLE([targets],AS_HELP_STRING([--enable-targets],
@@ -585,6 +598,8 @@ AC_SUBST(TARGETS_TO_BUILD,$TARGETS_TO_BUILD)
 for a_target in $TARGETS_TO_BUILD; do
   if test "$a_target" = "$LLVM_NATIVE_ARCH"; then
     LLVM_NATIVE_ARCHTARGET="${LLVM_NATIVE_ARCH}Target"
+    AC_DEFINE_UNQUOTED(LLVM_NATIVE_ARCHNAME,$LLVM_NATIVE_ARCH,
+      [Short LLVM architecture name for the native architecture, if available])
     AC_DEFINE_UNQUOTED(LLVM_NATIVE_ARCH,$LLVM_NATIVE_ARCHTARGET,
       [LLVM architecture name for the native architecture, if available])
   fi
@@ -728,6 +743,7 @@ AC_MSG_CHECKING([optimization flags])
 case "$withval" in
   default)
     case "$llvm_cv_os_type" in
+    FreeBSD) optimize_option=-O2 ;;
     MingW) optimize_option=-O2 ;;
     *)     optimize_option=-O3 ;;
     esac ;;
@@ -841,35 +857,6 @@ AC_ARG_ENABLE(libffi,AS_HELP_STRING(
     *) AC_MSG_ERROR([Invalid setting for --enable-libffi. Use "yes" or "no"]) ;;
   esac],
   llvm_cv_enable_libffi=no)
-
-dnl Only Windows needs dynamic libCompilerDriver to support plugins.
-if test "$llvm_cv_os_type" = "Win32" ; then
-   llvmc_dynamic="yes"
-else
-   llvmc_dynamic="no"
-fi
-
-dnl --enable-llvmc-dynamic : should LLVMC link libCompilerDriver dynamically?
-AC_ARG_ENABLE(llvmc-dynamic,AS_HELP_STRING(
---enable-llvmc-dynamic,
-[Link LLVMC dynamically (default is NO, unless on Win32)]),,
-enableval=$llvmc_dynamic)
-if test ${enableval} = "yes" && test "$ENABLE_PIC" -eq 1 ; then
-   AC_SUBST(ENABLE_LLVMC_DYNAMIC,[[ENABLE_LLVMC_DYNAMIC=1]])
-else
-   AC_SUBST(ENABLE_LLVMC_DYNAMIC,[[]])
-fi
-
-dnl --enable-llvmc-dynamic-plugins : should LLVMC support dynamic plugins?
-AC_ARG_ENABLE(llvmc-dynamic-plugins,AS_HELP_STRING(
---enable-llvmc-dynamic-plugins,
-[Enable dynamic LLVMC plugins (default is YES)]),,
-enableval=yes)
-if test ${enableval} = "yes" ; then
-   AC_SUBST(ENABLE_LLVMC_DYNAMIC_PLUGINS,[[ENABLE_LLVMC_DYNAMIC_PLUGINS=1]])
-else
-   AC_SUBST(ENABLE_LLVMC_DYNAMIC_PLUGINS,[[]])
-fi
 
 dnl===-----------------------------------------------------------------------===
 dnl===
@@ -996,17 +983,26 @@ fi
 
 dnl Find the install program
 AC_PROG_INSTALL
+dnl Prepend src dir to install path dir if it's a relative path
+dnl This is a hack for installs that take place in something other
+dnl than the top level.
+case "$INSTALL" in
+ [[\\/$]]* | ?:[[\\/]]* ) ;;
+ *)  INSTALL="\\\$(TOPSRCDIR)/$INSTALL" ;;
+esac
 
 dnl Checks for documentation and testing tools that we can do without. If these
 dnl are not found then they are set to "true" which always succeeds but does
 dnl nothing. This just lets the build output show that we could have done
 dnl something if the tool was available.
 AC_PATH_PROG(BZIP2, [bzip2])
+AC_PATH_PROG(CAT, [cat])
 AC_PATH_PROG(DOXYGEN, [doxygen])
 AC_PATH_PROG(GROFF, [groff])
 AC_PATH_PROG(GZIP, [gzip])
 AC_PATH_PROG(POD2HTML, [pod2html])
 AC_PATH_PROG(POD2MAN, [pod2man])
+AC_PATH_PROG(PDFROFF, [pdfroff])
 AC_PATH_PROG(RUNTEST, [runtest])
 DJ_AC_PATH_TCLSH
 AC_PATH_PROG(ZIP, [zip])
@@ -1016,14 +1012,17 @@ AC_PATH_PROGS(OCAMLDEP, [ocamldep])
 AC_PATH_PROGS(OCAMLDOC, [ocamldoc])
 AC_PATH_PROGS(GAS, [gas as])
 
+dnl Get the version of the linker in use.
+AC_LINK_GET_VERSION
+
 dnl Determine whether the linker supports the -R option.
 AC_LINK_USE_R
 
 dnl Determine whether the linker supports the -export-dynamic option.
 AC_LINK_EXPORT_DYNAMIC
 
-dnl Determine whether the linker supports the -retain-symbols-file option.
-AC_LINK_RETAIN_SYMBOLS_FILE
+dnl Determine whether the linker supports the --version-script option.
+AC_LINK_VERSION_SCRIPT
 
 dnl Check for libtool and the library that has dlopen function (which must come
 dnl before the AC_PROG_LIBTOOL check in order to enable dlopening libraries with
@@ -1267,6 +1266,9 @@ if test "$llvm_cv_enable_libffi" = "yes" ; then
   AC_CHECK_HEADERS([ffi.h ffi/ffi.h])
 fi
 
+dnl Try to find Darwin specific crash reporting library.
+AC_CHECK_HEADERS([CrashReporterClient.h])
+
 dnl===-----------------------------------------------------------------------===
 dnl===
 dnl=== SECTION 7: Check for types and structures
@@ -1325,6 +1327,9 @@ fi
 
 dnl atomic builtins are required for threading support.
 AC_MSG_CHECKING(for GCC atomic builtins)
+dnl Since we'll be using these atomic builtins in C++ files we should test
+dnl the C++ compiler.
+AC_LANG_PUSH([C++])
 AC_LINK_IFELSE(
   AC_LANG_SOURCE(
     [[int main() {
@@ -1336,12 +1341,12 @@ AC_LINK_IFELSE(
         return 0;
       }
     ]]),
+  AC_LANG_POP([C++])
   AC_MSG_RESULT(yes)
   AC_DEFINE(LLVM_MULTITHREADED, 1, Build multithreading support into LLVM),
   AC_MSG_RESULT(no)
   AC_DEFINE(LLVM_MULTITHREADED, 0, Build multithreading support into LLVM)
   AC_MSG_WARN([LLVM will be built thread-unsafe because atomic builtins are missing]))
-
 
 dnl===-----------------------------------------------------------------------===
 dnl===
@@ -1529,7 +1534,11 @@ dnl WARNING: dnl If you add or remove any of the following config headers, then
 dnl you MUST also update Makefile.rules so that the variable FilesToConfig
 dnl contains the same list of files as AC_CONFIG_HEADERS below. This ensures the
 dnl files can be updated automatically when their *.in sources change.
-AC_CONFIG_HEADERS([include/llvm/Config/config.h])
+AC_CONFIG_HEADERS([include/llvm/Config/config.h include/llvm/Config/llvm-config.h])
+AH_TOP([#ifndef CONFIG_H
+#define CONFIG_H])
+AH_BOTTOM([#endif])
+
 AC_CONFIG_FILES([include/llvm/Config/Targets.def])
 AC_CONFIG_FILES([include/llvm/Config/AsmPrinters.def])
 AC_CONFIG_FILES([include/llvm/Config/AsmParsers.def])
@@ -1542,11 +1551,8 @@ AC_CONFIG_FILES([Makefile.config])
 dnl Configure the RPM spec file for LLVM
 AC_CONFIG_FILES([llvm.spec])
 
-dnl Configure doxygen's configuration file
-AC_CONFIG_FILES([docs/doxygen.cfg])
-
 dnl Configure llvmc's Base plugin
-AC_CONFIG_FILES([tools/llvmc/plugins/Base/Base.td])
+AC_CONFIG_FILES([tools/llvmc/src/Base.td])
 
 dnl Do the first stage of configuration for llvm-config.in.
 AC_CONFIG_FILES([tools/llvm-config/llvm-config.in])

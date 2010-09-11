@@ -77,7 +77,7 @@ namespace {
   public:
 
     static char ID; // Pass identification, replacement for typeid
-    IndVarSimplify() : LoopPass(&ID) {}
+    IndVarSimplify() : LoopPass(ID) {}
 
     virtual bool runOnLoop(Loop *L, LPPassManager &LPM);
 
@@ -102,7 +102,7 @@ namespace {
     void RewriteNonIntegerIVs(Loop *L);
 
     ICmpInst *LinearFunctionTestReplace(Loop *L, const SCEV *BackedgeTakenCount,
-                                   Value *IndVar,
+                                   PHINode *IndVar,
                                    BasicBlock *ExitingBlock,
                                    BranchInst *BI,
                                    SCEVExpander &Rewriter);
@@ -117,8 +117,8 @@ namespace {
 }
 
 char IndVarSimplify::ID = 0;
-static RegisterPass<IndVarSimplify>
-X("indvars", "Canonicalize Induction Variables");
+INITIALIZE_PASS(IndVarSimplify, "indvars",
+                "Canonicalize Induction Variables", false, false);
 
 Pass *llvm::createIndVarSimplifyPass() {
   return new IndVarSimplify();
@@ -131,7 +131,7 @@ Pass *llvm::createIndVarSimplifyPass() {
 /// is actually a much broader range than just linear tests.
 ICmpInst *IndVarSimplify::LinearFunctionTestReplace(Loop *L,
                                    const SCEV *BackedgeTakenCount,
-                                   Value *IndVar,
+                                   PHINode *IndVar,
                                    BasicBlock *ExitingBlock,
                                    BranchInst *BI,
                                    SCEVExpander &Rewriter) {
@@ -144,10 +144,10 @@ ICmpInst *IndVarSimplify::LinearFunctionTestReplace(Loop *L,
     ICmpInst *OrigCond = dyn_cast<ICmpInst>(BI->getCondition());
     if (!OrigCond) return 0;
     const SCEV *R = SE->getSCEV(OrigCond->getOperand(1));
-    R = SE->getMinusSCEV(R, SE->getIntegerSCEV(1, R->getType()));
+    R = SE->getMinusSCEV(R, SE->getConstant(R->getType(), 1));
     if (R != BackedgeTakenCount) {
       const SCEV *L = SE->getSCEV(OrigCond->getOperand(0));
-      L = SE->getMinusSCEV(L, SE->getIntegerSCEV(1, L->getType()));
+      L = SE->getMinusSCEV(L, SE->getConstant(L->getType(), 1));
       if (L != BackedgeTakenCount)
         return 0;
     }
@@ -162,10 +162,10 @@ ICmpInst *IndVarSimplify::LinearFunctionTestReplace(Loop *L,
     // Add one to the "backedge-taken" count to get the trip count.
     // If this addition may overflow, we have to be more pessimistic and
     // cast the induction variable before doing the add.
-    const SCEV *Zero = SE->getIntegerSCEV(0, BackedgeTakenCount->getType());
+    const SCEV *Zero = SE->getConstant(BackedgeTakenCount->getType(), 0);
     const SCEV *N =
       SE->getAddExpr(BackedgeTakenCount,
-                     SE->getIntegerSCEV(1, BackedgeTakenCount->getType()));
+                     SE->getConstant(BackedgeTakenCount->getType(), 1));
     if ((isa<SCEVConstant>(N) && !N->isZero()) ||
         SE->isLoopEntryGuardedByCond(L, ICmpInst::ICMP_NE, N, Zero)) {
       // No overflow. Cast the sum.
@@ -175,13 +175,13 @@ ICmpInst *IndVarSimplify::LinearFunctionTestReplace(Loop *L,
       RHS = SE->getTruncateOrZeroExtend(BackedgeTakenCount,
                                         IndVar->getType());
       RHS = SE->getAddExpr(RHS,
-                           SE->getIntegerSCEV(1, IndVar->getType()));
+                           SE->getConstant(IndVar->getType(), 1));
     }
 
     // The BackedgeTaken expression contains the number of times that the
     // backedge branches to the loop header.  This is one less than the
     // number of times the loop executes, so use the incremented indvar.
-    CmpIndVar = L->getCanonicalInductionVariableIncrement();
+    CmpIndVar = IndVar->getIncomingValueForBlock(ExitingBlock);
   } else {
     // We have to use the preincremented value...
     RHS = SE->getTruncateOrZeroExtend(BackedgeTakenCount,
@@ -434,7 +434,7 @@ void IndVarSimplify::EliminateIVRemainders() {
     else {
       // (i+1) % n  -->  (i+1)==n?0:(i+1)  if i is in [0,n).
       const SCEV *LessOne =
-        SE->getMinusSCEV(S, SE->getIntegerSCEV(1, S->getType()));
+        SE->getMinusSCEV(S, SE->getConstant(S->getType(), 1));
       if ((!isSigned || SE->isKnownNonNegative(LessOne)) &&
           SE->isKnownPredicate(isSigned ? ICmpInst::ICMP_SLT : ICmpInst::ICMP_ULT,
                                LessOne, X)) {
@@ -467,6 +467,17 @@ void IndVarSimplify::EliminateIVRemainders() {
 }
 
 bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
+  // If LoopSimplify form is not available, stay out of trouble. Some notes:
+  //  - LSR currently only supports LoopSimplify-form loops. Indvars'
+  //    canonicalization can be a pessimization without LSR to "clean up"
+  //    afterwards.
+  //  - We depend on having a preheader; in particular,
+  //    Loop::getCanonicalInductionVariable only supports loops with preheaders,
+  //    and we're in trouble if we can't find the induction variable even when
+  //    we've manually inserted one.
+  if (!L->isLoopSimplifyForm())
+    return false;
+
   IU = &getAnalysis<IVUsers>();
   LI = &getAnalysis<LoopInfo>();
   SE = &getAnalysis<ScalarEvolution>();
@@ -523,7 +534,7 @@ bool IndVarSimplify::runOnLoop(Loop *L, LPPassManager &LPM) {
 
   // Now that we know the largest of the induction variable expressions
   // in this loop, insert a canonical induction variable of the largest size.
-  Value *IndVar = 0;
+  PHINode *IndVar = 0;
   if (NeedCannIV) {
     // Check to see if the loop already has any canonical-looking induction
     // variables. If any are present and wider than the planned canonical
@@ -760,8 +771,9 @@ void IndVarSimplify::SinkUnusedInvariants(Loop *L) {
     bool UsedInLoop = false;
     for (Value::use_iterator UI = I->use_begin(), UE = I->use_end();
          UI != UE; ++UI) {
-      BasicBlock *UseBB = cast<Instruction>(UI)->getParent();
-      if (PHINode *P = dyn_cast<PHINode>(UI)) {
+      User *U = *UI;
+      BasicBlock *UseBB = cast<Instruction>(U)->getParent();
+      if (PHINode *P = dyn_cast<PHINode>(U)) {
         unsigned i =
           PHINode::getIncomingValueNumForOperand(UI.getOperandNo());
         UseBB = P->getIncomingBlock(i);
@@ -850,9 +862,9 @@ void IndVarSimplify::HandleFloatingPointIV(Loop *L, PHINode *PN) {
   // Check Incr uses. One user is PN and the other user is an exit condition
   // used by the conditional terminator.
   Value::use_iterator IncrUse = Incr->use_begin();
-  Instruction *U1 = cast<Instruction>(IncrUse++);
+  Instruction *U1 = cast<Instruction>(*IncrUse++);
   if (IncrUse == Incr->use_end()) return;
-  Instruction *U2 = cast<Instruction>(IncrUse++);
+  Instruction *U2 = cast<Instruction>(*IncrUse++);
   if (IncrUse != Incr->use_end()) return;
 
   // Find exit condition, which is an fcmp.  If it doesn't exist, or if it isn't

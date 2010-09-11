@@ -191,33 +191,6 @@ SPURegisterInfo::SPURegisterInfo(const SPUSubtarget &subtarget,
 {
 }
 
-// SPU's 128-bit registers used for argument passing:
-static const unsigned SPU_ArgRegs[] = {
-  SPU::R3,  SPU::R4,  SPU::R5,  SPU::R6,  SPU::R7,  SPU::R8,  SPU::R9,
-  SPU::R10, SPU::R11, SPU::R12, SPU::R13, SPU::R14, SPU::R15, SPU::R16,
-  SPU::R17, SPU::R18, SPU::R19, SPU::R20, SPU::R21, SPU::R22, SPU::R23,
-  SPU::R24, SPU::R25, SPU::R26, SPU::R27, SPU::R28, SPU::R29, SPU::R30,
-  SPU::R31, SPU::R32, SPU::R33, SPU::R34, SPU::R35, SPU::R36, SPU::R37,
-  SPU::R38, SPU::R39, SPU::R40, SPU::R41, SPU::R42, SPU::R43, SPU::R44,
-  SPU::R45, SPU::R46, SPU::R47, SPU::R48, SPU::R49, SPU::R50, SPU::R51,
-  SPU::R52, SPU::R53, SPU::R54, SPU::R55, SPU::R56, SPU::R57, SPU::R58,
-  SPU::R59, SPU::R60, SPU::R61, SPU::R62, SPU::R63, SPU::R64, SPU::R65,
-  SPU::R66, SPU::R67, SPU::R68, SPU::R69, SPU::R70, SPU::R71, SPU::R72,
-  SPU::R73, SPU::R74, SPU::R75, SPU::R76, SPU::R77, SPU::R78, SPU::R79
-};
-
-const unsigned *
-SPURegisterInfo::getArgRegs()
-{
-  return SPU_ArgRegs;
-}
-
-unsigned
-SPURegisterInfo::getNumArgRegs()
-{
-  return sizeof(SPU_ArgRegs) / sizeof(SPU_ArgRegs[0]);
-}
-
 /// getPointerRegClass - Return the register class to use to hold pointers.
 /// This is used for addressing modes.
 const TargetRegisterClass *
@@ -249,36 +222,6 @@ SPURegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const
   };
 
   return SPU_CalleeSaveRegs;
-}
-
-const TargetRegisterClass* const*
-SPURegisterInfo::getCalleeSavedRegClasses(const MachineFunction *MF) const
-{
-  // Cell ABI Calling Convention
-  static const TargetRegisterClass * const SPU_CalleeSaveRegClasses[] = {
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, &SPU::GPRCRegClass, &SPU::GPRCRegClass,
-    &SPU::GPRCRegClass, /* environment pointer */
-    &SPU::GPRCRegClass, /* stack pointer */
-    &SPU::GPRCRegClass, /* link register */
-    0 /* end */
-  };
-
-  return SPU_CalleeSaveRegClasses;
 }
 
 /*!
@@ -327,9 +270,8 @@ SPURegisterInfo::eliminateCallFramePseudoInstr(MachineFunction &MF,
   MBB.erase(I);
 }
 
-unsigned
+void
 SPURegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
-                                     FrameIndexValue *Value,
                                      RegScavenger *RS) const
 {
   unsigned i = 0;
@@ -385,7 +327,6 @@ SPURegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   } else {
     MO.ChangeToImmediate(Offset);
   }
-  return 0;
 }
 
 /// determineFrameLayout - Determine the size of the frame and maximum call
@@ -469,12 +410,12 @@ void SPURegisterInfo::emitPrologue(MachineFunction &MF) const
          && "SPURegisterInfo::emitPrologue: FrameSize not aligned");
 
   // the "empty" frame size is 16 - just the register scavenger spill slot
-  if (FrameSize > 16 || MFI->hasCalls()) {
+  if (FrameSize > 16 || MFI->adjustsStack()) {
     FrameSize = -(FrameSize + SPUFrameInfo::minStackSize());
     if (hasDebugInfo) {
       // Mark effective beginning of when frame pointer becomes valid.
       FrameLabel = MMI.getContext().CreateTempSymbol();
-      BuildMI(MBB, MBBI, dl, TII.get(SPU::DBG_LABEL)).addSym(FrameLabel);
+      BuildMI(MBB, MBBI, dl, TII.get(SPU::PROLOG_LABEL)).addSym(FrameLabel);
     }
 
     // Adjust stack pointer, spilling $lr -> 16($sp) and $sp -> -FrameSize($sp)
@@ -533,7 +474,7 @@ void SPURegisterInfo::emitPrologue(MachineFunction &MF) const
 
       // Mark effective beginning of when frame pointer is ready.
       MCSymbol *ReadyLabel = MMI.getContext().CreateTempSymbol();
-      BuildMI(MBB, MBBI, dl, TII.get(SPU::DBG_LABEL)).addSym(ReadyLabel);
+      BuildMI(MBB, MBBI, dl, TII.get(SPU::PROLOG_LABEL)).addSym(ReadyLabel);
 
       MachineLocation FPDst(SPU::R1);
       MachineLocation FPSrc(MachineLocation::VirtualFP);
@@ -548,7 +489,7 @@ void SPURegisterInfo::emitPrologue(MachineFunction &MF) const
       dl = MBBI->getDebugLoc();
 
       // Insert terminator label
-      BuildMI(MBB, MBBI, dl, TII.get(SPU::DBG_LABEL))
+      BuildMI(MBB, MBBI, dl, TII.get(SPU::PROLOG_LABEL))
         .addSym(MMI.getContext().CreateTempSymbol());
     }
   }
@@ -569,7 +510,7 @@ SPURegisterInfo::emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const
          && "SPURegisterInfo::emitEpilogue: FrameSize not aligned");
 
   // the "empty" frame size is 16 - just the register scavenger spill slot
-  if (FrameSize > 16 || MFI->hasCalls()) {
+  if (FrameSize > 16 || MFI->adjustsStack()) {
     FrameSize = FrameSize + SPUFrameInfo::minStackSize();
     if (isInt<10>(FrameSize + LinkSlotOffset)) {
       // Reload $lr, adjust $sp by required amount
@@ -644,6 +585,7 @@ SPURegisterInfo::convertDFormToXForm(int dFormOpcode) const
     case SPU::LQDr32:    return SPU::LQXr32;
     case SPU::LQDr128:   return SPU::LQXr128;
     case SPU::LQDv16i8:  return SPU::LQXv16i8;
+    case SPU::LQDv4i32:  return SPU::LQXv4i32;
     case SPU::LQDv4f32:  return SPU::LQXv4f32;
     case SPU::STQDr32:   return SPU::STQXr32;
     case SPU::STQDr128:  return SPU::STQXr128;

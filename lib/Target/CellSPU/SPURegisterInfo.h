@@ -49,10 +49,6 @@ namespace llvm {
     //! Return the array of callee-saved registers
     virtual const unsigned* getCalleeSavedRegs(const MachineFunction *MF) const;
 
-    //! Return the register class array of the callee-saved registers
-    virtual const TargetRegisterClass* const *
-      getCalleeSavedRegClasses(const MachineFunction *MF) const;
-
     //! Allow for scavenging, so we can get scratch registers when needed.
     virtual bool requiresRegisterScavenging(const MachineFunction &MF) const
     { return true; }
@@ -67,9 +63,8 @@ namespace llvm {
                                        MachineBasicBlock &MBB,
                                        MachineBasicBlock::iterator I) const;
     //! Convert frame indicies into machine operands
-    unsigned eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
-                                 FrameIndexValue *Value = NULL,
-                                 RegScavenger *RS = NULL) const;
+    void eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
+                             RegScavenger *RS = NULL) const;
     //! Determine the frame's layour
     void determineFrameLayout(MachineFunction &MF) const;
 
@@ -89,15 +84,6 @@ namespace llvm {
     //------------------------------------------------------------------------
     // New methods added:
     //------------------------------------------------------------------------
-
-    //! Return the array of argument passing registers
-    /*!
-      \note The size of this array is returned by getArgRegsSize().
-     */
-    static const unsigned *getArgRegs();
-
-    //! Return the size of the argument passing register array
-    static unsigned getNumArgRegs();
 
     //! Get DWARF debugging register number
     int getDwarfRegNum(unsigned RegNum, bool isEH) const;

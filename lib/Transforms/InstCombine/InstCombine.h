@@ -51,7 +51,7 @@ static inline unsigned getComplexity(Value *V) {
 /// InstCombineIRInserter - This is an IRBuilder insertion helper that works
 /// just like the normal insertion helper, but also adds any new instructions
 /// to the instcombine worklist.
-class VISIBILITY_HIDDEN InstCombineIRInserter 
+class LLVM_LIBRARY_VISIBILITY InstCombineIRInserter 
     : public IRBuilderDefaultInserter<true> {
   InstCombineWorklist &Worklist;
 public:
@@ -65,7 +65,7 @@ public:
 };
   
 /// InstCombiner - The -instcombine pass.
-class VISIBILITY_HIDDEN InstCombiner
+class LLVM_LIBRARY_VISIBILITY InstCombiner
                              : public FunctionPass,
                                public InstVisitor<InstCombiner, Instruction*> {
   TargetData *TD;
@@ -81,7 +81,7 @@ public:
   BuilderTy *Builder;
       
   static char ID; // Pass identification, replacement for typeid
-  InstCombiner() : FunctionPass(&ID), TD(0), Builder(0) {}
+  InstCombiner() : FunctionPass(ID), TD(0), Builder(0) {}
 
 public:
   virtual bool runOnFunction(Function &F);
@@ -178,7 +178,8 @@ public:
   Instruction *visitPHINode(PHINode &PN);
   Instruction *visitGetElementPtrInst(GetElementPtrInst &GEP);
   Instruction *visitAllocaInst(AllocaInst &AI);
-  Instruction *visitFree(Instruction &FI);
+  Instruction *visitMalloc(Instruction &FI);
+  Instruction *visitFree(CallInst &FI);
   Instruction *visitLoadInst(LoadInst &LI);
   Instruction *visitStoreInst(StoreInst &SI);
   Instruction *visitBranchInst(BranchInst &BI);

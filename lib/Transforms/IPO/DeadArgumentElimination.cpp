@@ -120,9 +120,14 @@ namespace {
 
     typedef SmallVector<RetOrArg, 5> UseVector;
 
+  protected:
+    // DAH uses this to specify a different ID.
+    explicit DAE(char &ID) : ModulePass(ID) {}
+
   public:
     static char ID; // Pass identification, replacement for typeid
-    DAE() : ModulePass(&ID) {}
+    DAE() : ModulePass(ID) {}
+
     bool runOnModule(Module &M);
 
     virtual bool ShouldHackArguments() const { return false; }
@@ -146,8 +151,7 @@ namespace {
 
 
 char DAE::ID = 0;
-static RegisterPass<DAE>
-X("deadargelim", "Dead Argument Elimination");
+INITIALIZE_PASS(DAE, "deadargelim", "Dead Argument Elimination", false, false);
 
 namespace {
   /// DAH - DeadArgumentHacking pass - Same as dead argument elimination, but
@@ -155,13 +159,16 @@ namespace {
   /// by bugpoint.
   struct DAH : public DAE {
     static char ID;
+    DAH() : DAE(ID) {}
+
     virtual bool ShouldHackArguments() const { return true; }
   };
 }
 
 char DAH::ID = 0;
-static RegisterPass<DAH>
-Y("deadarghaX0r", "Dead Argument Hacking (BUGPOINT USE ONLY; DO NOT USE)");
+INITIALIZE_PASS(DAH, "deadarghaX0r", 
+                "Dead Argument Hacking (BUGPOINT USE ONLY; DO NOT USE)",
+                false, false);
 
 /// createDeadArgEliminationPass - This pass removes arguments from functions
 /// which are not used by the body of the function.
@@ -213,11 +220,11 @@ bool DAE::DeleteDeadVarargs(Function &Fn) {
   //
   std::vector<Value*> Args;
   while (!Fn.use_empty()) {
-    CallSite CS = CallSite::get(Fn.use_back());
+    CallSite CS(Fn.use_back());
     Instruction *Call = CS.getInstruction();
 
     // Pass all the same arguments.
-    Args.assign(CS.arg_begin(), CS.arg_begin()+NumArgs);
+    Args.assign(CS.arg_begin(), CS.arg_begin() + NumArgs);
 
     // Drop any attributes that were on the vararg arguments.
     AttrListPtr PAL = CS.getAttributes();
@@ -243,6 +250,8 @@ bool DAE::DeleteDeadVarargs(Function &Fn) {
       if (cast<CallInst>(Call)->isTailCall())
         cast<CallInst>(New)->setTailCall();
     }
+    New->setDebugLoc(Call->getDebugLoc());
+
     Args.clear();
 
     if (!Call->use_empty())
@@ -532,14 +541,14 @@ void DAE::MarkValue(const RetOrArg &RA, Liveness L,
 /// values (according to Uses) live as well.
 void DAE::MarkLive(const Function &F) {
   DEBUG(dbgs() << "DAE - Intrinsically live fn: " << F.getName() << "\n");
-    // Mark the function as live.
-    LiveFunctions.insert(&F);
-    // Mark all arguments as live.
-    for (unsigned i = 0, e = F.arg_size(); i != e; ++i)
-      PropagateLiveness(CreateArg(&F, i));
-    // Mark all return values as live.
-    for (unsigned i = 0, e = NumRetVals(&F); i != e; ++i)
-      PropagateLiveness(CreateRet(&F, i));
+  // Mark the function as live.
+  LiveFunctions.insert(&F);
+  // Mark all arguments as live.
+  for (unsigned i = 0, e = F.arg_size(); i != e; ++i)
+    PropagateLiveness(CreateArg(&F, i));
+  // Mark all return values as live.
+  for (unsigned i = 0, e = NumRetVals(&F); i != e; ++i)
+    PropagateLiveness(CreateRet(&F, i));
 }
 
 /// MarkLive - Mark the given return value or argument as live. Additionally,
@@ -715,7 +724,7 @@ bool DAE::RemoveDeadStuffFromFunction(Function *F) {
   //
   std::vector<Value*> Args;
   while (!F->use_empty()) {
-    CallSite CS = CallSite::get(F->use_back());
+    CallSite CS(F->use_back());
     Instruction *Call = CS.getInstruction();
 
     AttributesVec.clear();
@@ -770,6 +779,8 @@ bool DAE::RemoveDeadStuffFromFunction(Function *F) {
       if (cast<CallInst>(Call)->isTailCall())
         cast<CallInst>(New)->setTailCall();
     }
+    New->setDebugLoc(Call->getDebugLoc());
+
     Args.clear();
 
     if (!Call->use_empty()) {
@@ -853,7 +864,7 @@ bool DAE::RemoveDeadStuffFromFunction(Function *F) {
       if (ReturnInst *RI = dyn_cast<ReturnInst>(BB->getTerminator())) {
         Value *RetVal;
 
-        if (NFTy->getReturnType() == Type::getVoidTy(F->getContext())) {
+        if (NFTy->getReturnType()->isVoidTy()) {
           RetVal = 0;
         } else {
           assert (RetTy->isStructTy());

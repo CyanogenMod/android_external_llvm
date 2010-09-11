@@ -145,8 +145,8 @@ static void PrintCommand(const std::vector<const char*> &args) {
   std::vector<const char*>::const_iterator I = args.begin(), E = args.end(); 
   for (; I != E; ++I)
     if (*I)
-      outs() << "'" << *I << "'" << " ";
-  outs() << "\n"; outs().flush();
+      errs() << "'" << *I << "'" << " ";
+  errs() << "\n";
 }
 
 /// CopyEnv - This function takes an array of environment variables and makes a
@@ -232,17 +232,20 @@ static void RemoveEnv(const char * name, char ** const envp) {
 void GenerateBitcode(Module* M, const std::string& FileName) {
 
   if (Verbose)
-    outs() << "Generating Bitcode To " << FileName << '\n';
+    errs() << "Generating Bitcode To " << FileName << '\n';
 
   // Create the output file.
   std::string ErrorInfo;
-  raw_fd_ostream Out(FileName.c_str(), ErrorInfo,
-                     raw_fd_ostream::F_Binary);
-  if (!ErrorInfo.empty())
+  tool_output_file Out(FileName.c_str(), ErrorInfo,
+                       raw_fd_ostream::F_Binary);
+  if (!ErrorInfo.empty()) {
     PrintAndExit(ErrorInfo, M);
+    return;
+  }
 
   // Write it out
   WriteBitcodeToFile(M, Out);
+  Out.keep();
 }
 
 /// GenerateAssembly - generates a native assembly language source file from the
@@ -266,14 +269,13 @@ static int GenerateAssembly(const std::string &OutputFilename,
   // We will use GCC to assemble the program so set the assembly syntax to AT&T,
   // regardless of what the target in the bitcode file is.
   args.push_back("-x86-asm-syntax=att");
-  args.push_back("-f");
   args.push_back("-o");
   args.push_back(OutputFilename.c_str());
   args.push_back(InputFilename.c_str());
   args.push_back(0);
 
   if (Verbose) {
-    outs() << "Generating Assembly With: \n";
+    errs() << "Generating Assembly With: \n";
     PrintCommand(args);
   }
 
@@ -289,14 +291,13 @@ static int GenerateCFile(const std::string &OutputFile,
   std::vector<const char*> args;
   args.push_back(llc.c_str());
   args.push_back("-march=c");
-  args.push_back("-f");
   args.push_back("-o");
   args.push_back(OutputFile.c_str());
   args.push_back(InputFile.c_str());
   args.push_back(0);
 
   if (Verbose) {
-    outs() << "Generating C Source With: \n";
+    errs() << "Generating C Source With: \n";
     PrintCommand(args);
   }
 
@@ -393,7 +394,7 @@ static int GenerateNative(const std::string &OutputFilename,
   Args.push_back(0);
 
   if (Verbose) {
-    outs() << "Generating Native Executable With:\n";
+    errs() << "Generating Native Executable With:\n";
     PrintCommand(Args);
   }
 
@@ -408,7 +409,7 @@ static int GenerateNative(const std::string &OutputFilename,
 /// bitcode file for the program.
 static void EmitShellScript(char **argv, Module *M) {
   if (Verbose)
-    outs() << "Emitting Shell Script\n";
+    errs() << "Emitting Shell Script\n";
 #if defined(_WIN32) || defined(__CYGWIN__)
   // Windows doesn't support #!/bin/sh style shell scripts in .exe files.  To
   // support windows systems, we copy the llvm-stub.exe executable from the
@@ -427,7 +428,7 @@ static void EmitShellScript(char **argv, Module *M) {
 
   // Output the script to start the program...
   std::string ErrorInfo;
-  raw_fd_ostream Out2(OutputFilename.c_str(), ErrorInfo);
+  tool_output_file Out2(OutputFilename.c_str(), ErrorInfo);
   if (!ErrorInfo.empty())
     PrintAndExit(ErrorInfo, M);
 
@@ -468,6 +469,7 @@ static void EmitShellScript(char **argv, Module *M) {
       Out2 << "    -load=" << FullLibraryPath.str() << " \\\n";
   }
   Out2 << "    "  << BitcodeOutputFilename << " ${1+\"$@\"}\n";
+  Out2.keep();
 }
 
 // BuildLinkItems -- This function generates a LinkItemList for the LinkItems

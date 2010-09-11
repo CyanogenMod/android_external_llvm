@@ -118,6 +118,10 @@ namespace {
                cl::desc("<safe-tool arguments>..."),
                cl::ZeroOrMore, cl::PositionalEatsArgs);
 
+  cl::opt<std::string>
+  GCCBinary("gcc", cl::init("gcc"), 
+              cl::desc("The gcc binary to use. (default 'gcc')"));
+
   cl::list<std::string>
   GCCToolArgv("gcc-tool-args", cl::Positional,
               cl::desc("<gcc-tool arguments>..."),
@@ -143,8 +147,8 @@ bool BugDriver::initializeExecutionEnvironment() {
   case AutoPick:
     InterpreterSel = RunCBE;
     Interpreter =
-      AbstractInterpreter::createCBE(getToolName(), Message, &ToolArgv,
-                                     &GCCToolArgv);
+      AbstractInterpreter::createCBE(getToolName(), Message, GCCBinary,
+                                     &ToolArgv, &GCCToolArgv);
     if (!Interpreter) {
       InterpreterSel = RunJIT;
       Interpreter = AbstractInterpreter::createJIT(getToolName(), Message,
@@ -153,7 +157,8 @@ bool BugDriver::initializeExecutionEnvironment() {
     if (!Interpreter) {
       InterpreterSel = RunLLC;
       Interpreter = AbstractInterpreter::createLLC(getToolName(), Message,
-                                                   &ToolArgv, &GCCToolArgv);
+                                                   GCCBinary, &ToolArgv, 
+                                                   &GCCToolArgv);
     }
     if (!Interpreter) {
       InterpreterSel = RunLLI;
@@ -173,7 +178,8 @@ bool BugDriver::initializeExecutionEnvironment() {
   case RunLLCIA:
   case LLC_Safe:
     Interpreter = AbstractInterpreter::createLLC(getToolName(), Message,
-                                                 &ToolArgv, &GCCToolArgv,
+                                                 GCCBinary, &ToolArgv, 
+                                                 &GCCToolArgv,
                                                  InterpreterSel == RunLLCIA);
     break;
   case RunJIT:
@@ -183,7 +189,8 @@ bool BugDriver::initializeExecutionEnvironment() {
   case RunCBE:
   case CBE_bug:
     Interpreter = AbstractInterpreter::createCBE(getToolName(), Message,
-                                                 &ToolArgv, &GCCToolArgv);
+                                                 GCCBinary, &ToolArgv, 
+                                                 &GCCToolArgv);
     break;
   case Custom:
     Interpreter = AbstractInterpreter::createCustom(Message, CustomExecCommand);
@@ -209,6 +216,7 @@ bool BugDriver::initializeExecutionEnvironment() {
       SafeInterpreterSel = RunLLC;
       SafeToolArgs.push_back("--relocation-model=pic");
       SafeInterpreter = AbstractInterpreter::createLLC(Path.c_str(), Message,
+                                                       GCCBinary, 
                                                        &SafeToolArgs,
                                                        &GCCToolArgv);
     }
@@ -219,6 +227,7 @@ bool BugDriver::initializeExecutionEnvironment() {
       SafeInterpreterSel = RunLLC;
       SafeToolArgs.push_back("--relocation-model=pic");
       SafeInterpreter = AbstractInterpreter::createLLC(Path.c_str(), Message,
+                                                       GCCBinary, 
                                                        &SafeToolArgs,
                                                        &GCCToolArgv);
     }
@@ -230,6 +239,7 @@ bool BugDriver::initializeExecutionEnvironment() {
         InterpreterSel != RunCBE) {
       SafeInterpreterSel = RunCBE;
       SafeInterpreter = AbstractInterpreter::createCBE(Path.c_str(), Message,
+                                                       GCCBinary,
                                                        &SafeToolArgs,
                                                        &GCCToolArgv);
     }
@@ -239,6 +249,7 @@ bool BugDriver::initializeExecutionEnvironment() {
       SafeInterpreterSel = RunLLC;
       SafeToolArgs.push_back("--relocation-model=pic");
       SafeInterpreter = AbstractInterpreter::createLLC(Path.c_str(), Message,
+                                                       GCCBinary, 
                                                        &SafeToolArgs,
                                                        &GCCToolArgv);
     }
@@ -251,13 +262,13 @@ bool BugDriver::initializeExecutionEnvironment() {
   case RunLLCIA:
     SafeToolArgs.push_back("--relocation-model=pic");
     SafeInterpreter = AbstractInterpreter::createLLC(Path.c_str(), Message,
-                                                     &SafeToolArgs,
+                                                     GCCBinary, &SafeToolArgs,
                                                      &GCCToolArgv,
                                                 SafeInterpreterSel == RunLLCIA);
     break;
   case RunCBE:
     SafeInterpreter = AbstractInterpreter::createCBE(Path.c_str(), Message,
-                                                     &SafeToolArgs,
+                                                     GCCBinary, &SafeToolArgs,
                                                      &GCCToolArgv);
     break;
   case Custom:
@@ -271,7 +282,7 @@ bool BugDriver::initializeExecutionEnvironment() {
   }
   if (!SafeInterpreter) { outs() << Message << "\nExiting.\n"; exit(1); }
   
-  gcc = GCC::create(Message, &GCCToolArgv);
+  gcc = GCC::create(Message, GCCBinary, &GCCToolArgv);
   if (!gcc) { outs() << Message << "\nExiting.\n"; exit(1); }
 
   // If there was an error creating the selected interpreter, quit with error.
@@ -282,7 +293,7 @@ bool BugDriver::initializeExecutionEnvironment() {
 /// setting Error if an error occurs.  This is used for code generation
 /// crash testing.
 ///
-void BugDriver::compileProgram(Module *M, std::string *Error) {
+void BugDriver::compileProgram(Module *M, std::string *Error) const {
   // Emit the program to a bitcode file...
   sys::Path BitcodeFile (OutputPrefix + "-test-program.bc");
   std::string ErrMsg;
@@ -301,7 +312,7 @@ void BugDriver::compileProgram(Module *M, std::string *Error) {
   FileRemover BitcodeFileRemover(BitcodeFile, !SaveTemps);
 
   // Actually compile the program!
-  Interpreter->compileProgram(BitcodeFile.str(), Error);
+  Interpreter->compileProgram(BitcodeFile.str(), Error, Timeout, MemoryLimit);
 }
 
 
@@ -309,11 +320,12 @@ void BugDriver::compileProgram(Module *M, std::string *Error) {
 /// program to a file, returning the filename of the file.  A recommended
 /// filename may be optionally specified.
 ///
-std::string BugDriver::executeProgram(std::string OutputFile,
+std::string BugDriver::executeProgram(const Module *Program,
+                                      std::string OutputFile,
                                       std::string BitcodeFile,
                                       const std::string &SharedObj,
                                       AbstractInterpreter *AI,
-                                      std::string *Error) {
+                                      std::string *Error) const {
   if (AI == 0) AI = Interpreter;
   assert(AI && "Interpreter should have been created already!");
   bool CreatedBitcode = false;
@@ -388,9 +400,10 @@ std::string BugDriver::executeProgram(std::string OutputFile,
 /// executeProgramSafely - Used to create reference output with the "safe"
 /// backend, if reference output is not provided.
 ///
-std::string BugDriver::executeProgramSafely(std::string OutputFile,
-                                            std::string *Error) {
-  return executeProgram(OutputFile, "", "", SafeInterpreter, Error);
+std::string BugDriver::executeProgramSafely(const Module *Program,
+                                            std::string OutputFile,
+                                            std::string *Error) const {
+  return executeProgram(Program, OutputFile, "", "", SafeInterpreter, Error);
 }
 
 std::string BugDriver::compileSharedObject(const std::string &BitcodeFile,
@@ -429,7 +442,7 @@ bool BugDriver::createReferenceFile(Module *M, const std::string &Filename) {
   if (!Error.empty())
     return false;
 
-  ReferenceOutputFile = executeProgramSafely(Filename, &Error);
+  ReferenceOutputFile = executeProgramSafely(Program, Filename, &Error);
   if (!Error.empty()) {
     errs() << Error;
     if (Interpreter != SafeInterpreter) {
@@ -449,12 +462,14 @@ bool BugDriver::createReferenceFile(Module *M, const std::string &Filename) {
 /// is different, 1 is returned.  If there is a problem with the code
 /// generator (e.g., llc crashes), this will return -1 and set Error.
 ///
-bool BugDriver::diffProgram(const std::string &BitcodeFile,
+bool BugDriver::diffProgram(const Module *Program,
+                            const std::string &BitcodeFile,
                             const std::string &SharedObject,
                             bool RemoveBitcode,
-                            std::string *ErrMsg) {
+                            std::string *ErrMsg) const {
   // Execute the program, generating an output file...
-  sys::Path Output(executeProgram("", BitcodeFile, SharedObject, 0, ErrMsg));
+  sys::Path Output(executeProgram(Program, "", BitcodeFile, SharedObject, 0,
+                                  ErrMsg));
   if (!ErrMsg->empty())
     return false;
 

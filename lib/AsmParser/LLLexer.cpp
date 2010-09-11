@@ -492,6 +492,8 @@ lltok::Kind LLLexer::LexIdentifier() {
 
   KEYWORD(private);
   KEYWORD(linker_private);
+  KEYWORD(linker_private_weak);
+  KEYWORD(linker_private_weak_def_auto);
   KEYWORD(internal);
   KEYWORD(available_externally);
   KEYWORD(linkonce);
@@ -537,6 +539,7 @@ lltok::Kind LLLexer::LexIdentifier() {
   KEYWORD(coldcc);
   KEYWORD(x86_stdcallcc);
   KEYWORD(x86_fastcallcc);
+  KEYWORD(x86_thiscallcc);
   KEYWORD(arm_apcscc);
   KEYWORD(arm_aapcscc);
   KEYWORD(arm_aapcs_vfpcc);
@@ -570,7 +573,6 @@ lltok::Kind LLLexer::LexIdentifier() {
 
   KEYWORD(type);
   KEYWORD(opaque);
-  KEYWORD(union);
 
   KEYWORD(eq); KEYWORD(ne); KEYWORD(slt); KEYWORD(sgt); KEYWORD(sle);
   KEYWORD(sge); KEYWORD(ult); KEYWORD(ugt); KEYWORD(ule); KEYWORD(uge);

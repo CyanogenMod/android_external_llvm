@@ -102,7 +102,7 @@ APInt::APInt(unsigned numBits, unsigned numWords, const uint64_t bigVal[])
   clearUnusedBits();
 }
 
-APInt::APInt(unsigned numbits, const StringRef& Str, uint8_t radix)
+APInt::APInt(unsigned numbits, StringRef Str, uint8_t radix)
   : BitWidth(numbits), VAL(0) {
   assert(BitWidth && "Bitwidth too small");
   fromString(numbits, Str, radix);
@@ -613,7 +613,7 @@ APInt& APInt::flip(unsigned bitPosition) {
   return *this;
 }
 
-unsigned APInt::getBitsNeeded(const StringRef& str, uint8_t radix) {
+unsigned APInt::getBitsNeeded(StringRef str, uint8_t radix) {
   assert(!str.empty() && "Invalid string length");
   assert((radix == 10 || radix == 8 || radix == 16 || radix == 2) &&
          "Radix should be 2, 8, 10, or 16!");
@@ -1382,13 +1382,12 @@ APInt APInt::sqrt() const {
   // libc sqrt function which will probably use a hardware sqrt computation.
   // This should be faster than the algorithm below.
   if (magnitude < 52) {
-#if defined( _MSC_VER ) || defined(_MINIX)
-    // Amazingly, VC++ and Minix don't have round().
-    return APInt(BitWidth,
-                 uint64_t(::sqrt(double(isSingleWord()?VAL:pVal[0]))) + 0.5);
-#else
+#if HAVE_ROUND
     return APInt(BitWidth,
                  uint64_t(::round(::sqrt(double(isSingleWord()?VAL:pVal[0])))));
+#else
+    return APInt(BitWidth,
+                 uint64_t(::sqrt(double(isSingleWord()?VAL:pVal[0]))) + 0.5);
 #endif
   }
 
@@ -2047,7 +2046,7 @@ void APInt::udivrem(const APInt &LHS, const APInt &RHS,
   divide(LHS, lhsWords, RHS, rhsWords, &Quotient, &Remainder);
 }
 
-void APInt::fromString(unsigned numbits, const StringRef& str, uint8_t radix) {
+void APInt::fromString(unsigned numbits, StringRef str, uint8_t radix) {
   // Check our assumptions here
   assert(!str.empty() && "Invalid string length");
   assert((radix == 10 || radix == 8 || radix == 16 || radix == 2) &&
@@ -2124,15 +2123,16 @@ void APInt::toString(SmallVectorImpl<char> &Str, unsigned Radix,
     char *BufPtr = Buffer+65;
 
     uint64_t N;
-    if (Signed) {
-      int64_t I = getSExtValue();
-      if (I < 0) {
-        Str.push_back('-');
-        I = -I;
-      }
-      N = I;
-    } else {
+    if (!Signed) {
       N = getZExtValue();
+    } else {
+      int64_t I = getSExtValue();
+      if (I >= 0) {
+        N = I;
+      } else {
+        Str.push_back('-');
+        N = -(uint64_t)I;
+      }
     }
 
     while (N) {

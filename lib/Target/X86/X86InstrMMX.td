@@ -117,9 +117,6 @@ def MMX_MOVD64mr : MMXI<0x7E, MRMDestMem, (outs), (ins i32mem:$dst, VR64:$src),
                         "movd\t{$src, $dst|$dst, $src}", []>;
 def MMX_MOVD64grr : MMXI<0x7E, MRMDestReg, (outs), (ins GR32:$dst, VR64:$src),
                         "movd\t{$src, $dst|$dst, $src}", []>;
-def MMX_MOVQ64gmr : MMXRI<0x7E, MRMDestMem, (outs), 
-                         (ins i64mem:$dst, VR64:$src),
-                         "movq\t{$src, $dst|$dst, $src}", []>;
 
 let neverHasSideEffects = 1 in
 def MMX_MOVD64to64rr : MMXRI<0x6E, MRMSrcReg, (outs VR64:$dst), (ins GR64:$src),
@@ -133,10 +130,10 @@ let neverHasSideEffects = 1 in
 def MMX_MOVD64from64rr : MMXRI<0x7E, MRMDestReg,
                                (outs GR64:$dst), (ins VR64:$src),
                                "movd\t{$src, $dst|$dst, $src}", []>;
-def MMX_MOVD64rrv164 : MMXI<0x6E, MRMSrcReg, (outs VR64:$dst), (ins GR64:$src),
-                            "movd\t{$src, $dst|$dst, $src}",
-                            [(set VR64:$dst,
-                             (v1i64 (scalar_to_vector GR64:$src)))]>;
+def MMX_MOVD64rrv164 : MMXRI<0x6E, MRMSrcReg, (outs VR64:$dst), (ins GR64:$src),
+                             "movd\t{$src, $dst|$dst, $src}",
+                             [(set VR64:$dst,
+                              (v1i64 (scalar_to_vector GR64:$src)))]>;
 
 let neverHasSideEffects = 1 in
 def MMX_MOVQ64rr : MMXI<0x6F, MRMSrcReg, (outs VR64:$dst), (ins VR64:$src),
@@ -167,7 +164,7 @@ let neverHasSideEffects = 1 in
 def MMX_MOVQ2FR64rr: SSDIi8<0xD6, MRMSrcReg, (outs FR64:$dst), (ins VR64:$src),
                            "movq2dq\t{$src, $dst|$dst, $src}", []>;
 
-def MMX_MOVFR642Qrr: SSDIi8<0xD6, MRMSrcReg, (outs VR64:$dst), (ins FR64:$src),
+def MMX_MOVFR642Qrr: SDIi8<0xD6, MRMSrcReg, (outs VR64:$dst), (ins FR64:$src),
                            "movdq2q\t{$src, $dst|$dst, $src}", []>;
 
 def MMX_MOVNTQmr  : MMXI<0xE7, MRMDestMem, (outs), (ins i64mem:$dst, VR64:$src),
@@ -516,30 +513,20 @@ def : Pat<(store (v4i16 VR64:$src), addr:$dst),
           (MMX_MOVQ64mr addr:$dst, VR64:$src)>;
 def : Pat<(store (v2i32 VR64:$src), addr:$dst),
           (MMX_MOVQ64mr addr:$dst, VR64:$src)>;
-def : Pat<(store (v2f32 VR64:$src), addr:$dst),
-          (MMX_MOVQ64mr addr:$dst, VR64:$src)>;
 def : Pat<(store (v1i64 VR64:$src), addr:$dst),
           (MMX_MOVQ64mr addr:$dst, VR64:$src)>;
 
 // Bit convert.
 def : Pat<(v8i8  (bitconvert (v1i64 VR64:$src))), (v8i8  VR64:$src)>;
 def : Pat<(v8i8  (bitconvert (v2i32 VR64:$src))), (v8i8  VR64:$src)>;
-def : Pat<(v8i8  (bitconvert (v2f32 VR64:$src))), (v8i8  VR64:$src)>;
 def : Pat<(v8i8  (bitconvert (v4i16 VR64:$src))), (v8i8  VR64:$src)>;
 def : Pat<(v4i16 (bitconvert (v1i64 VR64:$src))), (v4i16 VR64:$src)>;
 def : Pat<(v4i16 (bitconvert (v2i32 VR64:$src))), (v4i16 VR64:$src)>;
-def : Pat<(v4i16 (bitconvert (v2f32 VR64:$src))), (v4i16 VR64:$src)>;
 def : Pat<(v4i16 (bitconvert (v8i8  VR64:$src))), (v4i16 VR64:$src)>;
 def : Pat<(v2i32 (bitconvert (v1i64 VR64:$src))), (v2i32 VR64:$src)>;
-def : Pat<(v2i32 (bitconvert (v2f32 VR64:$src))), (v2i32 VR64:$src)>;
 def : Pat<(v2i32 (bitconvert (v4i16 VR64:$src))), (v2i32 VR64:$src)>;
 def : Pat<(v2i32 (bitconvert (v8i8  VR64:$src))), (v2i32 VR64:$src)>;
-def : Pat<(v2f32 (bitconvert (v1i64 VR64:$src))), (v2f32 VR64:$src)>;
-def : Pat<(v2f32 (bitconvert (v2i32 VR64:$src))), (v2f32 VR64:$src)>;
-def : Pat<(v2f32 (bitconvert (v4i16 VR64:$src))), (v2f32 VR64:$src)>;
-def : Pat<(v2f32 (bitconvert (v8i8  VR64:$src))), (v2f32 VR64:$src)>;
 def : Pat<(v1i64 (bitconvert (v2i32 VR64:$src))), (v1i64 VR64:$src)>;
-def : Pat<(v1i64 (bitconvert (v2f32 VR64:$src))), (v1i64 VR64:$src)>;
 def : Pat<(v1i64 (bitconvert (v4i16 VR64:$src))), (v1i64 VR64:$src)>;
 def : Pat<(v1i64 (bitconvert (v8i8  VR64:$src))), (v1i64 VR64:$src)>;
 
@@ -548,8 +535,6 @@ def : Pat<(v1i64 (bitconvert (i64 GR64:$src))),
           (MMX_MOVD64to64rr GR64:$src)>;
 def : Pat<(v2i32 (bitconvert (i64 GR64:$src))),
           (MMX_MOVD64to64rr GR64:$src)>;
-def : Pat<(v2f32 (bitconvert (i64 GR64:$src))),
-          (MMX_MOVD64to64rr GR64:$src)>;
 def : Pat<(v4i16 (bitconvert (i64 GR64:$src))),
           (MMX_MOVD64to64rr GR64:$src)>;
 def : Pat<(v8i8  (bitconvert (i64 GR64:$src))),
@@ -557,8 +542,6 @@ def : Pat<(v8i8  (bitconvert (i64 GR64:$src))),
 def : Pat<(i64 (bitconvert (v1i64 VR64:$src))),
           (MMX_MOVD64from64rr VR64:$src)>;
 def : Pat<(i64 (bitconvert (v2i32 VR64:$src))),
-          (MMX_MOVD64from64rr VR64:$src)>;
-def : Pat<(i64 (bitconvert (v2f32 VR64:$src))),
           (MMX_MOVD64from64rr VR64:$src)>;
 def : Pat<(i64 (bitconvert (v4i16 VR64:$src))),
           (MMX_MOVD64from64rr VR64:$src)>;

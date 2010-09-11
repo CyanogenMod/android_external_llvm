@@ -41,16 +41,11 @@ class PIC16RegisterInfo : public PIC16GenRegisterInfo {
   virtual const unsigned* 
   getCalleeSavedRegs(const MachineFunction *MF = 0) const;
 
-  // PIC16 callee saved register classes
-  virtual const TargetRegisterClass* const *
-  getCalleeSavedRegClasses(const MachineFunction *MF) const;
-
   virtual BitVector getReservedRegs(const MachineFunction &MF) const;
   virtual bool hasFP(const MachineFunction &MF) const;
 
-  virtual unsigned eliminateFrameIndex(MachineBasicBlock::iterator MI,
-                                       int SPAdj, FrameIndexValue *Value = NULL,
-                                       RegScavenger *RS=NULL) const;
+  virtual void eliminateFrameIndex(MachineBasicBlock::iterator MI,
+                                   int SPAdj, RegScavenger *RS=NULL) const;
 
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
                                      MachineBasicBlock &MBB,

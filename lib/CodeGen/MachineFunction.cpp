@@ -378,7 +378,7 @@ void MachineFunction::viewCFG() const
 #ifndef NDEBUG
   ViewGraph(this, "mf" + getFunction()->getNameStr());
 #else
-  errs() << "SelectionDAG::viewGraph is only available in debug builds on "
+  errs() << "MachineFunction::viewCFG is only available in debug builds on "
          << "systems with Graphviz or gv!\n";
 #endif // NDEBUG
 }
@@ -388,7 +388,7 @@ void MachineFunction::viewCFGOnly() const
 #ifndef NDEBUG
   ViewGraph(this, "mf" + getFunction()->getNameStr(), true);
 #else
-  errs() << "SelectionDAG::viewGraph is only available in debug builds on "
+  errs() << "MachineFunction::viewCFGOnly is only available in debug builds on "
          << "systems with Graphviz or gv!\n";
 #endif // NDEBUG
 }
@@ -397,9 +397,14 @@ void MachineFunction::viewCFGOnly() const
 /// create a corresponding virtual register for it.
 unsigned MachineFunction::addLiveIn(unsigned PReg,
                                     const TargetRegisterClass *RC) {
-  assert(RC->contains(PReg) && "Not the correct regclass!");
-  unsigned VReg = getRegInfo().createVirtualRegister(RC);
-  getRegInfo().addLiveIn(PReg, VReg);
+  MachineRegisterInfo &MRI = getRegInfo();
+  unsigned VReg = MRI.getLiveInVirtReg(PReg);
+  if (VReg) {
+    assert(MRI.getRegClass(VReg) == RC && "Register class mismatch!");
+    return VReg;
+  }
+  VReg = MRI.createVirtualRegister(RC);
+  MRI.addLiveIn(PReg, VReg);
   return VReg;
 }
 
@@ -432,10 +437,16 @@ MCSymbol *MachineFunction::getJTISymbol(unsigned JTI, MCContext &Ctx,
 /// index with a negative value.
 ///
 int MachineFrameInfo::CreateFixedObject(uint64_t Size, int64_t SPOffset,
-                                        bool Immutable, bool isSS) {
+                                        bool Immutable) {
   assert(Size != 0 && "Cannot allocate zero size fixed stack objects!");
-  Objects.insert(Objects.begin(), StackObject(Size, 1, SPOffset, Immutable,
-                                              isSS));
+  // The alignment of the frame index can be determined from its offset from
+  // the incoming frame position.  If the frame object is at offset 32 and
+  // the stack is guaranteed to be 16-byte aligned, then we know that the
+  // object is 16-byte aligned.
+  unsigned StackAlign = TFI.getStackAlignment();
+  unsigned Align = MinAlign(SPOffset, StackAlign);
+  Objects.insert(Objects.begin(), StackObject(Size, Align, SPOffset, Immutable,
+                                              /*isSS*/false, false));
   return -++NumFixedObjects;
 }
 

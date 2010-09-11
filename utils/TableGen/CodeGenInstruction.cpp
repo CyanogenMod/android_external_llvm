@@ -102,12 +102,12 @@ CodeGenInstruction::CodeGenInstruction(Record *R, const std::string &AsmStr)
   isReturn     = R->getValueAsBit("isReturn");
   isBranch     = R->getValueAsBit("isBranch");
   isIndirectBranch = R->getValueAsBit("isIndirectBranch");
+  isCompare    = R->getValueAsBit("isCompare");
   isBarrier    = R->getValueAsBit("isBarrier");
   isCall       = R->getValueAsBit("isCall");
   canFoldAsLoad = R->getValueAsBit("canFoldAsLoad");
   mayLoad      = R->getValueAsBit("mayLoad");
   mayStore     = R->getValueAsBit("mayStore");
-  bool isTwoAddress = R->getValueAsBit("isTwoAddress");
   isPredicable = R->getValueAsBit("isPredicable");
   isConvertibleToThreeAddress = R->getValueAsBit("isConvertibleToThreeAddress");
   isCommutable = R->getValueAsBit("isCommutable");
@@ -211,16 +211,6 @@ CodeGenInstruction::CodeGenInstruction(Record *R, const std::string &AsmStr)
 
   // Parse Constraints.
   ParseConstraints(R->getValueAsString("Constraints"), this);
-
-  // For backward compatibility: isTwoAddress means operand 1 is tied to
-  // operand 0.
-  if (isTwoAddress) {
-    if (!OperandList[1].Constraints[0].isNone())
-      throw R->getName() + ": cannot use isTwoAddress property: instruction "
-            "already has constraint set!";
-    OperandList[1].Constraints[0] =
-      CodeGenInstruction::ConstraintInfo::getTied(0);
-  }
 
   // Parse the DisableEncoding field.
   std::string DisableEncoding = R->getValueAsString("DisableEncoding");

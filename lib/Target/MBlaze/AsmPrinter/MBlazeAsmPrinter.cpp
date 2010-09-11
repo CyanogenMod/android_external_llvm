@@ -65,11 +65,8 @@ namespace {
     void printFSLImm(const MachineInstr *MI, int opNum, raw_ostream &O);
     void printMemOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
                          const char *Modifier = 0);
-    void printFCCOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
-                         const char *Modifier = 0);
     void printSavedRegsBitmask(raw_ostream &OS);
 
-    const char *emitCurrentABIString();
     void emitFrameDirective();
 
     void printInstruction(const MachineInstr *MI, raw_ostream &O);
@@ -145,8 +142,9 @@ void MBlazeAsmPrinter::printSavedRegsBitmask(raw_ostream &O) {
   const MachineFrameInfo *MFI = MF->getFrameInfo();
   const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
   for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
-    unsigned RegNum = MBlazeRegisterInfo::getRegisterNumbering(CSI[i].getReg());
-    if (CSI[i].getRegClass() == MBlaze::CPURegsRegisterClass)
+    unsigned Reg = CSI[i].getReg();
+    unsigned RegNum = MBlazeRegisterInfo::getRegisterNumbering(Reg);
+    if (MBlaze::CPURegsRegisterClass->contains(Reg))
       CPUBitmask |= (1 << RegNum);
   }
 
@@ -155,7 +153,7 @@ void MBlazeAsmPrinter::printSavedRegsBitmask(raw_ostream &O) {
     CPUBitmask |= (1 << MBlazeRegisterInfo::
                 getRegisterNumbering(RI.getFrameRegister(*MF)));
 
-  if (MFI->hasCalls())
+  if (MFI->adjustsStack())
     CPUBitmask |= (1 << MBlazeRegisterInfo::
                 getRegisterNumbering(RI.getRARegister()));
 
@@ -268,7 +266,7 @@ void MBlazeAsmPrinter::printOperand(const MachineInstr *MI, int opNum,
 void MBlazeAsmPrinter::printUnsignedImm(const MachineInstr *MI, int opNum,
                                         raw_ostream &O) {
   const MachineOperand &MO = MI->getOperand(opNum);
-  if (MO.getType() == MachineOperand::MO_Immediate)
+  if (MO.isImm())
     O << (unsigned int)MO.getImm();
   else
     printOperand(MI, opNum, O);
@@ -277,7 +275,7 @@ void MBlazeAsmPrinter::printUnsignedImm(const MachineInstr *MI, int opNum,
 void MBlazeAsmPrinter::printFSLImm(const MachineInstr *MI, int opNum,
                                    raw_ostream &O) {
   const MachineOperand &MO = MI->getOperand(opNum);
-  if (MO.getType() == MachineOperand::MO_Immediate)
+  if (MO.isImm())
     O << "rfsl" << (unsigned int)MO.getImm();
   else
     printOperand(MI, opNum, O);
@@ -289,13 +287,6 @@ printMemOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
   printOperand(MI, opNum+1, O);
   O << ", ";
   printOperand(MI, opNum, O);
-}
-
-void MBlazeAsmPrinter::
-printFCCOperand(const MachineInstr *MI, int opNum, raw_ostream &O,
-                const char *Modifier) {
-  const MachineOperand& MO = MI->getOperand(opNum);
-  O << MBlaze::MBlazeFCCToString((MBlaze::CondCode)MO.getImm());
 }
 
 // Force static initialization.

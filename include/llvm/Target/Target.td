@@ -21,6 +21,11 @@ include "llvm/Intrinsics.td"
 
 class RegisterClass; // Forward def
 
+// SubRegIndex - Use instances of SubRegIndex to identify subregisters.
+class SubRegIndex {
+  string Namespace = "";
+}
+
 // Register - You should define one instance of this class for each register
 // in the target machine.  String n will become the "name" of the register.
 class Register<string n> {
@@ -49,6 +54,23 @@ class Register<string n> {
   // not [AX, AH, AL].
   list<Register> SubRegs = [];
 
+  // SubRegIndices - For each register in SubRegs, specify the SubRegIndex used
+  // to address it. Sub-sub-register indices are automatically inherited from
+  // SubRegs.
+  list<SubRegIndex> SubRegIndices = [];
+
+  // CompositeIndices - Specify subreg indices that don't correspond directly to
+  // a register in SubRegs and are not inherited. The following formats are
+  // supported:
+  //
+  // (a)     Identity  - Reg:a == Reg
+  // (a b)   Alias     - Reg:a == Reg:b
+  // (a b,c) Composite - Reg:a == (Reg:b):c
+  //
+  // This can be used to disambiguate a sub-sub-register that exists in more
+  // than one subregister and other weird stuff.
+  list<dag> CompositeIndices = [];
+
   // DwarfNumbers - Numbers used internally by gcc/gdb to identify the register.
   // These values can be determined by locating the <target>.h file in the
   // directory llvmgcc/gcc/config/<target>/ and looking for REGISTER_NAMES.  The
@@ -66,17 +88,6 @@ class Register<string n> {
 // overlapping live ranges into registers which alias.
 class RegisterWithSubRegs<string n, list<Register> subregs> : Register<n> {
   let SubRegs = subregs;
-}
-
-// SubRegSet - This can be used to define a specific mapping of registers to
-// indices, for use as named subregs of a particular physical register.  Each
-// register in 'subregs' becomes an addressable subregister at index 'n' of the
-// corresponding register in 'regs'.
-class SubRegSet<int n, list<Register> regs, list<Register> subregs> {
-  int index = n;
-  
-  list<Register> From = regs;
-  list<Register> To = subregs;
 }
 
 // RegisterClass - Now that all of the registers are defined, and aliases
@@ -117,9 +128,9 @@ class RegisterClass<string namespace, list<ValueType> regTypes, int alignment,
   //
   list<Register> MemberList = regList;
   
-  // SubClassList - Specify which register classes correspond to subregisters
-  // of this class. The order should be by subregister set index.
-  list<RegisterClass> SubRegClassList = [];
+  // SubRegClasses - Specify the register class of subregisters as a list of
+  // dags: (RegClass SubRegIndex, SubRegindex, ...)
+  list<dag> SubRegClasses = [];
 
   // MethodProtos/MethodBodies - These members can be used to insert arbitrary
   // code into a generated register class.   The normal usage of this is to 
@@ -187,12 +198,12 @@ class Instruction {
   bit isReturn     = 0;     // Is this instruction a return instruction?
   bit isBranch     = 0;     // Is this instruction a branch instruction?
   bit isIndirectBranch = 0; // Is this instruction an indirect branch?
+  bit isCompare    = 0;     // Is this instruction a comparison instruction?
   bit isBarrier    = 0;     // Can control flow fall through this instruction?
   bit isCall       = 0;     // Is this instruction a call instruction?
   bit canFoldAsLoad = 0;    // Can this be folded as a simple memory operand?
   bit mayLoad      = 0;     // Is it possible for this inst to read memory?
   bit mayStore     = 0;     // Is it possible for this inst to write memory?
-  bit isTwoAddress = 0;     // Is this a two address instruction?
   bit isConvertibleToThreeAddress = 0;  // Can this 2-addr instruction promote?
   bit isCommutable = 0;     // Is this 3 operand instruction commutable?
   bit isTerminator = 0;     // Is this part of the terminator for a basic block?
@@ -221,6 +232,9 @@ class Instruction {
   // purposes.
   bit isCodeGenOnly = 0;
 
+  // Is this instruction a pseudo instruction for use by the assembler parser.
+  bit isAsmParserOnly = 0;
+
   InstrItinClass Itinerary = NoItinerary;// Execution steps used for scheduling.
 
   string Constraints = "";  // OperandConstraint, e.g. $src = $dst.
@@ -230,7 +244,7 @@ class Instruction {
   string DisableEncoding = "";
 
   /// Target-specific flags. This becomes the TSFlags field in TargetInstrDesc.
-  bits<32> TSFlags = 0;
+  bits<64> TSFlags = 0;
 }
 
 /// Predicates - These are extra conditionals which are turned into instruction
@@ -296,8 +310,8 @@ class AsmOperandClass {
   /// The name to use for this class, which should be usable as an enum value.
   string Name = ?;
 
-  /// The super class of this operand.
-  AsmOperandClass SuperClass = ?;
+  /// The super classes of this operand.
+  list<AsmOperandClass> SuperClasses = [];
 
   /// The name of the method on the target specific operand to call to test
   /// whether the operand is an instance of this class. If not set, this will
@@ -331,10 +345,10 @@ class Operand<ValueType ty> {
   // in. Match classes are used to define the order in which instructions are
   // match, to ensure that which instructions gets matched is deterministic.
   //
-  // The target specific parser must be able to classify an parsed operand 
-  // into a unique class, which does not partially overlap with any other 
-  // classes. It can match a subset of some other class, in which case 
-  // ParserMatchSuperClass should be set to the name of that class.
+  // The target specific parser must be able to classify an parsed operand into
+  // a unique class, which does not partially overlap with any other classes. It
+  // can match a subset of some other class, in which case the AsmOperandClass
+  // should declare the other operand as one of its super classes.
   AsmOperandClass ParserMatchClass = ImmAsmOperand;
 }
 
@@ -383,24 +397,23 @@ class InstrInfo {
 }
 
 // Standard Pseudo Instructions.
-let isCodeGenOnly = 1 in {
+// This list must match TargetOpcodes.h and CodeGenTarget.cpp.
+// Only these instructions are allowed in the TargetOpcode namespace.
+let isCodeGenOnly = 1, Namespace = "TargetOpcode" in {
 def PHI : Instruction {
   let OutOperandList = (outs);
   let InOperandList = (ins variable_ops);
   let AsmString = "PHINODE";
-  let Namespace = "TargetOpcode";
 }
 def INLINEASM : Instruction {
   let OutOperandList = (outs);
   let InOperandList = (ins variable_ops);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
 }
-def DBG_LABEL : Instruction {
+def PROLOG_LABEL : Instruction {
   let OutOperandList = (outs);
   let InOperandList = (ins i32imm:$id);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let hasCtrlDep = 1;
   let isNotDuplicable = 1;
 }
@@ -408,7 +421,6 @@ def EH_LABEL : Instruction {
   let OutOperandList = (outs);
   let InOperandList = (ins i32imm:$id);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let hasCtrlDep = 1;
   let isNotDuplicable = 1;
 }
@@ -416,7 +428,6 @@ def GC_LABEL : Instruction {
   let OutOperandList = (outs);
   let InOperandList = (ins i32imm:$id);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let hasCtrlDep = 1;
   let isNotDuplicable = 1;
 }
@@ -424,21 +435,18 @@ def KILL : Instruction {
   let OutOperandList = (outs);
   let InOperandList = (ins variable_ops);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let neverHasSideEffects = 1;
 }
 def EXTRACT_SUBREG : Instruction {
   let OutOperandList = (outs unknown:$dst);
   let InOperandList = (ins unknown:$supersrc, i32imm:$subidx);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let neverHasSideEffects = 1;
 }
 def INSERT_SUBREG : Instruction {
   let OutOperandList = (outs unknown:$dst);
   let InOperandList = (ins unknown:$supersrc, unknown:$subsrc, i32imm:$subidx);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let neverHasSideEffects = 1;
   let Constraints = "$supersrc = $dst";
 }
@@ -446,7 +454,6 @@ def IMPLICIT_DEF : Instruction {
   let OutOperandList = (outs unknown:$dst);
   let InOperandList = (ins);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let neverHasSideEffects = 1;
   let isReMaterializable = 1;
   let isAsCheapAsAMove = 1;
@@ -455,14 +462,12 @@ def SUBREG_TO_REG : Instruction {
   let OutOperandList = (outs unknown:$dst);
   let InOperandList = (ins unknown:$implsrc, unknown:$subsrc, i32imm:$subidx);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let neverHasSideEffects = 1;
 }
 def COPY_TO_REGCLASS : Instruction {
   let OutOperandList = (outs unknown:$dst);
   let InOperandList = (ins unknown:$src, i32imm:$regclass);
   let AsmString = "";
-  let Namespace = "TargetOpcode";
   let neverHasSideEffects = 1;
   let isAsCheapAsAMove = 1;
 }
@@ -470,16 +475,29 @@ def DBG_VALUE : Instruction {
   let OutOperandList = (outs);
   let InOperandList = (ins variable_ops);
   let AsmString = "DBG_VALUE";
-  let Namespace = "TargetOpcode";
+  let isAsCheapAsAMove = 1;
+}
+def REG_SEQUENCE : Instruction {
+  let OutOperandList = (outs unknown:$dst);
+  let InOperandList = (ins variable_ops);
+  let AsmString = "";
+  let neverHasSideEffects = 1;
+  let isAsCheapAsAMove = 1;
+}
+def COPY : Instruction {
+  let OutOperandList = (outs unknown:$dst);
+  let InOperandList = (ins unknown:$src);
+  let AsmString = "";
+  let neverHasSideEffects = 1;
   let isAsCheapAsAMove = 1;
 }
 }
 
 //===----------------------------------------------------------------------===//
-// AsmParser - This class can be implemented by targets that wish to implement 
+// AsmParser - This class can be implemented by targets that wish to implement
 // .s file parsing.
 //
-// Subtargets can have multiple different assembly parsers (e.g. AT&T vs Intel 
+// Subtargets can have multiple different assembly parsers (e.g. AT&T vs Intel
 // syntax on X86 for example).
 //
 class AsmParser {
@@ -492,9 +510,9 @@ class AsmParser {
   // AsmParser class to call on every matched instruction. This can be used to
   // perform target specific instruction post-processing.
   string AsmParserInstCleanup  = "";
- 
+
   // Variant - AsmParsers can be of multiple different variants.  Variants are
-  // used to support targets that need to parser multiple formats for the 
+  // used to support targets that need to parser multiple formats for the
   // assembly language.
   int Variant = 0;
 

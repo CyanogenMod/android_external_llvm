@@ -1057,6 +1057,11 @@ static EEVT::TypeSet getImplicitType(Record *R, unsigned ResNo,
     const CodeGenTarget &T = TP.getDAGPatterns().getTargetInfo();
     return EEVT::TypeSet(T.getRegisterVTs(R));
   }
+
+  if (R->isSubClassOf("SubRegIndex")) {
+    assert(ResNo == 0 && "SubRegisterIndices only produce one result!");
+    return EEVT::TypeSet();
+  }
   
   if (R->isSubClassOf("ValueType") || R->isSubClassOf("CondCode")) {
     assert(ResNo == 0 && "This node only has one result!");
@@ -2192,10 +2197,10 @@ private:
       if (IntInfo->ModRef >= CodeGenIntrinsic::ReadArgMem)
         mayLoad = true;// These may load memory.
 
-      if (IntInfo->ModRef >= CodeGenIntrinsic::WriteArgMem)
+      if (IntInfo->ModRef >= CodeGenIntrinsic::ReadWriteArgMem)
         mayStore = true;// Intrinsics that can write to memory are 'mayStore'.
 
-      if (IntInfo->ModRef >= CodeGenIntrinsic::WriteMem)
+      if (IntInfo->ModRef >= CodeGenIntrinsic::ReadWriteMem)
         // WriteMem intrinsics can have other strange effects.
         HasSideEffects = true;
     }

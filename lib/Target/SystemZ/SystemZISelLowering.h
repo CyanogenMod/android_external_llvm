@@ -86,8 +86,7 @@ namespace llvm {
 
 
     MachineBasicBlock* EmitInstrWithCustomInserter(MachineInstr *MI,
-                                                   MachineBasicBlock *BB,
-                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
+                                                   MachineBasicBlock *BB) const;
 
     /// isFPImmLegal - Returns true if the target can instruction select the
     /// specified FP immediate natively. If false, the legalizer will
@@ -99,6 +98,7 @@ namespace llvm {
                            CallingConv::ID CallConv, bool isVarArg,
                            bool isTailCall,
                            const SmallVectorImpl<ISD::OutputArg> &Outs,
+                           const SmallVectorImpl<SDValue> &OutVals,
                            const SmallVectorImpl<ISD::InputArg> &Ins,
                            DebugLoc dl, SelectionDAG &DAG,
                            SmallVectorImpl<SDValue> &InVals) const;
@@ -127,6 +127,7 @@ namespace llvm {
       LowerCall(SDValue Chain, SDValue Callee,
                 CallingConv::ID CallConv, bool isVarArg, bool &isTailCall,
                 const SmallVectorImpl<ISD::OutputArg> &Outs,
+                const SmallVectorImpl<SDValue> &OutVals,
                 const SmallVectorImpl<ISD::InputArg> &Ins,
                 DebugLoc dl, SelectionDAG &DAG,
                 SmallVectorImpl<SDValue> &InVals) const;
@@ -135,6 +136,7 @@ namespace llvm {
       LowerReturn(SDValue Chain,
                   CallingConv::ID CallConv, bool isVarArg,
                   const SmallVectorImpl<ISD::OutputArg> &Outs,
+                  const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
 
     const SystemZSubtarget &Subtarget;

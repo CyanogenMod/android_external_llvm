@@ -42,7 +42,8 @@
 using namespace llvm;
 
 char LiveVariables::ID = 0;
-static RegisterPass<LiveVariables> X("livevars", "Live Variable Analysis");
+INITIALIZE_PASS(LiveVariables, "livevars",
+                "Live Variable Analysis", false, false);
 
 
 void LiveVariables::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -286,7 +287,7 @@ MachineInstr *LiveVariables::FindLastRefOrPartRef(unsigned Reg) {
   MachineInstr *LastDef = PhysRegDef[Reg];
   MachineInstr *LastUse = PhysRegUse[Reg];
   if (!LastDef && !LastUse)
-    return false;
+    return 0;
 
   MachineInstr *LastRefOrPartRef = LastUse ? LastUse : LastDef;
   unsigned LastRefOrPartRefDist = DistanceMap[LastRefOrPartRef];
@@ -482,21 +483,6 @@ void LiveVariables::UpdatePhysRegDefs(MachineInstr *MI,
   }
 }
 
-namespace {
-  struct RegSorter {
-    const TargetRegisterInfo *TRI;
-
-    RegSorter(const TargetRegisterInfo *tri) : TRI(tri) { }
-    bool operator()(unsigned A, unsigned B) {
-      if (TRI->isSubRegister(A, B))
-        return true;
-      else if (TRI->isSubRegister(B, A))
-        return false;
-      return A < B;
-    }
-  };
-}
-
 bool LiveVariables::runOnMachineFunction(MachineFunction &mf) {
   MF = &mf;
   MRI = &mf.getRegInfo();
@@ -609,7 +595,12 @@ bool LiveVariables::runOnMachineFunction(MachineFunction &mf) {
 
     // Finally, if the last instruction in the block is a return, make sure to
     // mark it as using all of the live-out values in the function.
-    if (!MBB->empty() && MBB->back().getDesc().isReturn()) {
+    // Things marked both call and return are tail calls; do not do this for
+    // them.  The tail callee need not take the same registers as input
+    // that it produces as output, and there are dependencies for its input
+    // registers elsewhere.
+    if (!MBB->empty() && MBB->back().getDesc().isReturn()
+        && !MBB->back().getDesc().isCall()) {
       MachineInstr *Ret = &MBB->back();
 
       for (MachineRegisterInfo::liveout_iterator

@@ -83,13 +83,14 @@ namespace {
   // pressure, it can caused fewer GPRs to be held in the queue.
   static cl::opt<unsigned>
   NumRecentlyUsedRegs("linearscan-skip-count",
-                      cl::desc("Number of registers for linearscan to remember to skip."),
+                      cl::desc("Number of registers for linearscan to remember"
+                               "to skip."),
                       cl::init(0),
                       cl::Hidden);
  
   struct RALinScan : public MachineFunctionPass {
     static char ID;
-    RALinScan() : MachineFunctionPass(&ID) {
+    RALinScan() : MachineFunctionPass(ID) {
       // Initialize the queue to record recently-used registers.
       if (NumRecentlyUsedRegs > 0)
         RecentRegs.resize(NumRecentlyUsedRegs, 0);
@@ -126,7 +127,7 @@ namespace {
     BitVector allocatableRegs_;
     LiveIntervals* li_;
     LiveStacks* ls_;
-    const MachineLoopInfo *loopInfo;
+    MachineLoopInfo *loopInfo;
 
     /// handled_ - Intervals are added to the handled_ set in the order of their
     /// start value.  This is uses for backtracking.
@@ -254,9 +255,9 @@ namespace {
                             SmallVector<LiveInterval*, 8> &SpillIntervals);
 
     /// attemptTrivialCoalescing - If a simple interval is defined by a copy,
-    /// try allocate the definition the same register as the source register
-    /// if the register is not defined during live time of the interval. This
-    /// eliminate a copy. This is used to coalesce copies which were not
+    /// try to allocate the definition to the same register as the source,
+    /// if the register is not defined during the life time of the interval.
+    /// This eliminates a copy, and is used to coalesce copies which were not
     /// coalesced away before allocation either due to dest and src being in
     /// different register classes or because the coalescer was overly
     /// conservative.
@@ -357,8 +358,8 @@ namespace {
   char RALinScan::ID = 0;
 }
 
-static RegisterPass<RALinScan>
-X("linearscan-regalloc", "Linear Scan Register Allocator");
+INITIALIZE_PASS(RALinScan, "linearscan-regalloc",
+                "Linear Scan Register Allocator", false, false);
 
 void RALinScan::ComputeRelatedRegClasses() {
   // First pass, add all reg classes to the union, and determine at least one
@@ -418,19 +419,15 @@ unsigned RALinScan::attemptTrivialCoalescing(LiveInterval &cur, unsigned Reg) {
   unsigned CandReg;
   {
     MachineInstr *CopyMI;
-    unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
     if (vni->def != SlotIndex() && vni->isDefAccurate() &&
-        (CopyMI = li_->getInstructionFromIndex(vni->def)) &&
-        tii_->isMoveInstr(*CopyMI, SrcReg, DstReg, SrcSubReg, DstSubReg))
+        (CopyMI = li_->getInstructionFromIndex(vni->def)) && CopyMI->isCopy())
       // Defined by a copy, try to extend SrcReg forward
-      CandReg = SrcReg;
+      CandReg = CopyMI->getOperand(1).getReg();
     else if (TrivCoalesceEnds &&
-             (CopyMI =
-              li_->getInstructionFromIndex(range.end.getBaseIndex())) &&
-             tii_->isMoveInstr(*CopyMI, SrcReg, DstReg, SrcSubReg, DstSubReg) &&
-             cur.reg == SrcReg)
+            (CopyMI = li_->getInstructionFromIndex(range.end.getBaseIndex())) &&
+             CopyMI->isCopy() && cur.reg == CopyMI->getOperand(1).getReg())
       // Only used by a copy, try to extend DstReg backwards
-      CandReg = DstReg;
+      CandReg = CopyMI->getOperand(0).getReg();
     else
       return Reg;
   }
@@ -486,7 +483,7 @@ bool RALinScan::runOnMachineFunction(MachineFunction &fn) {
   vrm_ = &getAnalysis<VirtRegMap>();
   if (!rewriter_.get()) rewriter_.reset(createVirtRegRewriter());
   
-  spiller_.reset(createSpiller(mf_, li_, loopInfo, vrm_));
+  spiller_.reset(createSpiller(*this, *mf_, *vrm_));
   
   initIntervalSets();
 
@@ -802,14 +799,14 @@ static void addStackInterval(LiveInterval *cur, LiveStacks *ls_,
 static
 float getConflictWeight(LiveInterval *cur, unsigned Reg, LiveIntervals *li_,
                         MachineRegisterInfo *mri_,
-                        const MachineLoopInfo *loopInfo) {
+                        MachineLoopInfo *loopInfo) {
   float Conflicts = 0;
   for (MachineRegisterInfo::reg_iterator I = mri_->reg_begin(Reg),
          E = mri_->reg_end(); I != E; ++I) {
     MachineInstr *MI = &*I;
     if (cur->liveAt(li_->getInstructionIndex(MI))) {
       unsigned loopDepth = loopInfo->getLoopDepth(MI->getParent());
-      Conflicts += powf(10.0f, (float)loopDepth);
+      Conflicts += std::pow(10.0f, (float)loopDepth);
     }
   }
   return Conflicts;
@@ -976,9 +973,10 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
     if ((vni->def != SlotIndex()) && !vni->isUnused() &&
          vni->isDefAccurate()) {
       MachineInstr *CopyMI = li_->getInstructionFromIndex(vni->def);
-      unsigned SrcReg, DstReg, SrcSubReg, DstSubReg;
-      if (CopyMI &&
-          tii_->isMoveInstr(*CopyMI, SrcReg, DstReg, SrcSubReg, DstSubReg)) {
+      if (CopyMI && CopyMI->isCopy()) {
+        unsigned DstSubReg = CopyMI->getOperand(0).getSubReg();
+        unsigned SrcReg = CopyMI->getOperand(1).getReg();
+        unsigned SrcSubReg = CopyMI->getOperand(1).getSubReg();
         unsigned Reg = 0;
         if (TargetRegisterInfo::isPhysicalRegister(SrcReg))
           Reg = SrcReg;
@@ -1204,10 +1202,8 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
   // linearscan.
   if (cur->weight != HUGE_VALF && cur->weight <= minWeight) {
     DEBUG(dbgs() << "\t\t\tspilling(c): " << *cur << '\n');
-    SmallVector<LiveInterval*, 8> spillIs;
-    std::vector<LiveInterval*> added;
-    
-    added = spiller_->spill(cur, spillIs); 
+    SmallVector<LiveInterval*, 8> spillIs, added;
+    spiller_->spill(cur, added, spillIs);
 
     std::sort(added.begin(), added.end(), LISorter());
     addStackInterval(cur, ls_, li_, mri_, *vrm_);
@@ -1271,25 +1267,29 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
   // in handled we need to roll back
   assert(!spillIs.empty() && "No spill intervals?"); 
   SlotIndex earliestStart = spillIs[0]->beginIndex();
-  
+
   // Spill live intervals of virtual regs mapped to the physical register we
   // want to clear (and its aliases).  We only spill those that overlap with the
   // current interval as the rest do not affect its allocation. we also keep
   // track of the earliest start of all spilled live intervals since this will
   // mark our rollback point.
-  std::vector<LiveInterval*> added;
+  SmallVector<LiveInterval*, 8> added;
   while (!spillIs.empty()) {
     LiveInterval *sli = spillIs.back();
     spillIs.pop_back();
     DEBUG(dbgs() << "\t\t\tspilling(a): " << *sli << '\n');
     if (sli->beginIndex() < earliestStart)
       earliestStart = sli->beginIndex();
-       
-    std::vector<LiveInterval*> newIs;
-    newIs = spiller_->spill(sli, spillIs, &earliestStart);
+    spiller_->spill(sli, added, spillIs);
     addStackInterval(sli, ls_, li_, mri_, *vrm_);
-    std::copy(newIs.begin(), newIs.end(), std::back_inserter(added));
     spilled.insert(sli->reg);
+  }
+
+  // Include any added intervals in earliestStart.
+  for (unsigned i = 0, e = added.size(); i != e; ++i) {
+    SlotIndex SI = added[i]->beginIndex();
+    if (SI < earliestStart)
+      earliestStart = SI;
   }
 
   DEBUG(dbgs() << "\t\trolling back to: " << earliestStart << '\n');

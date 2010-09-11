@@ -1,13 +1,20 @@
 import os
+import platform
 
 import Test
 import TestRunner
 import Util
 
+kIsWindows = platform.system() == 'Windows'
+
 class GoogleTest(object):
     def __init__(self, test_sub_dir, test_suffix):
         self.test_sub_dir = str(test_sub_dir)
         self.test_suffix = str(test_suffix)
+
+        # On Windows, assume tests will also end in '.exe'.
+        if kIsWindows:
+            self.test_suffix += '.exe'
 
     def getGTestTests(self, path, litConfig, localConfig):
         """getGTestTests(path) - [name]
@@ -183,8 +190,10 @@ class OneCommandPerFileTest:
             self.createTempInput(tmp, test)
             tmp.flush()
             cmd.append(tmp.name)
-        else:
+        elif hasattr(test, 'source_path'):
             cmd.append(test.source_path)
+        else:
+            cmd.append(test.getSourcePath())
 
         out, err, exitCode = TestRunner.executeCommand(cmd)
 

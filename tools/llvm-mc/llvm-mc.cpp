@@ -12,13 +12,13 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/MC/MCParser/AsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCParser/AsmParser.h"
 #include "llvm/Target/TargetAsmBackend.h"
 #include "llvm/Target/TargetAsmParser.h"
 #include "llvm/Target/TargetData.h"
@@ -27,6 +27,7 @@
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileUtilities.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -51,12 +52,19 @@ ShowEncoding("show-encoding", cl::desc("Show instruction encodings"));
 static cl::opt<bool>
 ShowInst("show-inst", cl::desc("Show internal instruction representation"));
 
+static cl::opt<bool>
+ShowInstOperands("show-inst-operands",
+                 cl::desc("Show instructions operands as parsed"));
+
 static cl::opt<unsigned>
 OutputAsmVariant("output-asm-variant",
                  cl::desc("Syntax variant to use for output printing"));
 
 static cl::opt<bool>
 RelaxAll("mc-relax-all", cl::desc("Relax all fixups"));
+
+static cl::opt<bool>
+EnableLogging("enable-api-logging", cl::desc("Enable MC API logging"));
 
 enum OutputFileType {
   OFT_Null,
@@ -74,9 +82,6 @@ FileType("filetype", cl::init(OFT_AssemblyFile),
        clEnumValN(OFT_ObjectFile, "obj",
                   "Emit a native object ('.o') file"),
        clEnumValEnd));
-
-static cl::opt<bool>
-Force("f", cl::desc("Enable binary output on terminals"));
 
 static cl::list<std::string>
 IncludeDirs("I", cl::desc("Directory of include files"),
@@ -135,6 +140,23 @@ static const Target *GetTarget(const char *ProgName) {
   return 0;
 }
 
+static formatted_tool_output_file *GetOutputStream() {
+  if (OutputFilename == "")
+    OutputFilename = "-";
+
+  std::string Err;
+  tool_output_file *Out = new tool_output_file(OutputFilename.c_str(), Err,
+                                               raw_fd_ostream::F_Binary);
+  if (!Err.empty()) {
+    errs() << Err << '\n';
+    delete Out;
+    return 0;
+  }
+  
+  return new formatted_tool_output_file(*Out,
+                                        formatted_raw_ostream::DELETE_STREAM);
+}
+
 static int AsLexInput(const char *ProgName) {
   std::string ErrorMessage;
   MemoryBuffer *Buffer = MemoryBuffer::getFileOrSTDIN(InputFilename,
@@ -165,9 +187,13 @@ static int AsLexInput(const char *ProgName) {
   assert(MAI && "Unable to create target asm info!");
 
   AsmLexer Lexer(*MAI);
-  
+  Lexer.setBuffer(SrcMgr.getMemoryBuffer(0));
+
+  OwningPtr<formatted_tool_output_file> Out(GetOutputStream());
+  if (!Out)
+    return 1;
+
   bool Error = false;
-  
   while (Lexer.Lex().isNot(AsmToken::Eof)) {
     switch (Lexer.getKind()) {
     default:
@@ -178,69 +204,51 @@ static int AsLexInput(const char *ProgName) {
       Error = true; // error already printed.
       break;
     case AsmToken::Identifier:
-      outs() << "identifier: " << Lexer.getTok().getString() << '\n';
+      *Out << "identifier: " << Lexer.getTok().getString() << '\n';
       break;
     case AsmToken::String:
-      outs() << "string: " << Lexer.getTok().getString() << '\n';
+      *Out << "string: " << Lexer.getTok().getString() << '\n';
       break;
     case AsmToken::Integer:
-      outs() << "int: " << Lexer.getTok().getString() << '\n';
+      *Out << "int: " << Lexer.getTok().getString() << '\n';
       break;
 
-    case AsmToken::Amp:            outs() << "Amp\n"; break;
-    case AsmToken::AmpAmp:         outs() << "AmpAmp\n"; break;
-    case AsmToken::Caret:          outs() << "Caret\n"; break;
-    case AsmToken::Colon:          outs() << "Colon\n"; break;
-    case AsmToken::Comma:          outs() << "Comma\n"; break;
-    case AsmToken::Dollar:         outs() << "Dollar\n"; break;
-    case AsmToken::EndOfStatement: outs() << "EndOfStatement\n"; break;
-    case AsmToken::Eof:            outs() << "Eof\n"; break;
-    case AsmToken::Equal:          outs() << "Equal\n"; break;
-    case AsmToken::EqualEqual:     outs() << "EqualEqual\n"; break;
-    case AsmToken::Exclaim:        outs() << "Exclaim\n"; break;
-    case AsmToken::ExclaimEqual:   outs() << "ExclaimEqual\n"; break;
-    case AsmToken::Greater:        outs() << "Greater\n"; break;
-    case AsmToken::GreaterEqual:   outs() << "GreaterEqual\n"; break;
-    case AsmToken::GreaterGreater: outs() << "GreaterGreater\n"; break;
-    case AsmToken::LParen:         outs() << "LParen\n"; break;
-    case AsmToken::Less:           outs() << "Less\n"; break;
-    case AsmToken::LessEqual:      outs() << "LessEqual\n"; break;
-    case AsmToken::LessGreater:    outs() << "LessGreater\n"; break;
-    case AsmToken::LessLess:       outs() << "LessLess\n"; break;
-    case AsmToken::Minus:          outs() << "Minus\n"; break;
-    case AsmToken::Percent:        outs() << "Percent\n"; break;
-    case AsmToken::Pipe:           outs() << "Pipe\n"; break;
-    case AsmToken::PipePipe:       outs() << "PipePipe\n"; break;
-    case AsmToken::Plus:           outs() << "Plus\n"; break;
-    case AsmToken::RParen:         outs() << "RParen\n"; break;
-    case AsmToken::Slash:          outs() << "Slash\n"; break;
-    case AsmToken::Star:           outs() << "Star\n"; break;
-    case AsmToken::Tilde:          outs() << "Tilde\n"; break;
+    case AsmToken::Amp:            *Out << "Amp\n"; break;
+    case AsmToken::AmpAmp:         *Out << "AmpAmp\n"; break;
+    case AsmToken::Caret:          *Out << "Caret\n"; break;
+    case AsmToken::Colon:          *Out << "Colon\n"; break;
+    case AsmToken::Comma:          *Out << "Comma\n"; break;
+    case AsmToken::Dollar:         *Out << "Dollar\n"; break;
+    case AsmToken::EndOfStatement: *Out << "EndOfStatement\n"; break;
+    case AsmToken::Eof:            *Out << "Eof\n"; break;
+    case AsmToken::Equal:          *Out << "Equal\n"; break;
+    case AsmToken::EqualEqual:     *Out << "EqualEqual\n"; break;
+    case AsmToken::Exclaim:        *Out << "Exclaim\n"; break;
+    case AsmToken::ExclaimEqual:   *Out << "ExclaimEqual\n"; break;
+    case AsmToken::Greater:        *Out << "Greater\n"; break;
+    case AsmToken::GreaterEqual:   *Out << "GreaterEqual\n"; break;
+    case AsmToken::GreaterGreater: *Out << "GreaterGreater\n"; break;
+    case AsmToken::LParen:         *Out << "LParen\n"; break;
+    case AsmToken::Less:           *Out << "Less\n"; break;
+    case AsmToken::LessEqual:      *Out << "LessEqual\n"; break;
+    case AsmToken::LessGreater:    *Out << "LessGreater\n"; break;
+    case AsmToken::LessLess:       *Out << "LessLess\n"; break;
+    case AsmToken::Minus:          *Out << "Minus\n"; break;
+    case AsmToken::Percent:        *Out << "Percent\n"; break;
+    case AsmToken::Pipe:           *Out << "Pipe\n"; break;
+    case AsmToken::PipePipe:       *Out << "PipePipe\n"; break;
+    case AsmToken::Plus:           *Out << "Plus\n"; break;
+    case AsmToken::RParen:         *Out << "RParen\n"; break;
+    case AsmToken::Slash:          *Out << "Slash\n"; break;
+    case AsmToken::Star:           *Out << "Star\n"; break;
+    case AsmToken::Tilde:          *Out << "Tilde\n"; break;
     }
   }
-  
+
+  // Keep output if no errors.
+  if (Error == 0) Out->keep();
+ 
   return Error;
-}
-
-static formatted_raw_ostream *GetOutputStream() {
-  if (OutputFilename == "")
-    OutputFilename = "-";
-
-  // Make sure that the Out file gets unlinked from the disk if we get a
-  // SIGINT.
-  if (OutputFilename != "-")
-    sys::RemoveFileOnSignal(sys::Path(OutputFilename));
-
-  std::string Err;
-  raw_fd_ostream *Out = new raw_fd_ostream(OutputFilename.c_str(), Err,
-                                           raw_fd_ostream::F_Binary);
-  if (!Err.empty()) {
-    errs() << Err << '\n';
-    delete Out;
-    return 0;
-  }
-  
-  return new formatted_raw_ostream(*Out, formatted_raw_ostream::DELETE_STREAM);
 }
 
 static int AssembleInput(const char *ProgName) {
@@ -273,10 +281,6 @@ static int AssembleInput(const char *ProgName) {
   assert(MAI && "Unable to create target asm info!");
   
   MCContext Ctx(*MAI);
-  formatted_raw_ostream *Out = GetOutputStream();
-  if (!Out)
-    return 1;
-
 
   // FIXME: We shouldn't need to do this (and link in codegen).
   OwningPtr<TargetMachine> TM(TheTarget->createTargetMachine(TripleName, ""));
@@ -287,43 +291,50 @@ static int AssembleInput(const char *ProgName) {
     return 1;
   }
 
-  OwningPtr<MCCodeEmitter> CE;
+  OwningPtr<formatted_tool_output_file> Out(GetOutputStream());
+  if (!Out)
+    return 1;
+
   OwningPtr<MCStreamer> Str;
-  OwningPtr<TargetAsmBackend> TAB;
 
   if (FileType == OFT_AssemblyFile) {
     MCInstPrinter *IP =
       TheTarget->createMCInstPrinter(OutputAsmVariant, *MAI);
+    MCCodeEmitter *CE = 0;
     if (ShowEncoding)
-      CE.reset(TheTarget->createCodeEmitter(*TM, Ctx));
+      CE = TheTarget->createCodeEmitter(*TM, Ctx);
     Str.reset(createAsmStreamer(Ctx, *Out,TM->getTargetData()->isLittleEndian(),
-                                /*asmverbose*/true, IP, CE.get(), ShowInst));
+                                /*asmverbose*/true, IP, CE, ShowInst));
   } else if (FileType == OFT_Null) {
     Str.reset(createNullStreamer(Ctx));
   } else {
     assert(FileType == OFT_ObjectFile && "Invalid file type!");
-    CE.reset(TheTarget->createCodeEmitter(*TM, Ctx));
-    TAB.reset(TheTarget->createAsmBackend(TripleName));
-    Str.reset(createMachOStreamer(Ctx, *TAB, *Out, CE.get(), RelaxAll));
+    MCCodeEmitter *CE = TheTarget->createCodeEmitter(*TM, Ctx);
+    TargetAsmBackend *TAB = TheTarget->createAsmBackend(TripleName);
+    Str.reset(TheTarget->createObjectStreamer(TripleName, Ctx, *TAB,
+                                              *Out, CE, RelaxAll));
   }
 
-  AsmParser Parser(SrcMgr, Ctx, *Str.get(), *MAI);
-  OwningPtr<TargetAsmParser> TAP(TheTarget->createAsmParser(Parser));
+  if (EnableLogging) {
+    Str.reset(createLoggingStreamer(Str.take(), errs()));
+  }
+
+  OwningPtr<MCAsmParser> Parser(createMCAsmParser(*TheTarget, SrcMgr, Ctx,
+                                                   *Str.get(), *MAI));
+  OwningPtr<TargetAsmParser> TAP(TheTarget->createAsmParser(*Parser, *TM));
   if (!TAP) {
     errs() << ProgName 
            << ": error: this target does not support assembly parsing.\n";
     return 1;
   }
 
-  Parser.setTargetParser(*TAP.get());
+  Parser->setShowParsedOperands(ShowInstOperands);
+  Parser->setTargetParser(*TAP.get());
 
-  int Res = Parser.Run(NoInitialTextSection);
-  if (Out != &fouts())
-    delete Out;
+  int Res = Parser->Run(NoInitialTextSection);
 
-  // Delete output on errors.
-  if (Res && OutputFilename != "-")
-    sys::Path(OutputFilename).eraseFromDisk();
+  // Keep output if no errors.
+  if (Res == 0) Out->keep();
 
   return Res;
 }
@@ -347,10 +358,20 @@ static int DisassembleInput(const char *ProgName, bool Enhanced) {
     return 1;
   }
   
+  OwningPtr<formatted_tool_output_file> Out(GetOutputStream());
+  if (!Out)
+    return 1;
+
+  int Res;
   if (Enhanced)
-    return Disassembler::disassembleEnhanced(TripleName, *Buffer);
+    Res = Disassembler::disassembleEnhanced(TripleName, *Buffer, *Out);
   else
-    return Disassembler::disassemble(*TheTarget, TripleName, *Buffer);
+    Res = Disassembler::disassemble(*TheTarget, TripleName, *Buffer, *Out);
+
+  // Keep output if no errors.
+  if (Res == 0) Out->keep();
+
+  return Res;
 }
 
 
@@ -369,6 +390,7 @@ int main(int argc, char **argv) {
   llvm::InitializeAllDisassemblers();
   
   cl::ParseCommandLineOptions(argc, argv, "llvm machine code playground\n");
+  TripleName = Triple::normalize(TripleName);
 
   switch (Action) {
   default:

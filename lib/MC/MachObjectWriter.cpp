@@ -16,6 +16,7 @@
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSymbol.h"
+#include "llvm/MC/MCMachOSymbolFlags.h"
 #include "llvm/MC/MCValue.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MachO.h"
@@ -32,6 +33,7 @@ static unsigned getFixupKindLog2Size(unsigned Kind) {
   default: llvm_unreachable("invalid fixup kind!");
   case X86::reloc_pcrel_1byte:
   case FK_Data_1: return 0;
+  case X86::reloc_pcrel_2byte:
   case FK_Data_2: return 1;
   case X86::reloc_pcrel_4byte:
   case X86::reloc_riprel_4byte:
@@ -46,6 +48,7 @@ static bool isFixupKindPCRel(unsigned Kind) {
   default:
     return false;
   case X86::reloc_pcrel_1byte:
+  case X86::reloc_pcrel_2byte:
   case X86::reloc_pcrel_4byte:
   case X86::reloc_riprel_4byte:
   case X86::reloc_riprel_4byte_movq_load:
@@ -56,6 +59,20 @@ static bool isFixupKindPCRel(unsigned Kind) {
 static bool isFixupKindRIPRel(unsigned Kind) {
   return Kind == X86::reloc_riprel_4byte ||
     Kind == X86::reloc_riprel_4byte_movq_load;
+}
+
+static bool doesSymbolRequireExternRelocation(MCSymbolData *SD) {
+  // Undefined symbols are always extern.
+  if (SD->Symbol->isUndefined())
+    return true;
+
+  // References to weak definitions require external relocation entries; the
+  // definition may not always be the one in the same object file.
+  if (SD->getFlags() & SF_WeakDefinition)
+    return true;
+
+  // Otherwise, we can use an internal relocation.
+  return false;
 }
 
 namespace {
@@ -130,7 +147,8 @@ class MachObjectWriterImpl {
     RIT_Pair                = 1,
     RIT_Difference          = 2,
     RIT_PreboundLazyPointer = 3,
-    RIT_LocalDifference     = 4
+    RIT_LocalDifference     = 4,
+    RIT_TLV                 = 5
   };
 
   /// X86_64 uses its own relocation types.
@@ -143,7 +161,8 @@ class MachObjectWriterImpl {
     RIT_X86_64_Subtractor = 5,
     RIT_X86_64_Signed1    = 6,
     RIT_X86_64_Signed2    = 7,
-    RIT_X86_64_Signed4    = 8
+    RIT_X86_64_Signed4    = 8,
+    RIT_X86_64_TLV        = 9
   };
 
   /// MachSymbolData - Helper struct for containing some precomputed information
@@ -155,8 +174,8 @@ class MachObjectWriterImpl {
 
     // Support lexicographic sorting.
     bool operator<(const MachSymbolData &RHS) const {
-      const std::string &Name = SymbolData->getSymbol().getName();
-      return Name < RHS.SymbolData->getSymbol().getName();
+      return SymbolData->getSymbol().getName() <
+             RHS.SymbolData->getSymbol().getName();
     }
   };
 
@@ -170,6 +189,7 @@ class MachObjectWriterImpl {
 
   llvm::DenseMap<const MCSectionData*,
                  std::vector<MachRelocationEntry> > Relocations;
+  llvm::DenseMap<const MCSectionData*, unsigned> IndirectSymBase;
 
   /// @}
   /// @name Symbol Table Data
@@ -289,9 +309,7 @@ public:
     uint64_t Start = OS.tell();
     (void) Start;
 
-    // FIXME: cast<> support!
-    const MCSectionMachO &Section =
-      static_cast<const MCSectionMachO&>(SD.getSection());
+    const MCSectionMachO &Section = cast<MCSectionMachO>(SD.getSection());
     WriteBytes(Section.getSectionName(), 16);
     WriteBytes(Section.getSegmentName(), 16);
     if (Is64Bit) {
@@ -312,7 +330,7 @@ public:
     Write32(NumRelocations ? RelocationsStart : 0);
     Write32(NumRelocations);
     Write32(Flags);
-    Write32(0); // reserved1
+    Write32(IndirectSymBase.lookup(&SD)); // reserved1
     Write32(Section.getStubSize()); // reserved2
     if (Is64Bit)
       Write32(0); // reserved3
@@ -404,7 +422,7 @@ public:
     // Compute the symbol address.
     if (Symbol.isDefined()) {
       if (Symbol.isAbsolute()) {
-        llvm_unreachable("FIXME: Not yet implemented!");
+        Address = cast<MCConstantExpr>(Symbol.getVariableValue())->getValue();
       } else {
         Address = Layout.getSymbolAddress(&Data);
       }
@@ -456,14 +474,17 @@ public:
 
   void RecordX86_64Relocation(const MCAssembler &Asm, const MCAsmLayout &Layout,
                               const MCFragment *Fragment,
-                              const MCAsmFixup &Fixup, MCValue Target,
+                              const MCFixup &Fixup, MCValue Target,
                               uint64_t &FixedValue) {
-    unsigned IsPCRel = isFixupKindPCRel(Fixup.Kind);
-    unsigned IsRIPRel = isFixupKindRIPRel(Fixup.Kind);
-    unsigned Log2Size = getFixupKindLog2Size(Fixup.Kind);
+    unsigned IsPCRel = isFixupKindPCRel(Fixup.getKind());
+    unsigned IsRIPRel = isFixupKindRIPRel(Fixup.getKind());
+    unsigned Log2Size = getFixupKindLog2Size(Fixup.getKind());
 
     // See <reloc.h>.
-    uint32_t Address = Layout.getFragmentOffset(Fragment) + Fixup.Offset;
+    uint32_t FixupOffset =
+      Layout.getFragmentOffset(Fragment) + Fixup.getOffset();
+    uint32_t FixupAddress =
+      Layout.getFragmentAddress(Fragment) + Fixup.getOffset();
     int64_t Value = 0;
     unsigned Index = 0;
     unsigned IsExtern = 0;
@@ -532,7 +553,7 @@ public:
       Type = RIT_X86_64_Unsigned;
 
       MachRelocationEntry MRE;
-      MRE.Word0 = Address;
+      MRE.Word0 = FixupOffset;
       MRE.Word1 = ((Index     <<  0) |
                    (IsPCRel   << 24) |
                    (Log2Size  << 25) |
@@ -548,6 +569,17 @@ public:
       MCSymbolData &SD = Asm.getSymbolData(*Symbol);
       const MCSymbolData *Base = Asm.getAtom(Layout, &SD);
 
+      // Relocations inside debug sections always use local relocations when
+      // possible. This seems to be done because the debugger doesn't fully
+      // understand x86_64 relocation entries, and expects to find values that
+      // have already been fixed up.
+      if (Symbol->isInSection()) {
+        const MCSectionMachO &Section = static_cast<const MCSectionMachO&>(
+          Fragment->getParent()->getSection());
+        if (Section.hasAttribute(MCSectionMachO::S_ATTR_DEBUG))
+          Base = 0;
+      }
+
       // x86_64 almost always uses external relocations, except when there is no
       // symbol to use as a base address (a local symbol with no preceeding
       // non-local symbol).
@@ -558,14 +590,17 @@ public:
         // Add the local offset, if needed.
         if (Base != &SD)
           Value += Layout.getSymbolAddress(&SD) - Layout.getSymbolAddress(Base);
-      } else {
+      } else if (Symbol->isInSection()) {
         // The index is the section ordinal (1-based).
         Index = SD.getFragment()->getParent()->getOrdinal() + 1;
         IsExtern = 0;
         Value += Layout.getSymbolAddress(&SD);
 
         if (IsPCRel)
-          Value -= Address + (1 << Log2Size);
+          Value -= FixupAddress + (1 << Log2Size);
+      } else {
+        report_fatal_error("unsupported relocation of undefined symbol '" +
+                           Symbol->getName() + "'");
       }
 
       MCSymbolRefExpr::VariantKind Modifier = Target.getSymA()->getKind();
@@ -575,41 +610,43 @@ public:
             // x86_64 distinguishes movq foo@GOTPCREL so that the linker can
             // rewrite the movq to an leaq at link time if the symbol ends up in
             // the same linkage unit.
-            if (unsigned(Fixup.Kind) == X86::reloc_riprel_4byte_movq_load)
+            if (unsigned(Fixup.getKind()) == X86::reloc_riprel_4byte_movq_load)
               Type = RIT_X86_64_GOTLoad;
             else
               Type = RIT_X86_64_GOT;
-          } else if (Modifier != MCSymbolRefExpr::VK_None)
+          }  else if (Modifier == MCSymbolRefExpr::VK_TLVP) {
+            Type = RIT_X86_64_TLV;
+          }  else if (Modifier != MCSymbolRefExpr::VK_None) {
             report_fatal_error("unsupported symbol modifier in relocation");
-          else
+          } else {
             Type = RIT_X86_64_Signed;
+
+            // The Darwin x86_64 relocation format has a problem where it cannot
+            // encode an address (L<foo> + <constant>) which is outside the atom
+            // containing L<foo>. Generally, this shouldn't occur but it does
+            // happen when we have a RIPrel instruction with data following the
+            // relocation entry (e.g., movb $012, L0(%rip)). Even with the PCrel
+            // adjustment Darwin x86_64 uses, the offset is still negative and
+            // the linker has no way to recognize this.
+            //
+            // To work around this, Darwin uses several special relocation types
+            // to indicate the offsets. However, the specification or
+            // implementation of these seems to also be incomplete; they should
+            // adjust the addend as well based on the actual encoded instruction
+            // (the additional bias), but instead appear to just look at the
+            // final offset.
+            switch (-(Target.getConstant() + (1LL << Log2Size))) {
+            case 1: Type = RIT_X86_64_Signed1; break;
+            case 2: Type = RIT_X86_64_Signed2; break;
+            case 4: Type = RIT_X86_64_Signed4; break;
+            }
+          }
         } else {
           if (Modifier != MCSymbolRefExpr::VK_None)
             report_fatal_error("unsupported symbol modifier in branch "
                               "relocation");
 
           Type = RIT_X86_64_Branch;
-        }
-
-        // The Darwin x86_64 relocation format has a problem where it cannot
-        // encode an address (L<foo> + <constant>) which is outside the atom
-        // containing L<foo>. Generally, this shouldn't occur but it does happen
-        // when we have a RIPrel instruction with data following the relocation
-        // entry (e.g., movb $012, L0(%rip)). Even with the PCrel adjustment
-        // Darwin x86_64 uses, the offset is still negative and the linker has
-        // no way to recognize this.
-        //
-        // To work around this, Darwin uses several special relocation types to
-        // indicate the offsets. However, the specification or implementation of
-        // these seems to also be incomplete; they should adjust the addend as
-        // well based on the actual encoded instruction (the additional bias),
-        // but instead appear to just look at the final offset.
-        if (IsRIPRel) {
-          switch (-(Target.getConstant() + (1LL << Log2Size))) {
-          case 1: Type = RIT_X86_64_Signed1; break;
-          case 2: Type = RIT_X86_64_Signed2; break;
-          case 4: Type = RIT_X86_64_Signed4; break;
-          }
         }
       } else {
         if (Modifier == MCSymbolRefExpr::VK_GOT) {
@@ -621,6 +658,8 @@ public:
           // required to include any necessary offset directly.
           Type = RIT_X86_64_GOT;
           IsPCRel = 1;
+        } else if (Modifier == MCSymbolRefExpr::VK_TLVP) {
+          report_fatal_error("TLVP symbol modifier should have been rip-rel");
         } else if (Modifier != MCSymbolRefExpr::VK_None)
           report_fatal_error("unsupported symbol modifier in relocation");
         else
@@ -633,7 +672,7 @@ public:
 
     // struct relocation_info (8 bytes)
     MachRelocationEntry MRE;
-    MRE.Word0 = Address;
+    MRE.Word0 = FixupOffset;
     MRE.Word1 = ((Index     <<  0) |
                  (IsPCRel   << 24) |
                  (Log2Size  << 25) |
@@ -645,11 +684,11 @@ public:
   void RecordScatteredRelocation(const MCAssembler &Asm,
                                  const MCAsmLayout &Layout,
                                  const MCFragment *Fragment,
-                                 const MCAsmFixup &Fixup, MCValue Target,
+                                 const MCFixup &Fixup, MCValue Target,
                                  uint64_t &FixedValue) {
-    uint32_t Address = Layout.getFragmentOffset(Fragment) + Fixup.Offset;
-    unsigned IsPCRel = isFixupKindPCRel(Fixup.Kind);
-    unsigned Log2Size = getFixupKindLog2Size(Fixup.Kind);
+    uint32_t FixupOffset = Layout.getFragmentOffset(Fragment)+Fixup.getOffset();
+    unsigned IsPCRel = isFixupKindPCRel(Fixup.getKind());
+    unsigned Log2Size = getFixupKindLog2Size(Fixup.getKind());
     unsigned Type = RIT_Vanilla;
 
     // See <reloc.h>.
@@ -692,41 +731,100 @@ public:
     }
 
     MachRelocationEntry MRE;
-    MRE.Word0 = ((Address   <<  0) |
-                 (Type      << 24) |
-                 (Log2Size  << 28) |
-                 (IsPCRel   << 30) |
+    MRE.Word0 = ((FixupOffset <<  0) |
+                 (Type        << 24) |
+                 (Log2Size    << 28) |
+                 (IsPCRel     << 30) |
                  RF_Scattered);
     MRE.Word1 = Value;
     Relocations[Fragment->getParent()].push_back(MRE);
   }
 
+  void RecordTLVPRelocation(const MCAssembler &Asm,
+                            const MCAsmLayout &Layout,
+                            const MCFragment *Fragment,
+                            const MCFixup &Fixup, MCValue Target,
+                            uint64_t &FixedValue) {
+    assert(Target.getSymA()->getKind() == MCSymbolRefExpr::VK_TLVP &&
+           !Is64Bit &&
+           "Should only be called with a 32-bit TLVP relocation!");
+
+    unsigned Log2Size = getFixupKindLog2Size(Fixup.getKind());
+    uint32_t Value = Layout.getFragmentOffset(Fragment)+Fixup.getOffset();
+    unsigned IsPCRel = 0;
+
+    // Get the symbol data.
+    MCSymbolData *SD_A = &Asm.getSymbolData(Target.getSymA()->getSymbol());
+    unsigned Index = SD_A->getIndex();
+
+    // We're only going to have a second symbol in pic mode and it'll be a
+    // subtraction from the picbase. For 32-bit pic the addend is the difference
+    // between the picbase and the next address.  For 32-bit static the addend
+    // is zero.
+    if (Target.getSymB()) {
+      // If this is a subtraction then we're pcrel.
+      uint32_t FixupAddress =
+      Layout.getFragmentAddress(Fragment) + Fixup.getOffset();
+      MCSymbolData *SD_B = &Asm.getSymbolData(Target.getSymB()->getSymbol());
+      IsPCRel = 1;
+      FixedValue = (FixupAddress - Layout.getSymbolAddress(SD_B) +
+                    Target.getConstant());
+      FixedValue += 1ULL << Log2Size;
+    } else {
+      FixedValue = 0;
+    }
+    
+    // struct relocation_info (8 bytes)
+    MachRelocationEntry MRE;
+    MRE.Word0 = Value;
+    MRE.Word1 = ((Index     <<  0) |
+                 (IsPCRel   << 24) |
+                 (Log2Size  << 25) |
+                 (1         << 27) | // Extern
+                 (RIT_TLV   << 28)); // Type
+    Relocations[Fragment->getParent()].push_back(MRE);
+  }
+  
   void RecordRelocation(const MCAssembler &Asm, const MCAsmLayout &Layout,
-                        const MCFragment *Fragment, const MCAsmFixup &Fixup,
+                        const MCFragment *Fragment, const MCFixup &Fixup,
                         MCValue Target, uint64_t &FixedValue) {
     if (Is64Bit) {
       RecordX86_64Relocation(Asm, Layout, Fragment, Fixup, Target, FixedValue);
       return;
     }
 
-    unsigned IsPCRel = isFixupKindPCRel(Fixup.Kind);
-    unsigned Log2Size = getFixupKindLog2Size(Fixup.Kind);
+    unsigned IsPCRel = isFixupKindPCRel(Fixup.getKind());
+    unsigned Log2Size = getFixupKindLog2Size(Fixup.getKind());
 
+    // If this is a 32-bit TLVP reloc it's handled a bit differently.
+    if (Target.getSymA()->getKind() == MCSymbolRefExpr::VK_TLVP) {
+      RecordTLVPRelocation(Asm, Layout, Fragment, Fixup, Target, FixedValue);
+      return;
+    }
+    
     // If this is a difference or a defined symbol plus an offset, then we need
     // a scattered relocation entry.
+    // Differences always require scattered relocations.
+    if (Target.getSymB())
+        return RecordScatteredRelocation(Asm, Layout, Fragment, Fixup,
+                                         Target, FixedValue);
+
+    // Get the symbol data, if any.
+    MCSymbolData *SD = 0;
+    if (Target.getSymA())
+      SD = &Asm.getSymbolData(Target.getSymA()->getSymbol());
+
+    // If this is an internal relocation with an offset, it also needs a
+    // scattered relocation entry.
     uint32_t Offset = Target.getConstant();
     if (IsPCRel)
       Offset += 1 << Log2Size;
-    if (Target.getSymB() ||
-        (Target.getSymA() && !Target.getSymA()->getSymbol().isUndefined() &&
-         Offset)) {
-      RecordScatteredRelocation(Asm, Layout, Fragment, Fixup,Target,FixedValue);
-      return;
-    }
+    if (Offset && SD && !doesSymbolRequireExternRelocation(SD))
+      return RecordScatteredRelocation(Asm, Layout, Fragment, Fixup,
+                                       Target, FixedValue);
 
     // See <reloc.h>.
-    uint32_t Address = Layout.getFragmentOffset(Fragment) + Fixup.Offset;
-    uint32_t Value = 0;
+    uint32_t FixupOffset = Layout.getFragmentOffset(Fragment)+Fixup.getOffset();
     unsigned Index = 0;
     unsigned IsExtern = 0;
     unsigned Type = 0;
@@ -737,19 +835,19 @@ public:
       // FIXME: Currently, these are never generated (see code below). I cannot
       // find a case where they are actually emitted.
       Type = RIT_Vanilla;
-      Value = 0;
     } else {
-      const MCSymbol *Symbol = &Target.getSymA()->getSymbol();
-      MCSymbolData *SD = &Asm.getSymbolData(*Symbol);
-
-      if (Symbol->isUndefined()) {
+      // Check whether we need an external or internal relocation.
+      if (doesSymbolRequireExternRelocation(SD)) {
         IsExtern = 1;
         Index = SD->getIndex();
-        Value = 0;
+        // For external relocations, make sure to offset the fixup value to
+        // compensate for the addend of the symbol address, if it was
+        // undefined. This occurs with weak definitions, for example.
+        if (!SD->Symbol->isUndefined())
+          FixedValue -= Layout.getSymbolAddress(SD);
       } else {
         // The index is the section ordinal (1-based).
         Index = SD->getFragment()->getParent()->getOrdinal() + 1;
-        Value = Layout.getSymbolAddress(SD);
       }
 
       Type = RIT_Vanilla;
@@ -757,7 +855,7 @@ public:
 
     // struct relocation_info (8 bytes)
     MachRelocationEntry MRE;
-    MRE.Word0 = Address;
+    MRE.Word0 = FixupOffset;
     MRE.Word1 = ((Index     <<  0) |
                  (IsPCRel   << 24) |
                  (Log2Size  << 25) |
@@ -775,28 +873,36 @@ public:
     // FIXME: Revisit this when the dust settles.
 
     // Bind non lazy symbol pointers first.
+    unsigned IndirectIndex = 0;
     for (MCAssembler::indirect_symbol_iterator it = Asm.indirect_symbol_begin(),
-           ie = Asm.indirect_symbol_end(); it != ie; ++it) {
-      // FIXME: cast<> support!
+           ie = Asm.indirect_symbol_end(); it != ie; ++it, ++IndirectIndex) {
       const MCSectionMachO &Section =
-        static_cast<const MCSectionMachO&>(it->SectionData->getSection());
+        cast<MCSectionMachO>(it->SectionData->getSection());
 
       if (Section.getType() != MCSectionMachO::S_NON_LAZY_SYMBOL_POINTERS)
         continue;
 
+      // Initialize the section indirect symbol base, if necessary.
+      if (!IndirectSymBase.count(it->SectionData))
+        IndirectSymBase[it->SectionData] = IndirectIndex;
+      
       Asm.getOrCreateSymbolData(*it->Symbol);
     }
 
     // Then lazy symbol pointers and symbol stubs.
+    IndirectIndex = 0;
     for (MCAssembler::indirect_symbol_iterator it = Asm.indirect_symbol_begin(),
-           ie = Asm.indirect_symbol_end(); it != ie; ++it) {
-      // FIXME: cast<> support!
+           ie = Asm.indirect_symbol_end(); it != ie; ++it, ++IndirectIndex) {
       const MCSectionMachO &Section =
-        static_cast<const MCSectionMachO&>(it->SectionData->getSection());
+        cast<MCSectionMachO>(it->SectionData->getSection());
 
       if (Section.getType() != MCSectionMachO::S_LAZY_SYMBOL_POINTERS &&
           Section.getType() != MCSectionMachO::S_SYMBOL_STUBS)
         continue;
+
+      // Initialize the section indirect symbol base, if necessary.
+      if (!IndirectSymBase.count(it->SectionData))
+        IndirectSymBase[it->SectionData] = IndirectIndex;
 
       // Set the symbol type to undefined lazy, but only on construction.
       //
@@ -841,7 +947,7 @@ public:
       const MCSymbol &Symbol = it->getSymbol();
 
       // Ignore non-linker visible symbols.
-      if (!Asm.isSymbolLinkerVisible(it))
+      if (!Asm.isSymbolLinkerVisible(it->getSymbol()))
         continue;
 
       if (!it->isExternal() && !Symbol.isUndefined())
@@ -877,7 +983,7 @@ public:
       const MCSymbol &Symbol = it->getSymbol();
 
       // Ignore non-linker visible symbols.
-      if (!Asm.isSymbolLinkerVisible(it))
+      if (!Asm.isSymbolLinkerVisible(it->getSymbol()))
         continue;
 
       if (it->isExternal() || Symbol.isUndefined())
@@ -1111,7 +1217,7 @@ void MachObjectWriter::ExecutePostLayoutBinding(MCAssembler &Asm) {
 void MachObjectWriter::RecordRelocation(const MCAssembler &Asm,
                                         const MCAsmLayout &Layout,
                                         const MCFragment *Fragment,
-                                        const MCAsmFixup &Fixup, MCValue Target,
+                                        const MCFixup &Fixup, MCValue Target,
                                         uint64_t &FixedValue) {
   ((MachObjectWriterImpl*) Impl)->RecordRelocation(Asm, Layout, Fragment, Fixup,
                                                    Target, FixedValue);

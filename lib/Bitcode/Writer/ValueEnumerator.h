@@ -15,6 +15,7 @@
 #define VALUE_ENUMERATOR_H
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Attributes.h"
 #include <vector>
 
@@ -26,7 +27,7 @@ class Instruction;
 class BasicBlock;
 class Function;
 class Module;
-class MetadataBase;
+class MDNode;
 class NamedMDNode;
 class AttrListPtr;
 class TypeSymbolTable;
@@ -49,6 +50,7 @@ private:
   ValueMapType ValueMap;
   ValueList Values;
   ValueList MDValues;
+  SmallVector<const MDNode *, 8> FunctionLocalMDs;
   ValueMapType MDValueMap;
   
   typedef DenseMap<void*, unsigned> AttributeMapType;
@@ -70,6 +72,11 @@ private:
   /// When a function is incorporated, this is the size of the Values list
   /// before incorporation.
   unsigned NumModuleValues;
+
+  /// When a function is incorporated, this is the size of the MDValues list
+  /// before incorporation.
+  unsigned NumModuleMDValues;
+
   unsigned FirstFuncConstantID;
   unsigned FirstInstID;
   
@@ -105,6 +112,9 @@ public:
   
   const ValueList &getValues() const { return Values; }
   const ValueList &getMDValues() const { return MDValues; }
+  const SmallVector<const MDNode *, 8> &getFunctionLocalMDValues() const { 
+    return FunctionLocalMDs;
+  }
   const TypeList &getTypes() const { return Types; }
   const std::vector<const BasicBlock*> &getBasicBlocks() const {
     return BasicBlocks; 
@@ -127,7 +137,9 @@ public:
 private:
   void OptimizeConstants(unsigned CstStart, unsigned CstEnd);
     
+  void EnumerateMDNodeOperands(const MDNode *N);
   void EnumerateMetadata(const Value *MD);
+  void EnumerateFunctionLocalMetadata(const MDNode *N);
   void EnumerateNamedMDNode(const NamedMDNode *NMD);
   void EnumerateValue(const Value *V);
   void EnumerateType(const Type *T);
@@ -136,7 +148,7 @@ private:
   
   void EnumerateTypeSymbolTable(const TypeSymbolTable &ST);
   void EnumerateValueSymbolTable(const ValueSymbolTable &ST);
-  void EnumerateMDSymbolTable(const MDSymbolTable &ST);
+  void EnumerateNamedMetadata(const Module *M);
 };
 
 } // End llvm namespace

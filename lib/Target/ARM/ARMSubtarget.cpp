@@ -33,12 +33,19 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
   , ARMFPUType(None)
   , UseNEONForSinglePrecisionFP(false)
   , SlowVMLx(false)
+  , SlowFPBrcc(false)
   , IsThumb(isT)
   , ThumbMode(Thumb1)
+  , NoARM(false)
   , PostRAScheduler(false)
   , IsR9Reserved(ReserveR9)
   , UseMovt(UseMOVT)
   , HasFP16(false)
+  , HasHardwareDivide(false)
+  , HasT2ExtractPack(false)
+  , HasDataBarrier(false)
+  , Pref32BitThumb(false)
+  , FPOnlySP(false)
   , stackAlignment(4)
   , CPUString("generic")
   , TargetType(isELF) // Default to ELF unless otherwise specified.
@@ -73,6 +80,8 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
     unsigned SubVer = TT[Idx];
     if (SubVer >= '7' && SubVer <= '9') {
       ARMArchVersion = V7A;
+      if (Len >= Idx+2 && TT[Idx+1] == 'm')
+        ARMArchVersion = V7M;
     } else if (SubVer == '6') {
       ARMArchVersion = V6;
       if (Len >= Idx+3 && TT[Idx+1] == 't' && TT[Idx+2] == '2')

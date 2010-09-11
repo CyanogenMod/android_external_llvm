@@ -18,6 +18,8 @@
 #include "MipsInstrInfo.h"
 #include "MipsTargetMachine.h"
 #include "MipsMachineFunction.h"
+#include "llvm/BasicBlock.h"
+#include "llvm/Instructions.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
@@ -75,6 +77,7 @@ namespace {
     }
     virtual void EmitFunctionBodyStart();
     virtual void EmitFunctionBodyEnd();
+    virtual bool isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) const;
     static const char *getRegisterName(unsigned RegNo);
 
     virtual void EmitFunctionEntryLabel();
@@ -133,8 +136,9 @@ void MipsAsmPrinter::printSavedRegsBitmask(raw_ostream &O) {
   const MachineFrameInfo *MFI = MF->getFrameInfo();
   const std::vector<CalleeSavedInfo> &CSI = MFI->getCalleeSavedInfo();
   for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
-    unsigned RegNum = MipsRegisterInfo::getRegisterNumbering(CSI[i].getReg());
-    if (CSI[i].getRegClass() == Mips::CPURegsRegisterClass)
+    unsigned Reg = CSI[i].getReg();
+    unsigned RegNum = MipsRegisterInfo::getRegisterNumbering(Reg);
+    if (Mips::CPURegsRegisterClass->contains(Reg))
       CPUBitmask |= (1 << RegNum);
     else
       FPUBitmask |= (1 << RegNum);
@@ -145,7 +149,7 @@ void MipsAsmPrinter::printSavedRegsBitmask(raw_ostream &O) {
     CPUBitmask |= (1 << MipsRegisterInfo::
                 getRegisterNumbering(RI.getFrameRegister(*MF)));
   
-  if (MFI->hasCalls()) 
+  if (MFI->adjustsStack()) 
     CPUBitmask |= (1 << MipsRegisterInfo::
                 getRegisterNumbering(RI.getRARegister()));
 
@@ -225,6 +229,23 @@ void MipsAsmPrinter::EmitFunctionBodyEnd() {
   OutStreamer.EmitRawText("\t.end\t" + Twine(CurrentFnSym->getName()));
 }
 
+
+/// isBlockOnlyReachableByFallthough - Return true if the basic block has
+/// exactly one predecessor and the control transfer mechanism between
+/// the predecessor and this block is a fall-through.
+bool MipsAsmPrinter::isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) 
+    const {
+  // The predecessor has to be immediately before this block.
+  const MachineBasicBlock *Pred = *MBB->pred_begin();
+
+  // If the predecessor is a switch statement, assume a jump table
+  // implementation, so it is not a fall through.
+  if (const BasicBlock *bb = Pred->getBasicBlock())
+    if (isa<SwitchInst>(bb->getTerminator()))
+      return false;
+  
+  return AsmPrinter::isBlockOnlyReachableByFallthrough(MBB);
+}
 
 // Print out an operand for an inline asm expression.
 bool MipsAsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo, 
@@ -306,7 +327,7 @@ void MipsAsmPrinter::printOperand(const MachineInstr *MI, int opNum,
 void MipsAsmPrinter::printUnsignedImm(const MachineInstr *MI, int opNum,
                                       raw_ostream &O) {
   const MachineOperand &MO = MI->getOperand(opNum);
-  if (MO.getType() == MachineOperand::MO_Immediate)
+  if (MO.isImm())
     O << (unsigned short int)MO.getImm();
   else 
     printOperand(MI, opNum, O);

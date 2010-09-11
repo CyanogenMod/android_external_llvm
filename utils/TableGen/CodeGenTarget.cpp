@@ -80,6 +80,7 @@ std::string llvm::getEnumName(MVT::SimpleValueType T) {
   case MVT::v1i64: return "MVT::v1i64";
   case MVT::v2i64: return "MVT::v2i64";
   case MVT::v4i64: return "MVT::v4i64";
+  case MVT::v8i64: return "MVT::v8i64";
   case MVT::v2f32: return "MVT::v2f32";
   case MVT::v4f32: return "MVT::v4f32";
   case MVT::v8f32: return "MVT::v8f32";
@@ -158,6 +159,7 @@ void CodeGenTarget::ReadRegisters() const {
   std::vector<Record*> Regs = Records.getAllDerivedDefinitions("Register");
   if (Regs.empty())
     throw std::string("No 'Register' subclasses defined!");
+  std::sort(Regs.begin(), Regs.end(), LessRecord());
 
   Registers.reserve(Regs.size());
   Registers.assign(Regs.begin(), Regs.end());
@@ -170,6 +172,11 @@ CodeGenRegister::CodeGenRegister(Record *R) : TheDef(R) {
 
 const std::string &CodeGenRegister::getName() const {
   return TheDef->getName();
+}
+
+void CodeGenTarget::ReadSubRegIndices() const {
+  SubRegIndices = Records.getAllDerivedDefinitions("SubRegIndex");
+  std::sort(SubRegIndices.begin(), SubRegIndices.end(), LessRecord());
 }
 
 void CodeGenTarget::ReadRegisterClasses() const {
@@ -228,17 +235,30 @@ CodeGenRegisterClass::CodeGenRegisterClass(Record *R) : TheDef(R) {
             "' does not derive from the Register class!";
     Elements.push_back(Reg);
   }
-  
-  std::vector<Record*> SubRegClassList = 
-                        R->getValueAsListOfDefs("SubRegClassList");
-  for (unsigned i = 0, e = SubRegClassList.size(); i != e; ++i) {
-    Record *SubRegClass = SubRegClassList[i];
-    if (!SubRegClass->isSubClassOf("RegisterClass"))
-      throw "Register Class member '" + SubRegClass->getName() +
-            "' does not derive from the RegisterClass class!";
-    SubRegClasses.push_back(SubRegClass);
-  }  
-  
+
+  // SubRegClasses is a list<dag> containing (RC, subregindex, ...) dags.
+  ListInit *SRC = R->getValueAsListInit("SubRegClasses");
+  for (ListInit::const_iterator i = SRC->begin(), e = SRC->end(); i != e; ++i) {
+    DagInit *DAG = dynamic_cast<DagInit*>(*i);
+    if (!DAG) throw "SubRegClasses must contain DAGs";
+    DefInit *DAGOp = dynamic_cast<DefInit*>(DAG->getOperator());
+    Record *RCRec;
+    if (!DAGOp || !(RCRec = DAGOp->getDef())->isSubClassOf("RegisterClass"))
+      throw "Operator '" + DAG->getOperator()->getAsString() +
+        "' in SubRegClasses is not a RegisterClass";
+    // Iterate over args, all SubRegIndex instances.
+    for (DagInit::const_arg_iterator ai = DAG->arg_begin(), ae = DAG->arg_end();
+         ai != ae; ++ai) {
+      DefInit *Idx = dynamic_cast<DefInit*>(*ai);
+      Record *IdxRec;
+      if (!Idx || !(IdxRec = Idx->getDef())->isSubClassOf("SubRegIndex"))
+        throw "Argument '" + (*ai)->getAsString() +
+          "' in SubRegClasses is not a SubRegIndex";
+      if (!SubRegClasses.insert(std::make_pair(IdxRec, RCRec)).second)
+        throw "SubRegIndex '" + IdxRec->getName() + "' mentioned twice";
+    }
+  }
+
   // Allow targets to override the size in bits of the RegisterClass.
   unsigned Size = R->getValueAsInt("Size");
 
@@ -309,58 +329,42 @@ struct SortInstByName {
 /// getInstructionsByEnumValue - Return all of the instructions defined by the
 /// target, ordered by their enum value.
 void CodeGenTarget::ComputeInstrsByEnum() const {
+  // The ordering here must match the ordering in TargetOpcodes.h.
+  const char *const FixedInstrs[] = {
+    "PHI",
+    "INLINEASM",
+    "PROLOG_LABEL",
+    "EH_LABEL",
+    "GC_LABEL",
+    "KILL",
+    "EXTRACT_SUBREG",
+    "INSERT_SUBREG",
+    "IMPLICIT_DEF",
+    "SUBREG_TO_REG",
+    "COPY_TO_REGCLASS",
+    "DBG_VALUE",
+    "REG_SEQUENCE",
+    "COPY",
+    0
+  };
   const DenseMap<const Record*, CodeGenInstruction*> &Insts = getInstructions();
-  const CodeGenInstruction *PHI = GetInstByName("PHI", Insts);
-  const CodeGenInstruction *INLINEASM = GetInstByName("INLINEASM", Insts);
-  const CodeGenInstruction *DBG_LABEL = GetInstByName("DBG_LABEL", Insts);
-  const CodeGenInstruction *EH_LABEL = GetInstByName("EH_LABEL", Insts);
-  const CodeGenInstruction *GC_LABEL = GetInstByName("GC_LABEL", Insts);
-  const CodeGenInstruction *KILL = GetInstByName("KILL", Insts);
-  const CodeGenInstruction *EXTRACT_SUBREG =
-    GetInstByName("EXTRACT_SUBREG", Insts);
-  const CodeGenInstruction *INSERT_SUBREG =
-    GetInstByName("INSERT_SUBREG", Insts);
-  const CodeGenInstruction *IMPLICIT_DEF = GetInstByName("IMPLICIT_DEF", Insts);
-  const CodeGenInstruction *SUBREG_TO_REG =
-    GetInstByName("SUBREG_TO_REG", Insts);
-  const CodeGenInstruction *COPY_TO_REGCLASS =
-    GetInstByName("COPY_TO_REGCLASS", Insts);
-  const CodeGenInstruction *DBG_VALUE = GetInstByName("DBG_VALUE", Insts);
-
-  // Print out the rest of the instructions now.
-  InstrsByEnum.push_back(PHI);
-  InstrsByEnum.push_back(INLINEASM);
-  InstrsByEnum.push_back(DBG_LABEL);
-  InstrsByEnum.push_back(EH_LABEL);
-  InstrsByEnum.push_back(GC_LABEL);
-  InstrsByEnum.push_back(KILL);
-  InstrsByEnum.push_back(EXTRACT_SUBREG);
-  InstrsByEnum.push_back(INSERT_SUBREG);
-  InstrsByEnum.push_back(IMPLICIT_DEF);
-  InstrsByEnum.push_back(SUBREG_TO_REG);
-  InstrsByEnum.push_back(COPY_TO_REGCLASS);
-  InstrsByEnum.push_back(DBG_VALUE);
-  
+  for (const char *const *p = FixedInstrs; *p; ++p) {
+    const CodeGenInstruction *Instr = GetInstByName(*p, Insts);
+    assert(Instr && "Missing target independent instruction");
+    assert(Instr->Namespace == "TargetOpcode" && "Bad namespace");
+    InstrsByEnum.push_back(Instr);
+  }
   unsigned EndOfPredefines = InstrsByEnum.size();
-  
+
   for (DenseMap<const Record*, CodeGenInstruction*>::const_iterator
        I = Insts.begin(), E = Insts.end(); I != E; ++I) {
     const CodeGenInstruction *CGI = I->second;
-    if (CGI != PHI &&
-        CGI != INLINEASM &&
-        CGI != DBG_LABEL &&
-        CGI != EH_LABEL &&
-        CGI != GC_LABEL &&
-        CGI != KILL &&
-        CGI != EXTRACT_SUBREG &&
-        CGI != INSERT_SUBREG &&
-        CGI != IMPLICIT_DEF &&
-        CGI != SUBREG_TO_REG &&
-        CGI != COPY_TO_REGCLASS &&
-        CGI != DBG_VALUE)
+    if (CGI->Namespace != "TargetOpcode")
       InstrsByEnum.push_back(CGI);
   }
-  
+
+  assert(InstrsByEnum.size() == Insts.size() && "Missing predefined instr");
+
   // All of the instructions are now in random order based on the map iteration.
   // Sort them by name.
   std::sort(InstrsByEnum.begin()+EndOfPredefines, InstrsByEnum.end(),
@@ -430,7 +434,7 @@ std::vector<CodeGenIntrinsic> llvm::LoadIntrinsics(const RecordKeeper &RC,
 CodeGenIntrinsic::CodeGenIntrinsic(Record *R) {
   TheDef = R;
   std::string DefName = R->getName();
-  ModRef = WriteMem;
+  ModRef = ReadWriteMem;
   isOverloaded = false;
   isCommutative = false;
   
@@ -551,10 +555,8 @@ CodeGenIntrinsic::CodeGenIntrinsic(Record *R) {
       ModRef = ReadArgMem;
     else if (Property->getName() == "IntrReadMem")
       ModRef = ReadMem;
-    else if (Property->getName() == "IntrWriteArgMem")
-      ModRef = WriteArgMem;
-    else if (Property->getName() == "IntrWriteMem")
-      ModRef = WriteMem;
+    else if (Property->getName() == "IntrReadWriteArgMem")
+      ModRef = ReadWriteArgMem;
     else if (Property->getName() == "Commutative")
       isCommutative = true;
     else if (Property->isSubClassOf("NoCapture")) {

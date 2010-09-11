@@ -92,7 +92,8 @@ InstrInfoEmitter::GetOperandInfo(const CodeGenInstruction &Inst) {
       else if (OpR->isSubClassOf("PointerLikeRegClass"))
         Res += utostr(OpR->getValueAsInt("RegClassKind")) + ", ";
       else
-        Res += "0, ";
+        // -1 means the operand does not have a fixed register class.
+        Res += "-1, ";
       
       // Fill in applicable flags.
       Res += "0";
@@ -269,6 +270,7 @@ void InstrInfoEmitter::emitRecord(const CodeGenInstruction &Inst, unsigned Num,
   if (Inst.isReturn)           OS << "|(1<<TID::Return)";
   if (Inst.isBranch)           OS << "|(1<<TID::Branch)";
   if (Inst.isIndirectBranch)   OS << "|(1<<TID::IndirectBranch)";
+  if (Inst.isCompare)          OS << "|(1<<TID::Compare)";
   if (Inst.isBarrier)          OS << "|(1<<TID::Barrier)";
   if (Inst.hasDelaySlot)       OS << "|(1<<TID::DelaySlot)";
   if (Inst.isCall)             OS << "|(1<<TID::Call)";
@@ -301,7 +303,7 @@ void InstrInfoEmitter::emitRecord(const CodeGenInstruction &Inst, unsigned Num,
   }
   OS << ", 0x";
   OS.write_hex(Value);
-  OS << ", ";
+  OS << "ULL, ";
 
   // Emit the implicit uses and defs lists...
   std::vector<Record*> UseList = Inst.TheDef->getValueAsListOfDefs("Uses");

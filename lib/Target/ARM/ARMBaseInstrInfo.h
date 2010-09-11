@@ -15,11 +15,12 @@
 #define ARMBASEINSTRUCTIONINFO_H
 
 #include "ARM.h"
-#include "ARMRegisterInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/Target/TargetInstrInfo.h"
 
 namespace llvm {
+  class ARMSubtarget;
+  class ARMBaseRegisterInfo;
 
 /// ARMII - This namespace holds all of the target specific flags that
 /// instruction info tracks.
@@ -97,30 +98,45 @@ namespace ARMII {
 
     // Miscellaneous arithmetic instructions
     ArithMiscFrm  = 12 << FormShift,
+    SatFrm        = 13 << FormShift,
 
     // Extend instructions
-    ExtFrm        = 13 << FormShift,
+    ExtFrm        = 14 << FormShift,
 
     // VFP formats
-    VFPUnaryFrm   = 14 << FormShift,
-    VFPBinaryFrm  = 15 << FormShift,
-    VFPConv1Frm   = 16 << FormShift,
-    VFPConv2Frm   = 17 << FormShift,
-    VFPConv3Frm   = 18 << FormShift,
-    VFPConv4Frm   = 19 << FormShift,
-    VFPConv5Frm   = 20 << FormShift,
-    VFPLdStFrm    = 21 << FormShift,
-    VFPLdStMulFrm = 22 << FormShift,
-    VFPMiscFrm    = 23 << FormShift,
+    VFPUnaryFrm   = 15 << FormShift,
+    VFPBinaryFrm  = 16 << FormShift,
+    VFPConv1Frm   = 17 << FormShift,
+    VFPConv2Frm   = 18 << FormShift,
+    VFPConv3Frm   = 19 << FormShift,
+    VFPConv4Frm   = 20 << FormShift,
+    VFPConv5Frm   = 21 << FormShift,
+    VFPLdStFrm    = 22 << FormShift,
+    VFPLdStMulFrm = 23 << FormShift,
+    VFPMiscFrm    = 24 << FormShift,
 
     // Thumb format
-    ThumbFrm      = 24 << FormShift,
+    ThumbFrm      = 25 << FormShift,
 
-    // NEON format
-    NEONFrm       = 25 << FormShift,
-    NEONGetLnFrm  = 26 << FormShift,
-    NEONSetLnFrm  = 27 << FormShift,
-    NEONDupFrm    = 28 << FormShift,
+    // Miscelleaneous format
+    MiscFrm       = 26 << FormShift,
+
+    // NEON formats
+    NGetLnFrm     = 27 << FormShift,
+    NSetLnFrm     = 28 << FormShift,
+    NDupFrm       = 29 << FormShift,
+    NLdStFrm      = 30 << FormShift,
+    N1RegModImmFrm= 31 << FormShift,
+    N2RegFrm      = 32 << FormShift,
+    NVCVTFrm      = 33 << FormShift,
+    NVDupLnFrm    = 34 << FormShift,
+    N2RegVShLFrm  = 35 << FormShift,
+    N2RegVShRFrm  = 36 << FormShift,
+    N3RegFrm      = 37 << FormShift,
+    N3RegVShFrm   = 38 << FormShift,
+    NVExtFrm      = 39 << FormShift,
+    NVMulSLFrm    = 40 << FormShift,
+    NVTBLFrm      = 41 << FormShift,
 
     //===------------------------------------------------------------------===//
     // Misc flags.
@@ -184,7 +200,7 @@ namespace ARMII {
 }
 
 class ARMBaseInstrInfo : public TargetInstrInfoImpl {
-  const ARMSubtarget& Subtarget;
+  const ARMSubtarget &Subtarget;
 protected:
   // Can be only subclassed.
   explicit ARMBaseInstrInfo(const ARMSubtarget &STI);
@@ -200,15 +216,21 @@ public:
   virtual const ARMBaseRegisterInfo &getRegisterInfo() const =0;
   const ARMSubtarget &getSubtarget() const { return Subtarget; }
 
+  bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
+                                 MachineBasicBlock::iterator MI,
+                                 const std::vector<CalleeSavedInfo> &CSI,
+                                 const TargetRegisterInfo *TRI) const;
+
   // Branch analysis.
   virtual bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                              MachineBasicBlock *&FBB,
                              SmallVectorImpl<MachineOperand> &Cond,
-                             bool AllowModify) const;
+                             bool AllowModify = false) const;
   virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const;
   virtual unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                                 MachineBasicBlock *FBB,
-                            const SmallVectorImpl<MachineOperand> &Cond) const;
+                                const SmallVectorImpl<MachineOperand> &Cond,
+                                DebugLoc DL) const;
 
   virtual
   bool ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const;
@@ -242,62 +264,90 @@ public:
   ///
   virtual unsigned GetInstSizeInBytes(const MachineInstr* MI) const;
 
-  /// Return true if the instruction is a register to register move and return
-  /// the source and dest operands and their sub-register indices by reference.
-  virtual bool isMoveInstr(const MachineInstr &MI,
-                           unsigned &SrcReg, unsigned &DstReg,
-                           unsigned &SrcSubIdx, unsigned &DstSubIdx) const;
-
   virtual unsigned isLoadFromStackSlot(const MachineInstr *MI,
                                        int &FrameIndex) const;
   virtual unsigned isStoreToStackSlot(const MachineInstr *MI,
                                       int &FrameIndex) const;
 
-  virtual bool copyRegToReg(MachineBasicBlock &MBB,
-                            MachineBasicBlock::iterator I,
-                            unsigned DestReg, unsigned SrcReg,
-                            const TargetRegisterClass *DestRC,
-                            const TargetRegisterClass *SrcRC) const;
+  virtual void copyPhysReg(MachineBasicBlock &MBB,
+                           MachineBasicBlock::iterator I, DebugLoc DL,
+                           unsigned DestReg, unsigned SrcReg,
+                           bool KillSrc) const;
 
   virtual void storeRegToStackSlot(MachineBasicBlock &MBB,
                                    MachineBasicBlock::iterator MBBI,
                                    unsigned SrcReg, bool isKill, int FrameIndex,
-                                   const TargetRegisterClass *RC) const;
+                                   const TargetRegisterClass *RC,
+                                   const TargetRegisterInfo *TRI) const;
 
   virtual void loadRegFromStackSlot(MachineBasicBlock &MBB,
                                     MachineBasicBlock::iterator MBBI,
                                     unsigned DestReg, int FrameIndex,
-                                    const TargetRegisterClass *RC) const;
+                                    const TargetRegisterClass *RC,
+                                    const TargetRegisterInfo *TRI) const;
 
   virtual MachineInstr *emitFrameIndexDebugValue(MachineFunction &MF,
-                                                 unsigned FrameIx,
+                                                 int FrameIx,
                                                  uint64_t Offset,
                                                  const MDNode *MDPtr,
                                                  DebugLoc DL) const;
-
-  virtual bool canFoldMemoryOperand(const MachineInstr *MI,
-                                    const SmallVectorImpl<unsigned> &Ops) const;
-
-  virtual MachineInstr* foldMemoryOperandImpl(MachineFunction &MF,
-                                              MachineInstr* MI,
-                                              const SmallVectorImpl<unsigned> &Ops,
-                                              int FrameIndex) const;
-
-  virtual MachineInstr* foldMemoryOperandImpl(MachineFunction &MF,
-                                              MachineInstr* MI,
-                                           const SmallVectorImpl<unsigned> &Ops,
-                                              MachineInstr* LoadMI) const;
 
   virtual void reMaterialize(MachineBasicBlock &MBB,
                              MachineBasicBlock::iterator MI,
                              unsigned DestReg, unsigned SubIdx,
                              const MachineInstr *Orig,
-                             const TargetRegisterInfo *TRI) const;
+                             const TargetRegisterInfo &TRI) const;
 
   MachineInstr *duplicate(MachineInstr *Orig, MachineFunction &MF) const;
 
   virtual bool produceSameValue(const MachineInstr *MI0,
                                 const MachineInstr *MI1) const;
+
+  /// areLoadsFromSameBasePtr - This is used by the pre-regalloc scheduler to
+  /// determine if two loads are loading from the same base address. It should
+  /// only return true if the base pointers are the same and the only
+  /// differences between the two addresses is the offset. It also returns the
+  /// offsets by reference.
+  virtual bool areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
+                                       int64_t &Offset1, int64_t &Offset2)const;
+
+  /// shouldScheduleLoadsNear - This is a used by the pre-regalloc scheduler to
+  /// determine (in conjuction with areLoadsFromSameBasePtr) if two loads should
+  /// be scheduled togther. On some targets if two loads are loading from
+  /// addresses in the same cache line, it's better if they are scheduled
+  /// together. This function takes two integers that represent the load offsets
+  /// from the common base address. It returns true if it decides it's desirable
+  /// to schedule the two loads together. "NumLoads" is the number of loads that
+  /// have already been scheduled after Load1.
+  virtual bool shouldScheduleLoadsNear(SDNode *Load1, SDNode *Load2,
+                                       int64_t Offset1, int64_t Offset2,
+                                       unsigned NumLoads) const;
+
+  virtual bool isSchedulingBoundary(const MachineInstr *MI,
+                                    const MachineBasicBlock *MBB,
+                                    const MachineFunction &MF) const;
+
+  virtual bool isProfitableToIfCvt(MachineBasicBlock &MBB,
+                                   unsigned NumInstrs) const;
+
+  virtual bool isProfitableToIfCvt(MachineBasicBlock &TMBB,unsigned NumT,
+                                   MachineBasicBlock &FMBB,unsigned NumF) const;
+
+  virtual bool isProfitableToDupForIfCvt(MachineBasicBlock &MBB,
+                                         unsigned NumInstrs) const {
+    return NumInstrs && NumInstrs == 1;
+  }
+
+  /// AnalyzeCompare - For a comparison instruction, return the source register
+  /// in SrcReg and the value it compares against in CmpValue. Return true if
+  /// the comparison instruction can be analyzed.
+  virtual bool AnalyzeCompare(const MachineInstr *MI, unsigned &SrcReg,
+                              int &CmpValue) const;
+
+  /// ConvertToSetZeroFlag - Convert the instruction to set the zero flag so
+  /// that we can remove a "comparison with zero".
+  virtual bool ConvertToSetZeroFlag(MachineInstr *Instr,
+                                    MachineInstr *CmpInstr) const;
 };
 
 static inline

@@ -50,7 +50,7 @@ namespace llvm {
       CALL,          // PIC16 Call instruction 
       CALLW,         // PIC16 CALLW instruction 
       SUBCC,         // Compare for equality or inequality.
-      SELECT_ICC,    // Psuedo to be caught in schedular and expanded to brcond.
+      SELECT_ICC,    // Pseudo to be caught in scheduler and expanded to brcond.
       BRCOND,        // Conditional branch.
       RET,           // Return.
       Dummy
@@ -106,12 +106,14 @@ namespace llvm {
     SDValue 
     LowerDirectCallArguments(SDValue ArgLabel, SDValue Chain, SDValue InFlag,
                              const SmallVectorImpl<ISD::OutputArg> &Outs,
+                             const SmallVectorImpl<SDValue> &OutVals,
                              DebugLoc dl, SelectionDAG &DAG) const;
 
     SDValue 
     LowerIndirectCallArguments(SDValue Chain, SDValue InFlag,
                                SDValue DataAddr_Lo, SDValue DataAddr_Hi, 
                                const SmallVectorImpl<ISD::OutputArg> &Outs,
+                               const SmallVectorImpl<SDValue> &OutVals,
                                const SmallVectorImpl<ISD::InputArg> &Ins,
                                DebugLoc dl, SelectionDAG &DAG) const;
 
@@ -119,10 +121,9 @@ namespace llvm {
     SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
     SDValue getPIC16Cmp(SDValue LHS, SDValue RHS, unsigned OrigCC, SDValue &CC,
                         SelectionDAG &DAG, DebugLoc dl) const;
-    virtual MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr *MI,
-                                                         MachineBasicBlock *MBB,
-                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
-
+    virtual MachineBasicBlock *
+      EmitInstrWithCustomInserter(MachineInstr *MI,
+                                  MachineBasicBlock *MBB) const;
 
     virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
     virtual void ReplaceNodeResults(SDNode *N,
@@ -144,6 +145,7 @@ namespace llvm {
       LowerCall(SDValue Chain, SDValue Callee,
                 CallingConv::ID CallConv, bool isVarArg, bool &isTailCall,
                 const SmallVectorImpl<ISD::OutputArg> &Outs,
+                const SmallVectorImpl<SDValue> &OutVals,
                 const SmallVectorImpl<ISD::InputArg> &Ins,
                 DebugLoc dl, SelectionDAG &DAG,
                 SmallVectorImpl<SDValue> &InVals) const;
@@ -152,6 +154,7 @@ namespace llvm {
       LowerReturn(SDValue Chain,
                   CallingConv::ID CallConv, bool isVarArg,
                   const SmallVectorImpl<ISD::OutputArg> &Outs,
+                  const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
 
     SDValue ExpandStore(SDNode *N, SelectionDAG &DAG) const;
@@ -178,6 +181,9 @@ namespace llvm {
       // FIXME: The function never seems to be aligned.
       return 1;
     }
+  protected:
+    std::pair<const TargetRegisterClass*, uint8_t>
+    findRepresentativeClass(EVT VT) const;
   private:
     // If the Node is a BUILD_PAIR representing a direct Address,
     // then this function will return true.

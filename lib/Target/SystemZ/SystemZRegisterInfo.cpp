@@ -47,22 +47,6 @@ SystemZRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   return CalleeSavedRegs;
 }
 
-const TargetRegisterClass* const*
-SystemZRegisterInfo::getCalleeSavedRegClasses(const MachineFunction *MF) const {
-  static const TargetRegisterClass * const CalleeSavedRegClasses[] = {
-    &SystemZ::GR64RegClass, &SystemZ::GR64RegClass,
-    &SystemZ::GR64RegClass, &SystemZ::GR64RegClass,
-    &SystemZ::GR64RegClass, &SystemZ::GR64RegClass,
-    &SystemZ::GR64RegClass, &SystemZ::GR64RegClass,
-    &SystemZ::GR64RegClass, &SystemZ::GR64RegClass,
-    &SystemZ::FP64RegClass, &SystemZ::FP64RegClass,
-    &SystemZ::FP64RegClass, &SystemZ::FP64RegClass,
-    &SystemZ::FP64RegClass, &SystemZ::FP64RegClass,
-    &SystemZ::FP64RegClass, &SystemZ::FP64RegClass, 0
-  };
-  return CalleeSavedRegClasses;
-}
-
 BitVector SystemZRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
   if (hasFP(MF))
@@ -108,10 +92,9 @@ int SystemZRegisterInfo::getFrameIndexOffset(const MachineFunction &MF,
   return Offset;
 }
 
-unsigned
+void
 SystemZRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
-                                         int SPAdj, FrameIndexValue *Value,
-                                         RegScavenger *RS) const {
+                                         int SPAdj, RegScavenger *RS) const {
   assert(SPAdj == 0 && "Unxpected");
 
   unsigned i = 0;
@@ -133,13 +116,13 @@ SystemZRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   // Offset is a either 12-bit unsigned or 20-bit signed integer.
   // FIXME: handle "too long" displacements.
-  int Offset = getFrameIndexOffset(MF, FrameIndex) + MI.getOperand(i+1).getImm();
+  int Offset =
+    getFrameIndexOffset(MF, FrameIndex) + MI.getOperand(i+1).getImm();
 
   // Check whether displacement is too long to fit into 12 bit zext field.
   MI.setDesc(TII.getMemoryInstr(MI.getOpcode(), Offset));
 
   MI.getOperand(i+1).ChangeToImmediate(Offset);
-  return 0;
 }
 
 void

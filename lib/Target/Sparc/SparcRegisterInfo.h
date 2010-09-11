@@ -32,9 +32,6 @@ struct SparcRegisterInfo : public SparcGenRegisterInfo {
   /// Code Generation virtual methods...  
   const unsigned *getCalleeSavedRegs(const MachineFunction *MF = 0) const;
 
-  const TargetRegisterClass* const* getCalleeSavedRegClasses(
-                                     const MachineFunction *MF = 0) const;
-
   BitVector getReservedRegs(const MachineFunction &MF) const;
 
   bool hasFP(const MachineFunction &MF) const;
@@ -43,9 +40,8 @@ struct SparcRegisterInfo : public SparcGenRegisterInfo {
                                      MachineBasicBlock &MBB,
                                      MachineBasicBlock::iterator I) const;
 
-  unsigned eliminateFrameIndex(MachineBasicBlock::iterator II,
-                               int SPAdj, FrameIndexValue *Value = NULL,
-                               RegScavenger *RS = NULL) const;
+  void eliminateFrameIndex(MachineBasicBlock::iterator II,
+                           int SPAdj, RegScavenger *RS = NULL) const;
 
   void processFunctionBeforeFrameFinalized(MachineFunction &MF) const;
 

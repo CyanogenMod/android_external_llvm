@@ -30,6 +30,8 @@ void IntrinsicEmitter::run(raw_ostream &OS) {
   if (TargetOnly && !Ints.empty())
     TargetPrefix = Ints[0].TargetPrefix;
 
+  EmitPrefix(OS);
+
   // Emit the enum information.
   EmitEnumInfo(Ints, OS);
 
@@ -59,6 +61,23 @@ void IntrinsicEmitter::run(raw_ostream &OS) {
 
   // Emit code to translate GCC builtins into LLVM intrinsics.
   EmitIntrinsicToGCCBuiltinMap(Ints, OS);
+
+  EmitSuffix(OS);
+}
+
+void IntrinsicEmitter::EmitPrefix(raw_ostream &OS) {
+  OS << "// VisualStudio defines setjmp as _setjmp\n"
+        "#if defined(_MSC_VER) && defined(setjmp)\n"
+        "#define setjmp_undefined_for_visual_studio\n"
+        "#undef setjmp\n"
+        "#endif\n\n";
+}
+
+void IntrinsicEmitter::EmitSuffix(raw_ostream &OS) {
+  OS << "#if defined(_MSC_VER) && defined(setjmp_undefined_for_visual_studio)\n"
+        "// let's return it to _setjmp state\n"
+        "#define setjmp _setjmp\n"
+        "#endif\n\n";
 }
 
 void IntrinsicEmitter::EmitEnumInfo(const std::vector<CodeGenIntrinsic> &Ints,
@@ -526,7 +545,7 @@ EmitModRefBehavior(const std::vector<CodeGenIntrinsic> &Ints, raw_ostream &OS){
   OS << "switch (iid) {\n";
   OS << "default:\n    return UnknownModRefBehavior;\n";
   for (unsigned i = 0, e = Ints.size(); i != e; ++i) {
-    if (Ints[i].ModRef == CodeGenIntrinsic::WriteMem)
+    if (Ints[i].ModRef == CodeGenIntrinsic::ReadWriteMem)
       continue;
     OS << "case " << TargetPrefix << "Intrinsic::" << Ints[i].EnumName
       << ":\n";
@@ -540,7 +559,7 @@ EmitModRefBehavior(const std::vector<CodeGenIntrinsic> &Ints, raw_ostream &OS){
     case CodeGenIntrinsic::ReadMem:
       OS << "  return OnlyReadsMemory;\n";
       break;
-    case CodeGenIntrinsic::WriteArgMem:
+    case CodeGenIntrinsic::ReadWriteArgMem:
       OS << "  return AccessesArguments;\n";
       break;
     }

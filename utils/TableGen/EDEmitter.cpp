@@ -306,11 +306,11 @@ static int X86TypeFromOpName(LiteralConstantEmitter *type,
   REG("RFP64");
   REG("RFP80");
   REG("VR128");
+  REG("VR256");
   REG("RST");
   REG("SEGMENT_REG");
   REG("DEBUG_REG");
-  REG("CONTROL_REG_32");
-  REG("CONTROL_REG_64");
+  REG("CONTROL_REG");
   
   IMM("i8imm");
   IMM("i16imm");
@@ -339,7 +339,9 @@ static int X86TypeFromOpName(LiteralConstantEmitter *type,
   MEM("f80mem");
   MEM("opaque80mem");
   MEM("i128mem");
+  MEM("i256mem");
   MEM("f128mem");
+  MEM("f256mem");
   MEM("opaque512mem");
   
   // all R, I, R, I
@@ -348,6 +350,7 @@ static int X86TypeFromOpName(LiteralConstantEmitter *type,
   LEA("lea64mem");
   
   // all I
+  PCR("i16imm_pcrel");
   PCR("i32imm_pcrel");
   PCR("i64i32imm_pcrel");
   PCR("brtarget8");
@@ -501,6 +504,8 @@ static void X86ExtractSemantics(
       // TODO add support for fixed operands
     } else if (name.find("F") != name.npos) {
       // ignore (this pushes onto the FP stack)
+    } else if (name.find("A") != name.npos) {
+      // ignore (pushes all GP registoers onto the stack)
     } else if (name[name.length() - 1] == 'm') {
       PUSH("src");
     } else if (name.find("i") != name.npos) {
@@ -519,6 +524,8 @@ static void X86ExtractSemantics(
       // TODO add support for fixed operands
     } else if (name.find("F") != name.npos) {
       // ignore (this pops from the FP stack)
+    } else if (name.find("A") != name.npos) {
+      // ignore (pushes all GP registoers onto the stack)
     } else if (name[name.length() - 1] == 'm') {
       POP("dst");
     } else {
@@ -571,14 +578,18 @@ static void X86ExtractSemantics(
 static int ARMFlagFromOpName(LiteralConstantEmitter *type,
                              const std::string &name) {
   REG("GPR");
+  REG("rGPR");
+  REG("tcGPR");
   REG("cc_out");
   REG("s_cc_out");
   REG("tGPR");
   REG("DPR");
-  REG("SPR");
-  REG("QPR");
   REG("DPR_VFP2");
   REG("DPR_8");
+  REG("SPR");
+  REG("QPR");
+  REG("QQPR");
+  REG("QQQQPR");
   
   IMM("i32imm");
   IMM("bf_inv_mask_imm");
@@ -588,17 +599,16 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   IMM("cps_opt");
   IMM("vfp_f64imm");
   IMM("vfp_f32imm");
+  IMM("memb_opt");
   IMM("msr_mask");
   IMM("neg_zero");
   IMM("imm0_31");
-  IMM("h8imm");
-  IMM("h16imm");
-  IMM("h32imm");
-  IMM("h64imm");
+  IMM("nModImm");
   IMM("imm0_4095");
   IMM("jt2block_operand");
   IMM("t_imm_s4");
   IMM("pclabel");
+  IMM("shift_imm");
   
   MISC("brtarget", "kOperandTypeARMBranchTarget");                // ?
   MISC("so_reg", "kOperandTypeARMSoReg");                         // R, R, I
@@ -888,22 +898,4 @@ void EDEmitter::run(raw_ostream &o) {
   o << ";" << "\n";
   
   o << "}\n";
-}
-
-void EDEmitter::runHeader(raw_ostream &o) {
-  EmitSourceFileHeader("Enhanced Disassembly Info Header", o);
-  
-  o << "#ifndef EDInfo_" << "\n";
-  o << "#define EDInfo_" << "\n";
-  o << "\n";
-  o << "#define EDIS_MAX_OPERANDS " << format("%d", EDIS_MAX_OPERANDS) << "\n";
-  o << "#define EDIS_MAX_SYNTAXES " << format("%d", EDIS_MAX_SYNTAXES) << "\n";
-  o << "\n";
-  
-  unsigned int i = 0;
-  
-  emitCommonEnums(o, i);
-  
-  o << "\n";
-  o << "#endif" << "\n";
 }

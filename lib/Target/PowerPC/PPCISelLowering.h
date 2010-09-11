@@ -111,9 +111,10 @@ namespace llvm {
       /// Return with a flag operand, matched by 'blr'
       RET_FLAG,
       
-      /// R32 = MFCR(CRREG, INFLAG) - Represents the MFCR/MFOCRF instructions.
-      /// This copies the bits corresponding to the specified CRREG into the
-      /// resultant GPR.  Bits corresponding to other CR regs are undefined.
+      /// R32 = MFCR(CRREG, INFLAG) - Represents the MFCRpseud/MFOCRF
+      /// instructions.  This copies the bits corresponding to the specified
+      /// CRREG into the resultant GPR.  Bits corresponding to other CR regs
+      /// are undefined.
       MFCR,
 
       /// RESVEC = VCMP(LHS, RHS, OPC) - Represents one of the altivec VCMP*
@@ -296,9 +297,9 @@ namespace llvm {
                                                 const SelectionDAG &DAG,
                                                 unsigned Depth = 0) const;
 
-    virtual MachineBasicBlock *EmitInstrWithCustomInserter(MachineInstr *MI,
-                                                         MachineBasicBlock *MBB,
-                    DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const;
+    virtual MachineBasicBlock *
+      EmitInstrWithCustomInserter(MachineInstr *MI,
+                                  MachineBasicBlock *MBB) const;
     MachineBasicBlock *EmitAtomicBinary(MachineInstr *MI, 
                                         MachineBasicBlock *MBB, bool is64Bit,
                                         unsigned BinOpcode) const;
@@ -317,12 +318,9 @@ namespace llvm {
     unsigned getByValTypeAlignment(const Type *Ty) const;
 
     /// LowerAsmOperandForConstraint - Lower the specified operand into the Ops
-    /// vector.  If it is invalid, don't add anything to Ops. If hasMemory is
-    /// true it means one of the asm constraint of the inline asm instruction
-    /// being processed is 'm'.
+    /// vector.  If it is invalid, don't add anything to Ops.
     virtual void LowerAsmOperandForConstraint(SDValue Op,
                                               char ConstraintLetter,
-                                              bool hasMemory,
                                               std::vector<SDValue> &Ops,
                                               SelectionDAG &DAG) const;
     
@@ -437,6 +435,7 @@ namespace llvm {
       LowerCall(SDValue Chain, SDValue Callee,
                 CallingConv::ID CallConv, bool isVarArg, bool &isTailCall,
                 const SmallVectorImpl<ISD::OutputArg> &Outs,
+                const SmallVectorImpl<SDValue> &OutVals,
                 const SmallVectorImpl<ISD::InputArg> &Ins,
                 DebugLoc dl, SelectionDAG &DAG,
                 SmallVectorImpl<SDValue> &InVals) const;
@@ -445,6 +444,7 @@ namespace llvm {
       LowerReturn(SDValue Chain,
                   CallingConv::ID CallConv, bool isVarArg,
                   const SmallVectorImpl<ISD::OutputArg> &Outs,
+                  const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
 
     SDValue
@@ -464,6 +464,7 @@ namespace llvm {
       LowerCall_Darwin(SDValue Chain, SDValue Callee,
                        CallingConv::ID CallConv, bool isVarArg, bool isTailCall,
                        const SmallVectorImpl<ISD::OutputArg> &Outs,
+                       const SmallVectorImpl<SDValue> &OutVals,
                        const SmallVectorImpl<ISD::InputArg> &Ins,
                        DebugLoc dl, SelectionDAG &DAG,
                        SmallVectorImpl<SDValue> &InVals) const;
@@ -471,6 +472,7 @@ namespace llvm {
       LowerCall_SVR4(SDValue Chain, SDValue Callee,
                      CallingConv::ID CallConv, bool isVarArg, bool isTailCall,
                      const SmallVectorImpl<ISD::OutputArg> &Outs,
+                     const SmallVectorImpl<SDValue> &OutVals,
                      const SmallVectorImpl<ISD::InputArg> &Ins,
                      DebugLoc dl, SelectionDAG &DAG,
                      SmallVectorImpl<SDValue> &InVals) const;

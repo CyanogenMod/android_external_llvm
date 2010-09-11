@@ -1,4 +1,4 @@
-//===- MipsInstrInfo.td - Mips Register defs --------------------*- C++ -*-===//
+//===- MipsInstrInfo.td - Mips Register defs ---------------*- tablegen -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -96,12 +96,7 @@ def HI16 : SDNodeXForm<imm, [{
 
 // Node immediate fits as 16-bit sign extended on target immediate.
 // e.g. addi, andi
-def immSExt16  : PatLeaf<(imm), [{
-  if (N->getValueType(0) == MVT::i32)
-    return (int32_t)N->getZExtValue() == (short)N->getZExtValue();
-  else
-    return (int64_t)N->getZExtValue() == (short)N->getZExtValue();
-}]>;
+def immSExt16  : PatLeaf<(imm), [{ return isInt<16>(N->getSExtValue()); }]>;
 
 // Node immediate fits as 16-bit zero extended on target immediate.
 // The LO16 param means that only the lower 16 bits of the node
@@ -541,7 +536,7 @@ let Predicates = [HasSwap] in {
 def MIPS_CMOV_ZERO  : PatLeaf<(i32 0)>;
 def MIPS_CMOV_NZERO : PatLeaf<(i32 1)>;
 
-let Predicates = [HasCondMov], isTwoAddress = 1 in {
+let Predicates = [HasCondMov], Constraints = "$F = $dst" in {
   def MOVN : CondMov<0x0a, "movn", MIPS_CMOV_NZERO>;
   def MOVZ : CondMov<0x0b, "movz", MIPS_CMOV_ZERO>;
 }

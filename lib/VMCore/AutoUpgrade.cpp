@@ -18,6 +18,7 @@
 #include "llvm/Module.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/IRBuilder.h"
 #include <cstring>
@@ -75,6 +76,46 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
         assert(delim != std::string::npos && "can not find type");
         F->setName(Name + ".p0" + Name.substr(delim+1));
         NewFn = F;
+        return true;
+      }
+    } else if (Name.compare(5, 9, "arm.neon.", 9) == 0) {
+      if (Name.compare(14, 7, "vmovls.", 7) == 0 ||
+          Name.compare(14, 7, "vmovlu.", 7) == 0) {
+        // Calls to these are transformed into IR without intrinsics.
+        NewFn = 0;
+        return true;
+      }
+      // Old versions of NEON ld/st intrinsics are missing alignment arguments.
+      bool isVLd = (Name.compare(14, 3, "vld", 3) == 0);
+      bool isVSt = (Name.compare(14, 3, "vst", 3) == 0);
+      if (isVLd || isVSt) {
+        unsigned NumVecs = Name.at(17) - '0';
+        if (NumVecs == 0 || NumVecs > 4)
+          return false;
+        bool isLaneOp = (Name.compare(18, 5, "lane.", 5) == 0);
+        if (!isLaneOp && Name.at(18) != '.')
+          return false;
+        unsigned ExpectedArgs = 2; // for the address and alignment
+        if (isVSt || isLaneOp)
+          ExpectedArgs += NumVecs;
+        if (isLaneOp)
+          ExpectedArgs += 1; // for the lane number
+        unsigned NumP = FTy->getNumParams();
+        if (NumP != ExpectedArgs - 1)
+          return false;
+
+        // Change the name of the old (bad) intrinsic, because 
+        // its type is incorrect, but we cannot overload that name.
+        F->setName("");
+
+        // One argument is missing: add the alignment argument.
+        std::vector<const Type*> NewParams;
+        for (unsigned p = 0; p < NumP; ++p)
+          NewParams.push_back(FTy->getParamType(p));
+        NewParams.push_back(Type::getInt32Ty(F->getContext()));
+        FunctionType *NewFTy = FunctionType::get(FTy->getReturnType(),
+                                                 NewParams, false);
+        NewFn = cast<Function>(M->getOrInsertFunction(Name, NewFTy));
         return true;
       }
     }
@@ -181,7 +222,6 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
         NewFnName = "llvm.memset.p0i8.i64";
     }
     if (NewFnName) {
-      const FunctionType *FTy = F->getFunctionType();
       NewFn = cast<Function>(M->getOrInsertFunction(NewFnName, 
                                             FTy->getReturnType(),
                                             FTy->getParamType(0),
@@ -314,10 +354,33 @@ bool llvm::UpgradeIntrinsicFunction(Function *F, Function *&NewFn) {
 void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   Function *F = CI->getCalledFunction();
   LLVMContext &C = CI->getContext();
-  
+  ImmutableCallSite CS(CI);
+
   assert(F && "CallInst has no function associated with it.");
 
   if (!NewFn) {
+    // Get the Function's name.
+    const std::string& Name = F->getName();
+
+    // Upgrade ARM NEON intrinsics.
+    if (Name.compare(5, 9, "arm.neon.", 9) == 0) {
+      Instruction *NewI;
+      if (Name.compare(14, 7, "vmovls.", 7) == 0) {
+        NewI = new SExtInst(CI->getArgOperand(0), CI->getType(),
+                            "upgraded." + CI->getName(), CI);
+      } else if (Name.compare(14, 7, "vmovlu.", 7) == 0) {
+        NewI = new ZExtInst(CI->getArgOperand(0), CI->getType(),
+                            "upgraded." + CI->getName(), CI);
+      } else {
+        llvm_unreachable("Unknown arm.neon function for CallInst upgrade.");
+      }
+      // Replace any uses of the old CallInst.
+      if (!CI->use_empty())
+        CI->replaceAllUsesWith(NewI);
+      CI->eraseFromParent();
+      return;
+    }
+
     bool isLoadH = false, isLoadL = false, isMovL = false;
     bool isMovSD = false, isShufPD = false;
     bool isUnpckhPD = false, isUnpcklPD = false;
@@ -344,11 +407,11 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
     if (isLoadH || isLoadL || isMovL || isMovSD || isShufPD ||
         isUnpckhPD || isUnpcklPD || isPunpckhQPD || isPunpcklQPD) {
       std::vector<Constant*> Idxs;
-      Value *Op0 = CI->getOperand(1);
+      Value *Op0 = CI->getArgOperand(0);
       ShuffleVectorInst *SI = NULL;
       if (isLoadH || isLoadL) {
         Value *Op1 = UndefValue::get(Op0->getType());
-        Value *Addr = new BitCastInst(CI->getOperand(2), 
+        Value *Addr = new BitCastInst(CI->getArgOperand(1), 
                                   Type::getDoublePtrTy(C),
                                       "upgraded.", CI);
         Value *Load = new LoadInst(Addr, "upgraded.", false, 8, CI);
@@ -381,7 +444,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
         SI = new ShuffleVectorInst(ZeroV, Op0, Mask, "upgraded.", CI);
       } else if (isMovSD ||
                  isUnpckhPD || isUnpcklPD || isPunpckhQPD || isPunpcklQPD) {
-        Value *Op1 = CI->getOperand(2);
+        Value *Op1 = CI->getArgOperand(1);
         if (isMovSD) {
           Idxs.push_back(ConstantInt::get(Type::getInt32Ty(C), 2));
           Idxs.push_back(ConstantInt::get(Type::getInt32Ty(C), 1));
@@ -395,8 +458,9 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
         Value *Mask = ConstantVector::get(Idxs);
         SI = new ShuffleVectorInst(Op0, Op1, Mask, "upgraded.", CI);
       } else if (isShufPD) {
-        Value *Op1 = CI->getOperand(2);
-        unsigned MaskVal = cast<ConstantInt>(CI->getOperand(3))->getZExtValue();
+        Value *Op1 = CI->getArgOperand(1);
+        unsigned MaskVal =
+                        cast<ConstantInt>(CI->getArgOperand(2))->getZExtValue();
         Idxs.push_back(ConstantInt::get(Type::getInt32Ty(C), MaskVal & 1));
         Idxs.push_back(ConstantInt::get(Type::getInt32Ty(C),
                                                ((MaskVal >> 1) & 1)+2));
@@ -416,8 +480,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       CI->eraseFromParent();
     } else if (F->getName() == "llvm.x86.sse41.pmulld") {
       // Upgrade this set of intrinsics into vector multiplies.
-      Instruction *Mul = BinaryOperator::CreateMul(CI->getOperand(1),
-                                                   CI->getOperand(2),
+      Instruction *Mul = BinaryOperator::CreateMul(CI->getArgOperand(0),
+                                                   CI->getArgOperand(1),
                                                    CI->getName(),
                                                    CI);
       // Fix up all the uses with our new multiply.
@@ -427,9 +491,9 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       // Remove upgraded multiply.
       CI->eraseFromParent();
     } else if (F->getName() == "llvm.x86.ssse3.palign.r") {
-      Value *Op1 = CI->getOperand(1);
-      Value *Op2 = CI->getOperand(2);
-      Value *Op3 = CI->getOperand(3);
+      Value *Op1 = CI->getArgOperand(0);
+      Value *Op2 = CI->getArgOperand(1);
+      Value *Op3 = CI->getArgOperand(2);
       unsigned shiftVal = cast<ConstantInt>(Op3)->getZExtValue();
       Value *Rep;
       IRBuilder<> Builder(C);
@@ -483,9 +547,9 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
       CI->eraseFromParent();
       
     } else if (F->getName() == "llvm.x86.ssse3.palign.r.128") {
-      Value *Op1 = CI->getOperand(1);
-      Value *Op2 = CI->getOperand(2);
-      Value *Op3 = CI->getOperand(3);
+      Value *Op1 = CI->getArgOperand(0);
+      Value *Op2 = CI->getArgOperand(1);
+      Value *Op3 = CI->getArgOperand(2);
       unsigned shiftVal = cast<ConstantInt>(Op3)->getZExtValue();
       Value *Rep;
       IRBuilder<> Builder(C);
@@ -546,6 +610,39 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
 
   switch (NewFn->getIntrinsicID()) {
   default:  llvm_unreachable("Unknown function for CallInst upgrade.");
+  case Intrinsic::arm_neon_vld1:
+  case Intrinsic::arm_neon_vld2:
+  case Intrinsic::arm_neon_vld3:
+  case Intrinsic::arm_neon_vld4:
+  case Intrinsic::arm_neon_vst1:
+  case Intrinsic::arm_neon_vst2:
+  case Intrinsic::arm_neon_vst3:
+  case Intrinsic::arm_neon_vst4:
+  case Intrinsic::arm_neon_vld2lane:
+  case Intrinsic::arm_neon_vld3lane:
+  case Intrinsic::arm_neon_vld4lane:
+  case Intrinsic::arm_neon_vst2lane:
+  case Intrinsic::arm_neon_vst3lane:
+  case Intrinsic::arm_neon_vst4lane: {
+    // Add a default alignment argument of 1.
+    SmallVector<Value*, 8> Operands(CS.arg_begin(), CS.arg_end());
+    Operands.push_back(ConstantInt::get(Type::getInt32Ty(C), 1));
+    CallInst *NewCI = CallInst::Create(NewFn, Operands.begin(), Operands.end(),
+                                       CI->getName(), CI);
+    NewCI->setTailCall(CI->isTailCall());
+    NewCI->setCallingConv(CI->getCallingConv());
+
+    //  Handle any uses of the old CallInst.
+    if (!CI->use_empty())
+      //  Replace all uses of the old call with the new cast which has the 
+      //  correct type.
+      CI->replaceAllUsesWith(NewCI);
+    
+    //  Clean up the old call now that it has been completely upgraded.
+    CI->eraseFromParent();
+    break;
+  }        
+
   case Intrinsic::x86_mmx_psll_d:
   case Intrinsic::x86_mmx_psll_q:
   case Intrinsic::x86_mmx_psll_w:
@@ -556,10 +653,10 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   case Intrinsic::x86_mmx_psrl_w: {
     Value *Operands[2];
     
-    Operands[0] = CI->getOperand(1);
+    Operands[0] = CI->getArgOperand(0);
     
     // Cast the second parameter to the correct type.
-    BitCastInst *BC = new BitCastInst(CI->getOperand(2), 
+    BitCastInst *BC = new BitCastInst(CI->getArgOperand(1), 
                                       NewFn->getFunctionType()->getParamType(1),
                                       "upgraded.", CI);
     Operands[1] = BC;
@@ -583,9 +680,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   case Intrinsic::ctlz:
   case Intrinsic::ctpop:
   case Intrinsic::cttz: {
-    //  Build a small vector of the 1..(N-1) operands, which are the 
-    //  parameters.
-    SmallVector<Value*, 8> Operands(CI->op_begin()+1, CI->op_end());
+    //  Build a small vector of the original arguments.
+    SmallVector<Value*, 8> Operands(CS.arg_begin(), CS.arg_end());
 
     //  Construct a new CallInst
     CallInst *NewCI = CallInst::Create(NewFn, Operands.begin(), Operands.end(),
@@ -620,7 +716,7 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   case Intrinsic::eh_selector:
   case Intrinsic::eh_typeid_for: {
     // Only the return type changed.
-    SmallVector<Value*, 8> Operands(CI->op_begin() + 1, CI->op_end());
+    SmallVector<Value*, 8> Operands(CS.arg_begin(), CS.arg_end());
     CallInst *NewCI = CallInst::Create(NewFn, Operands.begin(), Operands.end(),
                                        "upgraded." + CI->getName(), CI);
     NewCI->setTailCall(CI->isTailCall());
@@ -643,8 +739,8 @@ void llvm::UpgradeIntrinsicCall(CallInst *CI, Function *NewFn) {
   case Intrinsic::memset: {
     // Add isVolatile
     const llvm::Type *I1Ty = llvm::Type::getInt1Ty(CI->getContext());
-    Value *Operands[5] = { CI->getOperand(1), CI->getOperand(2),
-                           CI->getOperand(3), CI->getOperand(4),
+    Value *Operands[5] = { CI->getArgOperand(0), CI->getArgOperand(1),
+                           CI->getArgOperand(2), CI->getArgOperand(3),
                            llvm::ConstantInt::get(I1Ty, 0) };
     CallInst *NewCI = CallInst::Create(NewFn, Operands, Operands+5,
                                        CI->getName(), CI);
@@ -726,7 +822,8 @@ void llvm::CheckDebugInfoIntrinsics(Module *M) {
   if (Function *Declare = M->getFunction("llvm.dbg.declare")) {
     if (!Declare->use_empty()) {
       DbgDeclareInst *DDI = cast<DbgDeclareInst>(Declare->use_back());
-      if (!isa<MDNode>(DDI->getOperand(1)) ||!isa<MDNode>(DDI->getOperand(2))) {
+      if (!isa<MDNode>(DDI->getArgOperand(0)) ||
+          !isa<MDNode>(DDI->getArgOperand(1))) {
         while (!Declare->use_empty()) {
           CallInst *CI = cast<CallInst>(Declare->use_back());
           CI->eraseFromParent();

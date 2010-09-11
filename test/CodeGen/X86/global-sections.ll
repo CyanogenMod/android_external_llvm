@@ -20,7 +20,7 @@
 
 ; TODO: linux drops this into .rodata, we drop it into ".gnu.linkonce.r.G2"
 
-; DARWIN: .section __TEXT,__const_coal,coalesced
+; DARWIN: .section __TEXT,__const_coal,coalesced,pure_instructions
 ; DARWIN: _G2:
 ; DARWIN:    .long 42
 
@@ -85,7 +85,7 @@
 ; LINUX:   .byte	1
 ; LINUX:   .size	G6, 1
 
-; DARWIN:  .section __TEXT,__const_coal,coalesced
+; DARWIN:  .section __TEXT,__const_coal,coalesced,pure_instructions
 ; DARWIN:  .globl _G6
 ; DARWIN:  .weak_definition _G6
 ; DARWIN:_G6:
@@ -144,3 +144,17 @@
 ; LINUX: G10:
 ; LINUX:	.zero	400
 
+
+
+;; Zero sized objects should round up to 1 byte in zerofill directives.
+; rdar://7886017
+@G11 = global [0 x i32] zeroinitializer
+@G12 = global {} zeroinitializer
+@G13 = global { [0 x {}] } zeroinitializer
+
+; DARWIN: .globl _G11
+; DARWIN: .zerofill __DATA,__common,_G11,1,2
+; DARWIN: .globl _G12
+; DARWIN: .zerofill __DATA,__common,_G12,1,3
+; DARWIN: .globl _G13
+; DARWIN: .zerofill __DATA,__common,_G13,1,3

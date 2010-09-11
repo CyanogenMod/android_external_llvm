@@ -33,8 +33,8 @@ using namespace llvm;
 User::op_iterator CallSite::getCallee() const {
   Instruction *II(getInstruction());
   return isCall()
-    ? cast<CallInst>(II)->op_begin()
-    : cast<InvokeInst>(II)->op_end() - 3; // Skip BB, BB, Function
+    ? cast<CallInst>(II)->op_end() - 1 // Skip Callee
+    : cast<InvokeInst>(II)->op_end() - 3; // Skip BB, BB, Callee
 }
 
 //===----------------------------------------------------------------------===//
@@ -231,8 +231,7 @@ CallInst::~CallInst() {
 
 void CallInst::init(Value *Func, Value* const *Params, unsigned NumParams) {
   assert(NumOperands == NumParams+1 && "NumOperands not set up?");
-  Use *OL = OperandList;
-  OL[0] = Func;
+  Op<-1>() = Func;
 
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Func->getType())->getElementType());
@@ -245,16 +244,15 @@ void CallInst::init(Value *Func, Value* const *Params, unsigned NumParams) {
     assert((i >= FTy->getNumParams() || 
             FTy->getParamType(i) == Params[i]->getType()) &&
            "Calling a function with a bad signature!");
-    OL[i+1] = Params[i];
+    OperandList[i] = Params[i];
   }
 }
 
 void CallInst::init(Value *Func, Value *Actual1, Value *Actual2) {
   assert(NumOperands == 3 && "NumOperands not set up?");
-  Use *OL = OperandList;
-  OL[0] = Func;
-  OL[1] = Actual1;
-  OL[2] = Actual2;
+  Op<-1>() = Func;
+  Op<0>() = Actual1;
+  Op<1>() = Actual2;
 
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Func->getType())->getElementType());
@@ -273,9 +271,8 @@ void CallInst::init(Value *Func, Value *Actual1, Value *Actual2) {
 
 void CallInst::init(Value *Func, Value *Actual) {
   assert(NumOperands == 2 && "NumOperands not set up?");
-  Use *OL = OperandList;
-  OL[0] = Func;
-  OL[1] = Actual;
+  Op<-1>() = Func;
+  Op<0>() = Actual;
 
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Func->getType())->getElementType());
@@ -291,8 +288,7 @@ void CallInst::init(Value *Func, Value *Actual) {
 
 void CallInst::init(Value *Func) {
   assert(NumOperands == 1 && "NumOperands not set up?");
-  Use *OL = OperandList;
-  OL[0] = Func;
+  Op<-1>() = Func;
 
   const FunctionType *FTy =
     cast<FunctionType>(cast<PointerType>(Func->getType())->getElementType());
@@ -473,9 +469,10 @@ static Instruction *createMalloc(Instruction *InsertBefore,
 Instruction *CallInst::CreateMalloc(Instruction *InsertBefore,
                                     const Type *IntPtrTy, const Type *AllocTy,
                                     Value *AllocSize, Value *ArraySize,
+                                    Function * MallocF,
                                     const Twine &Name) {
   return createMalloc(InsertBefore, NULL, IntPtrTy, AllocTy, AllocSize,
-                      ArraySize, NULL, Name);
+                      ArraySize, MallocF, Name);
 }
 
 /// CreateMalloc - Generate the IR for a call to malloc:
@@ -527,8 +524,8 @@ static Instruction* createFree(Value* Source, Instruction *InsertBefore,
 }
 
 /// CreateFree - Generate the IR for a call to the builtin free function.
-void CallInst::CreateFree(Value* Source, Instruction *InsertBefore) {
-  createFree(Source, InsertBefore, NULL);
+Instruction * CallInst::CreateFree(Value* Source, Instruction *InsertBefore) {
+  return createFree(Source, InsertBefore, NULL);
 }
 
 /// CreateFree - Generate the IR for a call to the builtin free function.
@@ -828,8 +825,8 @@ static Value *getAISize(LLVMContext &Context, Value *Amt) {
   else {
     assert(!isa<BasicBlock>(Amt) &&
            "Passed basic block into allocation size parameter! Use other ctor");
-    assert(Amt->getType()->isIntegerTy(32) &&
-           "Allocation array size is not a 32-bit integer!");
+    assert(Amt->getType()->isIntegerTy() &&
+           "Allocation array size is not an integer!");
   }
   return Amt;
 }
@@ -894,6 +891,8 @@ AllocaInst::~AllocaInst() {
 
 void AllocaInst::setAlignment(unsigned Align) {
   assert((Align & (Align-1)) == 0 && "Alignment is not a power of 2!");
+  assert(Align <= MaximumAlignment &&
+         "Alignment is greater than MaximumAlignment!");
   setInstructionSubclassData(Log2_32(Align) + 1);
   assert(getAlignment() == Align && "Alignment representation error!");
 }
@@ -1029,8 +1028,11 @@ LoadInst::LoadInst(Value *Ptr, const char *Name, bool isVolatile,
 
 void LoadInst::setAlignment(unsigned Align) {
   assert((Align & (Align-1)) == 0 && "Alignment is not a power of 2!");
+  assert(Align <= MaximumAlignment &&
+         "Alignment is greater than MaximumAlignment!");
   setInstructionSubclassData((getSubclassDataFromInstruction() & 1) |
                              ((Log2_32(Align)+1)<<1));
+  assert(getAlignment() == Align && "Alignment representation error!");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1125,8 +1127,11 @@ StoreInst::StoreInst(Value *val, Value *addr, bool isVolatile,
 
 void StoreInst::setAlignment(unsigned Align) {
   assert((Align & (Align-1)) == 0 && "Alignment is not a power of 2!");
+  assert(Align <= MaximumAlignment &&
+         "Alignment is greater than MaximumAlignment!");
   setInstructionSubclassData((getSubclassDataFromInstruction() & 1) |
                              ((Log2_32(Align)+1) << 1));
+  assert(getAlignment() == Align && "Alignment representation error!");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1425,9 +1430,24 @@ bool ShuffleVectorInst::isValidOperands(const Value *V1, const Value *V2,
     return false;
   
   const VectorType *MaskTy = dyn_cast<VectorType>(Mask->getType());
-  if (!isa<Constant>(Mask) || MaskTy == 0 ||
-      !MaskTy->getElementType()->isIntegerTy(32))
+  if (MaskTy == 0 || !MaskTy->getElementType()->isIntegerTy(32))
     return false;
+
+  // Check to see if Mask is valid.
+  if (const ConstantVector *MV = dyn_cast<ConstantVector>(Mask)) {
+    const VectorType *VTy = cast<VectorType>(V1->getType());
+    for (unsigned i = 0, e = MV->getNumOperands(); i != e; ++i) {
+      if (ConstantInt* CI = dyn_cast<ConstantInt>(MV->getOperand(i))) {
+        if (CI->uge(VTy->getNumElements()*2))
+          return false;
+      } else if (!isa<UndefValue>(MV->getOperand(i))) {
+        return false;
+      }
+    }
+  }
+  else if (!isa<UndefValue>(Mask) && !isa<ConstantAggregateZero>(Mask))
+    return false;
+  
   return true;
 }
 
@@ -1456,7 +1476,7 @@ void InsertValueInst::init(Value *Agg, Value *Val, const unsigned *Idx,
   Op<0>() = Agg;
   Op<1>() = Val;
 
-  Indices.insert(Indices.end(), Idx, Idx + NumIdx);
+  Indices.append(Idx, Idx + NumIdx);
   setName(Name);
 }
 
@@ -1509,7 +1529,7 @@ void ExtractValueInst::init(const unsigned *Idx, unsigned NumIdx,
                             const Twine &Name) {
   assert(NumOperands == 1 && "NumOperands not initialized?");
 
-  Indices.insert(Indices.end(), Idx, Idx + NumIdx);
+  Indices.append(Idx, Idx + NumIdx);
   setName(Name);
 }
 
@@ -1562,43 +1582,29 @@ const Type* ExtractValueInst::getIndexedType(const Type *Agg,
 //                             BinaryOperator Class
 //===----------------------------------------------------------------------===//
 
-/// AdjustIType - Map Add, Sub, and Mul to FAdd, FSub, and FMul when the
-/// type is floating-point, to help provide compatibility with an older API.
-///
-static BinaryOperator::BinaryOps AdjustIType(BinaryOperator::BinaryOps iType,
-                                             const Type *Ty) {
-  // API compatibility: Adjust integer opcodes to floating-point opcodes.
-  if (Ty->isFPOrFPVectorTy()) {
-    if (iType == BinaryOperator::Add) iType = BinaryOperator::FAdd;
-    else if (iType == BinaryOperator::Sub) iType = BinaryOperator::FSub;
-    else if (iType == BinaryOperator::Mul) iType = BinaryOperator::FMul;
-  }
-  return iType;
-}
-
 BinaryOperator::BinaryOperator(BinaryOps iType, Value *S1, Value *S2,
                                const Type *Ty, const Twine &Name,
                                Instruction *InsertBefore)
-  : Instruction(Ty, AdjustIType(iType, Ty),
+  : Instruction(Ty, iType,
                 OperandTraits<BinaryOperator>::op_begin(this),
                 OperandTraits<BinaryOperator>::operands(this),
                 InsertBefore) {
   Op<0>() = S1;
   Op<1>() = S2;
-  init(AdjustIType(iType, Ty));
+  init(iType);
   setName(Name);
 }
 
 BinaryOperator::BinaryOperator(BinaryOps iType, Value *S1, Value *S2, 
                                const Type *Ty, const Twine &Name,
                                BasicBlock *InsertAtEnd)
-  : Instruction(Ty, AdjustIType(iType, Ty),
+  : Instruction(Ty, iType,
                 OperandTraits<BinaryOperator>::op_begin(this),
                 OperandTraits<BinaryOperator>::operands(this),
                 InsertAtEnd) {
   Op<0>() = S1;
   Op<1>() = S2;
-  init(AdjustIType(iType, Ty));
+  init(iType);
   setName(Name);
 }
 
@@ -1925,9 +1931,12 @@ bool CastInst::isLosslessCast() const {
 /// # bitcast i32* %x to i8*
 /// # bitcast <2 x i32> %x to <4 x i16> 
 /// # ptrtoint i32* %x to i32     ; on 32-bit plaforms only
-/// @brief Determine if a cast is a no-op.
-bool CastInst::isNoopCast(const Type *IntPtrTy) const {
-  switch (getOpcode()) {
+/// @brief Determine if the described cast is a no-op.
+bool CastInst::isNoopCast(Instruction::CastOps Opcode,
+                          const Type *SrcTy,
+                          const Type *DestTy,
+                          const Type *IntPtrTy) {
+  switch (Opcode) {
     default:
       assert(!"Invalid CastOp");
     case Instruction::Trunc:
@@ -1944,11 +1953,16 @@ bool CastInst::isNoopCast(const Type *IntPtrTy) const {
       return true;  // BitCast never modifies bits.
     case Instruction::PtrToInt:
       return IntPtrTy->getScalarSizeInBits() ==
-             getType()->getScalarSizeInBits();
+             DestTy->getScalarSizeInBits();
     case Instruction::IntToPtr:
       return IntPtrTy->getScalarSizeInBits() ==
-             getOperand(0)->getType()->getScalarSizeInBits();
+             SrcTy->getScalarSizeInBits();
   }
+}
+
+/// @brief Determine if a cast is a no-op.
+bool CastInst::isNoopCast(const Type *IntPtrTy) const {
+  return isNoopCast(getOpcode(), getOperand(0)->getType(), getType(), IntPtrTy);
 }
 
 /// This function determines if a pair of casts can be eliminated and what 
@@ -2013,6 +2027,14 @@ unsigned CastInst::isEliminableCastPair(
     { 99,99,99,99,99,99,99,99,99,13,99,12 }, // IntToPtr    |
     {  5, 5, 5, 6, 6, 5, 5, 6, 6,11, 5, 1 }, // BitCast    -+
   };
+  
+  // If either of the casts are a bitcast from scalar to vector, disallow the
+  // merging.
+  if ((firstOp == Instruction::BitCast &&
+       isa<VectorType>(SrcTy) != isa<VectorType>(MidTy)) ||
+      (secondOp == Instruction::BitCast &&
+       isa<VectorType>(MidTy) != isa<VectorType>(DstTy)))
+    return 0; // Disallowed
 
   int ElimCase = CastResults[firstOp-Instruction::CastOpsBegin]
                             [secondOp-Instruction::CastOpsBegin];

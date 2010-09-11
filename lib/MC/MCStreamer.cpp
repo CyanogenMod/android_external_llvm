@@ -15,7 +15,7 @@
 #include <cstdlib>
 using namespace llvm;
 
-MCStreamer::MCStreamer(MCContext &_Context) : Context(_Context), CurSection(0) {
+MCStreamer::MCStreamer(MCContext &Ctx) : Context(Ctx), CurSection(0) {
 }
 
 MCStreamer::~MCStreamer() {
@@ -48,7 +48,7 @@ void MCStreamer::EmitFill(uint64_t NumBytes, uint8_t FillValue,
     EmitValue(E, 1, AddrSpace);
 }
 
-/// EmitRawText - If this file is backed by a assembly streamer, this dumps
+/// EmitRawText - If this file is backed by an assembly streamer, this dumps
 /// the specified string in the output .s file.  This capability is
 /// indicated by the hasRawTextSupport() predicate.
 void MCStreamer::EmitRawText(StringRef String) {

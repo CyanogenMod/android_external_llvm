@@ -21,6 +21,35 @@ let TargetPrefix = "arm" in {  // All intrinsics start with "llvm.arm.".
 }
 
 //===----------------------------------------------------------------------===//
+// Saturating Arithmentic
+
+let TargetPrefix = "arm" in {  // All intrinsics start with "llvm.arm.".
+  def int_arm_qadd : GCCBuiltin<"__builtin_arm_qadd">,
+              Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty],
+                        [IntrNoMem, Commutative]>;
+  def int_arm_qsub : GCCBuiltin<"__builtin_arm_qsub">,
+              Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+  def int_arm_ssat : GCCBuiltin<"__builtin_arm_ssat">,
+              Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+  def int_arm_usat : GCCBuiltin<"__builtin_arm_usat">,
+              Intrinsic<[llvm_i32_ty], [llvm_i32_ty, llvm_i32_ty], [IntrNoMem]>;
+}
+
+//===----------------------------------------------------------------------===//
+// VFP
+
+let TargetPrefix = "arm" in {  // All intrinsics start with "llvm.arm.".
+  def int_arm_get_fpscr : GCCBuiltin<"__builtin_arm_get_fpscr">, 
+                         Intrinsic<[llvm_i32_ty], [], [IntrNoMem]>;
+  def int_arm_set_fpscr : GCCBuiltin<"__builtin_arm_set_fpscr">, 
+                         Intrinsic<[], [llvm_i32_ty], []>;
+  def int_arm_vcvtr     : Intrinsic<[llvm_float_ty], [llvm_anyfloat_ty],
+                                    [IntrNoMem]>;
+  def int_arm_vcvtru    : Intrinsic<[llvm_float_ty], [llvm_anyfloat_ty],
+                                    [IntrNoMem]>;
+}
+
+//===----------------------------------------------------------------------===//
 // Advanced SIMD (NEON)
 
 let TargetPrefix = "arm" in {  // All intrinsics start with "llvm.arm.".
@@ -31,9 +60,6 @@ let TargetPrefix = "arm" in {  // All intrinsics start with "llvm.arm.".
   class Neon_1Arg_Narrow_Intrinsic
     : Intrinsic<[llvm_anyvector_ty],
                 [LLVMExtendedElementVectorType<0>], [IntrNoMem]>;
-  class Neon_1Arg_Long_Intrinsic
-    : Intrinsic<[llvm_anyvector_ty],
-                [LLVMTruncatedElementVectorType<0>], [IntrNoMem]>;
   class Neon_2Arg_Intrinsic
     : Intrinsic<[llvm_anyvector_ty], [LLVMMatchType<0>, LLVMMatchType<0>],
                 [IntrNoMem]>;
@@ -293,8 +319,6 @@ def int_arm_neon_vmovn : Neon_1Arg_Narrow_Intrinsic;
 def int_arm_neon_vqmovns : Neon_1Arg_Narrow_Intrinsic;
 def int_arm_neon_vqmovnu : Neon_1Arg_Narrow_Intrinsic;
 def int_arm_neon_vqmovnsu : Neon_1Arg_Narrow_Intrinsic;
-def int_arm_neon_vmovls : Neon_1Arg_Long_Intrinsic;
-def int_arm_neon_vmovlu : Neon_1Arg_Long_Intrinsic;
 
 // Vector Table Lookup.
 // The first 1-4 arguments are the table.
@@ -315,62 +339,76 @@ def int_arm_neon_vtbx4 : Neon_Tbl6Arg_Intrinsic;
 let TargetPrefix = "arm" in {
 
   // De-interleaving vector loads from N-element structures.
+  // Source operands are the address and alignment.
   def int_arm_neon_vld1 : Intrinsic<[llvm_anyvector_ty],
-                                    [llvm_ptr_ty], [IntrReadArgMem]>;
+                                    [llvm_ptr_ty, llvm_i32_ty],
+                                    [IntrReadArgMem]>;
   def int_arm_neon_vld2 : Intrinsic<[llvm_anyvector_ty, LLVMMatchType<0>],
-                                    [llvm_ptr_ty], [IntrReadArgMem]>;
+                                    [llvm_ptr_ty, llvm_i32_ty],
+                                    [IntrReadArgMem]>;
   def int_arm_neon_vld3 : Intrinsic<[llvm_anyvector_ty, LLVMMatchType<0>,
                                      LLVMMatchType<0>],
-                                    [llvm_ptr_ty], [IntrReadArgMem]>;
+                                    [llvm_ptr_ty, llvm_i32_ty],
+                                    [IntrReadArgMem]>;
   def int_arm_neon_vld4 : Intrinsic<[llvm_anyvector_ty, LLVMMatchType<0>,
                                      LLVMMatchType<0>, LLVMMatchType<0>],
-                                    [llvm_ptr_ty], [IntrReadArgMem]>;
+                                    [llvm_ptr_ty, llvm_i32_ty],
+                                    [IntrReadArgMem]>;
 
   // Vector load N-element structure to one lane.
+  // Source operands are: the address, the N input vectors (since only one
+  // lane is assigned), the lane number, and the alignment.
   def int_arm_neon_vld2lane : Intrinsic<[llvm_anyvector_ty, LLVMMatchType<0>],
                                         [llvm_ptr_ty, LLVMMatchType<0>,
-                                         LLVMMatchType<0>, llvm_i32_ty],
-                                        [IntrReadArgMem]>;
+                                         LLVMMatchType<0>, llvm_i32_ty,
+                                         llvm_i32_ty], [IntrReadArgMem]>;
   def int_arm_neon_vld3lane : Intrinsic<[llvm_anyvector_ty, LLVMMatchType<0>,
                                          LLVMMatchType<0>],
                                         [llvm_ptr_ty, LLVMMatchType<0>,
                                          LLVMMatchType<0>, LLVMMatchType<0>,
-                                         llvm_i32_ty], [IntrReadArgMem]>;
+                                         llvm_i32_ty, llvm_i32_ty],
+                                        [IntrReadArgMem]>;
   def int_arm_neon_vld4lane : Intrinsic<[llvm_anyvector_ty, LLVMMatchType<0>,
                                          LLVMMatchType<0>, LLVMMatchType<0>],
                                         [llvm_ptr_ty, LLVMMatchType<0>,
                                          LLVMMatchType<0>, LLVMMatchType<0>,
-                                         LLVMMatchType<0>, llvm_i32_ty],
-                                        [IntrReadArgMem]>;
+                                         LLVMMatchType<0>, llvm_i32_ty,
+                                         llvm_i32_ty], [IntrReadArgMem]>;
 
   // Interleaving vector stores from N-element structures.
+  // Source operands are: the address, the N vectors, and the alignment.
   def int_arm_neon_vst1 : Intrinsic<[],
-                                    [llvm_ptr_ty, llvm_anyvector_ty],
-                                    [IntrWriteArgMem]>;
+                                    [llvm_ptr_ty, llvm_anyvector_ty,
+                                     llvm_i32_ty], [IntrReadWriteArgMem]>;
   def int_arm_neon_vst2 : Intrinsic<[],
                                     [llvm_ptr_ty, llvm_anyvector_ty,
-                                     LLVMMatchType<0>], [IntrWriteArgMem]>;
+                                     LLVMMatchType<0>, llvm_i32_ty],
+                                    [IntrReadWriteArgMem]>;
   def int_arm_neon_vst3 : Intrinsic<[],
                                     [llvm_ptr_ty, llvm_anyvector_ty,
-                                     LLVMMatchType<0>, LLVMMatchType<0>],
-                                     [IntrWriteArgMem]>;
+                                     LLVMMatchType<0>, LLVMMatchType<0>,
+                                     llvm_i32_ty], [IntrReadWriteArgMem]>;
   def int_arm_neon_vst4 : Intrinsic<[],
                                     [llvm_ptr_ty, llvm_anyvector_ty,
                                      LLVMMatchType<0>, LLVMMatchType<0>,
-                                     LLVMMatchType<0>], [IntrWriteArgMem]>;
+                                     LLVMMatchType<0>, llvm_i32_ty],
+                                    [IntrReadWriteArgMem]>;
 
   // Vector store N-element structure from one lane.
+  // Source operands are: the address, the N vectors, the lane number, and
+  // the alignment.
   def int_arm_neon_vst2lane : Intrinsic<[],
                                         [llvm_ptr_ty, llvm_anyvector_ty,
-                                         LLVMMatchType<0>, llvm_i32_ty],
-                                        [IntrWriteArgMem]>;
+                                         LLVMMatchType<0>, llvm_i32_ty,
+                                         llvm_i32_ty], [IntrReadWriteArgMem]>;
   def int_arm_neon_vst3lane : Intrinsic<[],
                                         [llvm_ptr_ty, llvm_anyvector_ty,
                                          LLVMMatchType<0>, LLVMMatchType<0>,
-                                         llvm_i32_ty], [IntrWriteArgMem]>;
+                                         llvm_i32_ty, llvm_i32_ty],
+                                        [IntrReadWriteArgMem]>;
   def int_arm_neon_vst4lane : Intrinsic<[],
                                         [llvm_ptr_ty, llvm_anyvector_ty,
                                          LLVMMatchType<0>, LLVMMatchType<0>,
-                                         LLVMMatchType<0>, llvm_i32_ty],
-                                        [IntrWriteArgMem]>;
+                                         LLVMMatchType<0>, llvm_i32_ty,
+                                         llvm_i32_ty], [IntrReadWriteArgMem]>;
 }

@@ -36,7 +36,7 @@ namespace {
 
   public:
     static char ID; // Pass identification, replacement for typeid
-    DeadMachineInstructionElim() : MachineFunctionPass(&ID) {}
+    DeadMachineInstructionElim() : MachineFunctionPass(ID) {}
 
   private:
     bool isDead(const MachineInstr *MI) const;
@@ -44,9 +44,8 @@ namespace {
 }
 char DeadMachineInstructionElim::ID = 0;
 
-static RegisterPass<DeadMachineInstructionElim>
-Y("dead-mi-elimination",
-  "Remove dead machine instructions");
+INITIALIZE_PASS(DeadMachineInstructionElim, "dead-mi-elimination",
+                "Remove dead machine instructions", false, false);
 
 FunctionPass *llvm::createDeadMachineInstructionElimPass() {
   return new DeadMachineInstructionElim();

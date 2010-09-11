@@ -83,7 +83,7 @@ MSP430TargetLowering::MSP430TargetLowering(MSP430TargetMachine &tm) :
 
   setStackPointerRegisterToSaveRestore(MSP430::SPW);
   setBooleanContents(ZeroOrOneBooleanContent);
-  setSchedulingPreference(SchedulingForLatency);
+  setSchedulingPreference(Sched::Latency);
 
   // We have post-incremented loads / stores.
   setIndexedLoadAction(ISD::POST_INC, MVT::i8, Legal);
@@ -110,8 +110,8 @@ MSP430TargetLowering::MSP430TargetLowering(MSP430TargetMachine &tm) :
   setOperationAction(ISD::ROTR,             MVT::i16,   Expand);
   setOperationAction(ISD::GlobalAddress,    MVT::i16,   Custom);
   setOperationAction(ISD::ExternalSymbol,   MVT::i16,   Custom);
+  setOperationAction(ISD::BlockAddress,     MVT::i16,   Custom);
   setOperationAction(ISD::BR_JT,            MVT::Other, Expand);
-  setOperationAction(ISD::BRIND,            MVT::Other, Expand);
   setOperationAction(ISD::BR_CC,            MVT::i8,    Custom);
   setOperationAction(ISD::BR_CC,            MVT::i16,   Custom);
   setOperationAction(ISD::BRCOND,           MVT::Other, Expand);
@@ -183,6 +183,7 @@ SDValue MSP430TargetLowering::LowerOperation(SDValue Op,
   case ISD::SRL:
   case ISD::SRA:              return LowerShifts(Op, DAG);
   case ISD::GlobalAddress:    return LowerGlobalAddress(Op, DAG);
+  case ISD::BlockAddress:     return LowerBlockAddress(Op, DAG);
   case ISD::ExternalSymbol:   return LowerExternalSymbol(Op, DAG);
   case ISD::SETCC:            return LowerSETCC(Op, DAG);
   case ISD::BR_CC:            return LowerBR_CC(Op, DAG);
@@ -277,6 +278,7 @@ MSP430TargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                                 CallingConv::ID CallConv, bool isVarArg,
                                 bool &isTailCall,
                                 const SmallVectorImpl<ISD::OutputArg> &Outs,
+                                const SmallVectorImpl<SDValue> &OutVals,
                                 const SmallVectorImpl<ISD::InputArg> &Ins,
                                 DebugLoc dl, SelectionDAG &DAG,
                                 SmallVectorImpl<SDValue> &InVals) const {
@@ -289,7 +291,7 @@ MSP430TargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   case CallingConv::Fast:
   case CallingConv::C:
     return LowerCCCCallTo(Chain, Callee, CallConv, isVarArg, isTailCall,
-                          Outs, Ins, dl, DAG, InVals);
+                          Outs, OutVals, Ins, dl, DAG, InVals);
   case CallingConv::MSP430_INTR:
     report_fatal_error("ISRs cannot be called directly");
     return SDValue();
@@ -368,7 +370,7 @@ MSP430TargetLowering::LowerCCCArguments(SDValue Chain,
              << "\n";
       }
       // Create the frame index object for this incoming parameter...
-      int FI = MFI->CreateFixedObject(ObjSize, VA.getLocMemOffset(), true, false);
+      int FI = MFI->CreateFixedObject(ObjSize, VA.getLocMemOffset(), true);
 
       // Create the SelectionDAG nodes corresponding to a load
       //from this parameter
@@ -386,6 +388,7 @@ SDValue
 MSP430TargetLowering::LowerReturn(SDValue Chain,
                                   CallingConv::ID CallConv, bool isVarArg,
                                   const SmallVectorImpl<ISD::OutputArg> &Outs,
+                                  const SmallVectorImpl<SDValue> &OutVals,
                                   DebugLoc dl, SelectionDAG &DAG) const {
 
   // CCValAssign - represent the assignment of the return value to a location
@@ -420,7 +423,7 @@ MSP430TargetLowering::LowerReturn(SDValue Chain,
     assert(VA.isRegLoc() && "Can only return in registers!");
 
     Chain = DAG.getCopyToReg(Chain, dl, VA.getLocReg(),
-                             Outs[i].Val, Flag);
+                             OutVals[i], Flag);
 
     // Guarantee that all emitted copies are stuck together,
     // avoiding something bad.
@@ -446,6 +449,7 @@ MSP430TargetLowering::LowerCCCCallTo(SDValue Chain, SDValue Callee,
                                      bool isTailCall,
                                      const SmallVectorImpl<ISD::OutputArg>
                                        &Outs,
+                                     const SmallVectorImpl<SDValue> &OutVals,
                                      const SmallVectorImpl<ISD::InputArg> &Ins,
                                      DebugLoc dl, SelectionDAG &DAG,
                                      SmallVectorImpl<SDValue> &InVals) const {
@@ -470,7 +474,7 @@ MSP430TargetLowering::LowerCCCCallTo(SDValue Chain, SDValue Callee,
   for (unsigned i = 0, e = ArgLocs.size(); i != e; ++i) {
     CCValAssign &VA = ArgLocs[i];
 
-    SDValue Arg = Outs[i].Val;
+    SDValue Arg = OutVals[i];
 
     // Promote the value if needed.
     switch (VA.getLocInfo()) {
@@ -528,7 +532,7 @@ MSP430TargetLowering::LowerCCCCallTo(SDValue Chain, SDValue Callee,
   // turn it into a TargetGlobalAddress node so that legalize doesn't hack it.
   // Likewise ExternalSymbol -> TargetExternalSymbol.
   if (GlobalAddressSDNode *G = dyn_cast<GlobalAddressSDNode>(Callee))
-    Callee = DAG.getTargetGlobalAddress(G->getGlobal(), MVT::i16);
+    Callee = DAG.getTargetGlobalAddress(G->getGlobal(), dl, MVT::i16);
   else if (ExternalSymbolSDNode *E = dyn_cast<ExternalSymbolSDNode>(Callee))
     Callee = DAG.getTargetExternalSymbol(E->getSymbol(), MVT::i16);
 
@@ -641,7 +645,8 @@ SDValue MSP430TargetLowering::LowerGlobalAddress(SDValue Op,
   int64_t Offset = cast<GlobalAddressSDNode>(Op)->getOffset();
 
   // Create the TargetGlobalAddress node, folding in the constant offset.
-  SDValue Result = DAG.getTargetGlobalAddress(GV, getPointerTy(), Offset);
+  SDValue Result = DAG.getTargetGlobalAddress(GV, Op.getDebugLoc(),
+                                              getPointerTy(), Offset);
   return DAG.getNode(MSP430ISD::Wrapper, Op.getDebugLoc(),
                      getPointerTy(), Result);
 }
@@ -651,6 +656,15 @@ SDValue MSP430TargetLowering::LowerExternalSymbol(SDValue Op,
   DebugLoc dl = Op.getDebugLoc();
   const char *Sym = cast<ExternalSymbolSDNode>(Op)->getSymbol();
   SDValue Result = DAG.getTargetExternalSymbol(Sym, getPointerTy());
+
+  return DAG.getNode(MSP430ISD::Wrapper, dl, getPointerTy(), Result);;
+}
+
+SDValue MSP430TargetLowering::LowerBlockAddress(SDValue Op,
+                                                SelectionDAG &DAG) const {
+  DebugLoc dl = Op.getDebugLoc();
+  const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
+  SDValue Result = DAG.getBlockAddress(BA, getPointerTy(), /*isTarget=*/true);
 
   return DAG.getNode(MSP430ISD::Wrapper, dl, getPointerTy(), Result);;
 }
@@ -752,7 +766,6 @@ SDValue MSP430TargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const {
   return DAG.getNode(MSP430ISD::BR_CC, dl, Op.getValueType(),
                      Chain, Dest, TargetCC, Flag);
 }
-
 
 SDValue MSP430TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
   SDValue LHS   = Op.getOperand(0);
@@ -879,7 +892,7 @@ MSP430TargetLowering::getReturnAddressFrameIndex(SelectionDAG &DAG) const {
     // Set up a frame object for the return address.
     uint64_t SlotSize = TD->getPointerSize();
     ReturnAddrIndex = MF.getFrameInfo()->CreateFixedObject(SlotSize, -SlotSize,
-                                                           true, false);
+                                                           true);
     FuncInfo->setRAIndex(ReturnAddrIndex);
   }
 
@@ -888,6 +901,9 @@ MSP430TargetLowering::getReturnAddressFrameIndex(SelectionDAG &DAG) const {
 
 SDValue MSP430TargetLowering::LowerRETURNADDR(SDValue Op,
                                               SelectionDAG &DAG) const {
+  MachineFrameInfo *MFI = DAG.getMachineFunction().getFrameInfo();
+  MFI->setReturnAddressIsTaken(true);
+
   unsigned Depth = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
   DebugLoc dl = Op.getDebugLoc();
 
@@ -911,6 +927,7 @@ SDValue MSP430TargetLowering::LowerFRAMEADDR(SDValue Op,
                                              SelectionDAG &DAG) const {
   MachineFrameInfo *MFI = DAG.getMachineFunction().getFrameInfo();
   MFI->setFrameAddressIsTaken(true);
+
   EVT VT = Op.getValueType();
   DebugLoc dl = Op.getDebugLoc();  // FIXME probably not meaningful
   unsigned Depth = cast<ConstantSDNode>(Op.getOperand(0))->getZExtValue();
@@ -1007,8 +1024,7 @@ bool MSP430TargetLowering::isZExtFree(EVT VT1, EVT VT2) const {
 
 MachineBasicBlock*
 MSP430TargetLowering::EmitShiftInstr(MachineInstr *MI,
-                                     MachineBasicBlock *BB,
-                   DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const {
+                                     MachineBasicBlock *BB) const {
   MachineFunction *F = BB->getParent();
   MachineRegisterInfo &RI = F->getRegInfo();
   DebugLoc dl = MI->getDebugLoc();
@@ -1058,12 +1074,10 @@ MSP430TargetLowering::EmitShiftInstr(MachineInstr *MI,
 
   // Update machine-CFG edges by transferring all successors of the current
   // block to the block containing instructions after shift.
-  RemBB->transferSuccessors(BB);
-
-  // Inform sdisel of the edge changes.
-  for (MachineBasicBlock::succ_iterator SI = BB->succ_begin(),
-         SE = BB->succ_end(); SI != SE; ++SI)
-    EM->insert(std::make_pair(*SI, RemBB));
+  RemBB->splice(RemBB->begin(), BB,
+                llvm::next(MachineBasicBlock::iterator(MI)),
+                BB->end());
+  RemBB->transferSuccessorsAndUpdatePHIs(BB);
 
   // Add adges BB => LoopBB => RemBB, BB => RemBB, LoopBB => LoopBB
   BB->addSuccessor(LoopBB);
@@ -1109,24 +1123,23 @@ MSP430TargetLowering::EmitShiftInstr(MachineInstr *MI,
 
   // RemBB:
   // DestReg = phi [%SrcReg, BB], [%ShiftReg, LoopBB]
-  BuildMI(RemBB, dl, TII.get(MSP430::PHI), DstReg)
+  BuildMI(*RemBB, RemBB->begin(), dl, TII.get(MSP430::PHI), DstReg)
     .addReg(SrcReg).addMBB(BB)
     .addReg(ShiftReg2).addMBB(LoopBB);
 
-  F->DeleteMachineInstr(MI);   // The pseudo instruction is gone now.
+  MI->eraseFromParent();   // The pseudo instruction is gone now.
   return RemBB;
 }
 
 MachineBasicBlock*
 MSP430TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
-                                                  MachineBasicBlock *BB,
-                   DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) const {
+                                                  MachineBasicBlock *BB) const {
   unsigned Opc = MI->getOpcode();
 
   if (Opc == MSP430::Shl8 || Opc == MSP430::Shl16 ||
       Opc == MSP430::Sra8 || Opc == MSP430::Sra16 ||
       Opc == MSP430::Srl8 || Opc == MSP430::Srl16)
-    return EmitShiftInstr(MI, BB, EM);
+    return EmitShiftInstr(MI, BB);
 
   const TargetInstrInfo &TII = *getTargetMachine().getInstrInfo();
   DebugLoc dl = MI->getDebugLoc();
@@ -1152,21 +1165,21 @@ MSP430TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   MachineFunction *F = BB->getParent();
   MachineBasicBlock *copy0MBB = F->CreateMachineBasicBlock(LLVM_BB);
   MachineBasicBlock *copy1MBB = F->CreateMachineBasicBlock(LLVM_BB);
-  BuildMI(BB, dl, TII.get(MSP430::JCC))
-    .addMBB(copy1MBB)
-    .addImm(MI->getOperand(3).getImm());
   F->insert(I, copy0MBB);
   F->insert(I, copy1MBB);
-  // Inform sdisel of the edge changes.
-  for (MachineBasicBlock::succ_iterator SI = BB->succ_begin(), 
-         SE = BB->succ_end(); SI != SE; ++SI)
-    EM->insert(std::make_pair(*SI, copy1MBB));
   // Update machine-CFG edges by transferring all successors of the current
   // block to the new block which will contain the Phi node for the select.
-  copy1MBB->transferSuccessors(BB);
+  copy1MBB->splice(copy1MBB->begin(), BB,
+                   llvm::next(MachineBasicBlock::iterator(MI)),
+                   BB->end());
+  copy1MBB->transferSuccessorsAndUpdatePHIs(BB);
   // Next, add the true and fallthrough blocks as its successors.
   BB->addSuccessor(copy0MBB);
   BB->addSuccessor(copy1MBB);
+
+  BuildMI(BB, dl, TII.get(MSP430::JCC))
+    .addMBB(copy1MBB)
+    .addImm(MI->getOperand(3).getImm());
 
   //  copy0MBB:
   //   %FalseValue = ...
@@ -1180,11 +1193,11 @@ MSP430TargetLowering::EmitInstrWithCustomInserter(MachineInstr *MI,
   //   %Result = phi [ %FalseValue, copy0MBB ], [ %TrueValue, thisMBB ]
   //  ...
   BB = copy1MBB;
-  BuildMI(BB, dl, TII.get(MSP430::PHI),
+  BuildMI(*BB, BB->begin(), dl, TII.get(MSP430::PHI),
           MI->getOperand(0).getReg())
     .addReg(MI->getOperand(2).getReg()).addMBB(copy0MBB)
     .addReg(MI->getOperand(1).getReg()).addMBB(thisMBB);
 
-  F->DeleteMachineInstr(MI);   // The pseudo instruction is gone now.
+  MI->eraseFromParent();   // The pseudo instruction is gone now.
   return BB;
 }

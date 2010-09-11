@@ -36,41 +36,38 @@ def LdStMulFrm    : Format<10>;
 def LdStExFrm     : Format<11>;
 
 def ArithMiscFrm  : Format<12>;
-def ExtFrm        : Format<13>;
+def SatFrm        : Format<13>;
+def ExtFrm        : Format<14>;
 
-def VFPUnaryFrm   : Format<14>;
-def VFPBinaryFrm  : Format<15>;
-def VFPConv1Frm   : Format<16>;
-def VFPConv2Frm   : Format<17>;
-def VFPConv3Frm   : Format<18>;
-def VFPConv4Frm   : Format<19>;
-def VFPConv5Frm   : Format<20>;
-def VFPLdStFrm    : Format<21>;
-def VFPLdStMulFrm : Format<22>;
-def VFPMiscFrm    : Format<23>;
+def VFPUnaryFrm   : Format<15>;
+def VFPBinaryFrm  : Format<16>;
+def VFPConv1Frm   : Format<17>;
+def VFPConv2Frm   : Format<18>;
+def VFPConv3Frm   : Format<19>;
+def VFPConv4Frm   : Format<20>;
+def VFPConv5Frm   : Format<21>;
+def VFPLdStFrm    : Format<22>;
+def VFPLdStMulFrm : Format<23>;
+def VFPMiscFrm    : Format<24>;
 
-def ThumbFrm      : Format<24>;
+def ThumbFrm      : Format<25>;
+def MiscFrm       : Format<26>;
 
-def NEONFrm       : Format<25>;
-def NEONGetLnFrm  : Format<26>;
-def NEONSetLnFrm  : Format<27>;
-def NEONDupFrm    : Format<28>;
-
-def MiscFrm       : Format<29>;
-def ThumbMiscFrm  : Format<30>;
-
-def NLdStFrm       : Format<31>;
-def N1RegModImmFrm : Format<32>;
-def N2RegFrm       : Format<33>;
-def NVCVTFrm       : Format<34>;
-def NVDupLnFrm     : Format<35>;
-def N2RegVShLFrm   : Format<36>;
-def N2RegVShRFrm   : Format<37>;
-def N3RegFrm       : Format<38>;
-def N3RegVShFrm    : Format<39>;
-def NVExtFrm       : Format<40>;
-def NVMulSLFrm     : Format<41>;
-def NVTBLFrm       : Format<42>;
+def NGetLnFrm     : Format<27>;
+def NSetLnFrm     : Format<28>;
+def NDupFrm       : Format<29>;
+def NLdStFrm      : Format<30>;
+def N1RegModImmFrm: Format<31>;
+def N2RegFrm      : Format<32>;
+def NVCVTFrm      : Format<33>;
+def NVDupLnFrm    : Format<34>;
+def N2RegVShLFrm  : Format<35>;
+def N2RegVShRFrm  : Format<36>;
+def N3RegFrm      : Format<37>;
+def N3RegVShFrm   : Format<38>;
+def NVExtFrm      : Format<39>;
+def NVMulSLFrm    : Format<40>;
+def NVTBLFrm      : Format<41>;
 
 // Misc flags.
 
@@ -141,11 +138,17 @@ def VFPNeonDomain : Domain<3>; // Instructions in both VFP & Neon domains
 // ARM special operands.
 //
 
+def CondCodeOperand : AsmOperandClass {
+  let Name = "CondCode";
+  let SuperClasses = [];
+}
+
 // ARM Predicate operand. Default to 14 = always (AL). Second part is CC
 // register whose default is 0 (no register).
 def pred : PredicateOperand<OtherVT, (ops i32imm, CCR),
                                      (ops (i32 14), (i32 zero_reg))> {
   let PrintMethod = "printPredicateOperand";
+  let ParserMatchClass = CondCodeOperand;
 }
 
 // Conditional code result for instructions whose 's' bit is set, e.g. subs.
@@ -228,7 +231,7 @@ class PseudoInst<dag oops, dag iops, InstrItinClass itin,
             "", itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString   = asm;
+  let AsmString = asm;
   let Pattern = pattern;
 }
 
@@ -240,7 +243,7 @@ class I<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, im, f, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = !con(iops, (ins pred:$p));
-  let AsmString   = !strconcat(opc, !strconcat("${p}", asm));
+  let AsmString = !strconcat(opc, !strconcat("${p}", asm));
   let Pattern = pattern;
   list<Predicate> Predicates = [IsARM];
 }
@@ -252,7 +255,7 @@ class InoP<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, im, f, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString   = !strconcat(opc, asm);
+  let AsmString = !strconcat(opc, asm);
   let Pattern = pattern;
   let isPredicable = 0;
   list<Predicate> Predicates = [IsARM];
@@ -268,7 +271,7 @@ class sI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, im, f, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = !con(iops, (ins pred:$p, cc_out:$s));
-  let AsmString   = !strconcat(opc, !strconcat("${p}${s}", asm));
+  let AsmString = !strconcat(opc, !strconcat("${p}${s}", asm));
   let Pattern = pattern;
   list<Predicate> Predicates = [IsARM];
 }
@@ -280,7 +283,7 @@ class XI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, im, f, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString   = asm;
+  let AsmString = asm;
   let Pattern = pattern;
   list<Predicate> Predicates = [IsARM];
 }
@@ -317,7 +320,7 @@ class ABXI<bits<4> opcod, dag oops, dag iops, InstrItinClass itin,
 }
 class ABXIx2<dag oops, dag iops, InstrItinClass itin,
              string asm, list<dag> pattern>
-  : XI<oops, iops, AddrModeNone, Size8Bytes, IndexModeNone, BrMiscFrm, itin,
+  : XI<oops, iops, AddrModeNone, Size8Bytes, IndexModeNone, Pseudo, itin,
        asm, "", pattern>;
 
 // BR_JT instructions
@@ -959,7 +962,7 @@ class ThumbI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstThumb<am, sz, IndexModeNone, ThumbFrm, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString   = asm;
+  let AsmString = asm;
   let Pattern = pattern;
   list<Predicate> Predicates = [IsThumb];
 }
@@ -995,7 +998,7 @@ class Thumb1I<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstThumb<am, sz, IndexModeNone, ThumbFrm, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString   = asm;
+  let AsmString = asm;
   let Pattern = pattern;
   list<Predicate> Predicates = [IsThumb1Only];
 }
@@ -1140,7 +1143,7 @@ class Thumb2sI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, IndexModeNone, ThumbFrm, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = !con(iops, (ins pred:$p, cc_out:$s));
-  let AsmString   = !strconcat(opc, !strconcat("${s}${p}", asm));
+  let AsmString = !strconcat(opc, !strconcat("${s}${p}", asm));
   let Pattern = pattern;
   list<Predicate> Predicates = [IsThumb2];
 }
@@ -1152,7 +1155,7 @@ class Thumb2XI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, IndexModeNone, ThumbFrm, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString   = asm;
+  let AsmString = asm;
   let Pattern = pattern;
   list<Predicate> Predicates = [IsThumb2];
 }
@@ -1163,7 +1166,7 @@ class ThumbXI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, IndexModeNone, ThumbFrm, GenericDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString   = asm;
+  let AsmString = asm;
   let Pattern = pattern;
   list<Predicate> Predicates = [IsThumb1Only];
 }
@@ -1280,7 +1283,7 @@ class VFPI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, im, f, VFPDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = !con(iops, (ins pred:$p));
-  let AsmString   = !strconcat(opc, !strconcat("${p}", asm));
+  let AsmString = !strconcat(opc, !strconcat("${p}", asm));
   let Pattern = pattern;
   list<Predicate> Predicates = [HasVFP2];
 }
@@ -1292,7 +1295,7 @@ class VFPXI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   : InstARM<am, sz, im, f, VFPDomain, cstr, itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString   = asm;
+  let AsmString = asm;
   let Pattern = pattern;
   list<Predicate> Predicates = [HasVFP2];
 }
@@ -1531,6 +1534,14 @@ class NLdSt<bit op23, bits<2> op21_20, bits<4> op11_8, bits<4> op7_4,
   let Inst{7-4} = op7_4;
 }
 
+class PseudoNLdSt<dag oops, dag iops, InstrItinClass itin, string cstr>
+  : InstARM<AddrMode6, Size4Bytes, IndexModeNone, Pseudo, NeonDomain, cstr,
+            itin> {
+  let OutOperandList = oops;
+  let InOperandList = !con(iops, (ins pred:$p));
+  list<Predicate> Predicates = [HasNEON];
+}
+
 class NDataI<dag oops, dag iops, Format f, InstrItinClass itin,
              string opc, string dt, string asm, string cstr, list<dag> pattern>
   : NeonI<oops, iops, AddrModeNone, IndexModeNone, f, itin, opc, dt, asm, cstr,
@@ -1653,17 +1664,17 @@ class NVLaneOp<bits<8> opcod1, bits<4> opcod2, bits<2> opcod3,
 class NVGetLane<bits<8> opcod1, bits<4> opcod2, bits<2> opcod3,
                 dag oops, dag iops, InstrItinClass itin,
                 string opc, string dt, string asm, list<dag> pattern>
-  : NVLaneOp<opcod1, opcod2, opcod3, oops, iops, NEONGetLnFrm, itin,
+  : NVLaneOp<opcod1, opcod2, opcod3, oops, iops, NGetLnFrm, itin,
              opc, dt, asm, pattern>;
 class NVSetLane<bits<8> opcod1, bits<4> opcod2, bits<2> opcod3,
                 dag oops, dag iops, InstrItinClass itin,
                 string opc, string dt, string asm, list<dag> pattern>
-  : NVLaneOp<opcod1, opcod2, opcod3, oops, iops, NEONSetLnFrm, itin,
+  : NVLaneOp<opcod1, opcod2, opcod3, oops, iops, NSetLnFrm, itin,
              opc, dt, asm, pattern>;
 class NVDup<bits<8> opcod1, bits<4> opcod2, bits<2> opcod3,
             dag oops, dag iops, InstrItinClass itin,
             string opc, string dt, string asm, list<dag> pattern>
-  : NVLaneOp<opcod1, opcod2, opcod3, oops, iops, NEONDupFrm, itin,
+  : NVLaneOp<opcod1, opcod2, opcod3, oops, iops, NDupFrm, itin,
              opc, dt, asm, pattern>;
 
 // Vector Duplicate Lane (from scalar to all elements)

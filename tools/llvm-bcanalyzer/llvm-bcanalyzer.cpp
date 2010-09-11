@@ -46,9 +46,6 @@ using namespace llvm;
 static cl::opt<std::string>
   InputFilename(cl::Positional, cl::desc("<input bitcode>"), cl::init("-"));
 
-static cl::opt<std::string>
-  OutputFilename("-o", cl::init("-"), cl::desc("<output file>"));
-
 static cl::opt<bool> Dump("dump", cl::desc("Dump low level bitcode trace"));
 
 //===----------------------------------------------------------------------===//
@@ -259,11 +256,11 @@ static const char *GetCodeName(unsigned CodeID, unsigned BlockID,
   case bitc::METADATA_BLOCK_ID:
     switch(CodeID) {
     default:return 0;
-    case bitc::METADATA_STRING:      return "MDSTRING";
-    case bitc::METADATA_NODE:        return "MDNODE";
-    case bitc::METADATA_FN_NODE:     return "FN_MDNODE";
+    case bitc::METADATA_STRING:      return "METADATA_STRING";
+    case bitc::METADATA_NODE:        return "METADATA_NODE";
+    case bitc::METADATA_FN_NODE:     return "METADATA_FN_NODE";
     case bitc::METADATA_NAME:        return "METADATA_NAME";
-    case bitc::METADATA_NAMED_NODE:  return "NAMEDMDNODE";
+    case bitc::METADATA_NAMED_NODE:  return "METADATA_NAMED_NODE";
     case bitc::METADATA_KIND:        return "METADATA_KIND";
     case bitc::METADATA_ATTACHMENT:  return "METADATA_ATTACHMENT";
     }

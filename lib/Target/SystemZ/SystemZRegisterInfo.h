@@ -1,4 +1,4 @@
-//===- SystemZRegisterInfo.h - SystemZ Register Information Impl ----*- C++ -*-===//
+//===-- SystemZRegisterInfo.h - SystemZ Register Information ----*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -19,15 +19,6 @@
 
 namespace llvm {
 
-namespace SystemZ {
-  /// SubregIndex - The index of various sized subregister classes. Note that
-  /// these indices must be kept in sync with the class indices in the
-  /// SystemZRegisterInfo.td file.
-  enum SubregIndex {
-    SUBREG_32BIT = 1, SUBREG_EVEN = 1, SUBREG_ODD = 2
-  };
-}
-
 class SystemZSubtarget;
 class SystemZInstrInfo;
 class Type;
@@ -41,12 +32,9 @@ struct SystemZRegisterInfo : public SystemZGenRegisterInfo {
   /// Code Generation virtual methods...
   const unsigned *getCalleeSavedRegs(const MachineFunction *MF = 0) const;
 
-  const TargetRegisterClass* const* getCalleeSavedRegClasses(
-                                     const MachineFunction *MF = 0) const;
-
   BitVector getReservedRegs(const MachineFunction &MF) const;
 
-  bool hasReservedCallFrame(MachineFunction &MF) const { return true; }
+  bool hasReservedCallFrame(const MachineFunction &MF) const { return true; }
   bool hasFP(const MachineFunction &MF) const;
 
   int getFrameIndexOffset(const MachineFunction &MF, int FI) const;
@@ -55,9 +43,8 @@ struct SystemZRegisterInfo : public SystemZGenRegisterInfo {
                                      MachineBasicBlock &MBB,
                                      MachineBasicBlock::iterator I) const;
 
-  unsigned eliminateFrameIndex(MachineBasicBlock::iterator II,
-                               int SPAdj, FrameIndexValue *Value = NULL,
-                               RegScavenger *RS = NULL) const;
+  void eliminateFrameIndex(MachineBasicBlock::iterator II,
+                           int SPAdj, RegScavenger *RS = NULL) const;
 
 
   void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,

@@ -155,7 +155,7 @@ bool AliasSet::aliasesPointer(const Value *Ptr, unsigned Size,
   // Check the call sites list and invoke list...
   if (!CallSites.empty()) {
     for (unsigned i = 0, e = CallSites.size(); i != e; ++i)
-      if (AA.getModRefInfo(CallSites[i], const_cast<Value*>(Ptr), Size)
+      if (AA.getModRefInfo(CallSites[i], Ptr, Size)
                    != AliasAnalysis::NoModRef)
         return true;
   }
@@ -456,8 +456,7 @@ void AliasSetTracker::deleteValue(Value *PtrVal) {
 
   // If this is a call instruction, remove the callsite from the appropriate
   // AliasSet.
-  CallSite CS = CallSite::get(PtrVal);
-  if (CS.getInstruction())
+  if (CallSite CS = PtrVal)
     if (!AA.doesNotAccessMemory(CS))
       if (AliasSet *AS = findAliasSetForCallSite(CS))
         AS->removeCallSite(CS);
@@ -580,7 +579,7 @@ namespace {
     AliasSetTracker *Tracker;
   public:
     static char ID; // Pass identification, replacement for typeid
-    AliasSetPrinter() : FunctionPass(&ID) {}
+    AliasSetPrinter() : FunctionPass(ID) {}
 
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesAll();
@@ -600,5 +599,5 @@ namespace {
 }
 
 char AliasSetPrinter::ID = 0;
-static RegisterPass<AliasSetPrinter>
-X("print-alias-sets", "Alias Set Printer", false, true);
+INITIALIZE_PASS(AliasSetPrinter, "print-alias-sets",
+                "Alias Set Printer", false, true);

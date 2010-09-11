@@ -13,13 +13,14 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "function-lowering-info"
-#include "FunctionLoweringInfo.h"
+#include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Function.h"
 #include "llvm/Instructions.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
+#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -30,7 +31,6 @@
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetFrameInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Support/Debug.h"
@@ -47,9 +47,11 @@ static bool isUsedOutsideOfDefiningBlock(const Instruction *I) {
   if (isa<PHINode>(I)) return true;
   const BasicBlock *BB = I->getParent();
   for (Value::const_use_iterator UI = I->use_begin(), E = I->use_end();
-        UI != E; ++UI)
-    if (cast<Instruction>(*UI)->getParent() != BB || isa<PHINode>(*UI))
+        UI != E; ++UI) {
+    const User *U = *UI;
+    if (cast<Instruction>(U)->getParent() != BB || isa<PHINode>(U))
       return true;
+  }
   return false;
 }
 
@@ -59,16 +61,16 @@ static bool isUsedOutsideOfDefiningBlock(const Instruction *I) {
 static bool isOnlyUsedInEntryBlock(const Argument *A, bool EnableFastISel) {
   // With FastISel active, we may be splitting blocks, so force creation
   // of virtual registers for all non-dead arguments.
-  // Don't force virtual registers for byval arguments though, because
-  // fast-isel can't handle those in all cases.
-  if (EnableFastISel && !A->hasByValAttr())
+  if (EnableFastISel)
     return A->use_empty();
 
   const BasicBlock *Entry = A->getParent()->begin();
   for (Value::const_use_iterator UI = A->use_begin(), E = A->use_end();
-       UI != E; ++UI)
-    if (cast<Instruction>(*UI)->getParent() != Entry || isa<SwitchInst>(*UI))
+       UI != E; ++UI) {
+    const User *U = *UI;
+    if (cast<Instruction>(U)->getParent() != Entry || isa<SwitchInst>(U))
       return false;  // Use not in entry block.
+  }
   return true;
 }
 
@@ -76,11 +78,17 @@ FunctionLoweringInfo::FunctionLoweringInfo(const TargetLowering &tli)
   : TLI(tli) {
 }
 
-void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf,
-                               bool EnableFastISel) {
+void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
   Fn = &fn;
   MF = &mf;
   RegInfo = &MF->getRegInfo();
+
+  // Check whether the function can return without sret-demotion.
+  SmallVector<ISD::OutputArg, 4> Outs;
+  GetReturnInfo(Fn->getReturnType(),
+                Fn->getAttributes().getRetAttributes(), Outs, TLI);
+  CanLowerReturn = TLI.CanLowerReturn(Fn->getCallingConv(), Fn->isVarArg(),
+                                      Outs, Fn->getContext());
 
   // Create a vreg for each argument register that is not dead and is used
   // outside of the entry block for the function.
@@ -104,16 +112,55 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf,
 
         TySize *= CUI->getZExtValue();   // Get total allocated size.
         if (TySize == 0) TySize = 1; // Don't create zero-sized stack objects.
+
+        // The object may need to be placed onto the stack near the stack
+        // protector if one exists. Determine here if this object is a suitable
+        // candidate. I.e., it would trigger the creation of a stack protector.
+        bool MayNeedSP =
+          (AI->isArrayAllocation() ||
+           (TySize > 8 && isa<ArrayType>(Ty) &&
+            cast<ArrayType>(Ty)->getElementType()->isIntegerTy(8)));
         StaticAllocaMap[AI] =
-          MF->getFrameInfo()->CreateStackObject(TySize, Align, false);
+          MF->getFrameInfo()->CreateStackObject(TySize, Align, false, MayNeedSP);
       }
 
   for (; BB != EB; ++BB)
-    for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I != E; ++I)
+    for (BasicBlock::const_iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
+      // Mark values used outside their block as exported, by allocating
+      // a virtual register for them.
       if (isUsedOutsideOfDefiningBlock(I))
         if (!isa<AllocaInst>(I) ||
             !StaticAllocaMap.count(cast<AllocaInst>(I)))
           InitializeRegForValue(I);
+
+      // Collect llvm.dbg.declare information. This is done now instead of
+      // during the initial isel pass through the IR so that it is done
+      // in a predictable order.
+      if (const DbgDeclareInst *DI = dyn_cast<DbgDeclareInst>(I)) {
+        MachineModuleInfo &MMI = MF->getMMI();
+        if (MMI.hasDebugInfo() &&
+            DIVariable(DI->getVariable()).Verify() &&
+            !DI->getDebugLoc().isUnknown()) {
+          // Don't handle byval struct arguments or VLAs, for example.
+          // Non-byval arguments are handled here (they refer to the stack
+          // temporary alloca at this point).
+          const Value *Address = DI->getAddress();
+          if (Address) {
+            if (const BitCastInst *BCI = dyn_cast<BitCastInst>(Address))
+              Address = BCI->getOperand(0);
+            if (const AllocaInst *AI = dyn_cast<AllocaInst>(Address)) {
+              DenseMap<const AllocaInst *, int>::iterator SI =
+                StaticAllocaMap.find(AI);
+              if (SI != StaticAllocaMap.end()) { // Check for VLAs.
+                int FI = SI->second;
+                MMI.setVariableDbgInfo(DI->getVariable(),
+                                       FI, DI->getDebugLoc());
+              }
+            }
+          }
+        }
+      }
+    }
 
   // Create an initial MachineBasicBlock for each LLVM BasicBlock in F.  This
   // also creates the initial PHI MachineInstrs, though none of the input
@@ -173,31 +220,34 @@ void FunctionLoweringInfo::clear() {
   CatchInfoFound.clear();
 #endif
   LiveOutRegInfo.clear();
+  ArgDbgValues.clear();
+  RegFixups.clear();
 }
 
-unsigned FunctionLoweringInfo::MakeReg(EVT VT) {
+/// CreateReg - Allocate a single virtual register for the given type.
+unsigned FunctionLoweringInfo::CreateReg(EVT VT) {
   return RegInfo->createVirtualRegister(TLI.getRegClassFor(VT));
 }
 
-/// CreateRegForValue - Allocate the appropriate number of virtual registers of
+/// CreateRegs - Allocate the appropriate number of virtual registers of
 /// the correctly promoted or expanded types.  Assign these registers
 /// consecutive vreg numbers and return the first assigned number.
 ///
 /// In the case that the given value has struct or array type, this function
 /// will assign registers for each member or element.
 ///
-unsigned FunctionLoweringInfo::CreateRegForValue(const Value *V) {
+unsigned FunctionLoweringInfo::CreateRegs(const Type *Ty) {
   SmallVector<EVT, 4> ValueVTs;
-  ComputeValueVTs(TLI, V->getType(), ValueVTs);
+  ComputeValueVTs(TLI, Ty, ValueVTs);
 
   unsigned FirstReg = 0;
   for (unsigned Value = 0, e = ValueVTs.size(); Value != e; ++Value) {
     EVT ValueVT = ValueVTs[Value];
-    EVT RegisterVT = TLI.getRegisterType(V->getContext(), ValueVT);
+    EVT RegisterVT = TLI.getRegisterType(Ty->getContext(), ValueVT);
 
-    unsigned NumRegs = TLI.getNumRegisters(V->getContext(), ValueVT);
+    unsigned NumRegs = TLI.getNumRegisters(Ty->getContext(), ValueVT);
     for (unsigned i = 0; i != NumRegs; ++i) {
-      unsigned R = MakeReg(RegisterVT);
+      unsigned R = CreateReg(RegisterVT);
       if (!FirstReg) FirstReg = R;
     }
   }
@@ -209,7 +259,7 @@ unsigned FunctionLoweringInfo::CreateRegForValue(const Value *V) {
 void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,
                         MachineBasicBlock *MBB) {
   // Inform the MachineModuleInfo of the personality for this landing pad.
-  const ConstantExpr *CE = cast<ConstantExpr>(I.getOperand(2));
+  const ConstantExpr *CE = cast<ConstantExpr>(I.getArgOperand(1));
   assert(CE->getOpcode() == Instruction::BitCast &&
          isa<Function>(CE->getOperand(0)) &&
          "Personality should be a function");
@@ -218,18 +268,18 @@ void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,
   // Gather all the type infos for this landing pad and pass them along to
   // MachineModuleInfo.
   std::vector<const GlobalVariable *> TyInfo;
-  unsigned N = I.getNumOperands();
+  unsigned N = I.getNumArgOperands();
 
-  for (unsigned i = N - 1; i > 2; --i) {
-    if (const ConstantInt *CI = dyn_cast<ConstantInt>(I.getOperand(i))) {
+  for (unsigned i = N - 1; i > 1; --i) {
+    if (const ConstantInt *CI = dyn_cast<ConstantInt>(I.getArgOperand(i))) {
       unsigned FilterLength = CI->getZExtValue();
       unsigned FirstCatch = i + FilterLength + !FilterLength;
-      assert (FirstCatch <= N && "Invalid filter length");
+      assert(FirstCatch <= N && "Invalid filter length");
 
       if (FirstCatch < N) {
         TyInfo.reserve(N - FirstCatch);
         for (unsigned j = FirstCatch; j < N; ++j)
-          TyInfo.push_back(ExtractTypeInfo(I.getOperand(j)));
+          TyInfo.push_back(ExtractTypeInfo(I.getArgOperand(j)));
         MMI->addCatchTypeInfo(MBB, TyInfo);
         TyInfo.clear();
       }
@@ -241,7 +291,7 @@ void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,
         // Filter.
         TyInfo.reserve(FilterLength - 1);
         for (unsigned j = i + 1; j < FirstCatch; ++j)
-          TyInfo.push_back(ExtractTypeInfo(I.getOperand(j)));
+          TyInfo.push_back(ExtractTypeInfo(I.getArgOperand(j)));
         MMI->addFilterTypeInfo(MBB, TyInfo);
         TyInfo.clear();
       }
@@ -250,10 +300,10 @@ void llvm::AddCatchInfo(const CallInst &I, MachineModuleInfo *MMI,
     }
   }
 
-  if (N > 3) {
-    TyInfo.reserve(N - 3);
-    for (unsigned j = 3; j < N; ++j)
-      TyInfo.push_back(ExtractTypeInfo(I.getOperand(j)));
+  if (N > 2) {
+    TyInfo.reserve(N - 2);
+    for (unsigned j = 2; j < N; ++j)
+      TyInfo.push_back(ExtractTypeInfo(I.getArgOperand(j)));
     MMI->addCatchTypeInfo(MBB, TyInfo);
   }
 }

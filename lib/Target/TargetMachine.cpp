@@ -30,14 +30,14 @@ namespace llvm {
   bool NoFramePointerElimNonLeaf;
   bool NoExcessFPPrecision;
   bool UnsafeFPMath;
-  bool FiniteOnlyFPMathOption;
+  bool NoInfsFPMath;
+  bool NoNaNsFPMath;
   bool HonorSignDependentRoundingFPMathOption;
   bool UseSoftFloat;
   FloatABI::ABIType FloatABIType;
   bool NoImplicitFloat;
   bool NoZerosInBSS;
-  bool DwarfExceptionHandling;
-  bool SjLjExceptionHandling;
+  bool JITExceptionHandling;
   bool JITEmitDebugInfo;
   bool JITEmitDebugInfoToDisk;
   bool UnwindTablesMandatory;
@@ -81,9 +81,14 @@ EnableUnsafeFPMath("enable-unsafe-fp-math",
   cl::location(UnsafeFPMath),
   cl::init(false));
 static cl::opt<bool, true>
-EnableFiniteOnlyFPMath("enable-finite-only-fp-math",
-  cl::desc("Enable optimizations that assumes non- NaNs / +-Infs"),
-  cl::location(FiniteOnlyFPMathOption),
+EnableNoInfsFPMath("enable-no-infs-fp-math",
+  cl::desc("Enable FP math optimizations that assume no +-Infs"),
+  cl::location(NoInfsFPMath),
+  cl::init(false));
+static cl::opt<bool, true>
+EnableNoNaNsFPMath("enable-no-nans-fp-math",
+  cl::desc("Enable FP math optimizations that assume no NaNs"),
+  cl::location(NoNaNsFPMath),
   cl::init(false));
 static cl::opt<bool, true>
 EnableHonorSignDependentRoundingFPMath("enable-sign-dependent-rounding-fp-math",
@@ -115,14 +120,9 @@ DontPlaceZerosInBSS("nozero-initialized-in-bss",
   cl::location(NoZerosInBSS),
   cl::init(false));
 static cl::opt<bool, true>
-EnableDwarfExceptionHandling("enable-eh",
-  cl::desc("Emit DWARF exception handling (default if target supports)"),
-  cl::location(DwarfExceptionHandling),
-  cl::init(false));
-static cl::opt<bool, true>
-EnableSjLjExceptionHandling("enable-sjlj-eh",
-  cl::desc("Emit SJLJ exception handling (default if target supports)"),
-  cl::location(SjLjExceptionHandling),
+EnableJITExceptionHandling("jit-enable-eh",
+  cl::desc("Emit exception handling information"),
+  cl::location(JITExceptionHandling),
   cl::init(false));
 // In debug builds, make this default to true.
 #ifdef NDEBUG
@@ -218,7 +218,8 @@ FunctionSections("ffunction-sections",
 //
 
 TargetMachine::TargetMachine(const Target &T) 
-  : TheTarget(T), AsmInfo(0) {
+  : TheTarget(T), AsmInfo(0),
+    MCRelaxAll(false) {
   // Typically it will be subtargets that will adjust FloatABIType from Default
   // to Soft or Hard.
   if (UseSoftFloat)
@@ -279,13 +280,14 @@ namespace llvm {
   /// DisableFramePointerElim - This returns true if frame pointer elimination
   /// optimization should be disabled for the given machine function.
   bool DisableFramePointerElim(const MachineFunction &MF) {
-    if (NoFramePointerElim)
-      return true;
-    if (NoFramePointerElimNonLeaf) {
+    // Check to see if we should eliminate non-leaf frame pointers and then
+    // check to see if we should eliminate all frame pointers.
+    if (NoFramePointerElimNonLeaf && !NoFramePointerElim) {
       const MachineFrameInfo *MFI = MF.getFrameInfo();
       return MFI->hasCalls();
     }
-    return false;
+
+    return NoFramePointerElim;
   }
 
   /// LessPreciseFPMAD - This flag return true when -enable-fp-mad option
@@ -294,12 +296,6 @@ namespace llvm {
   /// result is "less precise" than doing those operations individually.
   bool LessPreciseFPMAD() { return UnsafeFPMath || LessPreciseFPMADOption; }
 
-  /// FiniteOnlyFPMath - This returns true when the -enable-finite-only-fp-math
-  /// option is specified on the command line. If this returns false (default),
-  /// the code generator is not allowed to assume that FP arithmetic arguments
-  /// and results are never NaNs or +-Infs.
-  bool FiniteOnlyFPMath() { return UnsafeFPMath || FiniteOnlyFPMathOption; }
-  
   /// HonorSignDependentRoundingFPMath - Return true if the codegen must assume
   /// that the rounding mode of the FPU can change from its default.
   bool HonorSignDependentRoundingFPMath() {

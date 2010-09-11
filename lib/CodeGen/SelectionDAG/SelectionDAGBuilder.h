@@ -18,9 +18,6 @@
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
-#ifndef NDEBUG
-#include "llvm/ADT/SmallSet.h"
-#endif
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/Support/CallSite.h"
@@ -36,6 +33,7 @@ class BasicBlock;
 class BitCastInst;
 class BranchInst;
 class CallInst;
+class DbgValueInst;
 class ExtractElementInst;
 class ExtractValueInst;
 class FCmpInst;
@@ -58,10 +56,12 @@ class LoadInst;
 class MachineBasicBlock;
 class MachineInstr;
 class MachineRegisterInfo;
+class MDNode;
 class PHINode;
 class PtrToIntInst;
 class ReturnInst;
 class SDISelAsmOperandInfo;
+class SDDbgValue;
 class SExtInst;
 class SelectInst;
 class ShuffleVectorInst;
@@ -86,6 +86,28 @@ class SelectionDAGBuilder {
   DebugLoc CurDebugLoc;
 
   DenseMap<const Value*, SDValue> NodeMap;
+  
+  /// UnusedArgNodeMap - Maps argument value for unused arguments. This is used
+  /// to preserve debug information for incoming arguments.
+  DenseMap<const Value*, SDValue> UnusedArgNodeMap;
+
+  /// DanglingDebugInfo - Helper type for DanglingDebugInfoMap.
+  class DanglingDebugInfo {
+    const DbgValueInst* DI;
+    DebugLoc dl;
+    unsigned SDNodeOrder;
+  public:
+    DanglingDebugInfo() : DI(0), dl(DebugLoc()), SDNodeOrder(0) { }
+    DanglingDebugInfo(const DbgValueInst *di, DebugLoc DL, unsigned SDNO) :
+      DI(di), dl(DL), SDNodeOrder(SDNO) { }
+    const DbgValueInst* getDI() { return DI; }
+    DebugLoc getdl() { return dl; }
+    unsigned getSDNodeOrder() { return SDNodeOrder; }
+  };
+
+  /// DanglingDebugInfoMap - Keeps track of dbg_values for which we have not
+  /// yet seen the referent.  We defer handling these until we do see it.
+  DenseMap<const Value*, DanglingDebugInfo> DanglingDebugInfoMap;
 
 public:
   /// PendingLoads - Loads are not emitted to the program immediately.  We bunch
@@ -271,10 +293,6 @@ public:
   /// SwitchInst code generation information.
   std::vector<BitTestBlock> BitTestCases;
 
-  /// EdgeMapping - If an edge from CurMBB to any MBB is changed (e.g. due to
-  /// scheduler custom lowering), track the change here.
-  DenseMap<MachineBasicBlock*, MachineBasicBlock*> EdgeMapping;
-
   // Emit PHI-node-operand constants only once even if used by multiple
   // PHI nodes.
   DenseMap<const Constant *, unsigned> ConstantsOut;
@@ -343,10 +361,21 @@ public:
 
   void visit(unsigned Opcode, const User &I);
 
+  // resolveDanglingDebugInfo - if we saw an earlier dbg_value referring to V,
+  // generate the debug data structures now that we've seen its definition.
+  void resolveDanglingDebugInfo(const Value *V, SDValue Val);
   SDValue getValue(const Value *V);
+  SDValue getNonRegisterValue(const Value *V);
+  SDValue getValueImpl(const Value *V);
 
   void setValue(const Value *V, SDValue NewN) {
     SDValue &N = NodeMap[V];
+    assert(N.getNode() == 0 && "Already set a value for this node!");
+    N = NewN;
+  }
+  
+  void setUnusedArgValue(const Value *V, SDValue NewN) {
+    SDValue &N = UnusedArgNodeMap[V];
     assert(N.getNode() == 0 && "Already set a value for this node!");
     N = NewN;
   }
@@ -495,6 +524,12 @@ private:
   const char *implVisitAluOverflow(const CallInst &I, ISD::NodeType Op);
 
   void HandlePHINodesInSuccessorBlocks(const BasicBlock *LLVMBB);
+
+  /// EmitFuncArgumentDbgValue - If V is an function argument then create
+  /// corresponding DBG_VALUE machine instruction for it now. At the end of 
+  /// instruction selection, they will be inserted to the entry BB.
+  bool EmitFuncArgumentDbgValue(const Value *V, MDNode *Variable,
+                                uint64_t Offset, const SDValue &N);
 };
 
 } // end namespace llvm

@@ -65,7 +65,8 @@ namespace llvm {
                                                   const std::string &TT);
     typedef TargetAsmLexer *(*AsmLexerCtorTy)(const Target &T,
                                               const MCAsmInfo &MAI);
-    typedef TargetAsmParser *(*AsmParserCtorTy)(const Target &T,MCAsmParser &P);
+    typedef TargetAsmParser *(*AsmParserCtorTy)(const Target &T,MCAsmParser &P,
+                                                TargetMachine &TM);
     typedef MCDisassembler *(*MCDisassemblerCtorTy)(const Target &T);
     typedef MCInstPrinter *(*MCInstPrinterCtorTy)(const Target &T,
                                                   unsigned SyntaxVariant,
@@ -73,6 +74,13 @@ namespace llvm {
     typedef MCCodeEmitter *(*CodeEmitterCtorTy)(const Target &T,
                                                 TargetMachine &TM,
                                                 MCContext &Ctx);
+    typedef MCStreamer *(*ObjectStreamerCtorTy)(const Target &T,
+                                                const std::string &TT,
+                                                MCContext &Ctx,
+                                                TargetAsmBackend &TAB,
+                                                raw_ostream &_OS,
+                                                MCCodeEmitter *_Emitter,
+                                                bool RelaxAll);
 
   private:
     /// Next - The next registered target in the linked list, maintained by the
@@ -126,6 +134,10 @@ namespace llvm {
     /// if registered.
     CodeEmitterCtorTy CodeEmitterCtorFn;
 
+    /// ObjectStreamerCtorFn - Construction function for this target's
+    /// ObjectStreamer, if registered.
+    ObjectStreamerCtorTy ObjectStreamerCtorFn;
+
   public:
     /// @name Target Information
     /// @{
@@ -169,6 +181,9 @@ namespace llvm {
 
     /// hasCodeEmitter - Check if this target supports instruction encoding.
     bool hasCodeEmitter() const { return CodeEmitterCtorFn != 0; }
+
+    /// hasObjectStreamer - Check if this target supports streaming to files.
+    bool hasObjectStreamer() const { return ObjectStreamerCtorFn != 0; }
 
     /// @}
     /// @name Feature Constructors
@@ -223,10 +238,11 @@ namespace llvm {
     ///
     /// \arg Parser - The target independent parser implementation to use for
     /// parsing and lexing.
-    TargetAsmParser *createAsmParser(MCAsmParser &Parser) const {
+    TargetAsmParser *createAsmParser(MCAsmParser &Parser,
+                                     TargetMachine &TM) const {
       if (!AsmParserCtorFn)
         return 0;
-      return AsmParserCtorFn(*this, Parser);
+      return AsmParserCtorFn(*this, Parser, TM);
     }
 
     /// createAsmPrinter - Create a target specific assembly printer pass.  This
@@ -256,6 +272,24 @@ namespace llvm {
       if (!CodeEmitterCtorFn)
         return 0;
       return CodeEmitterCtorFn(*this, TM, Ctx);
+    }
+
+    /// createObjectStreamer - Create a target specific MCStreamer.
+    ///
+    /// \arg TT - The target triple.
+    /// \arg Ctx - The target context.
+    /// \arg TAB - The target assembler backend object. Takes ownership.
+    /// \arg _OS - The stream object.
+    /// \arg _Emitter - The target independent assembler object.Takes ownership.
+    /// \arg RelaxAll - Relax all fixups?
+    MCStreamer *createObjectStreamer(const std::string &TT, MCContext &Ctx,
+                                     TargetAsmBackend &TAB,
+                                     raw_ostream &_OS,
+                                     MCCodeEmitter *_Emitter,
+                                     bool RelaxAll) const {
+      if (!ObjectStreamerCtorFn)
+        return 0;
+      return ObjectStreamerCtorFn(*this, TT, Ctx, TAB, _OS, _Emitter, RelaxAll);
     }
 
     /// @}
@@ -479,6 +513,20 @@ namespace llvm {
         T.CodeEmitterCtorFn = Fn;
     }
 
+    /// RegisterObjectStreamer - Register an MCStreamer implementation
+    /// for the given target.
+    ///
+    /// Clients are responsible for ensuring that registration doesn't occur
+    /// while another thread is attempting to access the registry. Typically
+    /// this is done by initializing all targets at program startup.
+    ///
+    /// @param T - The target being registered.
+    /// @param Fn - A function to construct an MCStreamer for the target.
+    static void RegisterObjectStreamer(Target &T, Target::ObjectStreamerCtorTy Fn) {
+      if (!T.ObjectStreamerCtorFn)
+        T.ObjectStreamerCtorFn = Fn;
+    }
+
     /// @}
   };
 
@@ -621,8 +669,9 @@ namespace llvm {
     }
 
   private:
-    static TargetAsmParser *Allocator(const Target &T, MCAsmParser &P) {
-      return new AsmParserImpl(T, P);
+    static TargetAsmParser *Allocator(const Target &T, MCAsmParser &P,
+                                      TargetMachine &TM) {
+      return new AsmParserImpl(T, P, TM);
     }
   };
 

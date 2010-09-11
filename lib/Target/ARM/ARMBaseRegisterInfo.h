@@ -44,7 +44,7 @@ static inline bool isARMLowRegister(unsigned Reg) {
   }
 }
 
-struct ARMBaseRegisterInfo : public ARMGenRegisterInfo {
+class ARMBaseRegisterInfo : public ARMGenRegisterInfo {
 protected:
   const ARMBaseInstrInfo &TII;
   const ARMSubtarget &STI;
@@ -69,9 +69,6 @@ public:
   /// Code Generation virtual methods...
   const unsigned *getCalleeSavedRegs(const MachineFunction *MF = 0) const;
 
-  const TargetRegisterClass* const*
-  getCalleeSavedRegClasses(const MachineFunction *MF = 0) const;
-
   BitVector getReservedRegs(const MachineFunction &MF) const;
 
   /// getMatchingSuperRegClass - Return a subclass of the specified register
@@ -80,6 +77,16 @@ public:
   virtual const TargetRegisterClass *
   getMatchingSuperRegClass(const TargetRegisterClass *A,
                            const TargetRegisterClass *B, unsigned Idx) const;
+
+  /// canCombineSubRegIndices - Given a register class and a list of
+  /// subregister indices, return true if it's possible to combine the
+  /// subregister indices into one that corresponds to a larger
+  /// subregister. Return the new subregister index by reference. Note the
+  /// new index may be zero if the given subregisters can be combined to
+  /// form the whole register.
+  virtual bool canCombineSubRegIndices(const TargetRegisterClass *RC,
+                                       SmallVectorImpl<unsigned> &SubIndices,
+                                       unsigned &NewSubIdx) const;
 
   const TargetRegisterClass *getPointerRegClass(unsigned Kind = 0) const;
 
@@ -98,6 +105,14 @@ public:
 
   bool canRealignStack(const MachineFunction &MF) const;
   bool needsStackRealignment(const MachineFunction &MF) const;
+  int64_t getFrameIndexInstrOffset(const MachineInstr *MI, int Idx) const;
+  bool needsFrameBaseReg(MachineInstr *MI, int64_t Offset) const;
+  void materializeFrameBaseRegister(MachineBasicBlock::iterator I,
+                                    unsigned BaseReg, int FrameIdx,
+                                    int64_t Offset) const;
+  void resolveFrameIndex(MachineBasicBlock::iterator I,
+                         unsigned BaseReg, int64_t Offset) const;
+  bool isFrameOffsetLegal(const MachineInstr *MI, int64_t Offset) const;
 
   bool cannotEliminateFrame(const MachineFunction &MF) const;
 
@@ -109,6 +124,8 @@ public:
   unsigned getFrameRegister(const MachineFunction &MF) const;
   int getFrameIndexReference(const MachineFunction &MF, int FI,
                              unsigned &FrameReg) const;
+  int ResolveFrameIndexReference(const MachineFunction &MF, int FI,
+                                 unsigned &FrameReg, int SPAdj) const;
   int getFrameIndexOffset(const MachineFunction &MF, int FI) const;
 
   // Exception handling queries.
@@ -137,16 +154,17 @@ public:
 
   virtual bool requiresFrameIndexScavenging(const MachineFunction &MF) const;
 
-  virtual bool hasReservedCallFrame(MachineFunction &MF) const;
-  virtual bool canSimplifyCallFramePseudos(MachineFunction &MF) const;
+  virtual bool requiresVirtualBaseRegisters(const MachineFunction &MF) const;
+
+  virtual bool hasReservedCallFrame(const MachineFunction &MF) const;
+  virtual bool canSimplifyCallFramePseudos(const MachineFunction &MF) const;
 
   virtual void eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                             MachineBasicBlock &MBB,
-                                             MachineBasicBlock::iterator I) const;
+                                           MachineBasicBlock &MBB,
+                                           MachineBasicBlock::iterator I) const;
 
-  virtual unsigned eliminateFrameIndex(MachineBasicBlock::iterator II,
-                                       int SPAdj, FrameIndexValue *Value = NULL,
-                                       RegScavenger *RS = NULL) const;
+  virtual void eliminateFrameIndex(MachineBasicBlock::iterator II,
+                                   int SPAdj, RegScavenger *RS = NULL) const;
 
   virtual void emitPrologue(MachineFunction &MF) const;
   virtual void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;

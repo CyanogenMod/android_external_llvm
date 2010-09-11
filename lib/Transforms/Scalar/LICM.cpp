@@ -66,7 +66,7 @@ DisablePromotion("disable-licm-promotion", cl::Hidden,
 namespace {
   struct LICM : public LoopPass {
     static char ID; // Pass identification, replacement for typeid
-    LICM() : LoopPass(&ID) {}
+    LICM() : LoopPass(ID) {}
 
     virtual bool runOnLoop(Loop *L, LPPassManager &LPM);
 
@@ -75,10 +75,10 @@ namespace {
     ///
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesCFG();
-      AU.addRequiredID(LoopSimplifyID);
-      AU.addRequired<LoopInfo>();
       AU.addRequired<DominatorTree>();
       AU.addRequired<DominanceFrontier>();  // For scalar promotion (mem2reg)
+      AU.addRequired<LoopInfo>();
+      AU.addRequiredID(LoopSimplifyID);
       AU.addRequired<AliasAnalysis>();
       AU.addPreserved<ScalarEvolution>();
       AU.addPreserved<DominanceFrontier>();
@@ -222,7 +222,7 @@ namespace {
 }
 
 char LICM::ID = 0;
-static RegisterPass<LICM> X("licm", "Loop Invariant Code Motion");
+INITIALIZE_PASS(LICM, "licm", "Loop Invariant Code Motion", false, false);
 
 Pass *llvm::createLICMPass() { return new LICM(); }
 
@@ -457,7 +457,7 @@ bool LICM::isLoopInvariantInst(Instruction &I) {
 /// position, and may either delete it or move it to outside of the loop.
 ///
 void LICM::sink(Instruction &I) {
-  DEBUG(dbgs() << "LICM sinking instruction: " << I);
+  DEBUG(dbgs() << "LICM sinking instruction: " << I << "\n");
 
   SmallVector<BasicBlock*, 8> ExitBlocks;
   CurLoop->getExitBlocks(ExitBlocks);

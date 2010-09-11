@@ -30,7 +30,7 @@
 using namespace llvm;
 
 static cl::opt<unsigned> 
-MaxIterations("max-cg-scc-iterations", cl::ReallyHidden, cl::init(0));
+MaxIterations("max-cg-scc-iterations", cl::ReallyHidden, cl::init(4));
 
 STATISTIC(MaxSCCIterations, "Maximum CGSCCPassMgr iterations on one SCC");
 
@@ -45,7 +45,7 @@ class CGPassManager : public ModulePass, public PMDataManager {
 public:
   static char ID;
   explicit CGPassManager(int Depth) 
-    : ModulePass(&ID), PMDataManager(Depth) { }
+    : ModulePass(ID), PMDataManager(Depth) { }
 
   /// run - Execute all of the passes scheduled for execution.  Keep track of
   /// whether any of the passes modifies the module, and if so, return true.
@@ -191,6 +191,10 @@ bool CGPassManager::RefreshCallGraph(CallGraphSCC &CurSCC,
     
     // Walk the function body looking for call sites.  Sync up the call sites in
     // CGN with those actually in the function.
+
+    // Keep track of the number of direct and indirect calls that were
+    // invalidated and removed.
+    unsigned NumDirectRemoved = 0, NumIndirectRemoved = 0;
     
     // Get the set of call sites currently in the function.
     for (CallGraphNode::iterator I = CGN->begin(), E = CGN->end(); I != E; ) {
@@ -205,9 +209,15 @@ bool CGPassManager::RefreshCallGraph(CallGraphSCC &CurSCC,
           // If the call edge is not from a call or invoke, then the function
           // pass RAUW'd a call with another value.  This can happen when
           // constant folding happens of well known functions etc.
-          CallSite::get(I->first).getInstruction() == 0) {
+          !CallSite(I->first)) {
         assert(!CheckingMode &&
                "CallGraphSCCPass did not update the CallGraph correctly!");
+        
+        // If this was an indirect call site, count it.
+        if (I->second->getFunction() == 0)
+          ++NumIndirectRemoved;
+        else 
+          ++NumDirectRemoved;
         
         // Just remove the edge from the set of callees, keep track of whether
         // I points to the last element of the vector.
@@ -230,10 +240,13 @@ bool CGPassManager::RefreshCallGraph(CallGraphSCC &CurSCC,
     }
     
     // Loop over all of the instructions in the function, getting the callsites.
+    // Keep track of the number of direct/indirect calls added.
+    unsigned NumDirectAdded = 0, NumIndirectAdded = 0;
+    
     for (Function::iterator BB = F->begin(), E = F->end(); BB != E; ++BB)
       for (BasicBlock::iterator I = BB->begin(), E = BB->end(); I != E; ++I) {
-        CallSite CS = CallSite::get(I);
-        if (!CS.getInstruction() || isa<DbgInfoIntrinsic>(I)) continue;
+          CallSite CS(cast<Value>(I));
+        if (!CS || isa<DbgInfoIntrinsic>(I)) continue;
         
         // If this call site already existed in the callgraph, just verify it
         // matches up to expectations and remove it from CallSites.
@@ -286,18 +299,33 @@ bool CGPassManager::RefreshCallGraph(CallGraphSCC &CurSCC,
         assert(!CheckingMode &&
                "CallGraphSCCPass did not update the CallGraph correctly!");
 
-        // If the call site didn't exist in the CGN yet, add it.  We assume that
-        // newly introduced call sites won't be indirect.  This could be fixed
-        // in the future.
+        // If the call site didn't exist in the CGN yet, add it.
         CallGraphNode *CalleeNode;
-        if (Function *Callee = CS.getCalledFunction())
+        if (Function *Callee = CS.getCalledFunction()) {
           CalleeNode = CG.getOrInsertFunction(Callee);
-        else
+          ++NumDirectAdded;
+        } else {
           CalleeNode = CG.getCallsExternalNode();
+          ++NumIndirectAdded;
+        }
         
         CGN->addCalledFunction(CS, CalleeNode);
         MadeChange = true;
       }
+    
+    // We scanned the old callgraph node, removing invalidated call sites and
+    // then added back newly found call sites.  One thing that can happen is
+    // that an old indirect call site was deleted and replaced with a new direct
+    // call.  In this case, we have devirtualized a call, and CGSCCPM would like
+    // to iteratively optimize the new code.  Unfortunately, we don't really
+    // have a great way to detect when this happens.  As an approximation, we
+    // just look at whether the number of indirect calls is reduced and the
+    // number of direct calls is increased.  There are tons of ways to fool this
+    // (e.g. DCE'ing an indirect call and duplicating an unrelated block with a
+    // direct call) but this is close enough.
+    if (NumIndirectRemoved > NumIndirectAdded &&
+        NumDirectRemoved < NumDirectAdded)
+      DevirtualizedCall = true;
     
     // After scanning this function, if we still have entries in callsites, then
     // they are dangling pointers.  WeakVH should save us for this, so abort if
@@ -315,6 +343,9 @@ bool CGPassManager::RefreshCallGraph(CallGraphSCC &CurSCC,
           for (CallGraphSCC::iterator I = CurSCC.begin(), E = CurSCC.end();
             I != E; ++I)
               (*I)->dump();
+          if (DevirtualizedCall)
+            dbgs() << "CGSCCPASSMGR: Refresh devirtualized a call!\n";
+
          } else {
            dbgs() << "CGSCCPASSMGR: SCC Refresh didn't change call graph.\n";
          }
@@ -551,9 +582,9 @@ namespace {
     
   public:
     static char ID;
-    PrintCallGraphPass() : CallGraphSCCPass(&ID), Out(dbgs()) {}
+    PrintCallGraphPass() : CallGraphSCCPass(ID), Out(dbgs()) {}
     PrintCallGraphPass(const std::string &B, raw_ostream &o)
-      : CallGraphSCCPass(&ID), Banner(B), Out(o) {}
+      : CallGraphSCCPass(ID), Banner(B), Out(o) {}
     
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.setPreservesAll();

@@ -37,9 +37,10 @@ namespace lltok {
     kw_declare, kw_define,
     kw_global,  kw_constant,
 
-    kw_private, kw_linker_private, kw_internal, kw_linkonce, kw_linkonce_odr,
-    kw_weak, kw_weak_odr, kw_appending, kw_dllimport, kw_dllexport, kw_common,
-    kw_available_externally,
+    kw_private, kw_linker_private, kw_linker_private_weak,
+    kw_linker_private_weak_def_auto, kw_internal,
+    kw_linkonce, kw_linkonce_odr, kw_weak, kw_weak_odr, kw_appending,
+    kw_dllimport, kw_dllexport, kw_common, kw_available_externally,
     kw_default, kw_hidden, kw_protected,
     kw_extern_weak,
     kw_external, kw_thread_local,
@@ -68,7 +69,7 @@ namespace lltok {
     kw_c,
 
     kw_cc, kw_ccc, kw_fastcc, kw_coldcc,
-    kw_x86_stdcallcc, kw_x86_fastcallcc,
+    kw_x86_stdcallcc, kw_x86_fastcallcc, kw_x86_thiscallcc,
     kw_arm_apcscc, kw_arm_aapcscc, kw_arm_aapcs_vfpcc,
     kw_msp430_intrcc,
 
@@ -97,7 +98,6 @@ namespace lltok {
 
     kw_type,
     kw_opaque,
-    kw_union,
 
     kw_eq, kw_ne, kw_slt, kw_sgt, kw_sle, kw_sge, kw_ult, kw_ugt, kw_ule,
     kw_uge, kw_oeq, kw_one, kw_olt, kw_ogt, kw_ole, kw_oge, kw_ord, kw_uno,

@@ -690,6 +690,7 @@ ENABLE_DOXYGEN
 ENABLE_THREADS
 ENABLE_PIC
 ENABLE_SHARED
+ENABLE_TIMESTAMPS
 TARGETS_TO_BUILD
 LLVM_ENUM_TARGETS
 LLVM_ENUM_ASM_PRINTERS
@@ -702,8 +703,6 @@ ENABLE_BUILT_CLANG
 OPTIMIZE_OPTION
 EXTRA_OPTIONS
 BINUTILS_INCDIR
-ENABLE_LLVMC_DYNAMIC
-ENABLE_LLVMC_DYNAMIC_PLUGINS
 CXX
 CXXFLAGS
 ac_ct_CXX
@@ -736,11 +735,13 @@ INSTALL_PROGRAM
 INSTALL_SCRIPT
 INSTALL_DATA
 BZIP2
+CAT
 DOXYGEN
 GROFF
 GZIP
 POD2HTML
 POD2MAN
+PDFROFF
 RUNTEST
 TCLSH
 ZIP
@@ -749,7 +750,7 @@ OCAMLOPT
 OCAMLDEP
 OCAMLDOC
 GAS
-HAVE_LINK_RETAIN_SYMBOLS_FILE
+HAVE_LINK_VERSION_SCRIPT
 INSTALL_LTDL_TRUE
 INSTALL_LTDL_FALSE
 CONVENIENCE_LTDL_TRUE
@@ -1408,6 +1409,8 @@ Optional Features:
                           is YES)
   --enable-shared         Build a shared library and link tools against it
                           (default is NO)
+  --enable-timestamps     Enable embedding timestamp information in build
+                          (default is YES)
   --enable-targets        Build specific host targets: all or
                           target1,target2,... Valid targets are: host, x86,
                           x86_64, sparc, powerpc, alpha, arm, mips, spu,
@@ -1418,10 +1421,6 @@ Optional Features:
   --enable-bindings       Build specific language bindings:
                           all,auto,none,{binding-name} (default=auto)
   --enable-libffi         Check for the presence of libffi (default is NO)
-  --enable-llvmc-dynamic  Link LLVMC dynamically (default is NO, unless on
-                          Win32)
-  --enable-llvmc-dynamic-plugins
-                          Enable dynamic LLVMC plugins (default is YES)
   --enable-ltdl-install   install libltdl
 
 Optional Packages:
@@ -1983,7 +1982,6 @@ for i in `ls ${srcdir}/projects`
 do
   if test -d ${srcdir}/projects/${i} ; then
     case ${i} in
-      CVS) ;;
       sample)       subdirs="$subdirs projects/sample"
     ;;
       privbracket)  subdirs="$subdirs projects/privbracket"
@@ -4686,7 +4684,7 @@ else
 
 fi
 
-if test -d "CVS" -o -d "${srcdir}/CVS" -o -d ".svn" -o -d "${srcdir}/.svn" -o -d ".git" -o -d "${srcdir}/.git"; then
+if test -d ".svn" -o -d "${srcdir}/.svn" -o -d ".git" -o -d "${srcdir}/.git"; then
   cvsbuild="yes"
   optimize="no"
   CVSBUILD=CVSBUILD=1
@@ -4921,6 +4919,30 @@ echo "$as_me: error: Invalid setting for --enable-shared. Use \"yes\" or \"no\""
    { (exit 1); exit 1; }; } ;;
 esac
 
+# Check whether --enable-timestamps was given.
+if test "${enable_timestamps+set}" = set; then
+  enableval=$enable_timestamps;
+else
+  enableval=default
+fi
+
+case "$enableval" in
+  yes) ENABLE_TIMESTAMPS=1
+ ;;
+  no)  ENABLE_TIMESTAMPS=0
+ ;;
+  default) ENABLE_TIMESTAMPS=1
+ ;;
+  *) { { echo "$as_me:$LINENO: error: Invalid setting for --enable-timestamps. Use \"yes\" or \"no\"" >&5
+echo "$as_me: error: Invalid setting for --enable-timestamps. Use \"yes\" or \"no\"" >&2;}
+   { (exit 1); exit 1; }; } ;;
+esac
+
+cat >>confdefs.h <<_ACEOF
+#define ENABLE_TIMESTAMPS $ENABLE_TIMESTAMPS
+_ACEOF
+
+
 TARGETS_TO_BUILD=""
 # Check whether --enable-targets was given.
 if test "${enable_targets+set}" = set; then
@@ -4987,6 +5009,11 @@ TARGETS_TO_BUILD=$TARGETS_TO_BUILD
 for a_target in $TARGETS_TO_BUILD; do
   if test "$a_target" = "$LLVM_NATIVE_ARCH"; then
     LLVM_NATIVE_ARCHTARGET="${LLVM_NATIVE_ARCH}Target"
+
+cat >>confdefs.h <<_ACEOF
+#define LLVM_NATIVE_ARCHNAME $LLVM_NATIVE_ARCH
+_ACEOF
+
 
 cat >>confdefs.h <<_ACEOF
 #define LLVM_NATIVE_ARCH $LLVM_NATIVE_ARCHTARGET
@@ -5170,6 +5197,7 @@ echo $ECHO_N "checking optimization flags... $ECHO_C" >&6; }
 case "$withval" in
   default)
     case "$llvm_cv_os_type" in
+    FreeBSD) optimize_option=-O2 ;;
     MingW) optimize_option=-O2 ;;
     *)     optimize_option=-O3 ;;
     esac ;;
@@ -5343,42 +5371,6 @@ else
   llvm_cv_enable_libffi=no
 fi
 
-
-if test "$llvm_cv_os_type" = "Win32" ; then
-   llvmc_dynamic="yes"
-else
-   llvmc_dynamic="no"
-fi
-
-# Check whether --enable-llvmc-dynamic was given.
-if test "${enable_llvmc_dynamic+set}" = set; then
-  enableval=$enable_llvmc_dynamic;
-else
-  enableval=$llvmc_dynamic
-fi
-
-if test ${enableval} = "yes" && test "$ENABLE_PIC" -eq 1 ; then
-   ENABLE_LLVMC_DYNAMIC=ENABLE_LLVMC_DYNAMIC=1
-
-else
-   ENABLE_LLVMC_DYNAMIC=
-
-fi
-
-# Check whether --enable-llvmc-dynamic-plugins was given.
-if test "${enable_llvmc_dynamic_plugins+set}" = set; then
-  enableval=$enable_llvmc_dynamic_plugins;
-else
-  enableval=yes
-fi
-
-if test ${enableval} = "yes" ; then
-   ENABLE_LLVMC_DYNAMIC_PLUGINS=ENABLE_LLVMC_DYNAMIC_PLUGINS=1
-
-else
-   ENABLE_LLVMC_DYNAMIC_PLUGINS=
-
-fi
 
 
 ac_ext=c
@@ -7974,6 +7966,10 @@ test -z "$INSTALL_SCRIPT" && INSTALL_SCRIPT='${INSTALL}'
 
 test -z "$INSTALL_DATA" && INSTALL_DATA='${INSTALL} -m 644'
 
+case "$INSTALL" in
+ [\\/$]* | ?:[\\/]* ) ;;
+ *)  INSTALL="\\\$(TOPSRCDIR)/$INSTALL" ;;
+esac
 
 # Extract the first word of "bzip2", so it can be a program name with args.
 set dummy bzip2; ac_word=$2
@@ -8009,6 +8005,46 @@ BZIP2=$ac_cv_path_BZIP2
 if test -n "$BZIP2"; then
   { echo "$as_me:$LINENO: result: $BZIP2" >&5
 echo "${ECHO_T}$BZIP2" >&6; }
+else
+  { echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6; }
+fi
+
+
+# Extract the first word of "cat", so it can be a program name with args.
+set dummy cat; ac_word=$2
+{ echo "$as_me:$LINENO: checking for $ac_word" >&5
+echo $ECHO_N "checking for $ac_word... $ECHO_C" >&6; }
+if test "${ac_cv_path_CAT+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  case $CAT in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_CAT="$CAT" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+  for ac_exec_ext in '' $ac_executable_extensions; do
+  if { test -f "$as_dir/$ac_word$ac_exec_ext" && $as_executable_p "$as_dir/$ac_word$ac_exec_ext"; }; then
+    ac_cv_path_CAT="$as_dir/$ac_word$ac_exec_ext"
+    echo "$as_me:$LINENO: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+done
+IFS=$as_save_IFS
+
+  ;;
+esac
+fi
+CAT=$ac_cv_path_CAT
+if test -n "$CAT"; then
+  { echo "$as_me:$LINENO: result: $CAT" >&5
+echo "${ECHO_T}$CAT" >&6; }
 else
   { echo "$as_me:$LINENO: result: no" >&5
 echo "${ECHO_T}no" >&6; }
@@ -8209,6 +8245,46 @@ POD2MAN=$ac_cv_path_POD2MAN
 if test -n "$POD2MAN"; then
   { echo "$as_me:$LINENO: result: $POD2MAN" >&5
 echo "${ECHO_T}$POD2MAN" >&6; }
+else
+  { echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6; }
+fi
+
+
+# Extract the first word of "pdfroff", so it can be a program name with args.
+set dummy pdfroff; ac_word=$2
+{ echo "$as_me:$LINENO: checking for $ac_word" >&5
+echo $ECHO_N "checking for $ac_word... $ECHO_C" >&6; }
+if test "${ac_cv_path_PDFROFF+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  case $PDFROFF in
+  [\\/]* | ?:[\\/]*)
+  ac_cv_path_PDFROFF="$PDFROFF" # Let the user override the test with a path.
+  ;;
+  *)
+  as_save_IFS=$IFS; IFS=$PATH_SEPARATOR
+for as_dir in $PATH
+do
+  IFS=$as_save_IFS
+  test -z "$as_dir" && as_dir=.
+  for ac_exec_ext in '' $ac_executable_extensions; do
+  if { test -f "$as_dir/$ac_word$ac_exec_ext" && $as_executable_p "$as_dir/$ac_word$ac_exec_ext"; }; then
+    ac_cv_path_PDFROFF="$as_dir/$ac_word$ac_exec_ext"
+    echo "$as_me:$LINENO: found $as_dir/$ac_word$ac_exec_ext" >&5
+    break 2
+  fi
+done
+done
+IFS=$as_save_IFS
+
+  ;;
+esac
+fi
+PDFROFF=$ac_cv_path_PDFROFF
+if test -n "$PDFROFF"; then
+  { echo "$as_me:$LINENO: result: $PDFROFF" >&5
+echo "${ECHO_T}$PDFROFF" >&6; }
 else
   { echo "$as_me:$LINENO: result: no" >&5
 echo "${ECHO_T}no" >&6; }
@@ -8611,6 +8687,31 @@ fi
 done
 
 
+{ echo "$as_me:$LINENO: checking for linker version" >&5
+echo $ECHO_N "checking for linker version... $ECHO_C" >&6; }
+if test "${llvm_cv_link_version+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+
+   version_string="$(ld -v 2>&1 | head -1)"
+
+   # Check for ld64.
+   if (echo "$version_string" | grep -q "ld64"); then
+     llvm_cv_link_version=$(echo "$version_string" | sed -e "s#.*ld64-\([^ ]*\)#\1#")
+   else
+     llvm_cv_link_version=$(echo "$version_string" | sed -e "s#[^0-9]*\([0-9.]*\).*#\1#")
+   fi
+
+fi
+{ echo "$as_me:$LINENO: result: $llvm_cv_link_version" >&5
+echo "${ECHO_T}$llvm_cv_link_version" >&6; }
+
+cat >>confdefs.h <<_ACEOF
+#define HOST_LINK_VERSION "$llvm_cv_link_version"
+_ACEOF
+
+
+
 { echo "$as_me:$LINENO: checking for compiler -Wl,-R<path> option" >&5
 echo $ECHO_N "checking for compiler -Wl,-R<path> option... $ECHO_C" >&6; }
 if test "${llvm_cv_link_use_r+set}" = set; then
@@ -8795,9 +8896,9 @@ _ACEOF
   fi
 
 
-{ echo "$as_me:$LINENO: checking for compiler -Wl,-retain-symbols-file option" >&5
-echo $ECHO_N "checking for compiler -Wl,-retain-symbols-file option... $ECHO_C" >&6; }
-if test "${llvm_cv_link_use_retain_symbols_file+set}" = set; then
+{ echo "$as_me:$LINENO: checking for compiler -Wl,--version-script option" >&5
+echo $ECHO_N "checking for compiler -Wl,--version-script option... $ECHO_C" >&6; }
+if test "${llvm_cv_link_use_version_script+set}" = set; then
   echo $ECHO_N "(cached) $ECHO_C" >&6
 else
    ac_ext=c
@@ -8824,9 +8925,12 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
     (umask 077 && mkdir "$tmp")
   } || exit $?
 
-  echo "main" > "$tmp/exports"
+  echo "{" > "$tmp/export.map"
+  echo "  global: main;" >> "$tmp/export.map"
+  echo "  local: *;" >> "$tmp/export.map"
+  echo "};" >> "$tmp/export.map"
 
-  CFLAGS="$CFLAGS -Wl,-retain-symbols-file=$tmp/exports"
+  CFLAGS="$CFLAGS -Wl,--version-script=$tmp/export.map"
   cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
 _ACEOF
@@ -8876,17 +8980,17 @@ eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
   ac_status=$?
   echo "$as_me:$LINENO: \$? = $ac_status" >&5
   (exit $ac_status); }; }; then
-  llvm_cv_link_use_retain_symbols_file=yes
+  llvm_cv_link_use_version_script=yes
 else
   echo "$as_me: failed program was:" >&5
 sed 's/^/| /' conftest.$ac_ext >&5
 
-	llvm_cv_link_use_retain_symbols_file=no
+	llvm_cv_link_use_version_script=no
 fi
 
 rm -f core conftest.err conftest.$ac_objext \
       conftest$ac_exeext conftest.$ac_ext
-  rm "$tmp/exports"
+  rm "$tmp/export.map"
   rmdir "$tmp"
   CFLAGS="$oldcflags"
   ac_ext=c
@@ -8897,10 +9001,10 @@ ac_compiler_gnu=$ac_cv_c_compiler_gnu
 
 
 fi
-{ echo "$as_me:$LINENO: result: $llvm_cv_link_use_retain_symbols_file" >&5
-echo "${ECHO_T}$llvm_cv_link_use_retain_symbols_file" >&6; }
-if test "$llvm_cv_link_use_retain_symbols_file" = yes ; then
-  HAVE_LINK_RETAIN_SYMBOLS_FILE=1
+{ echo "$as_me:$LINENO: result: $llvm_cv_link_use_version_script" >&5
+echo "${ECHO_T}$llvm_cv_link_use_version_script" >&6; }
+if test "$llvm_cv_link_use_version_script" = yes ; then
+  HAVE_LINK_VERSION_SCRIPT=1
 
   fi
 
@@ -11274,7 +11378,7 @@ else
   lt_dlunknown=0; lt_dlno_uscore=1; lt_dlneed_uscore=2
   lt_status=$lt_dlunknown
   cat > conftest.$ac_ext <<EOF
-#line 11277 "configure"
+#line 11381 "configure"
 #include "confdefs.h"
 
 #if HAVE_DLFCN_H
@@ -16837,6 +16941,176 @@ done
 fi
 
 
+for ac_header in CrashReporterClient.h
+do
+as_ac_Header=`echo "ac_cv_header_$ac_header" | $as_tr_sh`
+if { as_var=$as_ac_Header; eval "test \"\${$as_var+set}\" = set"; }; then
+  { echo "$as_me:$LINENO: checking for $ac_header" >&5
+echo $ECHO_N "checking for $ac_header... $ECHO_C" >&6; }
+if { as_var=$as_ac_Header; eval "test \"\${$as_var+set}\" = set"; }; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+fi
+ac_res=`eval echo '${'$as_ac_Header'}'`
+	       { echo "$as_me:$LINENO: result: $ac_res" >&5
+echo "${ECHO_T}$ac_res" >&6; }
+else
+  # Is the header compilable?
+{ echo "$as_me:$LINENO: checking $ac_header usability" >&5
+echo $ECHO_N "checking $ac_header usability... $ECHO_C" >&6; }
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+#include <$ac_header>
+_ACEOF
+rm -f conftest.$ac_objext
+if { (ac_try="$ac_compile"
+case "(($ac_try" in
+  *\"* | *\`* | *\\*) ac_try_echo=\$ac_try;;
+  *) ac_try_echo=$ac_try;;
+esac
+eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
+  (eval "$ac_compile") 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag" || test ! -s conftest.err'
+  { (case "(($ac_try" in
+  *\"* | *\`* | *\\*) ac_try_echo=\$ac_try;;
+  *) ac_try_echo=$ac_try;;
+esac
+eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
+  (eval "$ac_try") 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (case "(($ac_try" in
+  *\"* | *\`* | *\\*) ac_try_echo=\$ac_try;;
+  *) ac_try_echo=$ac_try;;
+esac
+eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
+  (eval "$ac_try") 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_header_compiler=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+	ac_header_compiler=no
+fi
+
+rm -f core conftest.err conftest.$ac_objext conftest.$ac_ext
+{ echo "$as_me:$LINENO: result: $ac_header_compiler" >&5
+echo "${ECHO_T}$ac_header_compiler" >&6; }
+
+# Is the header present?
+{ echo "$as_me:$LINENO: checking $ac_header presence" >&5
+echo $ECHO_N "checking $ac_header presence... $ECHO_C" >&6; }
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+#include <$ac_header>
+_ACEOF
+if { (ac_try="$ac_cpp conftest.$ac_ext"
+case "(($ac_try" in
+  *\"* | *\`* | *\\*) ac_try_echo=\$ac_try;;
+  *) ac_try_echo=$ac_try;;
+esac
+eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
+  (eval "$ac_cpp conftest.$ac_ext") 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } >/dev/null; then
+  if test -s conftest.err; then
+    ac_cpp_err=$ac_c_preproc_warn_flag
+    ac_cpp_err=$ac_cpp_err$ac_c_werror_flag
+  else
+    ac_cpp_err=
+  fi
+else
+  ac_cpp_err=yes
+fi
+if test -z "$ac_cpp_err"; then
+  ac_header_preproc=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+  ac_header_preproc=no
+fi
+
+rm -f conftest.err conftest.$ac_ext
+{ echo "$as_me:$LINENO: result: $ac_header_preproc" >&5
+echo "${ECHO_T}$ac_header_preproc" >&6; }
+
+# So?  What about this header?
+case $ac_header_compiler:$ac_header_preproc:$ac_c_preproc_warn_flag in
+  yes:no: )
+    { echo "$as_me:$LINENO: WARNING: $ac_header: accepted by the compiler, rejected by the preprocessor!" >&5
+echo "$as_me: WARNING: $ac_header: accepted by the compiler, rejected by the preprocessor!" >&2;}
+    { echo "$as_me:$LINENO: WARNING: $ac_header: proceeding with the compiler's result" >&5
+echo "$as_me: WARNING: $ac_header: proceeding with the compiler's result" >&2;}
+    ac_header_preproc=yes
+    ;;
+  no:yes:* )
+    { echo "$as_me:$LINENO: WARNING: $ac_header: present but cannot be compiled" >&5
+echo "$as_me: WARNING: $ac_header: present but cannot be compiled" >&2;}
+    { echo "$as_me:$LINENO: WARNING: $ac_header:     check for missing prerequisite headers?" >&5
+echo "$as_me: WARNING: $ac_header:     check for missing prerequisite headers?" >&2;}
+    { echo "$as_me:$LINENO: WARNING: $ac_header: see the Autoconf documentation" >&5
+echo "$as_me: WARNING: $ac_header: see the Autoconf documentation" >&2;}
+    { echo "$as_me:$LINENO: WARNING: $ac_header:     section \"Present But Cannot Be Compiled\"" >&5
+echo "$as_me: WARNING: $ac_header:     section \"Present But Cannot Be Compiled\"" >&2;}
+    { echo "$as_me:$LINENO: WARNING: $ac_header: proceeding with the preprocessor's result" >&5
+echo "$as_me: WARNING: $ac_header: proceeding with the preprocessor's result" >&2;}
+    { echo "$as_me:$LINENO: WARNING: $ac_header: in the future, the compiler will take precedence" >&5
+echo "$as_me: WARNING: $ac_header: in the future, the compiler will take precedence" >&2;}
+    ( cat <<\_ASBOX
+## ----------------------------------- ##
+## Report this to llvmbugs@cs.uiuc.edu ##
+## ----------------------------------- ##
+_ASBOX
+     ) | sed "s/^/$as_me: WARNING:     /" >&2
+    ;;
+esac
+{ echo "$as_me:$LINENO: checking for $ac_header" >&5
+echo $ECHO_N "checking for $ac_header... $ECHO_C" >&6; }
+if { as_var=$as_ac_Header; eval "test \"\${$as_var+set}\" = set"; }; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  eval "$as_ac_Header=\$ac_header_preproc"
+fi
+ac_res=`eval echo '${'$as_ac_Header'}'`
+	       { echo "$as_me:$LINENO: result: $ac_res" >&5
+echo "${ECHO_T}$ac_res" >&6; }
+
+fi
+if test `eval echo '${'$as_ac_Header'}'` = yes; then
+  cat >>confdefs.h <<_ACEOF
+#define `echo "HAVE_$ac_header" | $as_tr_cpp` 1
+_ACEOF
+
+fi
+
+done
+
+
+
 
 
   { echo "$as_me:$LINENO: checking for HUGE_VAL sanity" >&5
@@ -19708,6 +19982,12 @@ fi
 
 { echo "$as_me:$LINENO: checking for GCC atomic builtins" >&5
 echo $ECHO_N "checking for GCC atomic builtins... $ECHO_C" >&6; }
+ac_ext=cpp
+ac_cpp='$CXXCPP $CPPFLAGS'
+ac_compile='$CXX -c $CXXFLAGS $CPPFLAGS conftest.$ac_ext >&5'
+ac_link='$CXX -o conftest$ac_exeext $CXXFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
+ac_compiler_gnu=$ac_cv_cxx_compiler_gnu
+
 cat >conftest.$ac_ext <<_ACEOF
 /* confdefs.h.  */
 _ACEOF
@@ -19758,6 +20038,12 @@ eval "echo \"\$as_me:$LINENO: $ac_try_echo\"") >&5
   ac_status=$?
   echo "$as_me:$LINENO: \$? = $ac_status" >&5
   (exit $ac_status); }; }; then
+  ac_ext=c
+ac_cpp='$CPP $CPPFLAGS'
+ac_compile='$CC -c $CFLAGS $CPPFLAGS conftest.$ac_ext >&5'
+ac_link='$CC -o conftest$ac_exeext $CFLAGS $CPPFLAGS $LDFLAGS conftest.$ac_ext $LIBS >&5'
+ac_compiler_gnu=$ac_cv_c_compiler_gnu
+
   { echo "$as_me:$LINENO: result: yes" >&5
 echo "${ECHO_T}yes" >&6; }
 
@@ -19782,7 +20068,6 @@ fi
 
 rm -f core conftest.err conftest.$ac_objext \
       conftest$ac_exeext conftest.$ac_ext
-
 
 
 if test "$llvm_cv_os_type" = "Linux" -a "$llvm_cv_target_arch" = "x86_64" ; then
@@ -20280,7 +20565,12 @@ fi
 
 
 
-ac_config_headers="$ac_config_headers include/llvm/Config/config.h"
+ac_config_headers="$ac_config_headers include/llvm/Config/config.h include/llvm/Config/llvm-config.h"
+
+
+
+
+
 
 ac_config_files="$ac_config_files include/llvm/Config/Targets.def"
 
@@ -20299,10 +20589,7 @@ ac_config_files="$ac_config_files Makefile.config"
 ac_config_files="$ac_config_files llvm.spec"
 
 
-ac_config_files="$ac_config_files docs/doxygen.cfg"
-
-
-ac_config_files="$ac_config_files tools/llvmc/plugins/Base/Base.td"
+ac_config_files="$ac_config_files tools/llvmc/src/Base.td"
 
 
 ac_config_files="$ac_config_files tools/llvm-config/llvm-config.in"
@@ -20914,6 +21201,7 @@ for ac_config_target in $ac_config_targets
 do
   case $ac_config_target in
     "include/llvm/Config/config.h") CONFIG_HEADERS="$CONFIG_HEADERS include/llvm/Config/config.h" ;;
+    "include/llvm/Config/llvm-config.h") CONFIG_HEADERS="$CONFIG_HEADERS include/llvm/Config/llvm-config.h" ;;
     "include/llvm/Config/Targets.def") CONFIG_FILES="$CONFIG_FILES include/llvm/Config/Targets.def" ;;
     "include/llvm/Config/AsmPrinters.def") CONFIG_FILES="$CONFIG_FILES include/llvm/Config/AsmPrinters.def" ;;
     "include/llvm/Config/AsmParsers.def") CONFIG_FILES="$CONFIG_FILES include/llvm/Config/AsmParsers.def" ;;
@@ -20921,8 +21209,7 @@ do
     "include/llvm/System/DataTypes.h") CONFIG_HEADERS="$CONFIG_HEADERS include/llvm/System/DataTypes.h" ;;
     "Makefile.config") CONFIG_FILES="$CONFIG_FILES Makefile.config" ;;
     "llvm.spec") CONFIG_FILES="$CONFIG_FILES llvm.spec" ;;
-    "docs/doxygen.cfg") CONFIG_FILES="$CONFIG_FILES docs/doxygen.cfg" ;;
-    "tools/llvmc/plugins/Base/Base.td") CONFIG_FILES="$CONFIG_FILES tools/llvmc/plugins/Base/Base.td" ;;
+    "tools/llvmc/src/Base.td") CONFIG_FILES="$CONFIG_FILES tools/llvmc/src/Base.td" ;;
     "tools/llvm-config/llvm-config.in") CONFIG_FILES="$CONFIG_FILES tools/llvm-config/llvm-config.in" ;;
     "setup") CONFIG_COMMANDS="$CONFIG_COMMANDS setup" ;;
     "Makefile") CONFIG_COMMANDS="$CONFIG_COMMANDS Makefile" ;;
@@ -21088,6 +21375,7 @@ ENABLE_DOXYGEN!$ENABLE_DOXYGEN$ac_delim
 ENABLE_THREADS!$ENABLE_THREADS$ac_delim
 ENABLE_PIC!$ENABLE_PIC$ac_delim
 ENABLE_SHARED!$ENABLE_SHARED$ac_delim
+ENABLE_TIMESTAMPS!$ENABLE_TIMESTAMPS$ac_delim
 TARGETS_TO_BUILD!$TARGETS_TO_BUILD$ac_delim
 LLVM_ENUM_TARGETS!$LLVM_ENUM_TARGETS$ac_delim
 LLVM_ENUM_ASM_PRINTERS!$LLVM_ENUM_ASM_PRINTERS$ac_delim
@@ -21096,7 +21384,6 @@ LLVM_ENUM_DISASSEMBLERS!$LLVM_ENUM_DISASSEMBLERS$ac_delim
 ENABLE_CBE_PRINTF_A!$ENABLE_CBE_PRINTF_A$ac_delim
 CLANGPATH!$CLANGPATH$ac_delim
 CLANGXXPATH!$CLANGXXPATH$ac_delim
-ENABLE_BUILT_CLANG!$ENABLE_BUILT_CLANG$ac_delim
 _ACEOF
 
   if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 97; then
@@ -21138,11 +21425,10 @@ _ACEOF
 ac_delim='%!_!# '
 for ac_last_try in false false false false false :; do
   cat >conf$$subs.sed <<_ACEOF
+ENABLE_BUILT_CLANG!$ENABLE_BUILT_CLANG$ac_delim
 OPTIMIZE_OPTION!$OPTIMIZE_OPTION$ac_delim
 EXTRA_OPTIONS!$EXTRA_OPTIONS$ac_delim
 BINUTILS_INCDIR!$BINUTILS_INCDIR$ac_delim
-ENABLE_LLVMC_DYNAMIC!$ENABLE_LLVMC_DYNAMIC$ac_delim
-ENABLE_LLVMC_DYNAMIC_PLUGINS!$ENABLE_LLVMC_DYNAMIC_PLUGINS$ac_delim
 CXX!$CXX$ac_delim
 CXXFLAGS!$CXXFLAGS$ac_delim
 ac_ct_CXX!$ac_ct_CXX$ac_delim
@@ -21175,11 +21461,13 @@ INSTALL_PROGRAM!$INSTALL_PROGRAM$ac_delim
 INSTALL_SCRIPT!$INSTALL_SCRIPT$ac_delim
 INSTALL_DATA!$INSTALL_DATA$ac_delim
 BZIP2!$BZIP2$ac_delim
+CAT!$CAT$ac_delim
 DOXYGEN!$DOXYGEN$ac_delim
 GROFF!$GROFF$ac_delim
 GZIP!$GZIP$ac_delim
 POD2HTML!$POD2HTML$ac_delim
 POD2MAN!$POD2MAN$ac_delim
+PDFROFF!$PDFROFF$ac_delim
 RUNTEST!$RUNTEST$ac_delim
 TCLSH!$TCLSH$ac_delim
 ZIP!$ZIP$ac_delim
@@ -21188,7 +21476,7 @@ OCAMLOPT!$OCAMLOPT$ac_delim
 OCAMLDEP!$OCAMLDEP$ac_delim
 OCAMLDOC!$OCAMLDOC$ac_delim
 GAS!$GAS$ac_delim
-HAVE_LINK_RETAIN_SYMBOLS_FILE!$HAVE_LINK_RETAIN_SYMBOLS_FILE$ac_delim
+HAVE_LINK_VERSION_SCRIPT!$HAVE_LINK_VERSION_SCRIPT$ac_delim
 INSTALL_LTDL_TRUE!$INSTALL_LTDL_TRUE$ac_delim
 INSTALL_LTDL_FALSE!$INSTALL_LTDL_FALSE$ac_delim
 CONVENIENCE_LTDL_TRUE!$CONVENIENCE_LTDL_TRUE$ac_delim
@@ -21232,7 +21520,7 @@ LIBOBJS!$LIBOBJS$ac_delim
 LTLIBOBJS!$LTLIBOBJS$ac_delim
 _ACEOF
 
-  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 92; then
+  if test `sed -n "s/.*$ac_delim\$/X/p" conf$$subs.sed | grep -c X` = 93; then
     break
   elif $ac_last_try; then
     { { echo "$as_me:$LINENO: error: could not make $CONFIG_STATUS" >&5

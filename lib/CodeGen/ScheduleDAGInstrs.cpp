@@ -32,7 +32,8 @@ using namespace llvm;
 ScheduleDAGInstrs::ScheduleDAGInstrs(MachineFunction &mf,
                                      const MachineLoopInfo &mli,
                                      const MachineDominatorTree &mdt)
-  : ScheduleDAG(mf), MLI(mli), MDT(mdt), LoopRegs(MLI, MDT) {
+  : ScheduleDAG(mf), MLI(mli), MDT(mdt), Defs(TRI->getNumRegs()),
+    Uses(TRI->getNumRegs()), LoopRegs(MLI, MDT) {
   MFI = mf.getFrameInfo();
   DbgValueVec.clear();
 }
@@ -159,8 +160,9 @@ void ScheduleDAGInstrs::BuildSchedGraph(AliasAnalysis *AA) {
   std::map<const Value *, std::vector<SUnit *> > AliasMemUses, NonAliasMemUses;
 
   // Keep track of dangling debug references to registers.
-  std::pair<MachineInstr*, unsigned>
-        DanglingDebugValue[TargetRegisterInfo::FirstVirtualRegister];
+  std::vector<std::pair<MachineInstr*, unsigned> >
+    DanglingDebugValue(TRI->getNumRegs(),
+    std::make_pair(static_cast<MachineInstr*>(0), 0));
 
   // Check to see if the scheduler cares about latencies.
   bool UnitLatencies = ForceUnitLatencies();
@@ -172,7 +174,6 @@ void ScheduleDAGInstrs::BuildSchedGraph(AliasAnalysis *AA) {
   // Remove any stale debug info; sometimes BuildSchedGraph is called again
   // without emitting the info from the previous call.
   DbgValueVec.clear();
-  std::memset(DanglingDebugValue, 0, sizeof(DanglingDebugValue));
 
   // Walk the list of instructions, from bottom moving up.
   for (MachineBasicBlock::iterator MII = InsertPos, MIE = Begin;
@@ -210,7 +211,7 @@ void ScheduleDAGInstrs::BuildSchedGraph(AliasAnalysis *AA) {
       assert(TRI->isPhysicalRegister(Reg) && "Virtual register encountered!");
 
       if (MO.isDef() && DanglingDebugValue[Reg].first!=0) {
-        SU->setDbgInstr(DanglingDebugValue[Reg].first);
+        SU->DbgInstrList.push_back(DanglingDebugValue[Reg].first);
         DbgValueVec[DanglingDebugValue[Reg].second] = 0;
         DanglingDebugValue[Reg] = std::make_pair((MachineInstr*)0, 0);
       }
@@ -572,8 +573,7 @@ std::string ScheduleDAGInstrs::getGraphNodeLabel(const SUnit *SU) const {
 }
 
 // EmitSchedule - Emit the machine code in scheduled order.
-MachineBasicBlock *ScheduleDAGInstrs::
-EmitSchedule(DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) {
+MachineBasicBlock *ScheduleDAGInstrs::EmitSchedule() {
   // For MachineInstr-based scheduling, we're rescheduling the instructions in
   // the block, so start by removing them from the block.
   while (Begin != InsertPos) {
@@ -600,8 +600,8 @@ EmitSchedule(DenseMap<MachineBasicBlock*, MachineBasicBlock*> *EM) {
     }
 
     BB->insert(InsertPos, SU->getInstr());
-    if (SU->getDbgInstr())
-      BB->insert(InsertPos, SU->getDbgInstr());
+    for (unsigned i = 0, e = SU->DbgInstrList.size() ; i < e ; ++i)
+      BB->insert(InsertPos, SU->DbgInstrList[i]);
   }
 
   // Update the Begin iterator, as the first instruction in the block

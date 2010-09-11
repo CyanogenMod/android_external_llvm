@@ -95,8 +95,23 @@ namespace ISD {
     // execution to HANDLER. Many platform-related details also :)
     EH_RETURN,
 
-    // TargetConstant* - Like Constant*, but the DAG does not do any folding or
-    // simplification of the constant.
+    // OUTCHAIN = EH_SJLJ_SETJMP(INCHAIN, buffer)
+    // This corresponds to the eh.sjlj.setjmp intrinsic.
+    // It takes an input chain and a pointer to the jump buffer as inputs
+    // and returns an outchain.
+    EH_SJLJ_SETJMP,
+
+    // OUTCHAIN = EH_SJLJ_LONGJMP(INCHAIN, buffer)
+    // This corresponds to the eh.sjlj.longjmp intrinsic.
+    // It takes an input chain and a pointer to the jump buffer as inputs
+    // and returns an outchain.
+    EH_SJLJ_LONGJMP,
+
+    // TargetConstant* - Like Constant*, but the DAG does not do any folding,
+    // simplification, or lowering of the constant. They are used for constants
+    // which are known to fit in the immediate fields of their users, or for
+    // carrying magic numbers which are not values which need to be materialized
+    // in registers.
     TargetConstant,
     TargetConstantFP,
 
@@ -115,7 +130,7 @@ namespace ISD {
     /// This node represents a target intrinsic function with no side effects.
     /// The first operand is the ID number of the intrinsic from the
     /// llvm::Intrinsic namespace.  The operands to the intrinsic follow.  The
-    /// node has returns the result of the intrinsic.
+    /// node returns the result of the intrinsic.
     INTRINSIC_WO_CHAIN,
 
     /// RESULT,OUTCHAIN = INTRINSIC_W_CHAIN(INCHAIN, INTRINSICID, arg1, ...)
@@ -493,8 +508,9 @@ namespace ISD {
     CALLSEQ_START,  // Beginning of a call sequence
     CALLSEQ_END,    // End of a call sequence
 
-    // VAARG - VAARG has three operands: an input chain, a pointer, and a
-    // SRCVALUE.  It returns a pair of values: the vaarg value and a new chain.
+    // VAARG - VAARG has four operands: an input chain, a pointer, a SRCVALUE,
+    // and the alignment. It returns a pair of values: the vaarg value and a
+    // new chain.
     VAARG,
 
     // VACOPY - VACOPY has five operands: an input chain, a destination pointer,
@@ -587,7 +603,7 @@ namespace ISD {
   /// which do not reference a specific memory location should be less than
   /// this value. Those that do must not be less than this value, and can
   /// be used with SelectionDAG::getMemIntrinsicNode.
-  static const int FIRST_TARGET_MEMORY_OPCODE = BUILTIN_OP_END+100;
+  static const int FIRST_TARGET_MEMORY_OPCODE = BUILTIN_OP_END+150;
 
   //===--------------------------------------------------------------------===//
   /// MemIndexedMode enum - This enum defines the load / store indexed
@@ -617,7 +633,6 @@ namespace ISD {
   ///              (the result of the load and the result of the base +/- offset
   ///              computation); a post-indexed store produces one value (the
   ///              the result of the base +/- offset computation).
-  ///
   enum MemIndexedMode {
     UNINDEXED = 0,
     PRE_INC,
@@ -635,10 +650,8 @@ namespace ISD {
   ///          integer result type.
   /// ZEXTLOAD loads the integer operand and zero extends it to a larger
   ///          integer result type.
-  /// EXTLOAD  is used for three things: floating point extending loads,
-  ///          integer extending loads [the top bits are undefined], and vector
-  ///          extending loads [load into low elt].
-  ///
+  /// EXTLOAD  is used for two things: floating point extending loads and
+  ///          integer extending loads [the top bits are undefined].
   enum LoadExtType {
     NON_EXTLOAD = 0,
     EXTLOAD,

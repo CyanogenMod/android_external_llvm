@@ -53,12 +53,10 @@ namespace llvm {
       reloc_arm_movt,
 
       // reloc_arm_movw  - MOVW immediate relocation.
-      reloc_arm_movw,
-
-      // reloc_arm_so_imm - ARM so_imm relocation.
-      reloc_arm_so_imm
+      reloc_arm_movw
     };
   }
 }
 
 #endif
+

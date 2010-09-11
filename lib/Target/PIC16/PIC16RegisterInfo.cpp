@@ -35,13 +35,6 @@ getCalleeSavedRegs(const MachineFunction *MF) const {
   return CalleeSavedRegs;
 }
 
-// PIC16 Callee Saved Reg Classes
-const TargetRegisterClass* const*
-PIC16RegisterInfo::getCalleeSavedRegClasses(const MachineFunction *MF) const {
-  static const TargetRegisterClass * const CalleeSavedRegClasses[] = { 0 };
-  return CalleeSavedRegClasses;
-}
-
 BitVector PIC16RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
   return Reserved;
@@ -51,13 +44,10 @@ bool PIC16RegisterInfo::hasFP(const MachineFunction &MF) const {
   return false;
 }
 
-unsigned PIC16RegisterInfo::
+void PIC16RegisterInfo::
 eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
-                    FrameIndexValue *Value, RegScavenger *RS) const
-{
-  /* NOT YET IMPLEMENTED */
-  return 0;
-}
+                    RegScavenger *RS) const
+{ /* NOT YET IMPLEMENTED */ }
 
 void PIC16RegisterInfo::emitPrologue(MachineFunction &MF) const
 {    /* NOT YET IMPLEMENTED */  }
