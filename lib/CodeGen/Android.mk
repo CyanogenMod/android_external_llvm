@@ -5,17 +5,18 @@ codegen_SRC_FILES :=	\
 	Analysis.cpp	\
 	BranchFolding.cpp	\
 	CalcSpillWeights.cpp	\
+        CallingConvLower.cpp    \
 	CodePlacementOpt.cpp	\
 	CriticalAntiDepBreaker.cpp	\
 	DeadMachineInstructionElim.cpp	\
 	DwarfEHPrepare.cpp	\
 	ELFCodeEmitter.cpp	\
 	ELFWriter.cpp	\
-	ExactHazardRecognizer.cpp	\
 	GCMetadata.cpp	\
 	GCMetadataPrinter.cpp	\
 	GCStrategy.cpp	\
 	IfConversion.cpp	\
+        InlineSpiller.cpp       \
 	IntrinsicLowering.cpp	\
 	LLVMTargetMachine.cpp	\
 	LatencyPriorityQueue.cpp	\
@@ -23,6 +24,7 @@ codegen_SRC_FILES :=	\
 	LiveIntervalAnalysis.cpp	\
 	LiveStackAnalysis.cpp	\
 	LiveVariables.cpp	\
+        LocalStackSlotAllocation.cpp	\
 	LowerSubregs.cpp	\
 	MachineBasicBlock.cpp	\
 	MachineCSE.cpp	\
@@ -43,20 +45,22 @@ codegen_SRC_FILES :=	\
 	MachineVerifier.cpp	\
 	ObjectCodeEmitter.cpp	\
 	OcamlGC.cpp	\
-	OptimizeExts.cpp	\
 	OptimizePHIs.cpp	\
 	PHIElimination.cpp	\
 	Passes.cpp	\
+        PeepholeOptimizer.cpp	\
+        PostRAHazardRecognizer.cpp	\
 	PostRASchedulerList.cpp	\
 	PreAllocSplitting.cpp	\
 	ProcessImplicitDefs.cpp	\
 	PrologEpilogInserter.cpp	\
 	PseudoSourceValue.cpp	\
+        RegAllocFast.cpp	\
 	RegAllocLinearScan.cpp	\
-	RegAllocLocal.cpp	\
 	RegAllocPBQP.cpp	\
 	RegisterCoalescer.cpp	\
 	RegisterScavenging.cpp	\
+        RenderMachineFunction.cpp	\
 	ScheduleDAG.cpp	\
 	ScheduleDAGEmit.cpp	\
 	ScheduleDAGInstrs.cpp	\
@@ -67,6 +71,8 @@ codegen_SRC_FILES :=	\
 	SjLjEHPrepare.cpp	\
 	SlotIndexes.cpp	\
 	Spiller.cpp	\
+        SplitKit.cpp	\
+        Splitter.cpp	\
 	StackProtector.cpp	\
 	StackSlotColoring.cpp	\
 	StrongPHIElimination.cpp	\

@@ -1,7 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 
 transforms_scalar_SRC_FILES :=	\
-	ABCD.cpp	\
 	ADCE.cpp	\
 	BasicBlockPlacement.cpp	\
 	CodeGenPrepare.cpp	\
@@ -28,6 +27,7 @@ transforms_scalar_SRC_FILES :=	\
 	SimplifyCFGPass.cpp	\
 	SimplifyHalfPowrLibCalls.cpp	\
 	SimplifyLibCalls.cpp	\
+        Sink.cpp                \
 	TailDuplication.cpp	\
 	TailRecursionElimination.cpp
 

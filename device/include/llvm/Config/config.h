@@ -1,6 +1,9 @@
 /* include/llvm/Config/config.h.  Generated from config.h.in by configure.  */
 /* include/llvm/Config/config.h.in.  Generated from autoconf/configure.ac by autoheader.  */
 
+#ifndef CONFIG_H
+#define CONFIG_H
+
 /* 32 bit multilib directory. */
 #define CXX_INCLUDE_32BIT_DIR ""
 
@@ -24,6 +27,9 @@
 
 /* Define if threads enabled */
 #define ENABLE_THREADS 0
+
+/* Define if timestamp information (e.g., __DATE___) is allowed */
+#define ENABLE_TIMESTAMPS 1
 
 /* Define to 1 if you have the `argz_append' function. */
 #define HAVE_ARGZ_APPEND 1
@@ -60,6 +66,9 @@
 
 /* Define to 1 if you have the `closedir' function. */
 #define HAVE_CLOSEDIR 1
+
+/* Define to 1 if you have the <CrashReporterClient.h> header file. */
+/* #undef HAVE_CRASHREPORTERCLIENT_H */
 
 /* Define to 1 if you have the <ctype.h> header file. */
 #define HAVE_CTYPE_H 1
@@ -450,6 +459,9 @@
 /* Define to 1 if you have the `__dso_handle' function. */
 #define HAVE___DSO_HANDLE 1
 
+/* Linker version detected at compile time. */
+/* #undef HOST_LINK_VERSION */
+
 /* Installation directory for binary executables */
 #define LLVM_BINDIR "/usr/local/google/llvm/bin"
 
@@ -485,6 +497,9 @@
 
 /* LLVM architecture name for the native architecture, if available */
 #define LLVM_NATIVE_ARCH ARMTarget
+
+/* Short LLVM architecture name for the native architecture, if available */
+#define LLVM_NATIVE_ARCHNAME ARM
 
 /* Define if this is Unixish platform */
 #define LLVM_ON_UNIX 1
@@ -590,3 +605,5 @@
 
 /* Define to `unsigned int' if <sys/types.h> does not define. */
 /* #undef size_t */
+
+#endif

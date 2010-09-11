@@ -627,7 +627,7 @@ void AsmPrinter::EmitFunctionBody() {
         HasAnyRealCode = true;
       
         ++EmittedInsts;
-      
+      }
 #ifndef ANDROID_TARGET_BUILD
       if (ShouldPrintDebugScopes) {
         NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);

@@ -24,6 +24,7 @@ analysis_SRC_FILES :=	\
 	LibCallAliasAnalysis.cpp	\
 	LibCallSemantics.cpp	\
 	LiveValues.cpp	\
+        Loads.cpp    \
 	MemoryBuiltins.cpp	\
 	MemoryDependenceAnalysis.cpp	\
 	LoopDependenceAnalysis.cpp	\

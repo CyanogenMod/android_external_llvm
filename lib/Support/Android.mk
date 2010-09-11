@@ -7,6 +7,8 @@ support_SRC_FILES :=	\
 	Allocator.cpp	\
 	CommandLine.cpp	\
 	ConstantRange.cpp	\
+        CrashRecoveryContext.cpp	\
+        DAGDeltaAlgorithm.cpp	\
 	Debug.cpp	\
 	DeltaAlgorithm.cpp	\
 	Dwarf.cpp	\
@@ -23,7 +25,6 @@ support_SRC_FILES :=	\
 	PluginLoader.cpp	\
 	PrettyStackTrace.cpp	\
 	Regex.cpp	\
-	SlowOperationInformer.cpp	\
 	SmallPtrSet.cpp	\
 	SmallVector.cpp	\
 	SourceMgr.cpp	\

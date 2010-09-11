@@ -33,8 +33,6 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/MC	\
 		lib/MC/MCParser	\
                 lib/Linker      \
-                lib/AsmParser   \
-                lib/Transforms/Instrumentation \
 	))
 
 include $(LOCAL_PATH)/llvm.mk

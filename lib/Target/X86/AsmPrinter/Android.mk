@@ -17,8 +17,7 @@ TBLGEN_TD_DIR := $(LOCAL_PATH)/..
 LOCAL_SRC_FILES :=	\
 	X86ATTInstPrinter.cpp	\
 	X86AsmPrinter.cpp	\
-	X86IntelInstPrinter.cpp	\
-	X86MCInstLower.cpp
+	X86IntelInstPrinter.cpp	
 
 LOCAL_C_INCLUDES +=	\
 	$(LOCAL_PATH)/..

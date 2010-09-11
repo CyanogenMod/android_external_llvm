@@ -1,7 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 
 codegen_selectiondag_SRC_FILES :=	\
-	CallingConvLower.cpp	\
 	DAGCombiner.cpp	\
 	FastISel.cpp	\
 	FunctionLoweringInfo.cpp	\
@@ -21,7 +20,8 @@ codegen_selectiondag_SRC_FILES :=	\
 	SelectionDAGBuilder.cpp	\
 	SelectionDAGISel.cpp	\
 	SelectionDAGPrinter.cpp	\
-	TargetLowering.cpp
+	TargetLowering.cpp      \
+        TargetSelectionDAGInfo.cpp
 
 # For the host
 # =====================================================

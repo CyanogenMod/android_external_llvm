@@ -27,14 +27,15 @@ LOCAL_SRC_FILES :=	\
 	X86ELFWriterInfo.cpp	\
 	X86FastISel.cpp	\
 	X86FloatingPoint.cpp	\
-	X86FloatingPointRegKill.cpp	\
 	X86ISelDAGToDAG.cpp	\
 	X86ISelLowering.cpp	\
 	X86InstrInfo.cpp	\
 	X86JITInfo.cpp	\
 	X86MCAsmInfo.cpp	\
 	X86MCCodeEmitter.cpp	\
+        X86MCInstLower.cpp  \
 	X86RegisterInfo.cpp	\
+        X86SelectionDAGInfo.cpp     \
 	X86Subtarget.cpp	\
 	X86TargetMachine.cpp	\
 	X86TargetObjectFile.cpp

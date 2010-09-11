@@ -22,7 +22,6 @@ transforms_utils_SRC_FILES :=	\
 	Mem2Reg.cpp	\
 	PromoteMemoryToRegister.cpp	\
 	SSAUpdater.cpp	\
-	SSI.cpp	\
 	SimplifyCFG.cpp	\
 	UnifyFunctionExitNodes.cpp	\
 	ValueMapper.cpp

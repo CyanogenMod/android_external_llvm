@@ -8,8 +8,7 @@ arm_asm_printer_TBLGEN_TABLES :=	\
 
 arm_asm_printer_SRC_FILES :=	\
 	ARMAsmPrinter.cpp	\
-	ARMInstPrinter.cpp	\
-	ARMMCInstLower.cpp
+	ARMInstPrinter.cpp	
 
 # For the host
 # =====================================================

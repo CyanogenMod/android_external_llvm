@@ -7,6 +7,7 @@ arm_codegen_TBLGEN_TABLES :=	\
 	ARMGenInstrNames.inc	\
     ARMGenInstrInfo.inc	\
     ARMGenDAGISel.inc	\
+    ARMGenFastISel.inc	\
 	ARMGenSubtarget.inc	\
     ARMGenCodeEmitter.inc	\
 	ARMGenCallingConv.inc
@@ -18,13 +19,17 @@ arm_codegen_SRC_FILES :=	\
 	ARMConstantIslandPass.cpp	\
 	ARMConstantPoolValue.cpp	\
 	ARMExpandPseudoInsts.cpp	\
+        ARMFastISel.cpp     \
+        ARMGlobalMerge.cpp  \
 	ARMISelDAGToDAG.cpp	\
 	ARMISelLowering.cpp	\
 	ARMInstrInfo.cpp	\
 	ARMJITInfo.cpp	\
 	ARMLoadStoreOptimizer.cpp	\
 	ARMMCAsmInfo.cpp	\
+        ARMMCInstLower.cpp  \
 	ARMRegisterInfo.cpp	\
+        ARMSelectionDAGInfo.cpp     \
 	ARMSubtarget.cpp	\
 	ARMTargetMachine.cpp	\
 	ARMTargetObjectFile.cpp	\
@@ -32,6 +37,7 @@ arm_codegen_SRC_FILES :=	\
 	NEONPreAllocPass.cpp	\
 	Thumb1InstrInfo.cpp	\
 	Thumb1RegisterInfo.cpp	\
+        Thumb2HazardRecognizer.cpp  \
 	Thumb2ITBlockPass.cpp	\
 	Thumb2InstrInfo.cpp	\
 	Thumb2RegisterInfo.cpp	\

@@ -2,11 +2,13 @@ LOCAL_PATH:= $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES :=	\
+	ARMDecoderEmitter.cpp	\
 	AsmMatcherEmitter.cpp	\
 	AsmWriterEmitter.cpp	\
 	AsmWriterInst.cpp	\
-	ARMDecoderEmitter.cpp	\
 	CallingConvEmitter.cpp	\
+        ClangASTNodesEmitter.cpp	\
+        ClangAttrEmitter.cpp	\
 	ClangDiagnosticsEmitter.cpp	\
 	CodeEmitterGen.cpp	\
 	CodeGenDAGPatterns.cpp	\
@@ -24,6 +26,7 @@ LOCAL_SRC_FILES :=	\
 	InstrInfoEmitter.cpp	\
 	IntrinsicEmitter.cpp	\
 	LLVMCConfigurationEmitter.cpp	\
+        NeonEmitter.cpp         \
 	OptParserEmitter.cpp	\
 	Record.cpp	\
 	RegisterInfoEmitter.cpp	\
