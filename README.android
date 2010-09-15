@@ -1,0 +1,39 @@
+/*
+ * README.android describes in high-level the LLVM changes that we cannot push
+ * upstream to the llvm.org repository:
+ *  - Changes due to Android's build system.
+ *  - Changes due to Android's toolchain.
+ *  - Changes due to the limitations in Android-based consumer electronics.
+ *
+ * Some of them are to-dos. If and when they are done, there will no longer be 
+ * merge conflicts with upstream on those parts.
+ *
+ * The file contains useful hints when we try to resolve future 3-way merge 
+ * conflicts. 
+ */ 
+
+* We add 40+ Android's *.mk files that are specific to Android's build system.
+
+* All the configuration files because we don't have configure/make/make-install
+
+* Changes for enabling both host and device builds.
+
+* All the tblgen work to enable Android to build a generator-generator binary
+  and then run it in the middle of Android build process.
+
+* Explicitly include <cctype> header since is*() are not builtin functions in 
+Android toolchain.
+
+* Code changes to make Android's toolchain stop outputting warnings. (This part
+  should be pushed upstream eventually.)
+
+* lib/Target/{X86,ARM}/AsmPrinter/{X86,ARM}AsmPrinter.cpp
+   Move from lib/Target/{X86,ARM}/{X86,ARM}AsmPrinter.cpp. 
+   AsmPrinter is only needed in Android when disassembly functionality 
+      is desired to be included.
+
+* Our ARM code generation fixes that upstream hasn't accepted yet. (This
+  conflict will be resolved eventually, but there will always be time lag.)
+
+* Assorted size optimizations because Android-based consumer electronics
+  need them.
