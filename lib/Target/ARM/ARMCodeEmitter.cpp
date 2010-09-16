@@ -88,9 +88,11 @@ namespace {
 
     void emitWordLE(unsigned Binary);
     void emitDWordLE(uint64_t Binary);
+    void emitConstantToMemory(unsigned CPI, const Constant *CV);
     void emitConstPoolInstruction(const MachineInstr &MI);
     void emitMOVi32immInstruction(const MachineInstr &MI);
     void emitMOVi2piecesInstruction(const MachineInstr &MI);
+    void emitLEApcrelInstruction(const MachineInstr &MI);
     void emitLEApcrelJTInstruction(const MachineInstr &MI);
     void emitPseudoMoveInstruction(const MachineInstr &MI);
     void addPCLabel(unsigned LabelID);
@@ -442,6 +444,56 @@ void ARMCodeEmitter::emitInstruction(const MachineInstr &MI) {
   MCE.processDebugLoc(MI.getDebugLoc(), false);
 }
 
+void ARMCodeEmitter::emitConstantToMemory(unsigned CPI, const Constant *C) {
+  DEBUG({
+      errs() << "  ** Constant pool #" << CPI << " @ "
+             << (void*)MCE.getCurrentPCValue() << " ";
+      if (const Function *F = dyn_cast<Function>(C))
+        errs() << F->getName();
+      else
+        errs() << *C;
+      errs() << '\n';
+    });
+
+  switch (C->getValueID()) {
+  default: {
+    llvm_unreachable("Unable to handle this constantpool entry!");
+    break;
+  }
+  case Value::GlobalVariableVal: {
+    emitGlobalAddress(static_cast<const GlobalValue*>(C),
+                      ARM::reloc_arm_absolute, isa<Function>(C), false);
+    emitWordLE(0);
+    break;
+  }
+  case Value::ConstantIntVal: {
+    const ConstantInt *CI = static_cast<const ConstantInt*>(C);
+    uint32_t Val = *(uint32_t*)CI->getValue().getRawData();
+    emitWordLE(Val);
+    break;
+  }
+  case Value::ConstantFPVal: {
+    const ConstantFP *CFP = static_cast<const ConstantFP*>(C);
+    if (CFP->getType()->isFloatTy())
+      emitWordLE(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
+    else if (CFP->getType()->isDoubleTy())
+      emitDWordLE(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
+    else {
+      llvm_unreachable("Unable to handle this constantpool entry!");
+    }
+    break;
+  }
+  case Value::ConstantArrayVal: {
+    const ConstantArray *CA = static_cast<const ConstantArray*>(C);
+    for (unsigned i = 0, e = CA->getNumOperands(); i != e; ++i)
+      emitConstantToMemory(CPI, CA->getOperand(i));
+    break;
+  }
+  }
+
+  return;
+}
+
 void ARMCodeEmitter::emitConstPoolInstruction(const MachineInstr &MI) {
   unsigned CPI = MI.getOperand(0).getImm();       // CP instruction index.
   unsigned CPIndex = MI.getOperand(1).getIndex(); // Actual cp entry index.
@@ -472,35 +524,7 @@ void ARMCodeEmitter::emitConstPoolInstruction(const MachineInstr &MI) {
     }
     emitWordLE(0);
   } else {
-    const Constant *CV = MCPE.Val.ConstVal;
-
-    DEBUG({
-        errs() << "  ** Constant pool #" << CPI << " @ "
-               << (void*)MCE.getCurrentPCValue() << " ";
-        if (const Function *F = dyn_cast<Function>(CV))
-          errs() << F->getName();
-        else
-          errs() << *CV;
-        errs() << '\n';
-      });
-
-    if (const GlobalValue *GV = dyn_cast<GlobalValue>(CV)) {
-      emitGlobalAddress(GV, ARM::reloc_arm_absolute, isa<Function>(GV), false);
-      emitWordLE(0);
-    } else if (const ConstantInt *CI = dyn_cast<ConstantInt>(CV)) {
-      uint32_t Val = *(uint32_t*)CI->getValue().getRawData();
-      emitWordLE(Val);
-    } else if (const ConstantFP *CFP = dyn_cast<ConstantFP>(CV)) {
-      if (CFP->getType()->isFloatTy())
-        emitWordLE(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
-      else if (CFP->getType()->isDoubleTy())
-        emitDWordLE(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
-      else {
-        llvm_unreachable("Unable to handle this constantpool entry!");
-      }
-    } else {
-      llvm_unreachable("Unable to handle this constantpool entry!");
-    }
+    emitConstantToMemory(CPI, MCPE.Val.ConstVal);
   }
 }
 
@@ -582,13 +606,39 @@ void ARMCodeEmitter::emitMOVi2piecesInstruction(const MachineInstr &MI) {
   emitWordLE(Binary);
 }
 
+void ARMCodeEmitter::emitLEApcrelInstruction(const MachineInstr &MI) {
+  // It's basically add r, pc, (LCPI - $+8)
+  const TargetInstrDesc &TID = MI.getDesc();
+
+  unsigned Binary = 0;
+
+  // Set the conditional execution predicate
+  Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+
+  // Encode S bit if MI modifies CPSR.
+  Binary |= getAddrModeSBit(MI, TID);
+
+  // Encode Rd.
+  Binary |= getMachineOpValue(MI, 0) << ARMII::RegRdShift;
+
+  // Encode Rn which is PC.
+  Binary |= ARMRegisterInfo::getRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
+
+  // Encode the displacement which is a so_imm.
+  // Set bit I(25) to identify this is the immediate form of <shifter_op>
+  Binary |= 1 << ARMII::I_BitShift;
+  emitConstPoolAddress(MI.getOperand(1).getIndex(), ARM::reloc_arm_so_imm_cp_entry);
+
+  emitWordLE(Binary);
+}
+
 void ARMCodeEmitter::emitLEApcrelJTInstruction(const MachineInstr &MI) {
   // It's basically add r, pc, (LJTI - $+8)
 
   const TargetInstrDesc &TID = MI.getDesc();
 
   // Emit the 'add' instruction.
-  unsigned Binary = 0x4 << 21;  // add: Insts{24-31} = 0b0100
+  unsigned Binary = 0x4 << 21;  // add: Insts{21-24} = 0b0100
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
@@ -727,6 +777,10 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
     // Two instructions to materialize a constant.
     emitMOVi2piecesInstruction(MI);
     break;
+  case ARM::LEApcrel:
+    // Materialize constantpool index address.
+    emitLEApcrelInstruction(MI);
+    break;
   case ARM::LEApcrelJT:
     // Materialize jumptable address.
     emitLEApcrelJTInstruction(MI);
@@ -812,7 +866,7 @@ unsigned ARMCodeEmitter::getMachineSoImmOpValue(unsigned SoImm) {
 
 unsigned ARMCodeEmitter::getAddrModeSBit(const MachineInstr &MI,
                                          const TargetInstrDesc &TID) const {
-  for (unsigned i = MI.getNumOperands(), e = TID.getNumOperands(); i >= e; --i){
+  for (unsigned i = MI.getNumOperands(), e = TID.getNumOperands(); i != e; --i){
     const MachineOperand &MO = MI.getOperand(i-1);
     if (MO.isReg() && MO.isDef() && MO.getReg() == ARM::CPSR)
       return 1 << ARMII::S_BitShift;
@@ -1584,14 +1638,13 @@ void ARMCodeEmitter::emitMiscInstruction(const MachineInstr &MI) {
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
 
-  switch(Opcode) {
-  default:
+  switch (Opcode) {
+  default: {
     llvm_unreachable("ARMCodeEmitter::emitMiscInstruction");
-
+  }
   case ARM::FMSTAT:
     // No further encoding needed.
     break;
-
   case ARM::VMRS:
   case ARM::VMSR: {
     const MachineOperand &MO0 = MI.getOperand(0);
@@ -1600,7 +1653,6 @@ void ARMCodeEmitter::emitMiscInstruction(const MachineInstr &MI) {
                 << ARMII::RegRdShift;
     break;
   }
-
   case ARM::FCONSTD:
   case ARM::FCONSTS: {
     // Encode Dd / Sd.
@@ -1612,7 +1664,7 @@ void ARMCodeEmitter::emitMiscInstruction(const MachineInstr &MI) {
                       .bitcastToAPInt().getHiBits(32).getLimitedValue());
     unsigned ModifiedImm;
 
-    if(Opcode == ARM::FCONSTS)
+    if (Opcode == ARM::FCONSTS)
       ModifiedImm = (Imm & 0x80000000) >> 24 | // a
                     (Imm & 0x03F80000) >> 19;  // bcdefgh
     else // Opcode == ARM::FCONSTD

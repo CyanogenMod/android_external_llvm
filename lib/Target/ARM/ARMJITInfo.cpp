@@ -15,6 +15,7 @@
 #include "ARMJITInfo.h"
 #include "ARMInstrInfo.h"
 #include "ARMConstantPoolValue.h"
+#include "ARMAddressingModes.h"
 #include "ARMRelocations.h"
 #include "ARMSubtarget.h"
 #include "llvm/Function.h"
@@ -247,6 +248,7 @@ intptr_t ARMJITInfo::resolveRelocDestAddr(MachineRelocation *MR) const {
     return getJumpTableBaseAddr(MR->getJumpTableIndex());
   case ARM::reloc_arm_cp_entry:
   case ARM::reloc_arm_vfp_cp_entry:
+  case ARM::reloc_arm_so_imm_cp_entry:
     // Constant pool entry address.
     return getConstantPoolEntryAddr(MR->getConstantPoolIndex());
   case ARM::reloc_arm_machine_cp_entry: {
@@ -288,6 +290,29 @@ void ARMJITInfo::relocate(void *Function, MachineRelocation *MR,
       if (MR->getRelocationType() == ARM::reloc_arm_vfp_cp_entry)
         ResultPtr = ResultPtr >> 2;
       *((intptr_t*)RelocPos) |= ResultPtr;
+      // Set register Rn to PC.
+      *((intptr_t*)RelocPos) |=
+        ARMRegisterInfo::getRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
+      break;
+    }
+    case ARM::reloc_arm_so_imm_cp_entry: {
+      ResultPtr = ResultPtr - (intptr_t)RelocPos - 8;
+      // If the result is positive, set bit U(23) to 1.
+      if (ResultPtr >= 0)
+        *((intptr_t*)RelocPos) |= 1 << ARMII::U_BitShift;
+      else {
+        // Otherwise, obtain the absolute value and set bit U(23) to 0.
+        *((intptr_t*)RelocPos) &= ~(1 << ARMII::U_BitShift);
+        // FIXME: Also set bit 22 to 1 since 'sub' instruction is going to be used.
+        *((intptr_t*)RelocPos) |= 1 << 22;
+        ResultPtr = - ResultPtr;
+      }
+
+      int SoImmVal = ARM_AM::getSOImmVal(ResultPtr);
+      assert(SoImmVal != -1 && "Not a valid so_imm value!");
+      *((intptr_t*)RelocPos) |= (ARM_AM::getSOImmValRot((unsigned)SoImmVal) >> 1)
+            << ARMII::SoRotImmShift;
+      *((intptr_t*)RelocPos) |= ARM_AM::getSOImmValImm((unsigned)SoImmVal);
       // Set register Rn to PC.
       *((intptr_t*)RelocPos) |=
         ARMRegisterInfo::getRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
