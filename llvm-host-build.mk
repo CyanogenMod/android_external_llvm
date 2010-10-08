@@ -60,6 +60,7 @@ $(hide) $(TBLGEN) \
 	-I $(LLVM_ROOT_PATH)/include	\
 	-I $(LLVM_ROOT_PATH)/host/include	\
 	-I $(LLVM_ROOT_PATH)/lib/Target	\
-    -gen-$(strip $(1)) \
-    -o $@ $<
+	$(if $(strip $(CLANG_ROOT_PATH)),-I $(CLANG_ROOT_PATH)/include,)	\
+	-gen-$(strip $(1))	\
+	-o $@ $<
 endef
