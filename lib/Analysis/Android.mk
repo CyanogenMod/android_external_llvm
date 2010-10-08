@@ -50,8 +50,13 @@ analysis_SRC_FILES :=	\
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(analysis_SRC_FILES) \
-                   Lint.cpp
+LOCAL_SRC_FILES :=	\
+	$(analysis_SRC_FILES) \
+	Lint.cpp	\
+	ModuleDebugInfoPrinter.cpp	\
+	RegionInfo.cpp	\
+	RegionPrinter.cpp	\
+	TypeBasedAliasAnalysis.cpp
 
 LOCAL_MODULE:= libLLVMAnalysis
 

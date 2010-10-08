@@ -35,7 +35,11 @@ transforms_scalar_SRC_FILES :=	\
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(transforms_scalar_SRC_FILES)
+LOCAL_SRC_FILES :=	\
+	$(transforms_scalar_SRC_FILES)	\
+	LowerAtomic.cpp	\
+	ValuePropagation.cpp
+
 LOCAL_MODULE:= libLLVMScalarOpts
 
 include $(LLVM_HOST_BUILD_MK)

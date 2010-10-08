@@ -17,6 +17,7 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/Transforms/Utils	\
 		lib/Transforms/Scalar	\
 		lib/Transforms/InstCombine	\
+		lib/Transforms/Instrumentation	\
 		lib/CodeGen	\
 		lib/CodeGen/SelectionDAG	\
 		lib/CodeGen/AsmPrinter	\
