@@ -1416,9 +1416,10 @@ static unsigned encodeVFPRd(const MachineInstr &MI, unsigned OpIdx) {
   unsigned Binary = 0;
   bool isSPVFP = false;
   RegD = ARMRegisterInfo::getRegisterNumbering(RegD, &isSPVFP);
-  if (!isSPVFP)
-    Binary |=   RegD               << ARMII::RegRdShift;
-  else {
+  if (!isSPVFP) {
+    Binary |=  (RegD & 0x0F)       << ARMII::RegRdShift;
+    Binary |= ((RegD & 0x10) >> 4) << ARMII::D_BitShift;
+  } else {
     Binary |= ((RegD & 0x1E) >> 1) << ARMII::RegRdShift;
     Binary |=  (RegD & 0x01)       << ARMII::D_BitShift;
   }
@@ -1430,9 +1431,10 @@ static unsigned encodeVFPRn(const MachineInstr &MI, unsigned OpIdx) {
   unsigned Binary = 0;
   bool isSPVFP = false;
   RegN = ARMRegisterInfo::getRegisterNumbering(RegN, &isSPVFP);
-  if (!isSPVFP)
-    Binary |=   RegN               << ARMII::RegRnShift;
-  else {
+  if (!isSPVFP) {
+    Binary |=  (RegN & 0x0F)       << ARMII::RegRnShift;
+    Binary |= ((RegN & 0x10) >> 4) << ARMII::N_BitShift;
+  } else {
     Binary |= ((RegN & 0x1E) >> 1) << ARMII::RegRnShift;
     Binary |=  (RegN & 0x01)       << ARMII::N_BitShift;
   }
@@ -1444,9 +1446,10 @@ static unsigned encodeVFPRm(const MachineInstr &MI, unsigned OpIdx) {
   unsigned Binary = 0;
   bool isSPVFP = false;
   RegM = ARMRegisterInfo::getRegisterNumbering(RegM, &isSPVFP);
-  if (!isSPVFP)
-    Binary |=   RegM;
-  else {
+  if (!isSPVFP) {
+    Binary |=  (RegM & 0x0F);
+    Binary |= ((RegM & 0x10) >> 4) << ARMII::M_BitShift;
+  } else {
     Binary |= ((RegM & 0x1E) >> 1);
     Binary |=  (RegM & 0x01)       << ARMII::M_BitShift;
   }
