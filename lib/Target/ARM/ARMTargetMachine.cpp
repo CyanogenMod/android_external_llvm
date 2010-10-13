@@ -62,7 +62,7 @@ ARMTargetMachine::ARMTargetMachine(const Target &T, const std::string &TT,
                std::string("e-p:32:32-f64:32:32-i64:32:32-"
                            "v128:32:128-v64:32:64-n32") :
                std::string("e-p:32:32-f64:64:64-i64:64:64-"
-                           "v128:64:128-v64:64:64-n32")),
+                           "v128:128:128-v64:64:64-n32")),
     TLInfo(*this),
     TSInfo(*this) {
   if (!Subtarget.hasARMOps())
