@@ -1,6 +1,6 @@
 LOCAL_PATH := $(call my-dir)
 LLVM_ROOT_PATH := $(LOCAL_PATH)
-LLVM_ENABLE_ASSERTION := true
+LLVM_ENABLE_ASSERTION := false
 
 include $(CLEAR_VARS)
 
