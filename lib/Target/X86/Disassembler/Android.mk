@@ -1,6 +1,6 @@
 LOCAL_PATH := $(call my-dir)
 
-# For the device only
+# For the host only
 # =====================================================
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
