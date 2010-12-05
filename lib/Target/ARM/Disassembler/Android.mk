@@ -1,26 +1,29 @@
 LOCAL_PATH := $(call my-dir)
 
+arm_disassembler_TBLGEN_TABLES := \
+    ARMGenDecoderTables.inc \
+    ARMGenEDInfo.inc \
+    ARMGenInstrNames.inc \
+    ARMGenInstrInfo.inc \
+    ARMGenRegisterNames.inc \
+    ARMGenRegisterInfo.h.inc
+
+arm_disassembler_SRC_FILES := \
+    ARMDisassembler.cpp \
+    ARMDisassemblerCore.cpp
+
 # For the device
 # =====================================================
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
-TBLGEN_TABLES :=	\
-	ARMGenDecoderTables.inc	\
-	ARMGenEDInfo.inc	\
-	ARMGenInstrNames.inc	\
-	ARMGenInstrInfo.inc	\
-	ARMGenRegisterNames.inc	\
-	ARMGenRegisterInfo.h.inc
+TBLGEN_TABLES := $(arm_disassembler_TBLGEN_TABLES)
 
 TBLGEN_TD_DIR := $(LOCAL_PATH)/..
 
-LOCAL_SRC_FILES :=	\
-	ARMDisassembler.cpp	\
-	ARMDisassemblerCore.cpp
+LOCAL_SRC_FILES := $(arm_disassembler_SRC_FILES)
 
-LOCAL_C_INCLUDES +=	\
-	$(LOCAL_PATH)/..
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/..
 
 LOCAL_MODULE:= libLLVMARMDisassembler
 
@@ -33,25 +36,17 @@ include $(BUILD_STATIC_LIBRARY)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
-TBLGEN_TABLES :=	\
-	ARMGenDecoderTables.inc	\
-	ARMGenEDInfo.inc	\
-	ARMGenInstrNames.inc	\
-	ARMGenInstrInfo.inc	\
-	ARMGenRegisterNames.inc	\
-	ARMGenRegisterInfo.h.inc
+TBLGEN_TABLES := $(arm_disassembler_TBLGEN_TABLES)
 
 TBLGEN_TD_DIR := $(LOCAL_PATH)/..
 
-LOCAL_SRC_FILES :=	\
-	ARMDisassembler.cpp	\
-	ARMDisassemblerCore.cpp
+LOCAL_SRC_FILES := $(arm_disassembler_SRC_FILES)
 
-LOCAL_C_INCLUDES +=	\
-	$(LOCAL_PATH)/..
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/..
 
 LOCAL_MODULE:= libLLVMARMDisassembler
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
+
