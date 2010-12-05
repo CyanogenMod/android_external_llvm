@@ -1,41 +1,52 @@
 LOCAL_PATH := $(call my-dir)
-LLVM_ROOT_PATH := $(LOCAL_PATH)
-LLVM_ENABLE_ASSERTION := false
 
+arm_disassembler_TBLGEN_TABLES := \
+    ARMGenDecoderTables.inc \
+    ARMGenEDInfo.inc \
+    ARMGenInstrNames.inc \
+    ARMGenInstrInfo.inc \
+    ARMGenRegisterNames.inc \
+    ARMGenRegisterInfo.h.inc
+
+arm_disassembler_SRC_FILES := \
+    ARMDisassembler.cpp \
+    ARMDisassemblerCore.cpp
+
+# For the device
+# =====================================================
 include $(CLEAR_VARS)
+include $(CLEAR_TBLGEN_VARS)
 
-subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
-		lib/System \
-		lib/Support	\
-		utils/TableGen	\
-		lib/VMCore	\
-		lib/Bitcode/Reader	\
-		lib/Bitcode/Writer	\
-		lib/Analysis	\
-		lib/Analysis/IPA	\
-		lib/Transforms/IPO	\
-		lib/Transforms/Utils	\
-		lib/Transforms/Scalar	\
-		lib/Transforms/InstCombine	\
-		lib/Transforms/Instrumentation	\
-		lib/CodeGen	\
-		lib/CodeGen/SelectionDAG	\
-		lib/CodeGen/AsmPrinter	\
-		lib/Target	\
-		lib/Target/ARM	\
-		lib/Target/ARM/AsmPrinter	\
-		lib/Target/ARM/Disassembler	\
-		lib/Target/ARM/TargetInfo	\
-		lib/Target/X86	\
-		lib/Target/X86/AsmPrinter	\
-		lib/Target/X86/Disassembler	\
-		lib/Target/X86/TargetInfo	\
-		lib/ExecutionEngine/JIT	\
-		lib/MC	\
-		lib/MC/MCParser	\
-                lib/Linker      \
-	))
+TBLGEN_TABLES := $(arm_disassembler_TBLGEN_TABLES)
 
-include $(LOCAL_PATH)/llvm.mk
+TBLGEN_TD_DIR := $(LOCAL_PATH)/..
 
-include $(subdirs)
+LOCAL_SRC_FILES := $(arm_disassembler_SRC_FILES)
+
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/..
+
+LOCAL_MODULE:= libLLVMARMDisassembler
+
+include $(LLVM_DEVICE_BUILD_MK)
+include $(LLVM_TBLGEN_RULES_MK)
+include $(BUILD_STATIC_LIBRARY)
+
+# For the host
+# =====================================================
+include $(CLEAR_VARS)
+include $(CLEAR_TBLGEN_VARS)
+
+TBLGEN_TABLES := $(arm_disassembler_TBLGEN_TABLES)
+
+TBLGEN_TD_DIR := $(LOCAL_PATH)/..
+
+LOCAL_SRC_FILES := $(arm_disassembler_SRC_FILES)
+
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/..
+
+LOCAL_MODULE:= libLLVMARMDisassembler
+
+include $(LLVM_HOST_BUILD_MK)
+include $(LLVM_TBLGEN_RULES_MK)
+include $(BUILD_HOST_STATIC_LIBRARY)
+
