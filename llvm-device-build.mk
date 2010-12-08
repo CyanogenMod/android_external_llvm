@@ -11,7 +11,14 @@ LOCAL_CFLAGS :=	\
 	$(LOCAL_CFLAGS)
 
 ifneq ($(TARGET_SIMULATOR),true)
-LOCAL_CFLAGS := -DANDROID_TARGET_BUILD $(LOCAL_CFLAGS)
+# The three inline options together reduce libbcc.so almost 1MB.
+# We move them from global build/core/combo/TARGET_linux-arm.mk
+# to here.
+LOCAL_CFLAGS := -DANDROID_TARGET_BUILD \
+		-finline-limit=64 \
+		-finline-functions \
+		-fno-inline-functions-called-once \
+		$(LOCAL_CFLAGS)
 endif
 
 ifeq ($(LLVM_ENABLE_ASSERTION),true)
