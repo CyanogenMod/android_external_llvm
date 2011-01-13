@@ -44,7 +44,12 @@ REQUIRES_RTTI := 1
 
 LOCAL_STATIC_LIBRARIES := libLLVMSupport libLLVMSystem
 LOCAL_MODULE := tblgen
-LOCAL_LDLIBS += -lpthread -lm -ldl
+LOCAL_LDLIBS += -lm
+ifeq ($(HOST_OS),windows)
+  LOCAL_LDLIBS += -limagehlp -lpsapi
+else
+  LOCAL_LDLIBS += -lpthread -ldl
+endif
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_EXECUTABLE)

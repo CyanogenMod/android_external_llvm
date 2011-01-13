@@ -182,17 +182,8 @@
 /* Define if you have the libdl library or equivalent. */
 #define HAVE_LIBDL 1
 
-/* Define to 1 if you have the `imagehlp' library (-limagehlp). */
-/* #undef HAVE_LIBIMAGEHLP */
-
 /* Define to 1 if you have the `m' library (-lm). */
 #define HAVE_LIBM 1
-
-/* Define to 1 if you have the `psapi' library (-lpsapi). */
-/* #undef HAVE_LIBPSAPI */
-
-/* Define to 1 if you have the `pthread' library (-lpthread). */
-#define HAVE_LIBPTHREAD 1
 
 /* Define to 1 if you have the `udis86' library (-ludis86). */
 /* #undef HAVE_LIBUDIS86 */
@@ -280,6 +271,10 @@
 /* Define to have the %a format string */
 #define HAVE_PRINTF_A 1
 
+#ifndef USE_MINGW
+/* Define to 1 if you have the `pthread' library (-lpthread). */
+#define HAVE_LIBPTHREAD 1
+
 /* Have pthread_getspecific */
 #define HAVE_PTHREAD_GETSPECIFIC 1
 
@@ -291,6 +286,7 @@
 
 /* Have pthread_rwlock_init */
 #define HAVE_PTHREAD_RWLOCK_INIT 1
+#endif /* not USE_MINGW */
 
 /* Define to 1 if srand48/lrand48/drand48 exist in <stdlib.h> */
 #define HAVE_RAND48 1
@@ -368,7 +364,9 @@
 #define HAVE_STRERROR 1
 
 /* Define to 1 if you have the `strerror_r' function. */
+#ifndef USE_MINGW
 #define HAVE_STRERROR_R 1
+#endif
 
 /* Define to 1 if you have the `strerror_s' function. */
 /* #undef HAVE_STRERROR_S */
@@ -447,9 +445,6 @@
 /* Define to 1 if the system has the type `u_int64_t'. */
 /* #undef HAVE_U_INT64_T */
 
-/* Define to 1 if you have the <windows.h> header file. */
-/* #undef HAVE_WINDOWS_H */
-
 /* Define to 1 if you have the `__dso_handle' function. */
 #define HAVE___DSO_HANDLE 1
 
@@ -495,11 +490,26 @@
 /* Short LLVM architecture name for the native architecture, if available */
 #define LLVM_NATIVE_ARCHNAME X86
 
+#ifdef USE_MINGW
+/* Define if this is Win32ish platform */
+#define LLVM_ON_WIN32 1
+
+/* Define to 1 if you have the <windows.h> header file. */
+#define HAVE_WINDOWS_H 1
+
+/* Define to 1 if you have the `psapi' library (-lpsapi). */
+#define HAVE_LIBPSAPI 1
+
+/* Define to 1 if you have the `imagehlp' library (-limagehlp). */
+#define HAVE_LIBIMAGEHLP 1
+
+#else /* not USE_MINGW */
+
 /* Define if this is Unixish platform */
 #define LLVM_ON_UNIX 1
 
-/* Define if this is Win32ish platform */
-/* #undef LLVM_ON_WIN32 */
+#endif
+
 
 /* Define to path to circo program if found or 'echo circo' otherwise */
 /* #undef LLVM_PATH_CIRCO */
@@ -601,3 +611,4 @@
 /* #undef size_t */
 
 #endif
+
