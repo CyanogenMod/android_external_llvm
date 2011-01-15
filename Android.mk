@@ -8,11 +8,13 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/System \
 		lib/Support	\
 		utils/TableGen	\
+		tools/llvm-as	\
 		lib/VMCore	\
 		lib/Bitcode/Reader	\
 		lib/Bitcode/Writer	\
 		lib/Analysis	\
 		lib/Analysis/IPA	\
+		lib/AsmParser \
 		lib/Transforms/IPO	\
 		lib/Transforms/Utils	\
 		lib/Transforms/Scalar	\
