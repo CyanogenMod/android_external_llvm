@@ -54,6 +54,8 @@ LOCAL_SRC_FILES := $(arm_codegen_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMARMCodeGen
 
+LOCAL_MODULE_TAGS := optional
+
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
@@ -69,6 +71,8 @@ TBLGEN_TABLES := $(arm_codegen_TBLGEN_TABLES)
 LOCAL_SRC_FILES := $(arm_codegen_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMARMCodeGen
+
+LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)

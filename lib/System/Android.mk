@@ -33,6 +33,9 @@ LOCAL_CFLAGS +=	-march=i686
 
 LOCAL_MODULE:= libLLVMSystem
 
+LOCAL_MODULE_TAGS := optional
+
+
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
 
@@ -49,6 +52,8 @@ LOCAL_CFLAGS += -I bionic/libc/include
 endif
 
 LOCAL_MODULE:= libLLVMSystem
+
+LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_STATIC_LIBRARY)

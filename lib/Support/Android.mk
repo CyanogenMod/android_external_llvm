@@ -58,6 +58,8 @@ LOCAL_SRC_FILES := $(support_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMSupport
 
+LOCAL_MODULE_TAGS := optional
+
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
 
@@ -68,6 +70,8 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := $(support_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMSupport
+
+LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_STATIC_LIBRARY)
