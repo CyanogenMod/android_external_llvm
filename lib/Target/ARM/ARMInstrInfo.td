@@ -2238,8 +2238,10 @@ def REVSH : AMiscA1I<0b01101111, (outs GPR:$dst), (ins GPR:$src), IIC_iUNAr,
 }
 
 def lsl_shift_imm : SDNodeXForm<imm, [{
-  unsigned Sh = ARM_AM::getSORegOpc(ARM_AM::lsl, N->getZExtValue());
-  return CurDAG->getTargetConstant(Sh, MVT::i32);
+  // Note that since the shift kind is fixed for both PKHBT and PKHTB,
+  // we don't encode anything other than the ShiftAmt [see ARMCodeEmitter.cpp]
+  //unsigned Sh = ARM_AM::getSORegOpc(ARM_AM::lsl, N->getZExtValue());
+  return CurDAG->getTargetConstant(N->getZExtValue(), MVT::i32);
 }]>;
 
 def lsl_amt : PatLeaf<(i32 imm), [{
@@ -2263,8 +2265,10 @@ def : ARMV6Pat<(or (and GPR:$src1, 0xFFFF), (shl GPR:$src2, imm16_31:$sh)),
                (PKHBT GPR:$src1, GPR:$src2, (lsl_shift_imm imm16_31:$sh))>;
 
 def asr_shift_imm : SDNodeXForm<imm, [{
-  unsigned Sh = ARM_AM::getSORegOpc(ARM_AM::asr, N->getZExtValue());
-  return CurDAG->getTargetConstant(Sh, MVT::i32);
+  // Note that since the shift kind is fixed for both PKHBT and PKHTB,
+  // we don't encode anything other than the ShiftAmt [see ARMCodeEmitter.cpp]
+  //unsigned Sh = ARM_AM::getSORegOpc(ARM_AM::asr, N->getZExtValue());
+  return CurDAG->getTargetConstant(N->getZExtValue(), MVT::i32);
 }]>;
 
 def asr_amt : PatLeaf<(i32 imm), [{
