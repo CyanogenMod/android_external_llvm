@@ -48,3 +48,4 @@
 # NEWER CLEAN STEPS MUST BE AT THE END OF THE LIST
 # ************************************************
 $(call add-clean-step, rm -rf $(OUT_DIR)/target/product/stingray/obj/STATIC_LIBRARIES/libLLVM*)
+$(call add-clean-step, rm -rf $(OUT_DIR)/target/product/stingray/obj/STATIC_LIBRARIES/libLLVMARMCodeGen_intermediates*)
