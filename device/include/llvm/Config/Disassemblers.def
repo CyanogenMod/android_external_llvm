@@ -24,6 +24,12 @@
 #  error Please define the macro LLVM_DISASSEMBLER(TargetName)
 #endif
 
-LLVM_DISASSEMBLER(ARM)
+#if defined(__arm__)
+  LLVM_DISASSEMBLER(ARM)
+#elif defined(__i386__)
+  LLVM_DISASSEMBLER(X86)
+#else
+#  error Unsupported TARGET_ARCH for LLVM_DISASSEMBLER
+#endif
 
 #undef LLVM_DISASSEMBLER

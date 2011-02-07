@@ -24,6 +24,12 @@
 #  error Please define the macro LLVM_ASM_PARSER(TargetName)
 #endif
 
-LLVM_ASM_PARSER(ARM) 
+#if defined(__arm__)
+  LLVM_ASM_PARSER(ARM)
+#elif defined(__i386__)
+  LLVM_ASM_PARSER(X86)
+#else
+#  error Unsupported TARGET_ARCH for LLVM_ASM_PARSER
+#endif
 
 #undef LLVM_ASM_PARSER

@@ -24,6 +24,12 @@
 #  error Please define the macro LLVM_ASM_PRINTER(TargetName)
 #endif
 
-LLVM_ASM_PRINTER(ARM) 
+#if defined(__arm__)
+  LLVM_ASM_PRINTER(ARM)
+#elif defined(__i386__)
+  LLVM_ASM_PRINTER(X86)
+#else
+#  error Unsupported TARGET_ARCH for LLVM_ASM_PRINTER
+#endif
 
 #undef LLVM_ASM_PRINTER

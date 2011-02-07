@@ -44,7 +44,7 @@ LOCAL_SRC_FILES := $(x86_target_info_SRC_FILES)
 LOCAL_C_INCLUDES +=     \
         $(LOCAL_PATH)/..
 
-LOCAL_MODULE:= libLLVMARMInfo
+LOCAL_MODULE:= libLLVMX86Info
 
 LOCAL_MODULE_TAGS := optional
 

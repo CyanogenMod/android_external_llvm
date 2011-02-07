@@ -496,10 +496,22 @@
 /* #undef LLVM_MULTITHREADED */
 
 /* LLVM architecture name for the native architecture, if available */
-#define LLVM_NATIVE_ARCH ARMTarget
+#if defined(__arm__)
+#   define LLVM_NATIVE_ARCH ARMTarget
+#elif defined(__i386__)
+#   define LLVM_NATIVE_ARCH X86Target
+#else
+#   error Unsupported target architecture for LLVM_NATIVE_ARCH
+#endif
 
 /* Short LLVM architecture name for the native architecture, if available */
-#define LLVM_NATIVE_ARCHNAME ARM
+#if defined(__arm__)
+#   define LLVM_NATIVE_ARCHNAME ARM
+#elif defined(__i386__)
+#   define LLVM_NATIVE_ARCHNAME X86
+#else
+#   error Unsupported target architecture for LLVM_NATIVE_ARCHNAME
+#endif
 
 /* Define if this is Unixish platform */
 #define LLVM_ON_UNIX 1
