@@ -1,18 +1,22 @@
 LOCAL_PATH := $(call my-dir)
 
-# For the device only
+x86_target_info_TBLGEN_TABLES :=	\
+	X86GenRegisterNames.inc	\
+	X86GenInstrNames.inc
+
+x86_target_info_SRC_FILES :=	\
+	X86TargetInfo.cpp
+
+# For the host
 # =====================================================
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
-TBLGEN_TABLES :=	\
-	X86GenRegisterNames.inc	\
-	X86GenInstrNames.inc
+TBLGEN_TABLES := $(x86_target_info_TBLGEN_TABLES)
 
 TBLGEN_TD_DIR := $(LOCAL_PATH)/..
 
-LOCAL_SRC_FILES :=	\
-	X86TargetInfo.cpp
+LOCAL_SRC_FILES := $(x86_target_info_SRC_FILES)
 
 LOCAL_C_INCLUDES +=	\
 	$(LOCAL_PATH)/..
@@ -24,3 +28,27 @@ LOCAL_MODULE_TAGS := optional
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
+
+# For the device
+# =====================================================
+ifeq ($(TARGET_ARCH),x86)
+include $(CLEAR_VARS)
+include $(CLEAR_TBLGEN_VARS)
+
+TBLGEN_TABLES := $(x86_target_info_TBLGEN_TABLES)
+
+TBLGEN_TD_DIR := $(LOCAL_PATH)/..
+
+LOCAL_SRC_FILES := $(x86_target_info_SRC_FILES)
+
+LOCAL_C_INCLUDES +=     \
+        $(LOCAL_PATH)/..
+
+LOCAL_MODULE:= libLLVMARMInfo
+
+LOCAL_MODULE_TAGS := optional
+
+include $(LLVM_DEVICE_BUILD_MK)
+include $(LLVM_TBLGEN_RULES_MK)
+include $(BUILD_STATIC_LIBRARY)
+endif
