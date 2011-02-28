@@ -141,6 +141,8 @@ namespace {
 
     void emitVFPLoadStoreMultipleInstruction(const MachineInstr &MI);
 
+    void emitMiscInstruction(const MachineInstr &MI);
+
     void emitNEONLaneInstruction(const MachineInstr &MI);
     void emitNEONDupInstruction(const MachineInstr &MI);
     void emitNEON1RegModImmInstruction(const MachineInstr &MI);
@@ -516,7 +518,9 @@ void ARMCodeEmitter::emitInstruction(const MachineInstr &MI) {
   case ARMII::VFPLdStMulFrm:
     emitVFPLoadStoreMultipleInstruction(MI);
     break;
-
+  case ARMII::VFPMiscFrm:
+    emitMiscInstruction(MI);
+    break;
   // NEON instructions.
   case ARMII::NGetLnFrm:
   case ARMII::NSetLnFrm:
@@ -1729,6 +1733,17 @@ ARMCodeEmitter::emitVFPLoadStoreMultipleInstruction(const MachineInstr &MI) {
     Binary |= NumRegs * 2;
   else
     Binary |= NumRegs;
+
+  emitWordLE(Binary);
+}
+
+void ARMCodeEmitter::emitMiscInstruction(const MachineInstr &MI) {
+  unsigned Opcode = MI.getDesc().Opcode;
+  // Part of binary is determined by TableGn.
+  unsigned Binary = getBinaryCodeForInstr(MI);
+
+  // Set the conditional execution predicate
+  Binary |= II->getPredicate(&MI) << ARMII::CondShift;
 
   emitWordLE(Binary);
 }

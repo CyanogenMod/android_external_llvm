@@ -1039,9 +1039,9 @@ def FCONSTS : VFPAI<(outs SPR:$Sd), (ins vfp_f32imm:$imm),
   // Encode instruction operands.
   let Inst{15-12} = Sd{4-1};
   let Inst{22}    = Sd{0};
-  let Inst{19}    = imm{31};    // The immediate is handled as a double.
-  let Inst{18-16} = imm{22-20};
-  let Inst{3-0}   = imm{19-16};
+  let Inst{19}    = imm{31};
+  let Inst{18-16} = imm{25-23};
+  let Inst{3-0}   = imm{22-19};
 
   // Encode remaining instruction bits.
   let Inst{27-23} = 0b11101;
