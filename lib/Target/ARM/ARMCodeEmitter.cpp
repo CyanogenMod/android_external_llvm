@@ -1564,9 +1564,6 @@ void ARMCodeEmitter::emitVFPArithInstruction(const MachineInstr &MI) {
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
 
   unsigned OpIdx = 0;
-  assert((Binary & ARMII::D_BitShift) == 0 &&
-         (Binary & ARMII::N_BitShift) == 0 &&
-         (Binary & ARMII::M_BitShift) == 0 && "VFP encoding bug!");
 
   // Encode Dd / Sd.
   Binary |= encodeVFPRd(MI, OpIdx++);
