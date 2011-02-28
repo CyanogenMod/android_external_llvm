@@ -227,20 +227,25 @@ namespace {
     uint32_t getAddrMode5OpValue(const MachineInstr &MI, unsigned Op) const {
       // {12-9}  = reg
       // {8}     = (U)nsigned (add == '1', sub == '0')
-      // {7-0}   = imm12
-      const MachineOperand &MO  = MI.getOperand(Op);
-      const MachineOperand &MO1 = MI.getOperand(Op + 1);
-      if (!MO.isReg()) {
-        emitConstPoolAddress(MO.getIndex(), ARM::reloc_arm_cp_entry);
-        return 0;
-      }
-      unsigned Reg = getARMRegisterNumbering(MO.getReg());
-      int32_t Imm8 = MO1.getImm();
+      // {7-0}   = imm8
       uint32_t Binary;
-      Binary = Imm8 & 0xff;
-      if (Imm8 >= 0)
-        Binary |= (1 << 8);
+      const MachineOperand &MO  = MI.getOperand(Op);
+      uint32_t Reg = getMachineOpValue(MI, MO);
       Binary |= (Reg << 9);
+
+      // If there is a non-zero immediate offset, encode it.
+      if (MO.isReg()) {
+          const MachineOperand &MO1 = MI.getOperand(Op + 1);
+        if (uint32_t ImmOffs = ARM_AM::getAM5Offset(MO1.getImm())) {
+          if (ARM_AM::getAM5Op(MO1.getImm()) == ARM_AM::add)
+            Binary |= 1 << 8;
+          Binary |= ImmOffs & 0xff;
+          return Binary;
+        }
+      }
+
+      // If immediate offset is omitted, default to +0.
+      Binary |= 1 << 8;
       return Binary;
     }
     unsigned getNEONVcvtImm32OpValue(const MachineInstr &MI, unsigned Op)
@@ -1646,6 +1651,12 @@ void ARMCodeEmitter::emitVFPLoadStoreInstruction(const MachineInstr &MI) {
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+
+  if (MI.getOpcode() == ARM::VLDRS || MI.getOpcode() == ARM::VLDRD ||
+      MI.getOpcode() == ARM::VSTRS || MI.getOpcode() == ARM::VSTRD){
+    emitWordLE(Binary);
+    return;
+  }
 
   unsigned OpIdx = 0;
 
