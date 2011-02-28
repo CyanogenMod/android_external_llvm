@@ -25,7 +25,7 @@ typedef StringMap<const MCSectionCOFF*> COFFUniqueMapTy;
 
 
 MCContext::MCContext(const MCAsmInfo &mai) : MAI(mai), NextUniqueID(0),
-                     CurrentDwarfLoc(0,0,0,0,0) {
+                     CurrentDwarfLoc(0,0,0,0,0,0) {
   MachOUniquingMap = 0;
   ELFUniquingMap = 0;
   COFFUniquingMap = 0;
@@ -148,10 +148,15 @@ getMachOSection(StringRef Segment, StringRef Section,
                                             Reserved2, Kind);
 }
 
-
-const MCSection *MCContext::
+const MCSectionELF *MCContext::
 getELFSection(StringRef Section, unsigned Type, unsigned Flags,
-              SectionKind Kind, bool IsExplicit, unsigned EntrySize) {
+              SectionKind Kind) {
+  return getELFSection(Section, Type, Flags, Kind, 0, "");
+}
+
+const MCSectionELF *MCContext::
+getELFSection(StringRef Section, unsigned Type, unsigned Flags,
+              SectionKind Kind, unsigned EntrySize, StringRef Group) {
   if (ELFUniquingMap == 0)
     ELFUniquingMap = new ELFUniqueMapTy();
   ELFUniqueMapTy &Map = *(ELFUniqueMapTy*)ELFUniquingMap;
@@ -160,9 +165,25 @@ getELFSection(StringRef Section, unsigned Type, unsigned Flags,
   StringMapEntry<const MCSectionELF*> &Entry = Map.GetOrCreateValue(Section);
   if (Entry.getValue()) return Entry.getValue();
   
+  // Possibly refine the entry size first.
+  if (!EntrySize) {
+    EntrySize = MCSectionELF::DetermineEntrySize(Kind);
+  }
+
+  MCSymbol *GroupSym = NULL;
+  if (!Group.empty())
+    GroupSym = GetOrCreateSymbol(Group);
+
   MCSectionELF *Result = new (*this) MCSectionELF(Entry.getKey(), Type, Flags,
-                                                  Kind, IsExplicit, EntrySize);
+                                                  Kind, EntrySize, GroupSym);
   Entry.setValue(Result);
+  return Result;
+}
+
+const MCSectionELF *MCContext::CreateELFGroupSection() {
+  MCSectionELF *Result =
+    new (*this) MCSectionELF(".group", MCSectionELF::SHT_GROUP, 0,
+                             SectionKind::getReadOnly(), 4, NULL);
   return Result;
 }
 
@@ -227,7 +248,7 @@ unsigned MCContext::GetDwarfFile(StringRef FileName, unsigned FileNumber) {
     Name = Slash.second;
     for (DirIndex = 0; DirIndex < MCDwarfDirs.size(); DirIndex++) {
       if (Directory == MCDwarfDirs[DirIndex])
-	break;
+        break;
     }
     if (DirIndex >= MCDwarfDirs.size()) {
       char *Buf = static_cast<char *>(Allocate(Directory.size()));
@@ -251,15 +272,11 @@ unsigned MCContext::GetDwarfFile(StringRef FileName, unsigned FileNumber) {
   return FileNumber;
 }
 
-/// ValidateDwarfFileNumber - takes a dwarf file number and returns true if it
+/// isValidDwarfFileNumber - takes a dwarf file number and returns true if it
 /// currently is assigned and false otherwise.
-bool MCContext::ValidateDwarfFileNumber(unsigned FileNumber) {
+bool MCContext::isValidDwarfFileNumber(unsigned FileNumber) {
   if(FileNumber == 0 || FileNumber >= MCDwarfFiles.size())
     return false;
 
-  MCDwarfFile *&ExistingFile = MCDwarfFiles[FileNumber];
-  if (ExistingFile)
-    return true;
-  else
-    return false;
+  return MCDwarfFiles[FileNumber] != 0;
 }

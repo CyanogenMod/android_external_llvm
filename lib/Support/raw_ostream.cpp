@@ -19,7 +19,6 @@
 #include "llvm/Config/config.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/System/Signals.h"
 #include "llvm/ADT/STLExtras.h"
 #include <cctype>
 #include <cerrno>
@@ -31,6 +30,10 @@
 #endif
 #if defined(HAVE_FCNTL_H)
 # include <fcntl.h>
+#endif
+
+#if defined(__CYGWIN__)
+#include <io.h>
 #endif
 
 #if defined(_MSC_VER)
@@ -410,6 +413,19 @@ raw_fd_ostream::raw_fd_ostream(const char *Filename, std::string &ErrorInfo,
   ShouldClose = true;
 }
 
+/// raw_fd_ostream ctor - FD is the file descriptor that this writes to.  If
+/// ShouldClose is true, this closes the file when the stream is destroyed.
+raw_fd_ostream::raw_fd_ostream(int fd, bool shouldClose, bool unbuffered)
+  : raw_ostream(unbuffered), FD(fd),
+    ShouldClose(shouldClose), Error(false) {
+#ifdef O_BINARY
+  // Setting STDOUT and STDERR to binary mode is necessary in Win32
+  // to avoid undesirable linefeed conversion.
+  if (fd == STDOUT_FILENO || fd == STDERR_FILENO)
+    setmode(fd, O_BINARY);
+#endif
+}
+
 raw_fd_ostream::~raw_fd_ostream() {
   if (FD >= 0) {
     flush();
@@ -664,31 +680,4 @@ void raw_null_ostream::write_impl(const char *Ptr, size_t Size) {
 
 uint64_t raw_null_ostream::current_pos() const {
   return 0;
-}
-
-//===----------------------------------------------------------------------===//
-//  tool_output_file
-//===----------------------------------------------------------------------===//
-
-/// SetupRemoveOnSignal - This is a helper for tool_output_file's constructor
-/// to allow the signal handlers to be installed before constructing the
-/// base class raw_fd_ostream.
-static const char *SetupRemoveOnSignal(const char *Filename) {
-  // Arrange for the file to be deleted if the process is killed.
-  if (strcmp(Filename, "-") != 0)
-    sys::RemoveFileOnSignal(sys::Path(Filename));
-  return Filename;
-}
-
-tool_output_file::tool_output_file(const char *filename, std::string &ErrorInfo, 
-                                   unsigned Flags)
-  : raw_fd_ostream(SetupRemoveOnSignal(filename), ErrorInfo, Flags),
-    Filename(filename),
-    Keep(!ErrorInfo.empty() /* If open fails, no cleanup is needed. */) {
-}
-
-tool_output_file::~tool_output_file() {
-  // Delete the file if the client hasn't told us not to.
-  if (!Keep && Filename != "-")
-    sys::Path(Filename).eraseFromDisk();
 }

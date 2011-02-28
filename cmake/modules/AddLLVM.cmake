@@ -9,6 +9,12 @@ macro(add_llvm_library name)
   if( LLVM_COMMON_DEPENDS )
     add_dependencies( ${name} ${LLVM_COMMON_DEPENDS} )
   endif( LLVM_COMMON_DEPENDS )
+
+  if( BUILD_SHARED_LIBS )
+    get_system_libs(sl)
+    target_link_libraries( ${name} ${sl} )
+  endif()
+
   install(TARGETS ${name}
     LIBRARY DESTINATION lib${LLVM_LIBDIR_SUFFIX}
     ARCHIVE DESTINATION lib${LLVM_LIBDIR_SUFFIX})
@@ -23,7 +29,7 @@ endmacro(add_llvm_library name)
 
 
 macro(add_llvm_loadable_module name)
-  if( NOT LLVM_ON_UNIX )
+  if( NOT LLVM_ON_UNIX OR CYGWIN )
     message(STATUS "Loadable modules not supported on this platform.
 ${name} ignored.")
   else()
@@ -60,13 +66,15 @@ macro(add_llvm_executable name)
   if( LLVM_LINK_COMPONENTS )
     llvm_config(${name} ${LLVM_LINK_COMPONENTS})
   endif( LLVM_LINK_COMPONENTS )
-  get_system_libs(llvm_system_libs)
-  if( llvm_system_libs )
-    target_link_libraries(${name} ${llvm_system_libs})
-  endif()
   if( LLVM_COMMON_DEPENDS )
     add_dependencies( ${name} ${LLVM_COMMON_DEPENDS} )
   endif( LLVM_COMMON_DEPENDS )
+  if( NOT MINGW )
+    get_system_libs(llvm_system_libs)
+    if( llvm_system_libs )
+      target_link_libraries(${name} ${llvm_system_libs})
+    endif()
+  endif()
 endmacro(add_llvm_executable name)
 
 

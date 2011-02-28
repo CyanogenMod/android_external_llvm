@@ -47,7 +47,9 @@ STATISTIC(NumLCSSA, "Number of live out of a loop variables");
 namespace {
   struct LCSSA : public LoopPass {
     static char ID; // Pass identification, replacement for typeid
-    LCSSA() : LoopPass(ID) {}
+    LCSSA() : LoopPass(ID) {
+      initializeLCSSAPass(*PassRegistry::getPassRegistry());
+    }
 
     // Cached analysis information for the current function.
     DominatorTree *DT;
@@ -90,7 +92,10 @@ namespace {
 }
   
 char LCSSA::ID = 0;
-INITIALIZE_PASS(LCSSA, "lcssa", "Loop-Closed SSA Form Pass", false, false);
+INITIALIZE_PASS_BEGIN(LCSSA, "lcssa", "Loop-Closed SSA Form Pass", false, false)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_PASS_END(LCSSA, "lcssa", "Loop-Closed SSA Form Pass", false, false)
 
 Pass *llvm::createLCSSAPass() { return new LCSSA(); }
 char &llvm::LCSSAID = LCSSA::ID;
@@ -206,7 +211,7 @@ bool LCSSA::ProcessInstruction(Instruction *Inst,
   DomTreeNode *DomNode = DT->getNode(DomBB);
 
   SSAUpdater SSAUpdate;
-  SSAUpdate.Initialize(Inst);
+  SSAUpdate.Initialize(Inst->getType(), Inst->getName());
   
   // Insert the LCSSA phi's into all of the exit blocks dominated by the
   // value, and add them to the Phi's map.

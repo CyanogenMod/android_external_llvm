@@ -542,17 +542,17 @@ public:
 
   SDValue getMemcpy(SDValue Chain, DebugLoc dl, SDValue Dst, SDValue Src,
                     SDValue Size, unsigned Align, bool isVol, bool AlwaysInline,
-                    const Value *DstSV, uint64_t DstSVOff,
-                    const Value *SrcSV, uint64_t SrcSVOff);
+                    MachinePointerInfo DstPtrInfo,
+                    MachinePointerInfo SrcPtrInfo);
 
   SDValue getMemmove(SDValue Chain, DebugLoc dl, SDValue Dst, SDValue Src,
                      SDValue Size, unsigned Align, bool isVol,
-                     const Value *DstSV, uint64_t DstOSVff,
-                     const Value *SrcSV, uint64_t SrcSVOff);
+                     MachinePointerInfo DstPtrInfo,
+                     MachinePointerInfo SrcPtrInfo);
 
   SDValue getMemset(SDValue Chain, DebugLoc dl, SDValue Dst, SDValue Src,
                     SDValue Size, unsigned Align, bool isVol,
-                    const Value *DstSV, uint64_t DstSVOff);
+                    MachinePointerInfo DstPtrInfo);
 
   /// getSetCC - Helper function to make it easier to build SetCC's if you just
   /// have an ISD::CondCode instead of an SDValue.
@@ -587,8 +587,8 @@ public:
   /// getAtomic - Gets a node for an atomic op, produces result and chain and
   /// takes 3 operands
   SDValue getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT, SDValue Chain,
-                    SDValue Ptr, SDValue Cmp, SDValue Swp, const Value* PtrVal,
-                    unsigned Alignment=0);
+                    SDValue Ptr, SDValue Cmp, SDValue Swp,
+                    MachinePointerInfo PtrInfo, unsigned Alignment=0);
   SDValue getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT, SDValue Chain,
                     SDValue Ptr, SDValue Cmp, SDValue Swp,
                     MachineMemOperand *MMO);
@@ -609,13 +609,13 @@ public:
   SDValue getMemIntrinsicNode(unsigned Opcode, DebugLoc dl,
                               const EVT *VTs, unsigned NumVTs,
                               const SDValue *Ops, unsigned NumOps,
-                              EVT MemVT, const Value *srcValue, int SVOff,
+                              EVT MemVT, MachinePointerInfo PtrInfo,
                               unsigned Align = 0, bool Vol = false,
                               bool ReadMem = true, bool WriteMem = true);
 
   SDValue getMemIntrinsicNode(unsigned Opcode, DebugLoc dl, SDVTList VTList,
                               const SDValue *Ops, unsigned NumOps,
-                              EVT MemVT, const Value *srcValue, int SVOff,
+                              EVT MemVT, MachinePointerInfo PtrInfo,
                               unsigned Align = 0, bool Vol = false,
                               bool ReadMem = true, bool WriteMem = true);
 
@@ -630,19 +630,22 @@ public:
   /// determined by their operands, and they produce a value AND a token chain.
   ///
   SDValue getLoad(EVT VT, DebugLoc dl, SDValue Chain, SDValue Ptr,
-                  const Value *SV, int SVOffset, bool isVolatile,
-                  bool isNonTemporal, unsigned Alignment);
+                  MachinePointerInfo PtrInfo, bool isVolatile,
+                  bool isNonTemporal, unsigned Alignment,
+                  const MDNode *TBAAInfo = 0);
   SDValue getExtLoad(ISD::LoadExtType ExtType, EVT VT, DebugLoc dl,
-                     SDValue Chain, SDValue Ptr, const Value *SV,
-                     int SVOffset, EVT MemVT, bool isVolatile,
-                     bool isNonTemporal, unsigned Alignment);
+                     SDValue Chain, SDValue Ptr, MachinePointerInfo PtrInfo,
+                     EVT MemVT, bool isVolatile,
+                     bool isNonTemporal, unsigned Alignment,
+                     const MDNode *TBAAInfo = 0);
   SDValue getIndexedLoad(SDValue OrigLoad, DebugLoc dl, SDValue Base,
                          SDValue Offset, ISD::MemIndexedMode AM);
   SDValue getLoad(ISD::MemIndexedMode AM, ISD::LoadExtType ExtType,
                   EVT VT, DebugLoc dl,
                   SDValue Chain, SDValue Ptr, SDValue Offset,
-                  const Value *SV, int SVOffset, EVT MemVT,
-                  bool isVolatile, bool isNonTemporal, unsigned Alignment);
+                  MachinePointerInfo PtrInfo, EVT MemVT,
+                  bool isVolatile, bool isNonTemporal, unsigned Alignment,
+                  const MDNode *TBAAInfo = 0);
   SDValue getLoad(ISD::MemIndexedMode AM, ISD::LoadExtType ExtType,
                   EVT VT, DebugLoc dl,
                   SDValue Chain, SDValue Ptr, SDValue Offset,
@@ -651,14 +654,16 @@ public:
   /// getStore - Helper function to build ISD::STORE nodes.
   ///
   SDValue getStore(SDValue Chain, DebugLoc dl, SDValue Val, SDValue Ptr,
-                   const Value *SV, int SVOffset, bool isVolatile,
-                   bool isNonTemporal, unsigned Alignment);
+                   MachinePointerInfo PtrInfo, bool isVolatile,
+                   bool isNonTemporal, unsigned Alignment,
+                   const MDNode *TBAAInfo = 0);
   SDValue getStore(SDValue Chain, DebugLoc dl, SDValue Val, SDValue Ptr,
                    MachineMemOperand *MMO);
   SDValue getTruncStore(SDValue Chain, DebugLoc dl, SDValue Val, SDValue Ptr,
-                        const Value *SV, int SVOffset, EVT TVT,
+                        MachinePointerInfo PtrInfo, EVT TVT,
                         bool isNonTemporal, bool isVolatile,
-                        unsigned Alignment);
+                        unsigned Alignment,
+                        const MDNode *TBAAInfo = 0);
   SDValue getTruncStore(SDValue Chain, DebugLoc dl, SDValue Val, SDValue Ptr,
                         EVT TVT, MachineMemOperand *MMO);
   SDValue getIndexedStore(SDValue OrigStoe, DebugLoc dl, SDValue Base,
@@ -976,10 +981,6 @@ public:
   /// isVerifiedDebugInfoDesc - Returns true if the specified SDValue has
   /// been verified as a debug information descriptor.
   bool isVerifiedDebugInfoDesc(SDValue Op) const;
-
-  /// getShuffleScalarElt - Returns the scalar element that will make up the ith
-  /// element of the result of the vector shuffle.
-  SDValue getShuffleScalarElt(const ShuffleVectorSDNode *N, unsigned Idx);
 
   /// UnrollVectorOp - Utility function used by legalize and lowering to
   /// "unroll" a vector operation by splitting out the scalars and operating

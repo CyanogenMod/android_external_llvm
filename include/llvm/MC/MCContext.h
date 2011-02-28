@@ -26,9 +26,11 @@ namespace llvm {
   class MCLabel;
   class MCDwarfFile;
   class MCDwarfLoc;
+  class MCLineSection;
   class StringRef;
   class Twine;
   class MCSectionMachO;
+  class MCSectionELF;
 
   /// MCContext - Context object for machine code objects.  This class owns all
   /// of the sections that it creates.
@@ -74,6 +76,10 @@ namespace llvm {
     /// The current dwarf line information from the last dwarf .loc directive.
     MCDwarfLoc CurrentDwarfLoc;
     bool DwarfLocSeen;
+
+    /// The dwarf line information from the .loc directives for the sections
+    /// with assembled machine instructions have after seeing .loc directives.
+    DenseMap<const MCSection *, MCLineSection *> MCLineSections;
 
     /// Allocator - Allocator object used for creating machine code objects.
     ///
@@ -132,11 +138,15 @@ namespace llvm {
                                           SectionKind K) {
       return getMachOSection(Segment, Section, TypeAndAttributes, 0, K);
     }
-    
-    const MCSection *getELFSection(StringRef Section, unsigned Type,
-                                   unsigned Flags, SectionKind Kind,
-                                   bool IsExplicit = false,
-                                   unsigned EntrySize = 0);
+
+    const MCSectionELF *getELFSection(StringRef Section, unsigned Type,
+                                      unsigned Flags, SectionKind Kind);
+
+    const MCSectionELF *getELFSection(StringRef Section, unsigned Type,
+                                      unsigned Flags, SectionKind Kind,
+                                      unsigned EntrySize, StringRef Group);
+
+    const MCSectionELF *CreateELFGroupSection();
 
     const MCSection *getCOFFSection(StringRef Section, unsigned Characteristics,
                                     int Selection, SectionKind Kind);
@@ -155,7 +165,11 @@ namespace llvm {
     /// GetDwarfFile - creates an entry in the dwarf file and directory tables.
     unsigned GetDwarfFile(StringRef FileName, unsigned FileNumber);
 
-    bool ValidateDwarfFileNumber(unsigned FileNumber);
+    bool isValidDwarfFileNumber(unsigned FileNumber);
+
+    bool hasDwarfFiles(void) {
+      return MCDwarfFiles.size() != 0;
+    }
 
     const std::vector<MCDwarfFile *> &getMCDwarfFiles() {
       return MCDwarfFiles;
@@ -163,19 +177,29 @@ namespace llvm {
     const std::vector<StringRef> &getMCDwarfDirs() {
       return MCDwarfDirs;
     }
+    DenseMap<const MCSection *, MCLineSection *> &getMCLineSections() {
+      return MCLineSections;
+    }
 
     /// setCurrentDwarfLoc - saves the information from the currently parsed
-    /// dwarf .loc directive and sets DwarfLocSeen.  When the next instruction      /// is assembled an entry in the line number table with this information and
+    /// dwarf .loc directive and sets DwarfLocSeen.  When the next instruction
+    /// is assembled an entry in the line number table with this information and
     /// the address of the instruction will be created.
     void setCurrentDwarfLoc(unsigned FileNum, unsigned Line, unsigned Column,
-                            unsigned Flags, unsigned Isa) {
+                            unsigned Flags, unsigned Isa,
+                            unsigned Discriminator) {
       CurrentDwarfLoc.setFileNum(FileNum);
       CurrentDwarfLoc.setLine(Line);
       CurrentDwarfLoc.setColumn(Column);
       CurrentDwarfLoc.setFlags(Flags);
       CurrentDwarfLoc.setIsa(Isa);
+      CurrentDwarfLoc.setDiscriminator(Discriminator);
       DwarfLocSeen = true;
     }
+    void ClearDwarfLocSeen() { DwarfLocSeen = false; }
+
+    bool getDwarfLocSeen() { return DwarfLocSeen; }
+    const MCDwarfLoc &getCurrentDwarfLoc() { return CurrentDwarfLoc; }
 
     /// @}
 

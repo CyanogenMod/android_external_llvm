@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "X86AsmPrinter.h"
-#include "AsmPrinter/X86ATTInstPrinter.h"
-#include "AsmPrinter/X86IntelInstPrinter.h"
+#include "InstPrinter/X86ATTInstPrinter.h"
+#include "InstPrinter/X86IntelInstPrinter.h"
 #include "X86MCInstLower.h"
 #include "X86.h"
 #include "X86COFFMachineModuleInfo.h"
@@ -47,12 +47,6 @@ using namespace llvm;
 //===----------------------------------------------------------------------===//
 // Primitive Helper Functions.
 //===----------------------------------------------------------------------===//
-
-void X86AsmPrinter::PrintPICBaseSymbol(raw_ostream &O) const {
-  const TargetLowering *TLI = TM.getTargetLowering();
-  O << *static_cast<const X86TargetLowering*>(TLI)->getPICBaseSymbol(MF,
-                                                                    OutContext);
-}
 
 /// runOnMachineFunction - Emit the function body.
 ///
@@ -185,15 +179,12 @@ void X86AsmPrinter::printSymbolOperand(const MachineOperand &MO,
     // These affect the name of the symbol, not any suffix.
     break;
   case X86II::MO_GOT_ABSOLUTE_ADDRESS:
-    O << " + [.-";
-    PrintPICBaseSymbol(O);
-    O << ']';
+    O << " + [.-" << *MF->getPICBaseSymbol() << ']';
     break;
   case X86II::MO_PIC_BASE_OFFSET:
   case X86II::MO_DARWIN_NONLAZY_PIC_BASE:
   case X86II::MO_DARWIN_HIDDEN_NONLAZY_PIC_BASE:
-    O << '-';
-    PrintPICBaseSymbol(O);
+    O << '-' << *MF->getPICBaseSymbol();
     break;
   case X86II::MO_TLSGD:     O << "@TLSGD";     break;
   case X86II::MO_GOTTPOFF:  O << "@GOTTPOFF";  break;
@@ -206,8 +197,7 @@ void X86AsmPrinter::printSymbolOperand(const MachineOperand &MO,
   case X86II::MO_PLT:       O << "@PLT";       break;
   case X86II::MO_TLVP:      O << "@TLVP";      break;
   case X86II::MO_TLVP_PIC_BASE:
-    O << "@TLVP" << '-';
-    PrintPICBaseSymbol(O);
+    O << "@TLVP" << '-' << *MF->getPICBaseSymbol();
     break;
   }
 }
@@ -344,10 +334,8 @@ void X86AsmPrinter::printMemReference(const MachineInstr *MI, unsigned Op,
 
 void X86AsmPrinter::printPICLabel(const MachineInstr *MI, unsigned Op,
                                   raw_ostream &O) {
-  PrintPICBaseSymbol(O);
-  O << '\n';
-  PrintPICBaseSymbol(O);
-  O << ':';
+  O << *MF->getPICBaseSymbol() << '\n';
+  O << *MF->getPICBaseSymbol() << ':';
 }
 
 bool X86AsmPrinter::printAsmMRegister(const MachineOperand &MO, char Mode,
@@ -578,6 +566,13 @@ void X86AsmPrinter::EmitEndOfAsmFile(Module &M) {
     // linker can safely perform dead code stripping.  Since LLVM never
     // generates code that does this, it is always safe to set.
     OutStreamer.EmitAssemblerFlag(MCAF_SubsectionsViaSymbols);
+  }
+
+  if (Subtarget->isTargetWindows() && !Subtarget->isTargetCygMing() &&
+      MMI->callsExternalVAFunctionWithFloatingPointArguments()) {
+    StringRef SymbolName = Subtarget->is64Bit() ? "_fltused" : "__fltused";
+    MCSymbol *S = MMI->getContext().GetOrCreateSymbol(SymbolName);
+    OutStreamer.EmitSymbolAttribute(S, MCSA_Global);
   }
 
   if (Subtarget->isTargetCOFF()) {

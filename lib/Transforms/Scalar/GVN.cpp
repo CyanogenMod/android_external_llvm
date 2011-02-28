@@ -35,6 +35,7 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/Loads.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
@@ -61,7 +62,6 @@ STATISTIC(NumPRELoad,   "Number of loads PRE'd");
 static cl::opt<bool> EnablePRE("enable-pre",
                                cl::init(true), cl::Hidden);
 static cl::opt<bool> EnableLoadPRE("enable-load-pre", cl::init(true));
-static cl::opt<bool> EnableFullLoadPRE("enable-full-load-pre", cl::init(false));
 
 //===----------------------------------------------------------------------===//
 //                         ValueTable Class
@@ -140,9 +140,9 @@ namespace {
       }
     }
 
-    bool operator!=(const Expression &other) const {
+    /*bool operator!=(const Expression &other) const {
       return !(*this == other);
-    }
+    }*/
   };
 
   class ValueTable {
@@ -165,7 +165,6 @@ namespace {
       Expression create_expression(CastInst* C);
       Expression create_expression(GetElementPtrInst* G);
       Expression create_expression(CallInst* C);
-      Expression create_expression(Constant* C);
       Expression create_expression(ExtractValueInst* C);
       Expression create_expression(InsertValueInst* C);
       
@@ -177,7 +176,6 @@ namespace {
       void add(Value *V, uint32_t num);
       void clear();
       void erase(Value *v);
-      unsigned size();
       void setAliasAnalysis(AliasAnalysis* A) { AA = A; }
       AliasAnalysis *getAliasAnalysis() const { return AA; }
       void setMemDep(MemoryDependenceAnalysis* M) { MD = M; }
@@ -665,12 +663,15 @@ namespace {
   public:
     static char ID; // Pass identification, replacement for typeid
     explicit GVN(bool noloads = false)
-      : FunctionPass(ID), NoLoads(noloads), MD(0) { }
+        : FunctionPass(ID), NoLoads(noloads), MD(0) {
+      initializeGVNPass(*PassRegistry::getPassRegistry());
+    }
 
   private:
     bool NoLoads;
     MemoryDependenceAnalysis *MD;
     DominatorTree *DT;
+    const TargetData* TD;
 
     ValueTable VN;
     DenseMap<BasicBlock*, ValueNumberScope*> localAvail;
@@ -716,7 +717,11 @@ FunctionPass *llvm::createGVNPass(bool NoLoads) {
   return new GVN(NoLoads);
 }
 
-INITIALIZE_PASS(GVN, "gvn", "Global Value Numbering", false, false);
+INITIALIZE_PASS_BEGIN(GVN, "gvn", "Global Value Numbering", false, false)
+INITIALIZE_PASS_DEPENDENCY(MemoryDependenceAnalysis)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
+INITIALIZE_PASS_END(GVN, "gvn", "Global Value Numbering", false, false)
 
 void GVN::dump(DenseMap<uint32_t, Value*>& d) {
   errs() << "{\n";
@@ -1068,12 +1073,12 @@ static int AnalyzeLoadFromClobberingStore(const Type *LoadTy, Value *LoadPtr,
                                           StoreInst *DepSI,
                                           const TargetData &TD) {
   // Cannot handle reading from store of first-class aggregate yet.
-  if (DepSI->getOperand(0)->getType()->isStructTy() ||
-      DepSI->getOperand(0)->getType()->isArrayTy())
+  if (DepSI->getValueOperand()->getType()->isStructTy() ||
+      DepSI->getValueOperand()->getType()->isArrayTy())
     return -1;
 
   Value *StorePtr = DepSI->getPointerOperand();
-  uint64_t StoreSize = TD.getTypeSizeInBits(DepSI->getOperand(0)->getType());
+  uint64_t StoreSize =TD.getTypeSizeInBits(DepSI->getValueOperand()->getType());
   return AnalyzeLoadFromClobberingWrite(LoadTy, LoadPtr,
                                         StorePtr, StoreSize, TD);
 }
@@ -1311,7 +1316,7 @@ static Value *ConstructSSAForLoadSet(LoadInst *LI,
   // Otherwise, we have to construct SSA form.
   SmallVector<PHINode*, 8> NewPHIs;
   SSAUpdater SSAUpdate(&NewPHIs);
-  SSAUpdate.Initialize(LI);
+  SSAUpdate.Initialize(LI->getType(), LI->getName());
   
   const Type *LoadTy = LI->getType();
   
@@ -1348,8 +1353,8 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
                               SmallVectorImpl<Instruction*> &toErase) {
   // Find the non-local dependencies of the load.
   SmallVector<NonLocalDepResult, 64> Deps;
-  MD->getNonLocalPointerDependency(LI->getOperand(0), true, LI->getParent(),
-                                   Deps);
+  AliasAnalysis::Location Loc = VN.getAliasAnalysis()->getLocation(LI);
+  MD->getNonLocalPointerDependency(Loc, true, LI->getParent(), Deps);
   //DEBUG(dbgs() << "INVESTIGATING NONLOCAL LOAD: "
   //             << Deps.size() << *LI << '\n');
 
@@ -1377,8 +1382,6 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
   SmallVector<AvailableValueInBlock, 16> ValuesPerBlock;
   SmallVector<BasicBlock*, 16> UnavailableBlocks;
 
-  const TargetData *TD = 0;
-  
   for (unsigned i = 0, e = Deps.size(); i != e; ++i) {
     BasicBlock *DepBB = Deps[i].getBB();
     MemDepResult DepInfo = Deps[i].getResult();
@@ -1393,14 +1396,12 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
       // read by the load, we can extract the bits we need for the load from the
       // stored value.
       if (StoreInst *DepSI = dyn_cast<StoreInst>(DepInfo.getInst())) {
-        if (TD == 0)
-          TD = getAnalysisIfAvailable<TargetData>();
         if (TD && Address) {
           int Offset = AnalyzeLoadFromClobberingStore(LI->getType(), Address,
                                                       DepSI, *TD);
           if (Offset != -1) {
             ValuesPerBlock.push_back(AvailableValueInBlock::get(DepBB,
-                                                           DepSI->getOperand(0),
+                                                       DepSI->getValueOperand(),
                                                                 Offset));
             continue;
           }
@@ -1410,8 +1411,6 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
       // If the clobbering value is a memset/memcpy/memmove, see if we can
       // forward a value on from it.
       if (MemIntrinsic *DepMI = dyn_cast<MemIntrinsic>(DepInfo.getInst())) {
-        if (TD == 0)
-          TD = getAnalysisIfAvailable<TargetData>();
         if (TD && Address) {
           int Offset = AnalyzeLoadFromClobberingMemInst(LI->getType(), Address,
                                                         DepMI, *TD);
@@ -1441,13 +1440,10 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
     if (StoreInst *S = dyn_cast<StoreInst>(DepInst)) {
       // Reject loads and stores that are to the same address but are of
       // different types if we have to.
-      if (S->getOperand(0)->getType() != LI->getType()) {
-        if (TD == 0)
-          TD = getAnalysisIfAvailable<TargetData>();
-        
+      if (S->getValueOperand()->getType() != LI->getType()) {
         // If the stored value is larger or equal to the loaded value, we can
         // reuse it.
-        if (TD == 0 || !CanCoerceMustAliasedValueToLoad(S->getOperand(0),
+        if (TD == 0 || !CanCoerceMustAliasedValueToLoad(S->getValueOperand(),
                                                         LI->getType(), *TD)) {
           UnavailableBlocks.push_back(DepBB);
           continue;
@@ -1455,16 +1451,13 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
       }
 
       ValuesPerBlock.push_back(AvailableValueInBlock::get(DepBB,
-                                                          S->getOperand(0)));
+                                                         S->getValueOperand()));
       continue;
     }
     
     if (LoadInst *LD = dyn_cast<LoadInst>(DepInst)) {
       // If the types mismatch and we can't handle it, reject reuse of the load.
       if (LD->getType() != LI->getType()) {
-        if (TD == 0)
-          TD = getAnalysisIfAvailable<TargetData>();
-        
         // If the stored value is larger or equal to the loaded value, we can
         // reuse it.
         if (TD == 0 || !CanCoerceMustAliasedValueToLoad(LD, LI->getType(),*TD)){
@@ -1534,25 +1527,18 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
       return false;
     if (Blockers.count(TmpBB))
       return false;
+    
+    // If any of these blocks has more than one successor (i.e. if the edge we
+    // just traversed was critical), then there are other paths through this 
+    // block along which the load may not be anticipated.  Hoisting the load 
+    // above this block would be adding the load to execution paths along
+    // which it was not previously executed.
     if (TmpBB->getTerminator()->getNumSuccessors() != 1)
-      allSingleSucc = false;
+      return false;
   }
 
   assert(TmpBB);
   LoadBB = TmpBB;
-
-  // If we have a repl set with LI itself in it, this means we have a loop where
-  // at least one of the values is LI.  Since this means that we won't be able
-  // to eliminate LI even if we insert uses in the other predecessors, we will
-  // end up increasing code size.  Reject this by scanning for LI.
-  for (unsigned i = 0, e = ValuesPerBlock.size(); i != e; ++i) {
-    if (ValuesPerBlock[i].isSimpleValue() &&
-        ValuesPerBlock[i].getSimpleValue() == LI) {
-      // Skip cases where LI is the only definition, even for EnableFullLoadPRE.
-      if (!EnableFullLoadPRE || e == 1)
-        return false;
-    }
-  }
 
   // FIXME: It is extremely unclear what this loop is doing, other than
   // artificially restricting loadpre.
@@ -1613,14 +1599,13 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
   unsigned NumUnavailablePreds = PredLoads.size();
   assert(NumUnavailablePreds != 0 &&
          "Fully available value should be eliminated above!");
-  if (!EnableFullLoadPRE) {
-    // If this load is unavailable in multiple predecessors, reject it.
-    // FIXME: If we could restructure the CFG, we could make a common pred with
-    // all the preds that don't have an available LI and insert a new load into
-    // that one block.
-    if (NumUnavailablePreds != 1)
+  
+  // If this load is unavailable in multiple predecessors, reject it.
+  // FIXME: If we could restructure the CFG, we could make a common pred with
+  // all the preds that don't have an available LI and insert a new load into
+  // that one block.
+  if (NumUnavailablePreds != 1)
       return false;
-  }
 
   // Check if the load can safely be moved to all the unavailable predecessors.
   bool CanDoPRE = true;
@@ -1635,7 +1620,7 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
     // If all preds have a single successor, then we know it is safe to insert
     // the load on the pred (?!?), so we can insert code to materialize the
     // pointer if it is not available.
-    PHITransAddr Address(LI->getOperand(0), TD);
+    PHITransAddr Address(LI->getPointerOperand(), TD);
     Value *LoadPtr = 0;
     if (allSingleSucc) {
       LoadPtr = Address.PHITranslateWithInsertion(LoadBB, UnavailablePred,
@@ -1649,7 +1634,7 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
     // we fail PRE.
     if (LoadPtr == 0) {
       DEBUG(dbgs() << "COULDN'T INSERT PHI TRANSLATED VALUE OF: "
-            << *LI->getOperand(0) << "\n");
+            << *LI->getPointerOperand() << "\n");
       CanDoPRE = false;
       break;
     }
@@ -1754,19 +1739,19 @@ bool GVN::processLoad(LoadInst *L, SmallVectorImpl<Instruction*> &toErase) {
     // access code.
     Value *AvailVal = 0;
     if (StoreInst *DepSI = dyn_cast<StoreInst>(Dep.getInst()))
-      if (const TargetData *TD = getAnalysisIfAvailable<TargetData>()) {
+      if (TD) {
         int Offset = AnalyzeLoadFromClobberingStore(L->getType(),
                                                     L->getPointerOperand(),
                                                     DepSI, *TD);
         if (Offset != -1)
-          AvailVal = GetStoreValueForLoad(DepSI->getOperand(0), Offset,
+          AvailVal = GetStoreValueForLoad(DepSI->getValueOperand(), Offset,
                                           L->getType(), L, *TD);
       }
     
     // If the clobbering value is a memset/memcpy/memmove, see if we can forward
     // a value on from it.
     if (MemIntrinsic *DepMI = dyn_cast<MemIntrinsic>(Dep.getInst())) {
-      if (const TargetData *TD = getAnalysisIfAvailable<TargetData>()) {
+      if (TD) {
         int Offset = AnalyzeLoadFromClobberingMemInst(L->getType(),
                                                       L->getPointerOperand(),
                                                       DepMI, *TD);
@@ -1805,14 +1790,13 @@ bool GVN::processLoad(LoadInst *L, SmallVectorImpl<Instruction*> &toErase) {
 
   Instruction *DepInst = Dep.getInst();
   if (StoreInst *DepSI = dyn_cast<StoreInst>(DepInst)) {
-    Value *StoredVal = DepSI->getOperand(0);
+    Value *StoredVal = DepSI->getValueOperand();
     
     // The store and load are to a must-aliased pointer, but they may not
     // actually have the same type.  See if we know how to reuse the stored
     // value (depending on its type).
-    const TargetData *TD = 0;
     if (StoredVal->getType() != L->getType()) {
-      if ((TD = getAnalysisIfAvailable<TargetData>())) {
+      if (TD) {
         StoredVal = CoerceAvailableValueToLoadType(StoredVal, L->getType(),
                                                    L, *TD);
         if (StoredVal == 0)
@@ -1841,9 +1825,8 @@ bool GVN::processLoad(LoadInst *L, SmallVectorImpl<Instruction*> &toErase) {
     // The loads are of a must-aliased pointer, but they may not actually have
     // the same type.  See if we know how to reuse the previously loaded value
     // (depending on its type).
-    const TargetData *TD = 0;
     if (DepLI->getType() != L->getType()) {
-      if ((TD = getAnalysisIfAvailable<TargetData>())) {
+      if (TD) {
         AvailableVal = CoerceAvailableValueToLoadType(DepLI, L->getType(), L,*TD);
         if (AvailableVal == 0)
           return false;
@@ -1915,6 +1898,19 @@ bool GVN::processInstruction(Instruction *I,
   // Ignore dbg info intrinsics.
   if (isa<DbgInfoIntrinsic>(I))
     return false;
+
+  // If the instruction can be easily simplified then do so now in preference
+  // to value numbering it.  Value numbering often exposes redundancies, for
+  // example if it determines that %y is equal to %x then the instruction
+  // "%z = and i32 %x, %y" becomes "%z = and i32 %x, %x" which we now simplify.
+  if (Value *V = SimplifyInstruction(I, TD, DT)) {
+    I->replaceAllUsesWith(V);
+    if (MD && V->getType()->isPointerTy())
+      MD->invalidateCachedPointerInfo(V);
+    VN.erase(I);
+    toErase.push_back(I);
+    return true;
+  }
 
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
     bool Changed = processLoad(LI, toErase);
@@ -2002,6 +1998,7 @@ bool GVN::runOnFunction(Function& F) {
   if (!NoLoads)
     MD = &getAnalysis<MemoryDependenceAnalysis>();
   DT = &getAnalysis<DominatorTree>();
+  TD = getAnalysisIfAvailable<TargetData>();
   VN.setAliasAnalysis(&getAnalysis<AliasAnalysis>());
   VN.setMemDep(MD);
   VN.setDomTree(DT);

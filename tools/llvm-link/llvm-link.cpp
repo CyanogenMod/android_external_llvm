@@ -20,7 +20,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/PrettyStackTrace.h"
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/IRReader.h"
 #include "llvm/System/Signals.h"
@@ -130,9 +130,9 @@ int main(int argc, char **argv) {
 
   if (Verbose) errs() << "Writing bitcode...\n";
   if (OutputAssembly) {
-    Out << *Composite;
-  } else if (Force || !CheckBitcodeOutputToConsole(Out, true))
-    WriteBitcodeToFile(Composite.get(), Out);
+    Out.os() << *Composite;
+  } else if (Force || !CheckBitcodeOutputToConsole(Out.os(), true))
+    WriteBitcodeToFile(Composite.get(), Out.os());
 
   // Declare success.
   Out.keep();

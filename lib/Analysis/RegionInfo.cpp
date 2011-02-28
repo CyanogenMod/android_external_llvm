@@ -45,7 +45,7 @@ STATISTIC(numSimpleRegions, "The # of simple regions");
 /// PrintStyle - Print region in difference ways.
 enum PrintStyle { PrintNone, PrintBB, PrintRN  };
 
-cl::opt<enum PrintStyle> printStyle("print-region-style", cl::Hidden,
+static cl::opt<enum PrintStyle> printStyle("print-region-style", cl::Hidden,
   cl::desc("style of printing regions"),
   cl::values(
     clEnumValN(PrintNone, "none",  "print no details"),
@@ -70,6 +70,15 @@ Region::~Region() {
 
   for (iterator I = begin(), E = end(); I != E; ++I)
     delete *I;
+}
+
+void Region::replaceEntry(BasicBlock *BB) {
+  entry.setPointer(BB);
+}
+
+void Region::replaceExit(BasicBlock *BB) {
+  assert(exit && "No exit to replace!");
+  exit = BB;
 }
 
 bool Region::contains(const BasicBlock *B) const {
@@ -131,8 +140,7 @@ bool Region::isSimple() const {
 
   BasicBlock *entry = getEntry(), *exit = getExit();
 
-  // TopLevelRegion
-  if (!exit)
+  if (isTopLevelRegion())
     return false;
 
   for (pred_iterator PI = pred_begin(entry), PE = pred_end(entry); PI != PE;
@@ -311,13 +319,38 @@ void Region::transferChildrenTo(Region *To) {
   children.clear();
 }
 
-void Region::addSubRegion(Region *SubRegion) {
+void Region::addSubRegion(Region *SubRegion, bool moveChildren) {
   assert(SubRegion->parent == 0 && "SubRegion already has a parent!");
+  assert(std::find(begin(), end(), SubRegion) == children.end()
+         && "Subregion already exists!");
+
   SubRegion->parent = this;
-  // Set up the region node.
-  assert(std::find(children.begin(), children.end(), SubRegion) == children.end()
-         && "Node already exist!");
   children.push_back(SubRegion);
+
+  if (!moveChildren)
+    return;
+
+  assert(SubRegion->children.size() == 0
+         && "SubRegions that contain children are not supported");
+
+  for (element_iterator I = element_begin(), E = element_end(); I != E; ++I)
+    if (!(*I)->isSubRegion()) {
+      BasicBlock *BB = (*I)->getNodeAs<BasicBlock>();
+
+      if (SubRegion->contains(BB))
+        RI->setRegionFor(BB, SubRegion);
+    }
+
+  std::vector<Region*> Keep;
+  for (iterator I = begin(), E = end(); I != E; ++I)
+    if (SubRegion->contains(*I) && *I != SubRegion) {
+      SubRegion->children.push_back(*I);
+      (*I)->parent = SubRegion;
+    } else
+      Keep.push_back(*I);
+
+  children.clear();
+  children.insert(children.begin(), Keep.begin(), Keep.end());
 }
 
 
@@ -337,6 +370,38 @@ unsigned Region::getDepth() const {
     ++Depth;
 
   return Depth;
+}
+
+Region *Region::getExpandedRegion() const {
+  unsigned NumSuccessors = exit->getTerminator()->getNumSuccessors();
+
+  if (NumSuccessors == 0)
+    return NULL;
+
+  for (pred_iterator PI = pred_begin(getExit()), PE = pred_end(getExit());
+       PI != PE; ++PI)
+    if (!DT->dominates(getEntry(), *PI))
+      return NULL;
+
+  Region *R = RI->getRegionFor(exit);
+
+  if (R->getEntry() != exit) {
+    if (exit->getTerminator()->getNumSuccessors() == 1)
+      return new Region(getEntry(), *succ_begin(exit), RI, DT);
+    else
+      return NULL;
+  }
+
+  while (R->getParent() && R->getParent()->getEntry() == exit)
+    R = R->getParent();
+
+  if (!DT->dominates(getEntry(), R->getExit()))
+    for (pred_iterator PI = pred_begin(getExit()), PE = pred_end(getExit());
+         PI != PE; ++PI)
+    if (!DT->dominates(R->getExit(), *PI))
+      return NULL;
+
+  return new Region(getEntry(), R->getExit(), RI, DT);
 }
 
 void Region::print(raw_ostream &OS, bool print_tree, unsigned level) const {
@@ -376,6 +441,11 @@ void Region::dump() const {
 }
 
 void Region::clearNodeCache() {
+  // Free the cached nodes.
+  for (BBNodeMapT::iterator I = BBNodeMap.begin(),
+       IE = BBNodeMap.end(); I != IE; ++I)
+    delete I->second;
+
   BBNodeMap.clear();
   for (Region::iterator RI = begin(), RE = end(); RI != RE; ++RI)
     (*RI)->clearNodeCache();
@@ -592,6 +662,7 @@ void RegionInfo::releaseMemory() {
 }
 
 RegionInfo::RegionInfo() : FunctionPass(ID) {
+  initializeRegionInfoPass(*PassRegistry::getPassRegistry());
   TopLevelRegion = 0;
 }
 
@@ -654,10 +725,13 @@ Region *RegionInfo::getRegionFor(BasicBlock *BB) const {
   return I != BBtoRegion.end() ? I->second : 0;
 }
 
+void RegionInfo::setRegionFor(BasicBlock *BB, Region *R) {
+  BBtoRegion[BB] = R;
+}
+
 Region *RegionInfo::operator[](BasicBlock *BB) const {
   return getRegionFor(BB);
 }
-
 
 BasicBlock *RegionInfo::getMaxRegionExit(BasicBlock *BB) const {
   BasicBlock *Exit = NULL;
@@ -733,9 +807,28 @@ RegionInfo::getCommonRegion(SmallVectorImpl<BasicBlock*> &BBs) const {
   return ret;
 }
 
+void RegionInfo::splitBlock(BasicBlock* NewBB, BasicBlock *OldBB)
+{
+  Region *R = getRegionFor(OldBB);
+
+  setRegionFor(NewBB, R);
+
+  while (R->getEntry() == OldBB && !R->isTopLevelRegion()) {
+    R->replaceEntry(NewBB);
+    R = R->getParent();
+  }
+
+  setRegionFor(OldBB, R);
+}
+
 char RegionInfo::ID = 0;
-INITIALIZE_PASS(RegionInfo, "regions",
-                "Detect single entry single exit regions", true, true);
+INITIALIZE_PASS_BEGIN(RegionInfo, "regions",
+                "Detect single entry single exit regions", true, true)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+INITIALIZE_PASS_DEPENDENCY(PostDominatorTree)
+INITIALIZE_PASS_DEPENDENCY(DominanceFrontier)
+INITIALIZE_PASS_END(RegionInfo, "regions",
+                "Detect single entry single exit regions", true, true)
 
 // Create methods available outside of this file, to use them
 // "include/llvm/LinkAllPasses.h". Otherwise the pass would be deleted by

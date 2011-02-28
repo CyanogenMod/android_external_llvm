@@ -36,7 +36,9 @@ namespace {
     bool runOnModule(Module &M);
   public:
     static char ID; // Pass identification, replacement for typeid
-    OptimalEdgeProfiler() : ModulePass(ID) {}
+    OptimalEdgeProfiler() : ModulePass(ID) {
+      initializeOptimalEdgeProfilerPass(*PassRegistry::getPassRegistry());
+    }
 
     void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequiredID(ProfileEstimatorPassID);
@@ -50,9 +52,14 @@ namespace {
 }
 
 char OptimalEdgeProfiler::ID = 0;
-INITIALIZE_PASS(OptimalEdgeProfiler, "insert-optimal-edge-profiling", 
+INITIALIZE_PASS_BEGIN(OptimalEdgeProfiler, "insert-optimal-edge-profiling", 
                 "Insert optimal instrumentation for edge profiling",
-                false, false);
+                false, false)
+INITIALIZE_PASS_DEPENDENCY(ProfileEstimatorPass)
+INITIALIZE_AG_DEPENDENCY(ProfileInfo)
+INITIALIZE_PASS_END(OptimalEdgeProfiler, "insert-optimal-edge-profiling", 
+                "Insert optimal instrumentation for edge profiling",
+                false, false)
 
 ModulePass *llvm::createOptimalEdgeProfilerPass() {
   return new OptimalEdgeProfiler();

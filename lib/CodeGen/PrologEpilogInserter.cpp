@@ -44,8 +44,12 @@ using namespace llvm;
 
 char PEI::ID = 0;
 
-INITIALIZE_PASS(PEI, "prologepilog",
-                "Prologue/Epilogue Insertion", false, false);
+INITIALIZE_PASS_BEGIN(PEI, "prologepilog",
+                "Prologue/Epilogue Insertion", false, false)
+INITIALIZE_PASS_DEPENDENCY(MachineLoopInfo)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
+INITIALIZE_PASS_END(PEI, "prologepilog",
+                "Prologue/Epilogue Insertion", false, false)
 
 STATISTIC(NumVirtualFrameRegs, "Number of virtual frame regs encountered");
 STATISTIC(NumScavengedRegs, "Number of frame index regs scavenged");
@@ -637,7 +641,7 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
       AdjustStackOffset(MFI, SFI, StackGrowsDown, Offset, MaxAlign);
   }
 
-  if (!RegInfo->targetHandlesStackFrameRounding()) {
+  if (!TFI.targetHandlesStackFrameRounding()) {
     // If we have reserved argument space for call sites in the function
     // immediately on entry to the current function, count it as part of the
     // overall stack size.
@@ -672,16 +676,16 @@ void PEI::calculateFrameObjectOffsets(MachineFunction &Fn) {
 /// prolog and epilog code to the function.
 ///
 void PEI::insertPrologEpilogCode(MachineFunction &Fn) {
-  const TargetRegisterInfo *TRI = Fn.getTarget().getRegisterInfo();
+  const TargetFrameInfo &TFI = *Fn.getTarget().getFrameInfo();
 
   // Add prologue to the function...
-  TRI->emitPrologue(Fn);
+  TFI.emitPrologue(Fn);
 
   // Add epilogue to restore the callee-save registers in each exiting block
   for (MachineFunction::iterator I = Fn.begin(), E = Fn.end(); I != E; ++I) {
     // If last instruction is a return instruction, add an epilogue
     if (!I->empty() && I->back().getDesc().isReturn())
-      TRI->emitEpilogue(Fn, *I);
+      TFI.emitEpilogue(Fn, *I);
   }
 }
 
@@ -755,8 +759,8 @@ void PEI::replaceFrameIndices(MachineFunction &Fn) {
           // If this instruction has a FrameIndex operand, we need to
           // use that target machine register info object to eliminate
           // it.
-            TRI.eliminateFrameIndex(MI, SPAdj,
-                                    FrameIndexVirtualScavenging ?  NULL : RS);
+          TRI.eliminateFrameIndex(MI, SPAdj,
+                                  FrameIndexVirtualScavenging ?  NULL : RS);
 
           // Reset the iterator if we were at the beginning of the BB.
           if (AtBeginning) {
@@ -825,7 +829,7 @@ void PEI::scavengeFrameVirtualRegs(MachineFunction &Fn) {
             ScratchReg = RS->scavengeRegister(RC, I, SPAdj);
             ++NumScavengedRegs;
           }
-          // replace this reference to the virtual register with the
+          // Replace this reference to the virtual register with the
           // scratch register.
           assert (ScratchReg && "Missing scratch register!");
           MI->getOperand(i).setReg(ScratchReg);

@@ -14,16 +14,19 @@
 #ifndef ARMTARGETMACHINE_H
 #define ARMTARGETMACHINE_H
 
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetData.h"
 #include "ARMInstrInfo.h"
+#include "ARMELFWriterInfo.h"
 #include "ARMFrameInfo.h"
 #include "ARMJITInfo.h"
 #include "ARMSubtarget.h"
 #include "ARMISelLowering.h"
 #include "ARMSelectionDAGInfo.h"
 #include "Thumb1InstrInfo.h"
+#include "Thumb1FrameInfo.h"
 #include "Thumb2InstrInfo.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetData.h"
+#include "llvm/MC/MCStreamer.h"
 #include "llvm/ADT/OwningPtr.h"
 
 namespace llvm {
@@ -31,9 +34,7 @@ namespace llvm {
 class ARMBaseTargetMachine : public LLVMTargetMachine {
 protected:
   ARMSubtarget        Subtarget;
-
 private:
-  ARMFrameInfo        FrameInfo;
   ARMJITInfo          JITInfo;
   InstrItineraryData  InstrItins;
   Reloc::Model        DefRelocModel;    // Reloc model before it's overridden.
@@ -42,11 +43,10 @@ public:
   ARMBaseTargetMachine(const Target &T, const std::string &TT,
                        const std::string &FS, bool isThumb);
 
-  virtual const ARMFrameInfo     *getFrameInfo() const { return &FrameInfo; }
   virtual       ARMJITInfo       *getJITInfo()         { return &JITInfo; }
   virtual const ARMSubtarget  *getSubtargetImpl() const { return &Subtarget; }
-  virtual const InstrItineraryData getInstrItineraryData() const {
-    return InstrItins;
+  virtual const InstrItineraryData *getInstrItineraryData() const {
+    return &InstrItins;
   }
 
   // Pass Pipeline Configuration
@@ -64,9 +64,11 @@ public:
 class ARMTargetMachine : public ARMBaseTargetMachine {
   ARMInstrInfo        InstrInfo;
   const TargetData    DataLayout;       // Calculates type size & alignment
+  ARMELFWriterInfo    ELFWriterInfo;
   ARMTargetLowering   TLInfo;
   ARMSelectionDAGInfo TSInfo;
-public:
+  ARMFrameInfo        FrameInfo;
+ public:
   ARMTargetMachine(const Target &T, const std::string &TT,
                    const std::string &FS);
 
@@ -81,9 +83,13 @@ public:
   virtual const ARMSelectionDAGInfo* getSelectionDAGInfo() const {
     return &TSInfo;
   }
+  virtual const ARMFrameInfo     *getFrameInfo() const { return &FrameInfo; }
 
   virtual const ARMInstrInfo     *getInstrInfo() const { return &InstrInfo; }
   virtual const TargetData       *getTargetData() const { return &DataLayout; }
+  virtual const ARMELFWriterInfo *getELFWriterInfo() const {
+    return Subtarget.isTargetELF() ? &ELFWriterInfo : 0;
+  }
 };
 
 /// ThumbTargetMachine - Thumb target machine.
@@ -94,8 +100,11 @@ class ThumbTargetMachine : public ARMBaseTargetMachine {
   // Either Thumb1InstrInfo or Thumb2InstrInfo.
   OwningPtr<ARMBaseInstrInfo> InstrInfo;
   const TargetData    DataLayout;   // Calculates type size & alignment
+  ARMELFWriterInfo    ELFWriterInfo;
   ARMTargetLowering   TLInfo;
   ARMSelectionDAGInfo TSInfo;
+  // Either Thumb1FrameInfo or ARMFrameInfo.
+  OwningPtr<ARMFrameInfo> FrameInfo;
 public:
   ThumbTargetMachine(const Target &T, const std::string &TT,
                      const std::string &FS);
@@ -117,7 +126,14 @@ public:
   virtual const ARMBaseInstrInfo *getInstrInfo() const {
     return InstrInfo.get();
   }
+  /// returns either Thumb1FrameInfo or ARMFrameInfo
+  virtual const ARMFrameInfo     *getFrameInfo() const {
+    return FrameInfo.get();
+  }
   virtual const TargetData       *getTargetData() const { return &DataLayout; }
+  virtual const ARMELFWriterInfo *getELFWriterInfo() const {
+    return Subtarget.isTargetELF() ? &ELFWriterInfo : 0;
+  }
 };
 
 } // end namespace llvm

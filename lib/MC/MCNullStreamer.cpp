@@ -25,7 +25,11 @@ namespace {
     /// @name MCStreamer Interface
     /// @{
 
+    virtual void InitSections() {
+    }
+
     virtual void SwitchSection(const MCSection *Section) {
+      PrevSection = CurSection;
       CurSection = Section;
     }
 
@@ -36,8 +40,10 @@ namespace {
     }
 
     virtual void EmitAssemblerFlag(MCAssemblerFlag Flag) {}
+    virtual void EmitThumbFunc(MCSymbol *Func) {}
 
     virtual void EmitAssignment(MCSymbol *Symbol, const MCExpr *Value) {}
+    virtual void EmitWeakReference(MCSymbol *Alias, const MCSymbol *Symbol){}
 
     virtual void EmitSymbolAttribute(MCSymbol *Symbol, MCSymbolAttr Attribute){}
 
@@ -61,6 +67,10 @@ namespace {
 
     virtual void EmitValue(const MCExpr *Value, unsigned Size,
                            unsigned AddrSpace) {}
+    virtual void EmitULEB128Value(const MCExpr *Value,
+                                  unsigned AddrSpace = 0) {}
+    virtual void EmitSLEB128Value(const MCExpr *Value,
+                                  unsigned AddrSpace = 0) {}
     virtual void EmitGPRel32Value(const MCExpr *Value) {}
     virtual void EmitValueToAlignment(unsigned ByteAlignment, int64_t Value = 0,
                                       unsigned ValueSize = 1,

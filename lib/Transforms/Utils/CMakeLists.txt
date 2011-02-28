@@ -22,7 +22,7 @@ add_llvm_library(LLVMTransformUtils
   SSAUpdater.cpp
   SimplifyCFG.cpp
   UnifyFunctionExitNodes.cpp
+  Utils.cpp
   ValueMapper.cpp
   )
 
-target_link_libraries (LLVMTransformUtils LLVMSupport)

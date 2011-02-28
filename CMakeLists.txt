@@ -10,7 +10,7 @@ set(CMAKE_MODULE_PATH
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules"
   )
 
-set(PACKAGE_VERSION "2.8")
+set(PACKAGE_VERSION "2.9")
 include(VersionFromVCS)
 add_version_info_from_vcs(PACKAGE_VERSION)
 
@@ -63,10 +63,9 @@ set(LLVM_ALL_TARGETS
   CppBackend
   Mips
   MBlaze
-  MSIL
   MSP430
-  PIC16
   PowerPC
+  PTX
   Sparc
   SystemZ
   X86
@@ -81,11 +80,21 @@ else( MSVC )
     CACHE STRING "Semicolon-separated list of targets to build, or \"all\".")
 endif( MSVC )
 
+set(CLANG_RESOURCE_DIR "" CACHE STRING
+  "Relative directory from the Clang binary to its resource files.")
+
 set(C_INCLUDE_DIRS "" CACHE STRING
   "Colon separated list of directories clang will search for headers.")
 
 set(LLVM_TARGET_ARCH "host"
   CACHE STRING "Set target to use for LLVM JIT or use \"host\" for automatic detection.")
+
+set(LIT_ARGS_DEFAULT "-sv")
+if (MSVC OR XCODE)
+  set(LIT_ARGS_DEFAULT "${LIT_ARGS_DEFAULT} --no-progress-bar")
+endif()
+set(LLVM_LIT_ARGS "${LIT_ARGS_DEFAULT}"
+    CACHE STRING "Default options for lit")
 
 option(LLVM_ENABLE_THREADS "Use threads if available." ON)
 
@@ -223,7 +232,7 @@ if( MSVC )
   add_llvm_definitions( -D_SCL_SECURE_NO_WARNINGS -DCRT_NONSTDC_NO_WARNINGS )
   add_llvm_definitions( -D_SCL_SECURE_NO_DEPRECATE )
   add_llvm_definitions( -wd4146 -wd4503 -wd4996 -wd4800 -wd4244 -wd4624 )
-  add_llvm_definitions( -wd4355 -wd4715 -wd4180 -wd4345 -wd4224 )
+  add_llvm_definitions( -wd4355 -wd4715 -wd4180 -wd4345 -wd4224 -wd4267 )
 
   # Suppress 'new behavior: elements of array 'array' will be default initialized'
   add_llvm_definitions( -wd4351 )
@@ -258,6 +267,15 @@ endif( ${CMAKE_SYSTEM_NAME} MATCHES SunOS )
 
 include(AddLLVM)
 include(TableGen)
+
+if( MINGW )
+  get_system_libs(LLVM_SYSTEM_LIBS_LIST)
+  foreach(l ${LLVM_SYSTEM_LIBS_LIST})
+    set(LLVM_SYSTEM_LIBS "${LLVM_SYSTEM_LIBS} -l${l}")
+  endforeach()
+  set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES}${LLVM_SYSTEM_LIBS}")
+  set(CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES}${LLVM_SYSTEM_LIBS}")
+endif()
 
 add_subdirectory(lib/Support)
 add_subdirectory(lib/System)
@@ -297,11 +315,12 @@ add_subdirectory(lib/Analysis/IPA)
 add_subdirectory(lib/MC)
 add_subdirectory(lib/MC/MCParser)
 add_subdirectory(lib/MC/MCDisassembler)
-add_subdirectory(test)
+add_subdirectory(lib/Object)
 
 add_subdirectory(utils/FileCheck)
 add_subdirectory(utils/count)
 add_subdirectory(utils/not)
+add_subdirectory(utils/llvm-lit)
 
 set(LLVM_ENUM_ASM_PRINTERS "")
 set(LLVM_ENUM_ASM_PARSERS "")
@@ -310,21 +329,25 @@ foreach(t ${LLVM_TARGETS_TO_BUILD})
   message(STATUS "Targeting ${t}")
   add_subdirectory(lib/Target/${t})
   add_subdirectory(lib/Target/${t}/TargetInfo)
-  if( EXISTS ${LLVM_MAIN_SRC_DIR}/lib/Target/${t}/AsmPrinter/CMakeLists.txt )
-    add_subdirectory(lib/Target/${t}/AsmPrinter)
+  set( td ${LLVM_MAIN_SRC_DIR}/lib/Target/${t} )
+  file(GLOB asmp_file "${td}/*AsmPrinter.cpp")
+  if( asmp_file )
     set(LLVM_ENUM_ASM_PRINTERS 
       "${LLVM_ENUM_ASM_PRINTERS}LLVM_ASM_PRINTER(${t})\n")
-  endif( EXISTS ${LLVM_MAIN_SRC_DIR}/lib/Target/${t}/AsmPrinter/CMakeLists.txt )
-  if( EXISTS ${LLVM_MAIN_SRC_DIR}/lib/Target/${t}/AsmParser/CMakeLists.txt )
+  endif()
+  if( EXISTS ${td}/InstPrinter/CMakeLists.txt )
+    add_subdirectory(lib/Target/${t}/InstPrinter)
+  endif()
+  if( EXISTS ${td}/AsmParser/CMakeLists.txt )
     add_subdirectory(lib/Target/${t}/AsmParser)
     set(LLVM_ENUM_ASM_PARSERS 
       "${LLVM_ENUM_ASM_PARSERS}LLVM_ASM_PARSER(${t})\n")
-  endif( EXISTS ${LLVM_MAIN_SRC_DIR}/lib/Target/${t}/AsmParser/CMakeLists.txt )
-  if( EXISTS ${LLVM_MAIN_SRC_DIR}/lib/Target/${t}/Disassembler/CMakeLists.txt )
+  endif()
+  if( EXISTS ${td}/Disassembler/CMakeLists.txt )
     add_subdirectory(lib/Target/${t}/Disassembler)
     set(LLVM_ENUM_DISASSEMBLERS
       "${LLVM_ENUM_DISASSEMBLERS}LLVM_DISASSEMBLER(${t})\n")
-  endif( EXISTS ${LLVM_MAIN_SRC_DIR}/lib/Target/${t}/Disassembler/CMakeLists.txt )
+  endif()
   set(CURRENT_LLVM_TARGET)
 endforeach(t)
 
@@ -355,11 +378,33 @@ add_subdirectory(lib/Archive)
 
 add_subdirectory(projects)
 
-option(LLVM_BUILD_TOOLS "Build LLVM tool programs." ON)
-add_subdirectory(tools)
+option(LLVM_BUILD_TOOLS
+  "Build the LLVM tools. If OFF, just generate build targets." ON)
+option(LLVM_INCLUDE_TOOLS "Generate build targets for the LLVM tools." ON)
+if( LLVM_INCLUDE_TOOLS )
+  add_subdirectory(tools)
+endif()
 
-option(LLVM_BUILD_EXAMPLES "Build LLVM example programs." OFF)
-add_subdirectory(examples)
+option(LLVM_BUILD_EXAMPLES
+  "Build the LLVM example programs. If OFF, just generate build targets." OFF)
+option(LLVM_INCLUDE_EXAMPLES "Generate build targets for the LLVM examples" ON)
+if( LLVM_INCLUDE_EXAMPLES )
+  add_subdirectory(examples)
+endif()
+
+option(LLVM_BUILD_TESTS
+  "Build LLVM unit tests. If OFF, just generate build targes." OFF)
+option(LLVM_INCLUDE_TESTS "Generate build targets for the LLVM unit tests." ON)
+if( LLVM_INCLUDE_TESTS )
+  add_subdirectory(test)
+  add_subdirectory(utils/unittest)
+  add_subdirectory(unittests)
+  if (MSVC)
+    # This utility is used to prevent chrashing tests from calling Dr. Watson on
+    # Windows.
+    add_subdirectory(utils/KillTheDoctor)
+  endif()
+endif()
 
 add_subdirectory(cmake/modules)
 
@@ -386,3 +431,9 @@ install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/
   )
 
 # TODO: make and install documentation.
+
+set(CPACK_PACKAGE_VENDOR "LLVM")
+set(CPACK_PACKAGE_VERSION_MAJOR 2)
+set(CPACK_PACKAGE_VERSION_MINOR 9)
+add_version_info_from_vcs(CPACK_PACKAGE_VERSION_PATCH)
+include(CPack)

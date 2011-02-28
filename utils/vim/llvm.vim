@@ -49,6 +49,7 @@ syn keyword llvmKeyword hidden protected default
 syn keyword llvmKeyword except deplibs
 syn keyword llvmKeyword volatile fastcc coldcc cc ccc
 syn keyword llvmKeyword x86_stdcallcc x86_fastcallcc
+syn keyword llvmKeyword ptx_kernel ptx_device
 syn keyword llvmKeyword signext zeroext inreg sret nounwind noreturn
 syn keyword llvmKeyword nocapture byval nest readnone readonly noalias
 syn keyword llvmKeyword inlinehint noinline alwaysinline optsize ssp sspreq
@@ -57,11 +58,9 @@ syn keyword llvmKeyword module asm align tail to
 syn keyword llvmKeyword addrspace section alias sideeffect c gc
 syn keyword llvmKeyword target datalayout triple
 syn keyword llvmKeyword blockaddress
-syn keyword llvmKeyword union
 
 " Obsolete keywords.
-syn keyword llvmError  uninitialized implementation
-syn keyword llvmError  getresult big little endian begin end
+syn keyword llvmError  getresult begin end
 
 " Misc syntax.
 syn match   llvmNoName /[%@]\d\+\>/

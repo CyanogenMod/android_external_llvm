@@ -9,6 +9,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/OwningPtr.h"
 #include <bitset>
 
 using namespace llvm;
@@ -68,7 +69,8 @@ int StringRef::compare_numeric(StringRef RHS) const {
 
 // Compute the edit distance between the two given strings.
 unsigned StringRef::edit_distance(llvm::StringRef Other, 
-                                  bool AllowReplacements) {
+                                  bool AllowReplacements,
+                                  unsigned MaxEditDistance) {
   // The algorithm implemented below is the "classic"
   // dynamic-programming algorithm for computing the Levenshtein
   // distance, which is described here:
@@ -83,10 +85,12 @@ unsigned StringRef::edit_distance(llvm::StringRef Other,
 
   const unsigned SmallBufferSize = 64;
   unsigned SmallBuffer[SmallBufferSize];
-  unsigned *Allocated = 0;
+  llvm::OwningArrayPtr<unsigned> Allocated;
   unsigned *previous = SmallBuffer;
-  if (2*(n + 1) > SmallBufferSize)
-    Allocated = previous = new unsigned [2*(n+1)];
+  if (2*(n + 1) > SmallBufferSize) {
+    previous = new unsigned [2*(n+1)];
+    Allocated.reset(previous);
+  }
   unsigned *current = previous + (n + 1);
   
   for (unsigned i = 0; i <= n; ++i) 
@@ -94,6 +98,8 @@ unsigned StringRef::edit_distance(llvm::StringRef Other,
 
   for (size_type y = 1; y <= m; ++y) {
     current[0] = y;
+    unsigned BestThisRow = current[0];
+    
     for (size_type x = 1; x <= n; ++x) {
       if (AllowReplacements) {
         current[x] = min(previous[x-1] + ((*this)[y-1] == Other[x-1]? 0u:1u),
@@ -103,7 +109,11 @@ unsigned StringRef::edit_distance(llvm::StringRef Other,
         if ((*this)[y-1] == Other[x-1]) current[x] = previous[x-1];
         else current[x] = min(current[x-1], previous[x]) + 1;
       }
+      BestThisRow = min(BestThisRow, current[x]);
     }
+    
+    if (MaxEditDistance && BestThisRow > MaxEditDistance)
+      return MaxEditDistance + 1;
     
     unsigned *tmp = current;
     current = previous;
@@ -111,8 +121,6 @@ unsigned StringRef::edit_distance(llvm::StringRef Other,
   }
 
   unsigned Result = previous[n];
-  delete [] Allocated;
-  
   return Result;
 }
 

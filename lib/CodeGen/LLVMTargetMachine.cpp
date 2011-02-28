@@ -30,6 +30,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/StandardPasses.h"
 using namespace llvm;
 
 namespace llvm {
@@ -143,10 +144,11 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     if (ShowMCEncoding)
       MCE = getTarget().createCodeEmitter(*this, *Context);
 
-    AsmStreamer.reset(createAsmStreamer(*Context, Out,
-                                        getTargetData()->isLittleEndian(),
-                                        getVerboseAsm(), InstPrinter,
-                                        MCE, ShowMCInst));
+    AsmStreamer.reset(getTarget().createAsmStreamer(*Context, Out,
+                                                    getTargetData()->isLittleEndian(),
+                                                    getVerboseAsm(),
+                                                    InstPrinter, MCE,
+                                                    ShowMCInst));
     break;
   }
   case CGFT_ObjectFile: {
@@ -160,6 +162,7 @@ bool LLVMTargetMachine::addPassesToEmitFile(PassManagerBase &PM,
     AsmStreamer.reset(getTarget().createObjectStreamer(TargetTriple, *Context,
                                                        *TAB, Out, MCE,
                                                        hasMCRelaxAll()));
+    AsmStreamer.get()->InitSections();
     break;
   }
   case CGFT_Null:
@@ -253,6 +256,9 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
                                                MCContext *&OutContext) {
   // Standard LLVM-Level Passes.
 
+  // Basic AliasAnalysis support.
+  createStandardAliasAnalysisPasses(&PM);
+
   // Before running any passes, run the verifier to determine if the input
   // coming from the front-end and/or optimizer is valid.
   if (!DisableVerify)
@@ -289,7 +295,7 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
     PM.add(createSjLjEHPass(getTargetLowering()));
     // FALLTHROUGH
   case ExceptionHandling::Dwarf:
-    PM.add(createDwarfEHPass(this, OptLevel==CodeGenOpt::None));
+    PM.add(createDwarfEHPass(this));
     break;
   case ExceptionHandling::None:
     PM.add(createLowerInvokePass(getTargetLowering()));

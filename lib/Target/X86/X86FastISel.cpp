@@ -63,6 +63,13 @@ public:
 
   virtual bool TargetSelectInstruction(const Instruction *I);
 
+  /// TryToFoldLoad - The specified machine instr operand is a vreg, and that
+  /// vreg is being provided by the specified load instruction.  If possible,
+  /// try to fold the load as an operand to the instruction, returning true if
+  /// possible.
+  virtual bool TryToFoldLoad(MachineInstr *MI, unsigned OpNo,
+                             const LoadInst *LI);
+  
 #include "X86GenFastISel.inc"
 
 private:
@@ -107,9 +114,6 @@ private:
   bool X86VisitIntrinsicCall(const IntrinsicInst &I);
   bool X86SelectCall(const Instruction *I);
 
-  CCAssignFn *CCAssignFnForCall(CallingConv::ID CC, bool isTailCall = false);
-  CCAssignFn *CCAssignFnForRet(CallingConv::ID CC, bool isTailCall = false);
-
   const X86InstrInfo *getInstrInfo() const {
     return getTargetMachine()->getInstrInfo();
   }
@@ -128,17 +132,18 @@ private:
       (VT == MVT::f32 && X86ScalarSSEf32);   // f32 is when SSE1
   }
 
-  bool isTypeLegal(const Type *Ty, EVT &VT, bool AllowI1 = false);
+  bool isTypeLegal(const Type *Ty, MVT &VT, bool AllowI1 = false);
 };
   
 } // end anonymous namespace.
 
-bool X86FastISel::isTypeLegal(const Type *Ty, EVT &VT, bool AllowI1) {
-  VT = TLI.getValueType(Ty, /*HandleUnknown=*/true);
-  if (VT == MVT::Other || !VT.isSimple())
+bool X86FastISel::isTypeLegal(const Type *Ty, MVT &VT, bool AllowI1) {
+  EVT evt = TLI.getValueType(Ty, /*HandleUnknown=*/true);
+  if (evt == MVT::Other || !evt.isSimple())
     // Unhandled type. Halt "fast" selection and bail.
     return false;
-  
+
+  VT = evt.getSimpleVT();
   // For now, require SSE/SSE2 for performing floating-point operations,
   // since x87 requires additional work.
   if (VT == MVT::f64 && !X86ScalarSSEf64)
@@ -156,45 +161,6 @@ bool X86FastISel::isTypeLegal(const Type *Ty, EVT &VT, bool AllowI1) {
 }
 
 #include "X86GenCallingConv.inc"
-
-/// CCAssignFnForCall - Selects the correct CCAssignFn for a given calling
-/// convention.
-CCAssignFn *X86FastISel::CCAssignFnForCall(CallingConv::ID CC,
-                                           bool isTaillCall) {
-  if (Subtarget->is64Bit()) {
-    if (CC == CallingConv::GHC)
-      return CC_X86_64_GHC;
-    else if (Subtarget->isTargetWin64())
-      return CC_X86_Win64_C;
-    else
-      return CC_X86_64_C;
-  }
-
-  if (CC == CallingConv::X86_FastCall)
-    return CC_X86_32_FastCall;
-  else if (CC == CallingConv::X86_ThisCall)
-    return CC_X86_32_ThisCall;
-  else if (CC == CallingConv::Fast)
-    return CC_X86_32_FastCC;
-  else if (CC == CallingConv::GHC)
-    return CC_X86_32_GHC;
-  else
-    return CC_X86_32_C;
-}
-
-/// CCAssignFnForRet - Selects the correct CCAssignFn for a given calling
-/// convention.
-CCAssignFn *X86FastISel::CCAssignFnForRet(CallingConv::ID CC,
-                                          bool isTaillCall) {
-  if (Subtarget->is64Bit()) {
-    if (Subtarget->isTargetWin64())
-      return RetCC_X86_Win64_C;
-    else
-      return RetCC_X86_64_C;
-  }
-
-  return RetCC_X86_32_C;
-}
 
 /// X86FastEmitLoad - Emit a machine instruction to load a value of type VT.
 /// The address is either pre-computed, i.e. Ptr, or a GlobalAddress, i.e. GV.
@@ -674,7 +640,7 @@ bool X86FastISel::X86SelectCallAddress(const Value *V, X86AddressMode &AM) {
 
 /// X86SelectStore - Select and emit code to implement store instructions.
 bool X86FastISel::X86SelectStore(const Instruction *I) {
-  EVT VT;
+  MVT VT;
   if (!isTypeLegal(I->getOperand(0)->getType(), VT, /*AllowI1=*/true))
     return false;
 
@@ -724,7 +690,7 @@ bool X86FastISel::X86SelectRet(const Instruction *I) {
     // Analyze operands of the call, assigning locations to each operand.
     SmallVector<CCValAssign, 16> ValLocs;
     CCState CCInfo(CC, F.isVarArg(), TM, ValLocs, I->getContext());
-    CCInfo.AnalyzeReturn(Outs, CCAssignFnForRet(CC));
+    CCInfo.AnalyzeReturn(Outs, RetCC_X86);
 
     const Value *RV = Ret->getOperand(0);
     unsigned Reg = getRegForValue(RV);
@@ -745,7 +711,7 @@ bool X86FastISel::X86SelectRet(const Instruction *I) {
       return false;
     // TODO: For now, don't try to handle cases where getLocInfo()
     // says Full but the types don't match.
-    if (VA.getValVT() != TLI.getValueType(RV->getType()))
+    if (TLI.getValueType(RV->getType()) != VA.getValVT())
       return false;
 
     // The calling-convention tables for x87 returns don't tell
@@ -775,7 +741,7 @@ bool X86FastISel::X86SelectRet(const Instruction *I) {
 /// X86SelectLoad - Select and emit code to implement load instructions.
 ///
 bool X86FastISel::X86SelectLoad(const Instruction *I)  {
-  EVT VT;
+  MVT VT;
   if (!isTypeLegal(I->getType(), VT, /*AllowI1=*/true))
     return false;
 
@@ -858,7 +824,7 @@ bool X86FastISel::X86FastEmitCompare(const Value *Op0, const Value *Op1,
 bool X86FastISel::X86SelectCmp(const Instruction *I) {
   const CmpInst *CI = cast<CmpInst>(I);
 
-  EVT VT;
+  MVT VT;
   if (!isTypeLegal(I->getOperand(0)->getType(), VT))
     return false;
 
@@ -1147,8 +1113,8 @@ bool X86FastISel::X86SelectShift(const Instruction *I) {
     return false;
   }
 
-  EVT VT = TLI.getValueType(I->getType(), /*HandleUnknown=*/true);
-  if (VT == MVT::Other || !isTypeLegal(I->getType(), VT))
+  MVT VT;
+  if (!isTypeLegal(I->getType(), VT))
     return false;
 
   unsigned Op0Reg = getRegForValue(I->getOperand(0));
@@ -1183,19 +1149,22 @@ bool X86FastISel::X86SelectShift(const Instruction *I) {
 }
 
 bool X86FastISel::X86SelectSelect(const Instruction *I) {
-  EVT VT = TLI.getValueType(I->getType(), /*HandleUnknown=*/true);
-  if (VT == MVT::Other || !isTypeLegal(I->getType(), VT))
+  MVT VT;
+  if (!isTypeLegal(I->getType(), VT))
     return false;
+  
+  // We only use cmov here, if we don't have a cmov instruction bail.
+  if (!Subtarget->hasCMov()) return false;
   
   unsigned Opc = 0;
   const TargetRegisterClass *RC = NULL;
-  if (VT.getSimpleVT() == MVT::i16) {
+  if (VT == MVT::i16) {
     Opc = X86::CMOVE16rr;
     RC = &X86::GR16RegClass;
-  } else if (VT.getSimpleVT() == MVT::i32) {
+  } else if (VT == MVT::i32) {
     Opc = X86::CMOVE32rr;
     RC = &X86::GR32RegClass;
-  } else if (VT.getSimpleVT() == MVT::i64) {
+  } else if (VT == MVT::i64) {
     Opc = X86::CMOVE64rr;
     RC = &X86::GR64RegClass;
   } else {
@@ -1346,7 +1315,7 @@ bool X86FastISel::X86VisitIntrinsicCall(const IntrinsicInst &I) {
     
     assert(CI && "Non-constant type in Intrinsic::objectsize?");
     
-    EVT VT;
+    MVT VT;
     if (!isTypeLegal(Ty, VT))
       return false;
     
@@ -1392,7 +1361,7 @@ bool X86FastISel::X86VisitIntrinsicCall(const IntrinsicInst &I) {
     const Type *RetTy =
       cast<StructType>(Callee->getReturnType())->getTypeAtIndex(unsigned(0));
 
-    EVT VT;
+    MVT VT;
     if (!isTypeLegal(RetTy, VT))
       return false;
 
@@ -1476,7 +1445,7 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
 
   // Handle *simple* calls for now.
   const Type *RetTy = CS.getType();
-  EVT RetVT;
+  MVT RetVT;
   if (RetTy->isVoidTy())
     RetVT = MVT::isVoid;
   else if (!isTypeLegal(RetTy, RetVT, true))
@@ -1506,7 +1475,7 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
   // Deal with call operands first.
   SmallVector<const Value *, 8> ArgVals;
   SmallVector<unsigned, 8> Args;
-  SmallVector<EVT, 8> ArgVTs;
+  SmallVector<MVT, 8> ArgVTs;
   SmallVector<ISD::ArgFlagsTy, 8> ArgFlags;
   Args.reserve(CS.arg_size());
   ArgVals.reserve(CS.arg_size());
@@ -1532,7 +1501,7 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
       return false;
 
     const Type *ArgTy = (*i)->getType();
-    EVT ArgVT;
+    MVT ArgVT;
     if (!isTypeLegal(ArgTy, ArgVT))
       return false;
     unsigned OriginalAlignment = TD.getABITypeAlignment(ArgTy);
@@ -1553,7 +1522,7 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
     CCInfo.AllocateStack(32, 8); 
   }
 
-  CCInfo.AnalyzeCallOperands(ArgVTs, ArgFlags, CCAssignFnForCall(CC));
+  CCInfo.AnalyzeCallOperands(ArgVTs, ArgFlags, CC_X86);
 
   // Get a count of how many bytes are to be pushed on the stack.
   unsigned NumBytes = CCInfo.getNextStackOffset();
@@ -1592,6 +1561,9 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
       break;
     }
     case CCValAssign::AExt: {
+      // We don't handle MMX parameters yet.
+      if (VA.getLocVT().isVector() && VA.getLocVT().getSizeInBits() == 128)
+        return false;
       bool Emitted = X86FastEmitExtend(ISD::ANY_EXTEND, VA.getLocVT(),
                                        Arg, ArgVT, Arg);
       if (!Emitted)
@@ -1606,7 +1578,7 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
       break;
     }
     case CCValAssign::BCvt: {
-      unsigned BC = FastEmit_r(ArgVT.getSimpleVT(), VA.getLocVT().getSimpleVT(),
+      unsigned BC = FastEmit_r(ArgVT.getSimpleVT(), VA.getLocVT(),
                                ISD::BIT_CONVERT, Arg, /*TODO: Kill=*/false);
       assert(BC != 0 && "Failed to emit a bitcast!");
       Arg = BC;
@@ -1709,7 +1681,7 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
 
   // Now handle call return value (if any).
   SmallVector<unsigned, 4> UsedRegs;
-  if (RetVT.getSimpleVT().SimpleTy != MVT::isVoid) {
+  if (RetVT != MVT::isVoid) {
     SmallVector<CCValAssign, 16> RVLocs;
     CCState CCInfo(CC, false, TM, RVLocs, I->getParent()->getContext());
     CCInfo.AnalyzeCallResult(RetVT, RetCC_X86);
@@ -1823,14 +1795,14 @@ X86FastISel::TargetSelectInstruction(const Instruction *I)  {
 }
 
 unsigned X86FastISel::TargetMaterializeConstant(const Constant *C) {
-  EVT VT;
+  MVT VT;
   if (!isTypeLegal(C->getType(), VT))
     return false;
   
   // Get opcode and regclass of the output for the given load instruction.
   unsigned Opc = 0;
   const TargetRegisterClass *RC = NULL;
-  switch (VT.getSimpleVT().SimpleTy) {
+  switch (VT.SimpleTy) {
   default: return false;
   case MVT::i8:
     Opc = X86::MOV8rm;
@@ -1940,6 +1912,34 @@ unsigned X86FastISel::TargetMaterializeAlloca(const AllocaInst *C) {
                          TII.get(Opc), ResultReg), AM);
   return ResultReg;
 }
+
+/// TryToFoldLoad - The specified machine instr operand is a vreg, and that
+/// vreg is being provided by the specified load instruction.  If possible,
+/// try to fold the load as an operand to the instruction, returning true if
+/// possible.
+bool X86FastISel::TryToFoldLoad(MachineInstr *MI, unsigned OpNo,
+                                const LoadInst *LI) {
+  X86AddressMode AM;
+  if (!X86SelectAddress(LI->getOperand(0), AM))
+    return false;
+  
+  X86InstrInfo &XII = (X86InstrInfo&)TII;
+  
+  unsigned Size = TD.getTypeAllocSize(LI->getType());
+  unsigned Alignment = LI->getAlignment();
+
+  SmallVector<MachineOperand, 8> AddrOps;
+  AM.getFullAddress(AddrOps);
+  
+  MachineInstr *Result =
+    XII.foldMemoryOperandImpl(*FuncInfo.MF, MI, OpNo, AddrOps, Size, Alignment);
+  if (Result == 0) return false;
+  
+  MI->getParent()->insert(MI, Result);
+  MI->eraseFromParent();
+  return true;
+}
+
 
 namespace llvm {
   llvm::FastISel *X86::createFastISel(FunctionLoweringInfo &funcInfo) {

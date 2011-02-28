@@ -69,9 +69,18 @@ namespace llvm {
 
   // Implementations
 
+  static inline void createStandardAliasAnalysisPasses(PassManagerBase *PM) {
+    // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
+    // BasicAliasAnalysis wins if they disagree. This is intended to help
+    // support "obvious" type-punning idioms.
+    PM->add(createTypeBasedAliasAnalysisPass());
+    PM->add(createBasicAliasAnalysisPass());
+  }
+
   static inline void createStandardFunctionPasses(PassManagerBase *PM,
                                                   unsigned OptimizationLevel) {
     if (OptimizationLevel > 0) {
+      createStandardAliasAnalysisPasses(PM);
       PM->add(createCFGSimplificationPass());
       if (OptimizationLevel == 1)
         PM->add(createPromoteMemoryToRegisterPass());
@@ -91,6 +100,8 @@ namespace llvm {
                                                 bool SimplifyLibCalls,
                                                 bool HaveExceptions,
                                                 Pass *InliningPass) {
+    createStandardAliasAnalysisPasses(PM);
+
     if (OptimizationLevel == 0) {
       if (InliningPass)
         PM->add(InliningPass);
@@ -117,20 +128,18 @@ namespace llvm {
       PM->add(createArgumentPromotionPass());   // Scalarize uninlined fn args
     
     // Start of function pass.
-    
     PM->add(createScalarReplAggregatesPass());  // Break up aggregate allocas
     if (SimplifyLibCalls)
       PM->add(createSimplifyLibCallsPass());    // Library Call Optimizations
     PM->add(createInstructionCombiningPass());  // Cleanup for scalarrepl.
     PM->add(createJumpThreadingPass());         // Thread jumps.
+    PM->add(createCorrelatedValuePropagationPass()); // Propagate conditionals
     PM->add(createCFGSimplificationPass());     // Merge & remove BBs
     PM->add(createInstructionCombiningPass());  // Combine silly seq's
     
     PM->add(createTailCallEliminationPass());   // Eliminate tail calls
     PM->add(createCFGSimplificationPass());     // Merge & remove BBs
     PM->add(createReassociatePass());           // Reassociate expressions
-    // Explicitly schedule this to ensure that it runs before any loop pass.
-    PM->add(new DominanceFrontier());           // Calculate Dominance Frontiers
     PM->add(createLoopRotatePass());            // Rotate Loop
     PM->add(createLICMPass());                  // Hoist loop invariants
     PM->add(createLoopUnswitchPass(OptimizeSize || OptimizationLevel < 3));
@@ -149,6 +158,7 @@ namespace llvm {
     // opened up by them.
     PM->add(createInstructionCombiningPass());
     PM->add(createJumpThreadingPass());         // Thread jumps
+    PM->add(createCorrelatedValuePropagationPass());
     PM->add(createDeadStoreEliminationPass());  // Delete dead stores
     PM->add(createAggressiveDCEPass());         // Delete dead instructions
     PM->add(createCFGSimplificationPass());     // Merge & remove BBs
@@ -178,6 +188,9 @@ namespace llvm {
                                              bool Internalize,
                                              bool RunInliner,
                                              bool VerifyEach) {
+    // Provide AliasAnalysis services for optimizations.
+    createStandardAliasAnalysisPasses(PM);
+
     // Now that composite has been compiled, scan through the module, looking
     // for a main function.  If main is defined, mark all other functions
     // internal.

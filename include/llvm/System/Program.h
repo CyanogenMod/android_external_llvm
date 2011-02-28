@@ -90,12 +90,13 @@ namespace sys {
     /// @see Execute
     /// @brief Waits for the program to exit.
     int Wait
-    ( unsigned secondsToWait = 0, ///< If non-zero, this specifies the amount
+    ( const Path& path, ///< The path to the child process executable.
+      unsigned secondsToWait, ///< If non-zero, this specifies the amount
       ///< of time to wait for the child process to exit. If the time
       ///< expires, the child is killed and this call returns. If zero,
       ///< this function will wait until the child finishes or forever if
       ///< it doesn't.
-      std::string* ErrMsg = 0 ///< If non-zero, provides a pointer to a string
+      std::string* ErrMsg ///< If non-zero, provides a pointer to a string
       ///< instance in which error messages will be returned. If the string
       ///< is non-empty upon return an error occurred while waiting.
       );
@@ -113,10 +114,10 @@ namespace sys {
 
     /// This static constructor (factory) will attempt to locate a program in
     /// the operating system's file system using some pre-determined set of
-    /// locations to search (e.g. the PATH on Unix).
+    /// locations to search (e.g. the PATH on Unix). Paths with slashes are
+    /// returned unmodified.
     /// @returns A Path object initialized to the path of the program or a
     /// Path object that is empty (invalid) if the program could not be found.
-    /// @throws nothing
     /// @brief Construct a Program by finding it by name.
     static Path FindProgramByName(const std::string& name);
 
@@ -129,7 +130,6 @@ namespace sys {
 
     /// A convenience function equivalent to Program prg; prg.Execute(..);
     /// prg.Wait(..);
-    /// @throws nothing
     /// @see Execute, Wait
     static int ExecuteAndWait(const Path& path,
                               const char** args,
@@ -140,7 +140,6 @@ namespace sys {
                               std::string* ErrMsg = 0);
 
     /// A convenience function equivalent to Program prg; prg.Execute(..);
-    /// @throws nothing
     /// @see Execute
     static void ExecuteNoWait(const Path& path,
                               const char** args,

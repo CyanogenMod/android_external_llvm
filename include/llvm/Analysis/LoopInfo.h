@@ -523,10 +523,9 @@ public:
   ///
   bool isLoopInvariant(Value *V) const;
 
-  /// isLoopInvariant - Return true if the specified instruction is
-  /// loop-invariant.
-  ///
-  bool isLoopInvariant(Instruction *I) const;
+  /// hasLoopInvariantOperands - Return true if all the operands of the
+  /// specified instruction are loop invariant. 
+  bool hasLoopInvariantOperands(Instruction *I) const;
 
   /// makeLoopInvariant - If the given value is an instruction inside of the
   /// loop and it can be hoisted, do so to make it trivially loop-invariant.
@@ -940,7 +939,9 @@ class LoopInfo : public FunctionPass {
 public:
   static char ID; // Pass identification, replacement for typeid
 
-  LoopInfo() : FunctionPass(ID) {}
+  LoopInfo() : FunctionPass(ID) {
+    initializeLoopInfoPass(*PassRegistry::getPassRegistry());
+  }
 
   LoopInfoBase<BasicBlock, Loop>& getBase() { return LI; }
 

@@ -5,9 +5,6 @@
 // This file is distributed under the University of Illinois Open Source
 // License. See LICENSE.TXT for details.
 //
-// Modified by Henrik Bach to comply with at least MinGW.
-// Ported to Win32 by Jeff Cohen.
-//
 //===----------------------------------------------------------------------===//
 //
 // This file provides the Win32 specific implementation of the Path class.
@@ -45,7 +42,12 @@ static void FlipBackSlashes(std::string& s) {
 
 namespace llvm {
 namespace sys {
+
 const char PathSeparator = ';';
+
+StringRef Path::GetEXESuffix() {
+  return "exe";
+}
 
 Path::Path(llvm::StringRef p)
   : path(p) {
@@ -64,6 +66,18 @@ Path::operator=(StringRef that) {
   return *this;
 }
 
+// push_back 0 on create, and pop_back on delete.
+struct ScopedNullTerminator {
+  std::string &str;
+  ScopedNullTerminator(std::string &s) : str(s) { str.push_back(0); }
+  ~ScopedNullTerminator() {
+    // str.pop_back(); But wait, C++03 doesn't have this...
+    assert(!str.empty() && str[str.size() - 1] == 0
+      && "Null char not present!");
+    str.resize(str.size() - 1);
+  }
+};
+
 bool
 Path::isValid() const {
   if (path.empty())
@@ -72,6 +86,8 @@ Path::isValid() const {
   // If there is a colon, it must be the second character, preceded by a letter
   // and followed by something.
   size_t len = path.size();
+  // This code assumes that path is null terminated, so make sure it is.
+  ScopedNullTerminator snt(path);
   size_t pos = path.rfind(':',len);
   size_t rootslash = 0;
   if (pos != std::string::npos) {
@@ -156,8 +172,9 @@ Path::isAbsolute(const char *NameStart, unsigned NameLen) {
   case 2:
     return NameStart[0] == '/';
   default:
-    return (NameStart[0] == '/' || (NameStart[1] == ':' && NameStart[2] == '/')) ||
-           (NameStart[0] == '\\' || (NameStart[1] == ':' && NameStart[2] == '\\'));
+    return
+      (NameStart[0] == '/' || (NameStart[1] == ':' && NameStart[2] == '/')) ||
+      (NameStart[0] == '\\' || (NameStart[1] == ':' && NameStart[2] == '\\'));
   }
 }
 
@@ -216,15 +233,39 @@ Path::GetTemporaryDirectory(std::string* ErrMsg) {
 // FIXME: the following set of functions don't map to Windows very well.
 Path
 Path::GetRootDirectory() {
-  Path result;
-  result.set("C:/");
-  return result;
+  // This is the only notion that that Windows has of a root directory. Nothing
+  // is here except for drives.
+  return Path("file:///");
 }
 
 void
 Path::GetSystemLibraryPaths(std::vector<sys::Path>& Paths) {
-  Paths.push_back(sys::Path("C:/WINDOWS/SYSTEM32"));
-  Paths.push_back(sys::Path("C:/WINDOWS"));
+  char buff[MAX_PATH];
+  // Generic form of C:\Windows\System32
+  HRESULT res =  SHGetFolderPathA(NULL,
+                                  CSIDL_FLAG_CREATE | CSIDL_SYSTEM,
+                                  NULL,
+                                  SHGFP_TYPE_CURRENT,
+                                  buff);
+  if (res != S_OK) {
+    assert(0 && "Failed to get system directory");
+    return;
+  }
+  Paths.push_back(sys::Path(buff));
+
+  // Reset buff.
+  buff[0] = 0;
+  // Generic form of C:\Windows
+  res =  SHGetFolderPathA(NULL,
+                          CSIDL_FLAG_CREATE | CSIDL_WINDOWS,
+                          NULL,
+                          SHGFP_TYPE_CURRENT,
+                          buff);
+  if (res != S_OK) {
+    assert(0 && "Failed to get windows directory");
+    return;
+  }
+  Paths.push_back(sys::Path(buff));
 }
 
 void
@@ -246,20 +287,23 @@ Path::GetBitcodeLibraryPaths(std::vector<sys::Path>& Paths) {
 
 Path
 Path::GetLLVMDefaultConfigDir() {
-  // TODO: this isn't going to fly on Windows
-  return Path("/etc/llvm");
+  Path ret = GetUserHomeDirectory();
+  if (!ret.appendComponent(".llvm"))
+    assert(0 && "Failed to append .llvm");
+  return ret;
 }
 
 Path
 Path::GetUserHomeDirectory() {
-  // TODO: Typical Windows setup doesn't define HOME.
-  const char* home = getenv("HOME");
-  if (home) {
-    Path result;
-    if (result.set(home))
-      return result;
-  }
-  return GetRootDirectory();
+  char buff[MAX_PATH];
+  HRESULT res = SHGetFolderPathA(NULL,
+                                 CSIDL_FLAG_CREATE | CSIDL_APPDATA,
+                                 NULL,
+                                 SHGFP_TYPE_CURRENT,
+                                 buff);
+  if (res != S_OK)
+    assert(0 && "Failed to get user home directory");
+  return Path(buff);
 }
 
 Path
@@ -328,6 +372,19 @@ Path::isDirectory() const {
   DWORD attr = GetFileAttributes(path.c_str());
   return (attr != INVALID_FILE_ATTRIBUTES) &&
          (attr & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+bool
+Path::isSymLink() const {
+  DWORD attributes = GetFileAttributes(path.c_str());
+
+  if (attributes == INVALID_FILE_ATTRIBUTES)
+    // There's no sane way to report this :(.
+    assert(0 && "GetFileAttributes returned INVALID_FILE_ATTRIBUTES");
+
+  // This isn't exactly what defines a NTFS symlink, but it is only true for
+  // paths that act like a symlink.
+  return attributes & FILE_ATTRIBUTE_REPARSE_POINT;
 }
 
 bool
@@ -400,8 +457,10 @@ PathWithStatus::getFileStatus(bool update, std::string *ErrStr) const {
     for (unsigned i = 0; i < path.length(); ++i)
       status.uniqueID += path[i];
 
-    __int64 ft = *reinterpret_cast<__int64*>(&fi.ftLastWriteTime);
-    status.modTime.fromWin32Time(ft);
+    ULARGE_INTEGER ui;
+    ui.LowPart = fi.ftLastWriteTime.dwLowDateTime;
+    ui.HighPart = fi.ftLastWriteTime.dwHighDateTime;
+    status.modTime.fromWin32Time(ui.QuadPart);
 
     status.isDir = fi.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY;
     fsIsValid = true;
@@ -530,18 +589,6 @@ Path::eraseComponent() {
 }
 
 bool
-Path::appendSuffix(StringRef suffix) {
-  std::string save(path);
-  path.append(".");
-  path.append(suffix);
-  if (!isValid()) {
-    path = save;
-    return false;
-  }
-  return true;
-}
-
-bool
 Path::eraseSuffix() {
   size_t dotpos = path.rfind('.',path.size());
   size_t slashpos = path.rfind('/',path.size());
@@ -620,7 +667,8 @@ Path::createDirectoryOnDisk(bool create_parents, std::string* ErrMsg) {
     pathname[len-1] = 0;
     if (!CreateDirectory(pathname, NULL) &&
         GetLastError() != ERROR_ALREADY_EXISTS) {
-      return MakeErrMsg(ErrMsg, std::string(pathname) + ": Can't create directory: ");
+      return MakeErrMsg(ErrMsg, std::string(pathname) +
+                        ": Can't create directory: ");
     }
   }
   return false;
@@ -720,7 +768,7 @@ Path::eraseFromDisk(bool remove_contents, std::string *ErrStr) const {
 
 bool Path::getMagicNumber(std::string& Magic, unsigned len) const {
   assert(len < 1024 && "Request for magic string too long");
-  char* buf = (char*) alloca(1 + len);
+  char* buf = reinterpret_cast<char*>(alloca(len));
 
   HANDLE h = CreateFile(path.c_str(),
                         GENERIC_READ,
@@ -739,8 +787,7 @@ bool Path::getMagicNumber(std::string& Magic, unsigned len) const {
   if (!ret || nRead != len)
     return false;
 
-  buf[len] = '\0';
-  Magic = buf;
+  Magic = std::string(buf, len);
   return true;
 }
 
@@ -777,8 +824,11 @@ Path::setStatusInfoOnDisk(const FileStatus &si, std::string *ErrMsg) const {
     return MakeErrMsg(ErrMsg, path + ": GetFileInformationByHandle: ");
   }
 
+  ULARGE_INTEGER ui;
+  ui.QuadPart = si.modTime.toWin32Time();
   FILETIME ft;
-  (uint64_t&)ft = si.modTime.toWin32Time();
+  ft.dwLowDateTime = ui.LowPart;
+  ft.dwHighDateTime = ui.HighPart;
   BOOL ret = SetFileTime(h, NULL, &ft, &ft);
   DWORD err = GetLastError();
   CloseHandle(h);

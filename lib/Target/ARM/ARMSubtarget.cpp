@@ -27,9 +27,14 @@ static cl::opt<bool>
 UseMOVT("arm-use-movt",
         cl::init(true), cl::Hidden);
 
+static cl::opt<bool>
+StrictAlign("arm-strict-align", cl::Hidden,
+            cl::desc("Disallow all unaligned memory accesses"));
+
 ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
                            bool isT)
   : ARMArchVersion(V4)
+  , ARMProcFamily(Others)
   , ARMFPUType(None)
   , UseNEONForSinglePrecisionFP(false)
   , SlowVMLx(false)
@@ -46,24 +51,26 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
   , HasT2ExtractPack(false)
   , HasDataBarrier(false)
   , Pref32BitThumb(false)
+  , HasMPExtension(false)
   , FPOnlySP(false)
+  , AllowsUnalignedMem(false)
   , stackAlignment(4)
   , CPUString("generic")
   , TargetType(isELF) // Default to ELF unless otherwise specified.
   , TargetABI(ARM_ABI_APCS) {
-  // default to soft float ABI
+  // Default to soft float ABI
   if (FloatABIType == FloatABI::Default)
     FloatABIType = FloatABI::Soft;
 
   // Determine default and user specified characteristics
 
-  // Parse features string.
-  CPUString = ParseSubtargetFeatures(FS, CPUString);
-
   // When no arch is specified either by CPU or by attributes, make the default
   // ARMv4T.
-  if (CPUString == "generic" && (FS.empty() || FS == "generic"))
+  const char *ARMArchFeature = "";
+  if (CPUString == "generic" && (FS.empty() || FS == "generic")) {
     ARMArchVersion = V4T;
+    ARMArchFeature = ",+v4t";
+  }
 
   // Set the boolean corresponding to the current target triple, or the default
   // if one cannot be determined, to true.
@@ -81,29 +88,35 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
     unsigned SubVer = TT[Idx];
     if (SubVer >= '7' && SubVer <= '9') {
       ARMArchVersion = V7A;
-      if (Len >= Idx+2 && TT[Idx+1] == 'm')
+      ARMArchFeature = ",+v7a";
+      if (Len >= Idx+2 && TT[Idx+1] == 'm') {
         ARMArchVersion = V7M;
+        ARMArchFeature = ",+v7m";
+      }
     } else if (SubVer == '6') {
       ARMArchVersion = V6;
-      if (Len >= Idx+3 && TT[Idx+1] == 't' && TT[Idx+2] == '2')
+      ARMArchFeature = ",+v6";
+      if (Len >= Idx+3 && TT[Idx+1] == 't' && TT[Idx+2] == '2') {
         ARMArchVersion = V6T2;
+        ARMArchFeature = ",+v6t2";
+      }
     } else if (SubVer == '5') {
       ARMArchVersion = V5T;
-      if (Len >= Idx+3 && TT[Idx+1] == 't' && TT[Idx+2] == 'e')
+      ARMArchFeature = ",+v5t";
+      if (Len >= Idx+3 && TT[Idx+1] == 't' && TT[Idx+2] == 'e') {
         ARMArchVersion = V5TE;
+        ARMArchFeature = ",+v5te";
+      }
     } else if (SubVer == '4') {
-      if (Len >= Idx+2 && TT[Idx+1] == 't')
+      if (Len >= Idx+2 && TT[Idx+1] == 't') {
         ARMArchVersion = V4T;
-      else
+        ARMArchFeature = ",+v4t";
+      } else {
         ARMArchVersion = V4;
+        ARMArchFeature = "";
+      }
     }
   }
-
-  // Thumb2 implies at least V6T2.
-  if (ARMArchVersion >= V6T2)
-    ThumbMode = Thumb2;
-  else if (ThumbMode >= Thumb2)
-    ARMArchVersion = V6T2;
 
   if (Len >= 10) {
     if (TT.find("-darwin") != std::string::npos)
@@ -114,6 +127,25 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
   if (TT.find("eabi") != std::string::npos)
     TargetABI = ARM_ABI_AAPCS;
 
+  // Parse features string.  If the first entry in FS (the CPU) is missing,
+  // insert the architecture feature derived from the target triple.  This is
+  // important for setting features that are implied based on the architecture
+  // version.
+  std::string FSWithArch;
+  if (FS.empty())
+    FSWithArch = std::string(ARMArchFeature);
+  else if (FS.find(',') == 0)
+    FSWithArch = std::string(ARMArchFeature) + FS;
+  else
+    FSWithArch = FS;
+  CPUString = ParseSubtargetFeatures(FSWithArch, CPUString);
+
+  // Thumb2 implies at least V6T2.
+  if (ARMArchVersion >= V6T2)
+    ThumbMode = Thumb2;
+  else if (ThumbMode >= Thumb2)
+    ARMArchVersion = V6T2;
+
   if (isAAPCS_ABI())
     stackAlignment = 8;
 
@@ -122,6 +154,11 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &FS,
 
   if (!isThumb() || hasThumb2())
     PostRAScheduler = true;
+
+  // v6+ may or may not support unaligned mem access depending on the system
+  // configuration.
+  if (!StrictAlign && hasV6Ops() && isTargetDarwin())
+    AllowsUnalignedMem = true;
 }
 
 /// GVIsIndirectSymbol - true if the GV will be accessed via an indirect symbol.
@@ -173,6 +210,18 @@ ARMSubtarget::GVIsIndirectSymbol(const GlobalValue *GV,
   }
 
   return false;
+}
+
+unsigned ARMSubtarget::getMispredictionPenalty() const {
+  // If we have a reasonable estimate of the pipeline depth, then we can
+  // estimate the penalty of a misprediction based on that.
+  if (isCortexA8())
+    return 13;
+  else if (isCortexA9())
+    return 8;
+  
+  // Otherwise, just return a sensible default.
+  return 10;
 }
 
 bool ARMSubtarget::enablePostRAScheduler(

@@ -50,6 +50,10 @@ static cl::opt<bool>
 Aggressive("aggressive-ext-opt", cl::Hidden,
            cl::desc("Aggressive extension optimization"));
 
+static cl::opt<bool>
+DisablePeephole("disable-peephole", cl::Hidden, cl::init(false),
+                cl::desc("Disable the peephole optimizer"));
+
 STATISTIC(NumReuse,      "Number of extension results reused");
 STATISTIC(NumEliminated, "Number of compares eliminated");
 
@@ -62,7 +66,9 @@ namespace {
 
   public:
     static char ID; // Pass identification
-    PeepholeOptimizer() : MachineFunctionPass(ID) {}
+    PeepholeOptimizer() : MachineFunctionPass(ID) {
+      initializePeepholeOptimizerPass(*PassRegistry::getPassRegistry());
+    }
 
     virtual bool runOnMachineFunction(MachineFunction &MF);
 
@@ -83,8 +89,11 @@ namespace {
 }
 
 char PeepholeOptimizer::ID = 0;
-INITIALIZE_PASS(PeepholeOptimizer, "peephole-opts",
-                "Peephole Optimizations", false, false);
+INITIALIZE_PASS_BEGIN(PeepholeOptimizer, "peephole-opts",
+                "Peephole Optimizations", false, false)
+INITIALIZE_PASS_DEPENDENCY(MachineDominatorTree)
+INITIALIZE_PASS_END(PeepholeOptimizer, "peephole-opts",
+                "Peephole Optimizations", false, false)
 
 FunctionPass *llvm::createPeepholeOptimizerPass() {
   return new PeepholeOptimizer();
@@ -102,12 +111,10 @@ FunctionPass *llvm::createPeepholeOptimizerPass() {
 bool PeepholeOptimizer::
 OptimizeExtInstr(MachineInstr *MI, MachineBasicBlock *MBB,
                  SmallPtrSet<MachineInstr*, 8> &LocalMIs) {
-  LocalMIs.insert(MI);
-
   unsigned SrcReg, DstReg, SubIdx;
   if (!TII->isCoalescableExtInstr(*MI, SrcReg, DstReg, SubIdx))
     return false;
-
+  
   if (TargetRegisterInfo::isPhysicalRegister(DstReg) ||
       TargetRegisterInfo::isPhysicalRegister(SrcReg))
     return false;
@@ -232,22 +239,17 @@ OptimizeExtInstr(MachineInstr *MI, MachineBasicBlock *MBB,
 /// set) the same flag as the compare, then we can remove the comparison and use
 /// the flag from the previous instruction.
 bool PeepholeOptimizer::OptimizeCmpInstr(MachineInstr *MI,
-                                         MachineBasicBlock *MBB) {
+                                         MachineBasicBlock *MBB){
   // If this instruction is a comparison against zero and isn't comparing a
   // physical register, we can try to optimize it.
   unsigned SrcReg;
-  int CmpValue;
-  if (!TII->AnalyzeCompare(MI, SrcReg, CmpValue) ||
-      TargetRegisterInfo::isPhysicalRegister(SrcReg) || CmpValue != 0)
+  int CmpMask, CmpValue;
+  if (!TII->AnalyzeCompare(MI, SrcReg, CmpMask, CmpValue) ||
+      TargetRegisterInfo::isPhysicalRegister(SrcReg))
     return false;
 
-  MachineRegisterInfo::def_iterator DI = MRI->def_begin(SrcReg);
-  if (llvm::next(DI) != MRI->def_end())
-    // Only support one definition.
-    return false;
-
-  // Attempt to convert the defining instruction to set the "zero" flag.
-  if (TII->ConvertToSetZeroFlag(&*DI, MI)) {
+  // Attempt to optimize the comparison instruction.
+  if (TII->OptimizeCompareInstr(MI, SrcReg, CmpMask, CmpValue, MRI)) {
     ++NumEliminated;
     return true;
   }
@@ -256,6 +258,9 @@ bool PeepholeOptimizer::OptimizeCmpInstr(MachineInstr *MI,
 }
 
 bool PeepholeOptimizer::runOnMachineFunction(MachineFunction &MF) {
+  if (DisablePeephole)
+    return false;
+  
   TM  = &MF.getTarget();
   TII = TM->getInstrInfo();
   MRI = &MF.getRegInfo();
@@ -269,15 +274,17 @@ bool PeepholeOptimizer::runOnMachineFunction(MachineFunction &MF) {
     LocalMIs.clear();
 
     for (MachineBasicBlock::iterator
-           MII = I->begin(), ME = I->end(); MII != ME; ) {
-      MachineInstr *MI = &*MII;
+           MII = I->begin(), MIE = I->end(); MII != MIE; ) {
+      MachineInstr *MI = &*MII++;
+      LocalMIs.insert(MI);
+
+      if (MI->getDesc().hasUnmodeledSideEffects())
+        continue;
 
       if (MI->getDesc().isCompare()) {
-        ++MII; // The iterator may become invalid if the compare is deleted.
         Changed |= OptimizeCmpInstr(MI, MBB);
       } else {
         Changed |= OptimizeExtInstr(MI, MBB, LocalMIs);
-        ++MII;
       }
     }
   }

@@ -506,7 +506,7 @@ SDValue MipsTargetLowering::LowerGlobalAddress(SDValue Op,
     SDValue GA = DAG.getTargetGlobalAddress(GV, dl, MVT::i32, 0,
                                             MipsII::MO_GOT);
     SDValue ResNode = DAG.getLoad(MVT::i32, dl, 
-                                  DAG.getEntryNode(), GA, NULL, 0,
+                                  DAG.getEntryNode(), GA, MachinePointerInfo(),
                                   false, false, 0);
     // On functions and global targets not internal linked only
     // a load from got/GP is necessary for PIC to work.
@@ -546,7 +546,8 @@ LowerJumpTable(SDValue Op, SelectionDAG &DAG) const
     SDValue Ops[] = { JTI };
     HiPart = DAG.getNode(MipsISD::Hi, dl, DAG.getVTList(MVT::i32), Ops, 1);
   } else // Emit Load from Global Pointer
-    HiPart = DAG.getLoad(MVT::i32, dl, DAG.getEntryNode(), JTI, NULL, 0,
+    HiPart = DAG.getLoad(MVT::i32, dl, DAG.getEntryNode(), JTI,
+                         MachinePointerInfo(),
                          false, false, 0);
 
   SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, JTI);
@@ -584,7 +585,8 @@ LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
     SDValue CP = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(), 
                                       N->getOffset(), MipsII::MO_GOT);
     SDValue Load = DAG.getLoad(MVT::i32, dl, DAG.getEntryNode(), 
-                               CP, NULL, 0, false, false, 0);
+                               CP, MachinePointerInfo::getConstantPool(),
+                               false, false, 0);
     SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, CP);
     ResNode = DAG.getNode(ISD::ADD, dl, MVT::i32, Load, Lo);
   }
@@ -603,7 +605,8 @@ SDValue MipsTargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
   // vastart just stores the address of the VarArgsFrameIndex slot into the
   // memory location argument.
   const Value *SV = cast<SrcValueSDNode>(Op.getOperand(2))->getValue();
-  return DAG.getStore(Op.getOperand(0), dl, FI, Op.getOperand(1), SV, 0,
+  return DAG.getStore(Op.getOperand(0), dl, FI, Op.getOperand(1),
+                      MachinePointerInfo(SV),
                       false, false, 0);
 }
 
@@ -626,8 +629,8 @@ SDValue MipsTargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
 //       go to stack.
 //===----------------------------------------------------------------------===//
 
-static bool CC_MipsO32(unsigned ValNo, EVT ValVT,
-                       EVT LocVT, CCValAssign::LocInfo LocInfo,
+static bool CC_MipsO32(unsigned ValNo, MVT ValVT,
+                       MVT LocVT, CCValAssign::LocInfo LocInfo,
                        ISD::ArgFlagsTy ArgFlags, CCState &State) {
 
   static const unsigned IntRegsSize=4, FloatRegsSize=2; 
@@ -692,8 +695,8 @@ static bool CC_MipsO32(unsigned ValNo, EVT ValVT,
   return false; // CC must always match
 }
 
-static bool CC_MipsO32_VarArgs(unsigned ValNo, EVT ValVT,
-                       EVT LocVT, CCValAssign::LocInfo LocInfo,
+static bool CC_MipsO32_VarArgs(unsigned ValNo, MVT ValVT,
+                       MVT LocVT, CCValAssign::LocInfo LocInfo,
                        ISD::ArgFlagsTy ArgFlags, CCState &State) {
 
   static const unsigned IntRegsSize=4;
@@ -786,7 +789,7 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   // To meet O32 ABI, Mips must always allocate 16 bytes on
   // the stack (even if less than 4 are used as arguments)
   if (Subtarget->isABI_O32()) {
-    int VTsize = EVT(MVT::i32).getSizeInBits()/8;
+    int VTsize = MVT(MVT::i32).getSizeInBits()/8;
     MFI->CreateFixedObject(VTsize, (VTsize*3), true);
     CCInfo.AnalyzeCallOperands(Outs, 
                      isVarArg ? CC_MipsO32_VarArgs : CC_MipsO32);
@@ -863,7 +866,8 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
     // emit ISD::STORE whichs stores the 
     // parameter value to a stack Location
-    MemOpChains.push_back(DAG.getStore(Chain, dl, Arg, PtrOff, NULL, 0,
+    MemOpChains.push_back(DAG.getStore(Chain, dl, Arg, PtrOff,
+                                       MachinePointerInfo(),
                                        false, false, 0));
   }
 
@@ -937,8 +941,9 @@ MipsTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
 
       // Reload GP value.
       FI = MipsFI->getGPFI();
-      SDValue FIN = DAG.getFrameIndex(FI,getPointerTy());
-      SDValue GPLoad = DAG.getLoad(MVT::i32, dl, Chain, FIN, NULL, 0,
+      SDValue FIN = DAG.getFrameIndex(FI, getPointerTy());
+      SDValue GPLoad = DAG.getLoad(MVT::i32, dl, Chain, FIN,
+                                   MachinePointerInfo::getFixedStack(FI),
                                    false, false, 0);
       Chain = GPLoad.getValue(1);
       Chain = DAG.getCopyToReg(Chain, dl, DAG.getRegister(Mips::GP, MVT::i32), 
@@ -1104,7 +1109,8 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
 
       // Create load nodes to retrieve arguments from the stack
       SDValue FIN = DAG.getFrameIndex(FI, getPointerTy());
-      InVals.push_back(DAG.getLoad(VA.getValVT(), dl, Chain, FIN, NULL, 0,
+      InVals.push_back(DAG.getLoad(VA.getValVT(), dl, Chain, FIN,
+                                   MachinePointerInfo::getFixedStack(FI),
                                    false, false, 0));
     }
   }
@@ -1140,7 +1146,8 @@ MipsTargetLowering::LowerFormalArguments(SDValue Chain,
       int FI = MFI->CreateFixedObject(4, 0, true);
       MipsFI->recordStoreVarArgsFI(FI, -(4+(StackLoc*4)));
       SDValue PtrOff = DAG.getFrameIndex(FI, getPointerTy());
-      OutChains.push_back(DAG.getStore(Chain, dl, ArgValue, PtrOff, NULL, 0,
+      OutChains.push_back(DAG.getStore(Chain, dl, ArgValue, PtrOff,
+                                       MachinePointerInfo(),
                                        false, false, 0));
 
       // Record the frame index of the first variable argument
@@ -1260,6 +1267,37 @@ getConstraintType(const std::string &Constraint) const
     }
   }
   return TargetLowering::getConstraintType(Constraint);
+}
+
+/// Examine constraint type and operand type and determine a weight value.
+/// This object must already have been set up with the operand type
+/// and the current alternative constraint selected.
+TargetLowering::ConstraintWeight
+MipsTargetLowering::getSingleConstraintMatchWeight(
+    AsmOperandInfo &info, const char *constraint) const {
+  ConstraintWeight weight = CW_Invalid;
+  Value *CallOperandVal = info.CallOperandVal;
+    // If we don't have a value, we can't do a match,
+    // but allow it at the lowest weight.
+  if (CallOperandVal == NULL)
+    return CW_Default;
+  const Type *type = CallOperandVal->getType();
+  // Look at the constraint type.
+  switch (*constraint) {
+  default:
+    weight = TargetLowering::getSingleConstraintMatchWeight(info, constraint);
+    break;
+  case 'd':     
+  case 'y': 
+    if (type->isIntegerTy())
+      weight = CW_Register;
+    break;
+  case 'f':
+    if (type->isFloatTy())
+      weight = CW_Register;
+    break;
+  }
+  return weight;
 }
 
 /// getRegClassForInlineAsmConstraint - Given a constraint letter (e.g. "r"),

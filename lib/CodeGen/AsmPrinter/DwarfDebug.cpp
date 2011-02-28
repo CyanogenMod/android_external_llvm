@@ -30,6 +30,7 @@
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Analysis/DebugInfo.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
@@ -51,6 +52,10 @@ static cl::opt<bool> DisableDebugInfoPrinting("disable-debug-info-print",
 static cl::opt<bool> UnknownLocations("use-unknown-locations", cl::Hidden,
      cl::desc("Make an absense of debug location information explicit."),
      cl::init(false));
+
+#ifndef NDEBUG
+STATISTIC(BlocksWithoutLineNo, "Number of blocks without any line number");
+#endif
 
 namespace {
   const char *DWARFGroupName = "DWARF Emission";
@@ -507,6 +512,8 @@ void DwarfDebug::addSourceLine(DIE *Die, DIVariable V) {
     return;
 
   unsigned Line = V.getLineNumber();
+  if (Line == 0)
+    return;
   unsigned FileID = GetOrCreateSourceID(V.getContext().getDirectory(),
                                         V.getContext().getFilename());
   assert(FileID && "Invalid file id");
@@ -522,6 +529,8 @@ void DwarfDebug::addSourceLine(DIE *Die, DIGlobalVariable G) {
     return;
 
   unsigned Line = G.getLineNumber();
+  if (Line == 0)
+    return;
   unsigned FileID = GetOrCreateSourceID(G.getContext().getDirectory(),
                                         G.getContext().getFilename());
   assert(FileID && "Invalid file id");
@@ -557,10 +566,10 @@ void DwarfDebug::addSourceLine(DIE *Die, DIType Ty) {
     return;
 
   unsigned Line = Ty.getLineNumber();
-  if (!Ty.getContext().Verify())
+  if (Line == 0 || !Ty.getContext().Verify())
     return;
-  unsigned FileID = GetOrCreateSourceID(Ty.getContext().getDirectory(),
-                                        Ty.getContext().getFilename());
+  unsigned FileID = GetOrCreateSourceID(Ty.getDirectory(),
+                                        Ty.getFilename());
   assert(FileID && "Invalid file id");
   addUInt(Die, dwarf::DW_AT_decl_file, 0, FileID);
   addUInt(Die, dwarf::DW_AT_decl_line, 0, Line);
@@ -574,6 +583,8 @@ void DwarfDebug::addSourceLine(DIE *Die, DINameSpace NS) {
     return;
 
   unsigned Line = NS.getLineNumber();
+  if (Line == 0)
+    return;
   StringRef FN = NS.getFilename();
   StringRef Dir = NS.getDirectory();
 
@@ -583,10 +594,15 @@ void DwarfDebug::addSourceLine(DIE *Die, DINameSpace NS) {
   addUInt(Die, dwarf::DW_AT_decl_line, 0, Line);
 }
 
-/// addVariableAddress - Add DW_AT_location attribute for a DbgVariable.
-void DwarfDebug::addVariableAddress(DbgVariable *&DV, DIE *Die,
-                                    unsigned Attribute,
-                                    const MachineLocation &Location) {
+/// addVariableAddress - Add DW_AT_location attribute for a DbgVariable based
+/// on provided frame index.
+void DwarfDebug::addVariableAddress(DbgVariable *&DV, DIE *Die, int64_t FI) {
+  MachineLocation Location;
+  unsigned FrameReg;
+  const TargetRegisterInfo *RI = Asm->TM.getRegisterInfo();
+  int Offset = RI->getFrameIndexReference(*Asm->MF, FI, FrameReg);
+  Location.set(FrameReg, Offset);
+
   if (DV->variableHasComplexAddress())
     addComplexAddress(DV, Die, dwarf::DW_AT_location, Location);
   else if (DV->isBlockByrefVariable())
@@ -807,6 +823,15 @@ void DwarfDebug::addAddress(DIE *Die, unsigned Attribute,
   unsigned Reg = RI->getDwarfRegNum(Location.getReg(), false);
   DIEBlock *Block = new (DIEValueAllocator) DIEBlock();
 
+  if (RI->getFrameRegister(*Asm->MF) == Location.getReg()
+      && Location.getOffset()) {
+    // If variable offset is based in frame register then use fbreg.
+    addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_fbreg);
+    addSInt(Block, 0, dwarf::DW_FORM_sdata, Location.getOffset());
+    addBlock(Die, Attribute, 0, Block);
+    return;
+  }
+
   if (Location.isReg()) {
     if (Reg < 32) {
       addUInt(Block, 0, dwarf::DW_FORM_data1, dwarf::DW_OP_reg0 + Reg);
@@ -829,35 +854,28 @@ void DwarfDebug::addAddress(DIE *Die, unsigned Attribute,
 }
 
 /// addRegisterAddress - Add register location entry in variable DIE.
-bool DwarfDebug::addRegisterAddress(DIE *Die, const MCSymbol *VS,
-                                    const MachineOperand &MO) {
+bool DwarfDebug::addRegisterAddress(DIE *Die, const MachineOperand &MO) {
   assert (MO.isReg() && "Invalid machine operand!");
   if (!MO.getReg())
     return false;
   MachineLocation Location;
   Location.set(MO.getReg());
   addAddress(Die, dwarf::DW_AT_location, Location);
-  if (VS)
-    addLabel(Die, dwarf::DW_AT_start_scope, dwarf::DW_FORM_addr, VS);
   return true;
 }
 
 /// addConstantValue - Add constant value entry in variable DIE.
-bool DwarfDebug::addConstantValue(DIE *Die, const MCSymbol *VS,
-                                  const MachineOperand &MO) {
+bool DwarfDebug::addConstantValue(DIE *Die, const MachineOperand &MO) {
   assert (MO.isImm() && "Invalid machine operand!");
   DIEBlock *Block = new (DIEValueAllocator) DIEBlock();
   unsigned Imm = MO.getImm();
   addUInt(Block, 0, dwarf::DW_FORM_udata, Imm);
   addBlock(Die, dwarf::DW_AT_const_value, 0, Block);
-  if (VS)
-    addLabel(Die, dwarf::DW_AT_start_scope, dwarf::DW_FORM_addr, VS);
   return true;
 }
 
 /// addConstantFPValue - Add constant value entry in variable DIE.
-bool DwarfDebug::addConstantFPValue(DIE *Die, const MCSymbol *VS,
-                                    const MachineOperand &MO) {
+bool DwarfDebug::addConstantFPValue(DIE *Die, const MachineOperand &MO) {
   assert (MO.isFPImm() && "Invalid machine operand!");
   DIEBlock *Block = new (DIEValueAllocator) DIEBlock();
   APFloat FPImm = MO.getFPImm()->getValueAPF();
@@ -878,8 +896,6 @@ bool DwarfDebug::addConstantFPValue(DIE *Die, const MCSymbol *VS,
             (unsigned char)0xFF & FltPtr[Start]);
 
   addBlock(Die, dwarf::DW_AT_const_value, 0, Block);
-  if (VS)
-    addLabel(Die, dwarf::DW_AT_start_scope, dwarf::DW_FORM_addr, VS);
   return true;
 }
 
@@ -893,8 +909,7 @@ void DwarfDebug::addToContextOwner(DIE *Die, DIDescriptor Context) {
     DIE *ContextDIE = getOrCreateNameSpace(DINameSpace(Context));
     ContextDIE->addChild(Die);
   } else if (Context.isSubprogram()) {
-    DIE *ContextDIE = createSubprogramDIE(DISubprogram(Context),
-                                          /*MakeDecl=*/false);
+    DIE *ContextDIE = createSubprogramDIE(DISubprogram(Context));
     ContextDIE->addChild(Die);
   } else if (DIE *ContextDIE = getCompileUnit(Context)->getDIE(Context))
     ContextDIE->addChild(Die);
@@ -1028,16 +1043,23 @@ void DwarfDebug::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
     DIDescriptor RTy = Elements.getElement(0);
     addType(&Buffer, DIType(RTy));
 
-    // Add prototype flag.
-    addUInt(&Buffer, dwarf::DW_AT_prototyped, dwarf::DW_FORM_flag, 1);
-
+    bool isPrototyped = true;
     // Add arguments.
     for (unsigned i = 1, N = Elements.getNumElements(); i < N; ++i) {
-      DIE *Arg = new DIE(dwarf::DW_TAG_formal_parameter);
       DIDescriptor Ty = Elements.getElement(i);
-      addType(Arg, DIType(Ty));
-      Buffer.addChild(Arg);
+      if (Ty.isUnspecifiedParameter()) {
+        DIE *Arg = new DIE(dwarf::DW_TAG_unspecified_parameters);
+        Buffer.addChild(Arg);
+        isPrototyped = false;
+      } else {
+        DIE *Arg = new DIE(dwarf::DW_TAG_formal_parameter);
+        addType(Arg, DIType(Ty));
+        Buffer.addChild(Arg);
+      }
     }
+    // Add prototype flag.
+    if (isPrototyped)
+      addUInt(&Buffer, dwarf::DW_AT_prototyped, dwarf::DW_FORM_flag, 1);
   }
     break;
   case dwarf::DW_TAG_structure_type:
@@ -1055,8 +1077,21 @@ void DwarfDebug::constructTypeDIE(DIE &Buffer, DICompositeType CTy) {
     for (unsigned i = 0; i < N; ++i) {
       DIDescriptor Element = Elements.getElement(i);
       DIE *ElemDie = NULL;
-      if (Element.isSubprogram())
+      if (Element.isSubprogram()) {
+        DISubprogram SP(Element);
         ElemDie = createSubprogramDIE(DISubprogram(Element));
+        if (SP.isProtected())
+          addUInt(ElemDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_flag,
+                  dwarf::DW_ACCESS_protected);
+        else if (SP.isPrivate())
+          addUInt(ElemDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_flag,
+                  dwarf::DW_ACCESS_private);
+        else 
+          addUInt(ElemDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_flag,
+            dwarf::DW_ACCESS_public);
+        if (SP.isExplicit())
+          addUInt(ElemDie, dwarf::DW_AT_explicit, dwarf::DW_FORM_flag, 1);
+      }
       else if (Element.isVariable()) {
         DIVariable DV(Element);
         ElemDie = new DIE(dwarf::DW_TAG_variable);
@@ -1253,7 +1288,8 @@ DIE *DwarfDebug::createMemberDIE(DIDerivedType DT) {
   else if (DT.isPrivate())
     addUInt(MemberDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_flag,
             dwarf::DW_ACCESS_private);
-  else if (DT.getTag() == dwarf::DW_TAG_inheritance)
+  // Otherwise C++ member and base classes are considered public.
+  else if (DT.getCompileUnit().getLanguage() == dwarf::DW_LANG_C_plus_plus)
     addUInt(MemberDie, dwarf::DW_AT_accessibility, dwarf::DW_FORM_flag,
             dwarf::DW_ACCESS_public);
   if (DT.isVirtual())
@@ -1263,7 +1299,7 @@ DIE *DwarfDebug::createMemberDIE(DIDerivedType DT) {
 }
 
 /// createSubprogramDIE - Create new DIE using SP.
-DIE *DwarfDebug::createSubprogramDIE(DISubprogram SP, bool MakeDecl) {
+DIE *DwarfDebug::createSubprogramDIE(DISubprogram SP) {
   CompileUnit *SPCU = getCompileUnit(SP);
   DIE *SPDie = SPCU->getDIE(SP);
   if (SPDie)
@@ -1281,10 +1317,7 @@ DIE *DwarfDebug::createSubprogramDIE(DISubprogram SP, bool MakeDecl) {
 
   addSourceLine(SPDie, SP);
 
-  // Add prototyped tag, if C or ObjC.
-  unsigned Lang = SP.getCompileUnit().getLanguage();
-  if (Lang == dwarf::DW_LANG_C99 || Lang == dwarf::DW_LANG_C89 ||
-      Lang == dwarf::DW_LANG_ObjC)
+  if (SP.isPrototyped()) 
     addUInt(SPDie, dwarf::DW_AT_prototyped, dwarf::DW_FORM_flag, 1);
 
   // Add Return Type.
@@ -1308,7 +1341,7 @@ DIE *DwarfDebug::createSubprogramDIE(DISubprogram SP, bool MakeDecl) {
                                             SP.getContainingType()));
   }
 
-  if (MakeDecl || !SP.isDefinition()) {
+  if (!SP.isDefinition()) {
     addUInt(SPDie, dwarf::DW_AT_declaration, dwarf::DW_FORM_flag, 1);
 
     // Add arguments. Do not add arguments for subprogram definition. They will
@@ -1598,6 +1631,8 @@ DIE *DwarfDebug::constructVariableDIE(DbgVariable *DV, DbgScope *Scope) {
 
   if (Tag == dwarf::DW_TAG_formal_parameter && DV->getType().isArtificial())
     addUInt(VariableDie, dwarf::DW_AT_artificial, dwarf::DW_FORM_flag, 1);
+  else if (DIVariable(DV->getVariable()).isArtificial())
+    addUInt(VariableDie, dwarf::DW_AT_artificial, dwarf::DW_FORM_flag, 1);
 
   if (Scope->isAbstractScope()) {
     DV->setDIE(VariableDie);
@@ -1620,25 +1655,28 @@ DIE *DwarfDebug::constructVariableDIE(DbgVariable *DV, DbgScope *Scope) {
     DbgVariableToDbgInstMap.find(DV);
   if (DVI != DbgVariableToDbgInstMap.end()) {
     const MachineInstr *DVInsn = DVI->second;
-    const MCSymbol *DVLabel = findVariableLabel(DV);
     bool updated = false;
     // FIXME : Handle getNumOperands != 3
     if (DVInsn->getNumOperands() == 3) {
-      if (DVInsn->getOperand(0).isReg())
-        updated =
-          addRegisterAddress(VariableDie, DVLabel, DVInsn->getOperand(0));
+      if (DVInsn->getOperand(0).isReg()) {
+        const MachineOperand RegOp = DVInsn->getOperand(0);
+        const TargetRegisterInfo *TRI = Asm->TM.getRegisterInfo();
+        if (DVInsn->getOperand(1).isImm() &&
+            TRI->getFrameRegister(*Asm->MF) == RegOp.getReg()) {
+          addVariableAddress(DV, VariableDie, DVInsn->getOperand(1).getImm());
+          updated = true;
+        } else
+          updated = addRegisterAddress(VariableDie, RegOp);
+      }
       else if (DVInsn->getOperand(0).isImm())
-        updated = addConstantValue(VariableDie, DVLabel, DVInsn->getOperand(0));
+        updated = addConstantValue(VariableDie, DVInsn->getOperand(0));
       else if (DVInsn->getOperand(0).isFPImm())
         updated =
-          addConstantFPValue(VariableDie, DVLabel, DVInsn->getOperand(0));
+          addConstantFPValue(VariableDie, DVInsn->getOperand(0));
     } else {
       MachineLocation Location = Asm->getDebugValueLocation(DVInsn);
       if (Location.getReg()) {
         addAddress(VariableDie, dwarf::DW_AT_location, Location);
-        if (DVLabel)
-          addLabel(VariableDie, dwarf::DW_AT_start_scope, dwarf::DW_FORM_addr,
-                   DVLabel);
         updated = true;
       }
     }
@@ -1653,15 +1691,10 @@ DIE *DwarfDebug::constructVariableDIE(DbgVariable *DV, DbgScope *Scope) {
   }
 
   // .. else use frame index, if available.
-  MachineLocation Location;
-  unsigned FrameReg;
-  const TargetRegisterInfo *RI = Asm->TM.getRegisterInfo();
   int FI = 0;
-  if (findVariableFrameIndex(DV, &FI)) {
-    int Offset = RI->getFrameIndexReference(*Asm->MF, FI, FrameReg);
-    Location.set(FrameReg, Offset);
-    addVariableAddress(DV, VariableDie, dwarf::DW_AT_location, Location);
-  }
+  if (findVariableFrameIndex(DV, &FI))
+    addVariableAddress(DV, VariableDie, FI);
+  
   DV->setDIE(VariableDie);
   return VariableDie;
 
@@ -1743,6 +1776,10 @@ unsigned DwarfDebug::GetOrCreateSourceID(StringRef DirName, StringRef FileName){
   unsigned DId;
   assert (DirName.empty() == false && "Invalid directory name!");
 
+  // If FE did not provide a file name, then assume stdin.
+  if (FileName.empty())
+    return GetOrCreateSourceID(DirName, "<stdin>");
+
   StringMap<unsigned>::iterator DI = DirectoryIdMap.find(DirName);
   if (DI != DirectoryIdMap.end()) {
     DId = DI->getValue();
@@ -1808,7 +1845,11 @@ void DwarfDebug::constructCompileUnit(const MDNode *N) {
   addUInt(Die, dwarf::DW_AT_entry_pc, dwarf::DW_FORM_addr, 0);
   // DW_AT_stmt_list is a offset of line number information for this
   // compile unit in debug_line section.
-  addUInt(Die, dwarf::DW_AT_stmt_list, dwarf::DW_FORM_data4, 0);
+  if (Asm->MAI->doesDwarfUsesAbsoluteLabelForStmtList())
+    addLabel(Die, dwarf::DW_AT_stmt_list, dwarf::DW_FORM_addr,
+             Asm->GetTempSymbol("section_line"));
+  else
+    addUInt(Die, dwarf::DW_AT_stmt_list, dwarf::DW_FORM_data4, 0);
 
   if (!Dir.empty())
     addString(Die, dwarf::DW_AT_comp_dir, dwarf::DW_FORM_string, Dir);
@@ -2032,6 +2073,10 @@ void DwarfDebug::beginModule(Module *M) {
     for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i)
       getOrCreateTypeDIE(DIType(NMD->getOperand(i)));
 
+  if (NamedMDNode *NMD = M->getNamedMetadata("llvm.dbg.ty"))
+    for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i)
+      getOrCreateTypeDIE(DIType(NMD->getOperand(i)));
+
   // Prime section data.
   SectionMap.insert(Asm->getObjFileLowering().getTextSection());
 
@@ -2070,8 +2115,7 @@ void DwarfDebug::endModule() {
       StringRef FName = SP.getLinkageName();
       if (FName.empty())
         FName = SP.getName();
-      NamedMDNode *NMD =
-        M->getNamedMetadata(Twine("llvm.dbg.lv.", getRealLinkageName(FName)));
+      NamedMDNode *NMD = getFnSpecificMDNode(*(MMI->getModule()), FName);
       if (!NMD) continue;
       unsigned E = NMD->getNumOperands();
       if (!E) continue;
@@ -2306,8 +2350,6 @@ DwarfDebug::collectVariableInfo(const MachineFunction *MF,
     Processed.insert(DV);
     DbgVariable *RegVar = new DbgVariable(DV);
     Scope->addVariable(RegVar);
-    if (!CurFnArg)
-      DbgVariableLabelsMap[RegVar] = getLabelBeforeInsn(MInsn);
     if (DbgVariable *AbsVar = findAbstractVariable(DV, MInsn->getDebugLoc())) {
       DbgVariableToDbgInstMap[AbsVar] = MInsn;
       VarToAbstractVarMap[RegVar] = AbsVar;
@@ -2364,10 +2406,7 @@ DwarfDebug::collectVariableInfo(const MachineFunction *MF,
 
   // Collect info for variables that were optimized out.
   const Function *F = MF->getFunction();
-  const Module *M = F->getParent();
-  if (NamedMDNode *NMD =
-      M->getNamedMetadata(Twine("llvm.dbg.lv.",
-                                getRealLinkageName(F->getName())))) {
+  if (NamedMDNode *NMD = getFnSpecificMDNode(*(F->getParent()), F->getName())) {
     for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i) {
       DIVariable DV(cast<MDNode>(NMD->getOperand(i)));
       if (!DV || !Processed.insert(DV))
@@ -2398,8 +2437,8 @@ const MCSymbol *DwarfDebug::getLabelAfterInsn(const MachineInstr *MI) {
   return I->second;
 }
 
-/// beginScope - Process beginning of a scope.
-void DwarfDebug::beginScope(const MachineInstr *MI) {
+/// beginInstruction - Process beginning of an instruction.
+void DwarfDebug::beginInstruction(const MachineInstr *MI) {
   if (InsnNeedsLabel.count(MI) == 0) {
     LabelsBeforeInsn[MI] = PrevLabel;
     return;
@@ -2433,8 +2472,8 @@ void DwarfDebug::beginScope(const MachineInstr *MI) {
   assert (0 && "Instruction is not processed!");
 }
 
-/// endScope - Process end of a scope.
-void DwarfDebug::endScope(const MachineInstr *MI) {
+/// endInstruction - Process end of an instruction.
+void DwarfDebug::endInstruction(const MachineInstr *MI) {
   if (InsnsEndScopeSet.count(MI) != 0) {
     // Emit a label if this instruction ends a scope.
     MCSymbol *Label = MMI->getContext().CreateTempSymbol();
@@ -2716,11 +2755,36 @@ static DebugLoc FindFirstDebugLoc(const MachineFunction *MF) {
   return DebugLoc();
 }
 
+#ifndef NDEBUG
+/// CheckLineNumbers - Count basicblocks whose instructions do not have any
+/// line number information.
+static void CheckLineNumbers(const MachineFunction *MF) {
+  for (MachineFunction::const_iterator I = MF->begin(), E = MF->end();
+       I != E; ++I) {
+    bool FoundLineNo = false;
+    for (MachineBasicBlock::const_iterator II = I->begin(), IE = I->end();
+         II != IE; ++II) {
+      const MachineInstr *MI = II;
+      if (!MI->getDebugLoc().isUnknown()) {
+        FoundLineNo = true;
+        break;
+      }
+    }
+    if (!FoundLineNo && I->size())
+      ++BlocksWithoutLineNo;      
+  }
+}
+#endif
+
 /// beginFunction - Gather pre-function debug information.  Assumes being
 /// emitted immediately after the function entry point.
 void DwarfDebug::beginFunction(const MachineFunction *MF) {
   if (!MMI->hasDebugInfo()) return;
   if (!extractScopeInformation()) return;
+
+#ifndef NDEBUG
+  CheckLineNumbers(MF);
+#endif
 
   FunctionBeginSym = Asm->GetTempSymbol("func_begin",
                                         Asm->getFunctionNumber());
@@ -2829,10 +2893,8 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
         StringRef FName = SP.getLinkageName();
         if (FName.empty())
           FName = SP.getName();
-        const Module *M = MF->getFunction()->getParent();
-        if (NamedMDNode *NMD =
-            M->getNamedMetadata(Twine("llvm.dbg.lv.",
-                                      getRealLinkageName(FName)))) {
+        if (NamedMDNode *NMD = 
+            getFnSpecificMDNode(*(MF->getFunction()->getParent()), FName)) {
           for (unsigned i = 0, e = NMD->getNumOperands(); i != e; ++i) {
           DIVariable DV(cast<MDNode>(NMD->getOperand(i)));
           if (!DV || !ProcessedVars.insert(DV))
@@ -2864,7 +2926,6 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
   DbgVariableToFrameIndexMap.clear();
   VarToAbstractVarMap.clear();
   DbgVariableToDbgInstMap.clear();
-  DbgVariableLabelsMap.clear();
   DeleteContainerSeconds(DbgScopeMap);
   InsnsEndScopeSet.clear();
   ConcreteScopes.clear();
@@ -2893,15 +2954,6 @@ bool DwarfDebug::findVariableFrameIndex(const DbgVariable *V, int *FI) {
     return false;
   *FI = I->second;
   return true;
-}
-
-/// findVariableLabel - Find MCSymbol for the variable.
-const MCSymbol *DwarfDebug::findVariableLabel(const DbgVariable *V) {
-  DenseMap<const DbgVariable *, const MCSymbol *>::iterator I
-    = DbgVariableLabelsMap.find(V);
-  if (I == DbgVariableLabelsMap.end())
-    return NULL;
-  else return I->second;
 }
 
 /// findDbgScope - Find DbgScope for the debug loc attached with an
@@ -2940,6 +2992,10 @@ MCSymbol *DwarfDebug::recordSourceLine(unsigned Line, unsigned Col,
       DICompileUnit CU(S);
       Dir = CU.getDirectory();
       Fn = CU.getFilename();
+    } else if (Scope.isFile()) {
+      DIFile F(S);
+      Dir = F.getDirectory();
+      Fn = F.getFilename();
     } else if (Scope.isSubprogram()) {
       DISubprogram SP(S);
       Dir = SP.getDirectory();
@@ -3119,10 +3175,17 @@ void DwarfDebug::emitDIE(DIE *Die) {
     case dwarf::DW_AT_ranges: {
       // DW_AT_range Value encodes offset in debug_range section.
       DIEInteger *V = cast<DIEInteger>(Values[i]);
-      Asm->EmitLabelOffsetDifference(DwarfDebugRangeSectionSym,
-                                     V->getValue(),
-                                     DwarfDebugRangeSectionSym,
-                                     4);
+
+      if (Asm->MAI->doesDwarfUsesLabelOffsetForRanges()) {
+        Asm->EmitLabelPlusOffset(DwarfDebugRangeSectionSym,
+                                 V->getValue(),
+                                 4);
+      } else {
+        Asm->EmitLabelOffsetDifference(DwarfDebugRangeSectionSym,
+                                       V->getValue(),
+                                       DwarfDebugRangeSectionSym,
+                                       4);
+      }
       break;
     }
     case dwarf::DW_AT_location: {
@@ -3131,6 +3194,14 @@ void DwarfDebug::emitDIE(DIE *Die) {
         Asm->EmitLabelDifference(L->getValue(), DwarfDebugLocSectionSym, 4);
       } else
         Values[i]->EmitValue(Asm, Form);
+      break;
+    }
+    case dwarf::DW_AT_accessibility: {
+      if (Asm->isVerbose()) {
+        DIEInteger *V = cast<DIEInteger>(Values[i]);
+        Asm->OutStreamer.AddComment(dwarf::AccessibilityString(V->getValue()));
+      }
+      Values[i]->EmitValue(Asm, Form);
       break;
     }
     default:

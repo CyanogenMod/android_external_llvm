@@ -11,6 +11,7 @@ add_llvm_library(LLVMAnalysis
   ConstantFolding.cpp
   DbgInfoPrinter.cpp
   DebugInfo.cpp
+  DIBuilder.cpp
   DomPrinter.cpp
   IVUsers.cpp
   InlineCost.cpp
@@ -27,11 +28,12 @@ add_llvm_library(LLVMAnalysis
   LoopDependenceAnalysis.cpp
   LoopInfo.cpp
   LoopPass.cpp
+  MemDepPrinter.cpp
   MemoryBuiltins.cpp
   MemoryDependenceAnalysis.cpp
   ModuleDebugInfoPrinter.cpp
+  NoAliasAnalysis.cpp
   PHITransAddr.cpp
-  PointerTracking.cpp
   PostDominators.cpp
   ProfileEstimatorPass.cpp
   ProfileInfo.cpp
@@ -39,6 +41,7 @@ add_llvm_library(LLVMAnalysis
   ProfileInfoLoaderPass.cpp
   ProfileVerifierPass.cpp
   RegionInfo.cpp
+  RegionPass.cpp
   RegionPrinter.cpp
   ScalarEvolution.cpp
   ScalarEvolutionAliasAnalysis.cpp
@@ -49,5 +52,3 @@ add_llvm_library(LLVMAnalysis
   TypeBasedAliasAnalysis.cpp
   ValueTracking.cpp
   )
-
-target_link_libraries (LLVMAnalysis LLVMSupport)

@@ -304,7 +304,9 @@ namespace {
     bool runOnFunction(Function &F);
   public:
     static char ID; // Pass identification, replacement for typeid
-    MemCpyOpt() : FunctionPass(ID) {}
+    MemCpyOpt() : FunctionPass(ID) {
+      initializeMemCpyOptPass(*PassRegistry::getPassRegistry());
+    }
 
   private:
     // This transformation requires dominator postdominator info
@@ -321,7 +323,8 @@ namespace {
     bool processStore(StoreInst *SI, BasicBlock::iterator &BBI);
     bool processMemCpy(MemCpyInst *M);
     bool processMemMove(MemMoveInst *M);
-    bool performCallSlotOptzn(MemCpyInst *cpy, CallInst *C);
+    bool performCallSlotOptzn(Instruction *cpy, Value *cpyDst, Value *cpySrc,
+                              uint64_t cpyLen, CallInst *C);
     bool iterateOnFunction(Function &F);
   };
   
@@ -331,9 +334,13 @@ namespace {
 // createMemCpyOptPass - The public interface to this file...
 FunctionPass *llvm::createMemCpyOptPass() { return new MemCpyOpt(); }
 
-INITIALIZE_PASS(MemCpyOpt, "memcpyopt", "MemCpy Optimization", false, false);
-
-
+INITIALIZE_PASS_BEGIN(MemCpyOpt, "memcpyopt", "MemCpy Optimization",
+                      false, false)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+INITIALIZE_PASS_DEPENDENCY(MemoryDependenceAnalysis)
+INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
+INITIALIZE_PASS_END(MemCpyOpt, "memcpyopt", "MemCpy Optimization",
+                    false, false)
 
 /// processStore - When GVN is scanning forward over instructions, we look for
 /// some other patterns to fold away.  In particular, this looks for stores to
@@ -341,6 +348,37 @@ INITIALIZE_PASS(MemCpyOpt, "memcpyopt", "MemCpy Optimization", false, false);
 /// (currently 4) it attempts to merge them together into a memcpy/memset.
 bool MemCpyOpt::processStore(StoreInst *SI, BasicBlock::iterator &BBI) {
   if (SI->isVolatile()) return false;
+  
+  TargetData *TD = getAnalysisIfAvailable<TargetData>();
+  if (!TD) return false;
+
+  // Detect cases where we're performing call slot forwarding, but
+  // happen to be using a load-store pair to implement it, rather than
+  // a memcpy.
+  if (LoadInst *LI = dyn_cast<LoadInst>(SI->getOperand(0))) {
+    if (!LI->isVolatile() && LI->hasOneUse()) {
+      MemoryDependenceAnalysis &MD = getAnalysis<MemoryDependenceAnalysis>();
+
+      MemDepResult dep = MD.getDependency(LI);
+      CallInst *C = 0;
+      if (dep.isClobber() && !isa<MemCpyInst>(dep.getInst()))
+        C = dyn_cast<CallInst>(dep.getInst());
+      
+      if (C) {
+        bool changed = performCallSlotOptzn(LI,
+                        SI->getPointerOperand()->stripPointerCasts(), 
+                        LI->getPointerOperand()->stripPointerCasts(),
+                        TD->getTypeStoreSize(SI->getOperand(0)->getType()), C);
+        if (changed) {
+          MD.removeInstruction(SI);
+          SI->eraseFromParent();
+          LI->eraseFromParent();
+          ++NumMemCpyInstr;
+          return true;
+        }
+      }
+    }
+  }
   
   LLVMContext &Context = SI->getContext();
 
@@ -354,8 +392,6 @@ bool MemCpyOpt::processStore(StoreInst *SI, BasicBlock::iterator &BBI) {
   if (!ByteVal)
     return false;
 
-  TargetData *TD = getAnalysisIfAvailable<TargetData>();
-  if (!TD) return false;
   AliasAnalysis &AA = getAnalysis<AliasAnalysis>();
   Module *M = SI->getParent()->getParent()->getParent();
 
@@ -489,7 +525,9 @@ bool MemCpyOpt::processStore(StoreInst *SI, BasicBlock::iterator &BBI) {
 /// performCallSlotOptzn - takes a memcpy and a call that it depends on,
 /// and checks for the possibility of a call slot optimization by having
 /// the call write its result directly into the destination of the memcpy.
-bool MemCpyOpt::performCallSlotOptzn(MemCpyInst *cpy, CallInst *C) {
+bool MemCpyOpt::performCallSlotOptzn(Instruction *cpy,
+                                     Value *cpyDest, Value *cpySrc,
+                                     uint64_t cpyLen, CallInst *C) {
   // The general transformation to keep in mind is
   //
   //   call @func(..., src, ...)
@@ -506,15 +544,7 @@ bool MemCpyOpt::performCallSlotOptzn(MemCpyInst *cpy, CallInst *C) {
 
   // Deliberately get the source and destination with bitcasts stripped away,
   // because we'll need to do type comparisons based on the underlying type.
-  Value *cpyDest = cpy->getDest();
-  Value *cpySrc = cpy->getSource();
   CallSite CS(C);
-
-  // We need to be able to reason about the size of the memcpy, so we require
-  // that it be a constant.
-  ConstantInt *cpyLength = dyn_cast<ConstantInt>(cpy->getLength());
-  if (!cpyLength)
-    return false;
 
   // Require that src be an alloca.  This simplifies the reasoning considerably.
   AllocaInst *srcAlloca = dyn_cast<AllocaInst>(cpySrc);
@@ -532,7 +562,7 @@ bool MemCpyOpt::performCallSlotOptzn(MemCpyInst *cpy, CallInst *C) {
   uint64_t srcSize = TD->getTypeAllocSize(srcAlloca->getAllocatedType()) *
     srcArraySize->getZExtValue();
 
-  if (cpyLength->getZExtValue() < srcSize)
+  if (cpyLen < srcSize)
     return false;
 
   // Check that accessing the first srcSize bytes of dest will not cause a
@@ -601,7 +631,7 @@ bool MemCpyOpt::performCallSlotOptzn(MemCpyInst *cpy, CallInst *C) {
   // the use analysis, we also need to know that it does not sneakily
   // access dest.  We rely on AA to figure this out for us.
   AliasAnalysis &AA = getAnalysis<AliasAnalysis>();
-  if (AA.getModRefInfo(C, cpy->getRawDest(), srcSize) !=
+  if (AA.getModRefInfo(C, cpyDest, srcSize) !=
       AliasAnalysis::NoModRef)
     return false;
 
@@ -630,7 +660,6 @@ bool MemCpyOpt::performCallSlotOptzn(MemCpyInst *cpy, CallInst *C) {
 
   // Remove the memcpy
   MD.removeInstruction(cpy);
-  cpy->eraseFromParent();
   ++NumMemCpyInstr;
 
   return true;
@@ -644,6 +673,10 @@ bool MemCpyOpt::performCallSlotOptzn(MemCpyInst *cpy, CallInst *C) {
 bool MemCpyOpt::processMemCpy(MemCpyInst *M) {
   MemoryDependenceAnalysis &MD = getAnalysis<MemoryDependenceAnalysis>();
 
+  // We can only optimize statically-sized memcpy's.
+  ConstantInt *cpyLen = dyn_cast<ConstantInt>(M->getLength());
+  if (!cpyLen) return false;
+
   // The are two possible optimizations we can do for memcpy:
   //   a) memcpy-memcpy xform which exposes redundance for DSE.
   //   b) call-memcpy xform for return slot optimization.
@@ -651,8 +684,12 @@ bool MemCpyOpt::processMemCpy(MemCpyInst *M) {
   if (!dep.isClobber())
     return false;
   if (!isa<MemCpyInst>(dep.getInst())) {
-    if (CallInst *C = dyn_cast<CallInst>(dep.getInst()))
-      return performCallSlotOptzn(M, C);
+    if (CallInst *C = dyn_cast<CallInst>(dep.getInst())) {
+      bool changed = performCallSlotOptzn(M, M->getDest(), M->getSource(),
+                                  cpyLen->getZExtValue(), C);
+      if (changed) M->eraseFromParent();
+      return changed;
+    }
     return false;
   }
   
@@ -697,13 +734,20 @@ bool MemCpyOpt::processMemCpy(MemCpyInst *M) {
                                  M->getParent()->getParent()->getParent(),
                                  M->getIntrinsicID(), ArgTys, 3);
     
+  // Make sure to use the lesser of the alignment of the source and the dest
+  // since we're changing where we're reading from, but don't want to increase
+  // the alignment past what can be read from or written to.
+  // TODO: Is this worth it if we're creating a less aligned memcpy? For
+  // example we could be moving from movaps -> movq on x86.
+  unsigned Align = std::min(MDep->getAlignmentCst()->getZExtValue(),
+                            M->getAlignmentCst()->getZExtValue());
+  LLVMContext &Context = M->getContext();
+  ConstantInt *AlignCI = ConstantInt::get(Type::getInt32Ty(Context), Align);
   Value *Args[5] = {
     M->getRawDest(), MDep->getRawSource(), M->getLength(),
-    M->getAlignmentCst(), M->getVolatileCst()
+    AlignCI, M->getVolatileCst()
   };
-  
   CallInst *C = CallInst::Create(MemCpyFun, Args, Args+5, "", M);
-  
   
   // If C and M don't interfere, then this is a valid transformation.  If they
   // did, this would mean that the two sources overlap, which would be bad.
@@ -728,7 +772,7 @@ bool MemCpyOpt::processMemMove(MemMoveInst *M) {
 
   // If the memmove is a constant size, use it for the alias query, this allows
   // us to optimize things like: memmove(P, P+64, 64);
-  uint64_t MemMoveSize = ~0ULL;
+  uint64_t MemMoveSize = AliasAnalysis::UnknownSize;
   if (ConstantInt *Len = dyn_cast<ConstantInt>(M->getLength()))
     MemMoveSize = Len->getZExtValue();
   

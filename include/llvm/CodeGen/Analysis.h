@@ -30,7 +30,7 @@ class GlobalVariable;
 /// of insertvalue or extractvalue indices that identify a member, return
 /// the linearized index of the start of the member.
 ///
-unsigned ComputeLinearIndex(const TargetLowering &TLI, const Type *Ty,
+unsigned ComputeLinearIndex(const Type *Ty,
                             const unsigned *Indices,
                             const unsigned *IndicesEnd,
                             unsigned CurIndex = 0);
@@ -52,7 +52,7 @@ GlobalVariable *ExtractTypeInfo(Value *V);
 
 /// hasInlineAsmMemConstraint - Return true if the inline asm instruction being
 /// processed uses a memory 'm' constraint.
-bool hasInlineAsmMemConstraint(std::vector<InlineAsm::ConstraintInfo> &CInfos,
+bool hasInlineAsmMemConstraint(InlineAsm::ConstraintInfoVector &CInfos,
                                const TargetLowering &TLI);
 
 /// getFCmpCondCode - Return the ISD condition code corresponding to

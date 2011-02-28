@@ -49,7 +49,9 @@ namespace {
     bool runOnFunction(Function &F);
   public:
     static char ID; // Pass identification, replacement for typeid
-    TailDup() : FunctionPass(ID) {}
+    TailDup() : FunctionPass(ID) {
+      initializeTailDupPass(*PassRegistry::getPassRegistry());
+    }
 
   private:
     inline bool shouldEliminateUnconditionalBranch(TerminatorInst *, unsigned);
@@ -59,7 +61,7 @@ namespace {
 }
 
 char TailDup::ID = 0;
-INITIALIZE_PASS(TailDup, "tailduplicate", "Tail Duplication", false, false);
+INITIALIZE_PASS(TailDup, "tailduplicate", "Tail Duplication", false, false)
 
 // Public interface to the Tail Duplication pass
 FunctionPass *llvm::createTailDuplicationPass() { return new TailDup(); }

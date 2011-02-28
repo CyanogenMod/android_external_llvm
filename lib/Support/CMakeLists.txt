@@ -1,3 +1,6 @@
+## FIXME: This only requires RTTI because tblgen uses it.  Fix that.
+set(LLVM_REQUIRES_RTTI 1)
+
 add_llvm_library(LLVMSupport
   APFloat.cpp
   APInt.cpp
@@ -35,6 +38,7 @@ add_llvm_library(LLVMSupport
   SystemUtils.cpp
   TargetRegistry.cpp
   Timer.cpp
+  ToolOutputFile.cpp
   Triple.cpp
   Twine.cpp
   raw_os_ostream.cpp
@@ -45,5 +49,3 @@ add_llvm_library(LLVMSupport
   regfree.c
   regstrlcpy.c
   )
-
-target_link_libraries (LLVMSupport LLVMSystem)

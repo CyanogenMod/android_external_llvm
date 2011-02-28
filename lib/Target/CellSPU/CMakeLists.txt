@@ -12,16 +12,16 @@ tablegen(SPUGenSubtarget.inc -gen-subtarget)
 tablegen(SPUGenCallingConv.inc -gen-callingconv)
 
 add_llvm_target(CellSPUCodeGen
+  SPUAsmPrinter.cpp
   SPUFrameInfo.cpp
   SPUHazardRecognizers.cpp
   SPUInstrInfo.cpp
   SPUISelDAGToDAG.cpp
   SPUISelLowering.cpp
+  SPUFrameInfo.cpp
   SPUMCAsmInfo.cpp
   SPURegisterInfo.cpp
   SPUSubtarget.cpp
   SPUTargetMachine.cpp
   SPUSelectionDAGInfo.cpp
   )
-
-target_link_libraries (LLVMCellSPUCodeGen LLVMSelectionDAG)

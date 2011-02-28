@@ -13,14 +13,14 @@ tablegen(SparcGenCallingConv.inc -gen-callingconv)
 add_llvm_target(SparcCodeGen
   DelaySlotFiller.cpp
   FPMover.cpp
+  SparcAsmPrinter.cpp
   SparcInstrInfo.cpp
   SparcISelDAGToDAG.cpp
   SparcISelLowering.cpp
+  SparcFrameInfo.cpp
   SparcMCAsmInfo.cpp
   SparcRegisterInfo.cpp
   SparcSubtarget.cpp
   SparcTargetMachine.cpp
   SparcSelectionDAGInfo.cpp
   )
-
-target_link_libraries (LLVMSparcCodeGen LLVMSelectionDAG)

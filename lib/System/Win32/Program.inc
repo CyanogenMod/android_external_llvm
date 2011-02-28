@@ -22,6 +22,15 @@
 //===          and must not be UNIX code
 //===----------------------------------------------------------------------===//
 
+#ifdef __MINGW32__
+// Ancient mingw32's w32api might not have this declaration.
+extern "C"
+BOOL WINAPI SetInformationJobObject(HANDLE hJob,
+                                    JOBOBJECTINFOCLASS JobObjectInfoClass,
+                                    LPVOID lpJobObjectInfo,
+                                    DWORD cbJobObjectInfoLength);
+#endif
+
 namespace {
   struct Win32ProcessInfo {
     HANDLE hProcess;
@@ -58,10 +67,12 @@ Program::FindProgramByName(const std::string& progName) {
   Path temp;
   if (!temp.set(progName)) // invalid name
     return Path();
-  if (temp.canExecute()) // already executable as is
+  // Return paths with slashes verbatim.
+  if (progName.find('\\') != std::string::npos ||
+      progName.find('/') != std::string::npos)
     return temp;
 
-  // At this point, the file name is valid and its not executable.
+  // At this point, the file name is valid and does not contain slashes.
   // Let Windows search for it.
   char buffer[MAX_PATH];
   char *dummy = NULL;
@@ -122,15 +133,6 @@ static HANDLE RedirectIO(const Path *path, int fd, std::string* ErrMsg) {
 
   return h;
 }
-
-#ifdef __MINGW32__
-  // Due to unknown reason, mingw32's w32api doesn't have this declaration.
-  extern "C"
-  BOOL WINAPI SetInformationJobObject(HANDLE hJob,
-                                      JOBOBJECTINFOCLASS JobObjectInfoClass,
-                                      LPVOID lpJobObjectInfo,
-                                      DWORD cbJobObjectInfoLength);
-#endif
 
 /// ArgNeedsQuotes - Check whether argument needs to be quoted when calling
 /// CreateProcess.
@@ -337,7 +339,8 @@ Program::Execute(const Path& path,
 }
 
 int
-Program::Wait(unsigned secondsToWait,
+Program::Wait(const Path &path,
+              unsigned secondsToWait,
               std::string* ErrMsg) {
   if (Data_ == 0) {
     MakeErrMsg(ErrMsg, "Process not started!");

@@ -89,7 +89,7 @@ namespace sys {
       /// Construct a path to the root directory of the file system. The root
       /// directory is a top level directory above which there are no more
       /// directories. For example, on UNIX, the root directory is /. On Windows
-      /// it is C:\. Other operating systems may have different notions of
+      /// it is file:///. Other operating systems may have different notions of
       /// what the root directory is or none at all. In that case, a consistent
       /// default root directory will be used.
       static Path GetRootDirectory();
@@ -105,9 +105,7 @@ namespace sys {
       static Path GetTemporaryDirectory(std::string* ErrMsg = 0);
 
       /// Construct a vector of sys::Path that contains the "standard" system
-      /// library paths suitable for linking into programs. This function *must*
-      /// return the value of LLVM_LIB_SEARCH_PATH as the first item in \p Paths
-      /// if that environment variable is set and it references a directory.
+      /// library paths suitable for linking into programs.
       /// @brief Construct a path to the system library directory
       static void GetSystemLibraryPaths(std::vector<sys::Path>& Paths);
 
@@ -154,6 +152,12 @@ namespace sys {
       /// @brief Returns the current working directory.
       static Path GetCurrentDirectory();
 
+      /// Return the suffix commonly used on file names that contain an
+      /// executable.
+      /// @returns The executable file suffix for the current platform.
+      /// @brief Return the executable file suffix.
+      static StringRef GetEXESuffix();
+
       /// Return the suffix commonly used on file names that contain a shared
       /// object, shared archive, or dynamic link library. Such files are
       /// linked at runtime into a process and their code images are shared
@@ -164,6 +168,7 @@ namespace sys {
 
       /// GetMainExecutable - Return the path to the main executable, given the
       /// value of argv[0] from program startup and the address of main itself.
+      /// In extremis, this function may fail and return an empty path.
       static Path GetMainExecutable(const char *argv0, void *MainAddr);
 
       /// This is one of the very few ways in which a path can be constructed
@@ -336,10 +341,21 @@ namespace sys {
       /// native Dynamic Library (shared library, shared object) by looking at
       /// the file's magic number. The Path object must reference a file, not a
       /// directory.
-      /// @return strue if the file starts with the magid number for a native
+      /// @returns true if the file starts with the magic number for a native
       /// shared library.
-      /// @brief Determine if the path reference a dynamic library.
+      /// @brief Determine if the path references a dynamic library.
       bool isDynamicLibrary() const;
+
+      /// This function determines if the path name in the object references a
+      /// native object file by looking at it's magic number. The term object
+      /// file is defined as "an organized collection of separate, named
+      /// sequences of binary data." This covers the obvious file formats such
+      /// as COFF and ELF, but it also includes llvm ir bitcode, archives,
+      /// libraries, etc...
+      /// @returns true if the file starts with the magic number for an object
+      /// file.
+      /// @brief Determine if the path references an object file.
+      bool isObjectFile() const;
 
       /// This function determines if the path name references an existing file
       /// or directory in the file system.
@@ -349,11 +365,17 @@ namespace sys {
       /// the file system.
       bool exists() const;
 
-      /// This function determines if the path name refences an
+      /// This function determines if the path name references an
       /// existing directory.
       /// @returns true if the pathname references an existing directory.
-      /// @brief Determins if the path is a directory in the file system.
+      /// @brief Determines if the path is a directory in the file system.
       bool isDirectory() const;
+
+      /// This function determines if the path name references an
+      /// existing symbolic link.
+      /// @returns true if the pathname references an existing symlink.
+      /// @brief Determines if the path is a symlink in the file system.
+      bool isSymLink() const;
 
       /// This function determines if the path name references a readable file
       /// or directory in the file system. This function checks for
@@ -373,9 +395,9 @@ namespace sys {
       /// in the file system.
       bool canWrite() const;
 
-      /// This function checks that what we're trying to work only on a regular file.
-      /// Check for things like /dev/null, any block special file,
-      /// or other things that aren't "regular" regular files.
+      /// This function checks that what we're trying to work only on a regular
+      /// file. Check for things like /dev/null, any block special file, or
+      /// other things that aren't "regular" regular files.
       /// @returns true if the file is S_ISREG.
       /// @brief Determines if the file is a regular file
       bool isRegularFile() const;
@@ -436,7 +458,8 @@ namespace sys {
       /// The precondition for this function is that the Path reference a file
       /// name (i.e. isFile() returns true). If the Path is not a file, no
       /// action is taken and the function returns false. If the path would
-      /// become invalid for the host operating system, false is returned.
+      /// become invalid for the host operating system, false is returned. When
+      /// the \p suffix is empty, no action is performed.
       /// @returns false if the suffix could not be added, true if it was.
       /// @brief Adds a period and the \p suffix to the end of the pathname.
       bool appendSuffix(StringRef suffix);

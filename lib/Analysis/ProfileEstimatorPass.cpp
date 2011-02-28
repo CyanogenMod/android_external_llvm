@@ -39,7 +39,8 @@ namespace {
   public:
     static char ID; // Class identification, replacement for typeinfo
     explicit ProfileEstimatorPass(const double execcount = 0)
-      : FunctionPass(ID), ExecCount(execcount) {
+        : FunctionPass(ID), ExecCount(execcount) {
+      initializeProfileEstimatorPassPass(*PassRegistry::getPassRegistry());
       if (execcount == 0) ExecCount = LoopWeight;
     }
 
@@ -72,8 +73,11 @@ namespace {
 }  // End of anonymous namespace
 
 char ProfileEstimatorPass::ID = 0;
-INITIALIZE_AG_PASS(ProfileEstimatorPass, ProfileInfo, "profile-estimator",
-                "Estimate profiling information", false, true, false);
+INITIALIZE_AG_PASS_BEGIN(ProfileEstimatorPass, ProfileInfo, "profile-estimator",
+                "Estimate profiling information", false, true, false)
+INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_AG_PASS_END(ProfileEstimatorPass, ProfileInfo, "profile-estimator",
+                "Estimate profiling information", false, true, false)
 
 namespace llvm {
   char &ProfileEstimatorPassID = ProfileEstimatorPass::ID;

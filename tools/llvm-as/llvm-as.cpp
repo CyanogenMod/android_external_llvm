@@ -25,7 +25,7 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/SystemUtils.h"
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/System/Signals.h"
 #include <memory>
 using namespace llvm;
@@ -77,8 +77,8 @@ static void WriteOutputFile(const Module *M) {
     exit(1);
   }
 
-  if (Force || !CheckBitcodeOutputToConsole(*Out, true))
-    WriteBitcodeToFile(M, *Out);
+  if (Force || !CheckBitcodeOutputToConsole(Out->os(), true))
+    WriteBitcodeToFile(M, Out->os());
 
   // Declare success.
   Out->keep();

@@ -17,6 +17,7 @@
 #include "llvm/BasicBlock.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/ValueHandle.h"
+#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -132,37 +133,6 @@ namespace llvm {
     }
   };
 
-  /// NonLocalDepResult - This is a result from a NonLocal dependence query.
-  /// For each BasicBlock (the BB entry) it keeps a MemDepResult and the
-  /// (potentially phi translated) address that was live in the block.
-  class NonLocalDepResult {
-    BasicBlock *BB;
-    MemDepResult Result;
-    Value *Address;
-  public:
-    NonLocalDepResult(BasicBlock *bb, MemDepResult result, Value *address)
-      : BB(bb), Result(result), Address(address) {}
-    
-    // BB is the sort key, it can't be changed.
-    BasicBlock *getBB() const { return BB; }
-    
-    void setResult(const MemDepResult &R, Value *Addr) {
-      Result = R;
-      Address = Addr;
-    }
-    
-    const MemDepResult &getResult() const { return Result; }
-    
-    /// getAddress - Return the address of this pointer in this block.  This can
-    /// be different than the address queried for the non-local result because
-    /// of phi translation.  This returns null if the address was not available
-    /// in a block (i.e. because phi translation failed) or if this is a cached
-    /// result and that address was deleted.
-    ///
-    /// The address is always null for a non-local 'call' dependence.
-    Value *getAddress() const { return Address; }
-  };
-  
   /// NonLocalDepEntry - This is an entry in the NonLocalDepInfo cache.  For
   /// each BasicBlock (the BB entry) it keeps a MemDepResult.
   class NonLocalDepEntry {
@@ -185,6 +155,36 @@ namespace llvm {
     bool operator<(const NonLocalDepEntry &RHS) const {
       return BB < RHS.BB;
     }
+  };
+  
+  /// NonLocalDepResult - This is a result from a NonLocal dependence query.
+  /// For each BasicBlock (the BB entry) it keeps a MemDepResult and the
+  /// (potentially phi translated) address that was live in the block.
+  class NonLocalDepResult {
+    NonLocalDepEntry Entry;
+    Value *Address;
+  public:
+    NonLocalDepResult(BasicBlock *bb, MemDepResult result, Value *address)
+      : Entry(bb, result), Address(address) {}
+    
+    // BB is the sort key, it can't be changed.
+    BasicBlock *getBB() const { return Entry.getBB(); }
+    
+    void setResult(const MemDepResult &R, Value *Addr) {
+      Entry.setResult(R);
+      Address = Addr;
+    }
+    
+    const MemDepResult &getResult() const { return Entry.getResult(); }
+    
+    /// getAddress - Return the address of this pointer in this block.  This can
+    /// be different than the address queried for the non-local result because
+    /// of phi translation.  This returns null if the address was not available
+    /// in a block (i.e. because phi translation failed) or if this is a cached
+    /// result and that address was deleted.
+    ///
+    /// The address is always null for a non-local 'call' dependence.
+    Value *getAddress() const { return Address; }
   };
   
   /// MemoryDependenceAnalysis - This is an analysis that determines, for a
@@ -212,7 +212,7 @@ namespace llvm {
   private:
     /// ValueIsLoadPair - This is a pair<Value*, bool> where the bool is true if
     /// the dependence is a read only dependence, false if read/write.
-    typedef PointerIntPair<Value*, 1, bool> ValueIsLoadPair;
+    typedef PointerIntPair<const Value*, 1, bool> ValueIsLoadPair;
 
     /// BBSkipFirstBlockPair - This pair is used when caching information for a
     /// block.  If the pointer is null, the cache value is not a full query that
@@ -220,11 +220,28 @@ namespace llvm {
     /// or not the contents of the block was skipped.
     typedef PointerIntPair<BasicBlock*, 1, bool> BBSkipFirstBlockPair;
 
+    /// NonLocalPointerInfo - This record is the information kept for each
+    /// (value, is load) pair.
+    struct NonLocalPointerInfo {
+      /// Pair - The pair of the block and the skip-first-block flag.
+      BBSkipFirstBlockPair Pair;
+      /// NonLocalDeps - The results of the query for each relevant block.
+      NonLocalDepInfo NonLocalDeps;
+      /// Size - The maximum size of the dereferences of the
+      /// pointer. May be UnknownSize if the sizes are unknown.
+      uint64_t Size;
+      /// TBAATag - The TBAA tag associated with dereferences of the
+      /// pointer. May be null if there are no tags or conflicting tags.
+      const MDNode *TBAATag;
+
+      NonLocalPointerInfo() : Size(AliasAnalysis::UnknownSize), TBAATag(0) {}
+    };
+
     /// CachedNonLocalPointerInfo - This map stores the cached results of doing
     /// a pointer lookup at the bottom of a block.  The key of this map is the
     /// pointer+isload bit, the value is a list of <bb->result> mappings.
-    typedef DenseMap<ValueIsLoadPair, std::pair<BBSkipFirstBlockPair, 
-                  NonLocalDepInfo> > CachedNonLocalPointerInfo;
+    typedef DenseMap<ValueIsLoadPair,
+                     NonLocalPointerInfo> CachedNonLocalPointerInfo;
     CachedNonLocalPointerInfo NonLocalPointerDeps;
 
     // A map from instructions to their non-local pointer dependencies.
@@ -297,10 +314,10 @@ namespace llvm {
     /// set of instructions that either define or clobber the value.
     ///
     /// This method assumes the pointer has a "NonLocal" dependency within BB.
-    void getNonLocalPointerDependency(Value *Pointer, bool isLoad,
-                                      BasicBlock *BB,
+    void getNonLocalPointerDependency(const AliasAnalysis::Location &Loc,
+                                      bool isLoad, BasicBlock *BB,
                                     SmallVectorImpl<NonLocalDepResult> &Result);
-    
+
     /// removeInstruction - Remove an instruction from the dependence analysis,
     /// updating the dependence of instructions that previously depended on it.
     void removeInstruction(Instruction *InstToRemove);
@@ -319,19 +336,20 @@ namespace llvm {
     void invalidateCachedPredecessors();
     
   private:
-    MemDepResult getPointerDependencyFrom(Value *Pointer, uint64_t MemSize,
+    MemDepResult getPointerDependencyFrom(const AliasAnalysis::Location &Loc,
                                           bool isLoad, 
                                           BasicBlock::iterator ScanIt,
                                           BasicBlock *BB);
     MemDepResult getCallSiteDependencyFrom(CallSite C, bool isReadOnlyCall,
                                            BasicBlock::iterator ScanIt,
                                            BasicBlock *BB);
-    bool getNonLocalPointerDepFromBB(const PHITransAddr &Pointer, uint64_t Size,
+    bool getNonLocalPointerDepFromBB(const PHITransAddr &Pointer,
+                                     const AliasAnalysis::Location &Loc,
                                      bool isLoad, BasicBlock *BB,
                                      SmallVectorImpl<NonLocalDepResult> &Result,
                                      DenseMap<BasicBlock*, Value*> &Visited,
                                      bool SkipFirstBlock = false);
-    MemDepResult GetNonLocalInfoForBlock(Value *Pointer, uint64_t PointeeSize,
+    MemDepResult GetNonLocalInfoForBlock(const AliasAnalysis::Location &Loc,
                                          bool isLoad, BasicBlock *BB,
                                          NonLocalDepInfo *Cache,
                                          unsigned NumSortedEntries);

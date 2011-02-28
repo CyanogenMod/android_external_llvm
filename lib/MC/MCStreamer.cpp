@@ -9,13 +9,16 @@
 
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCObjectWriter.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Twine.h"
 #include <cstdlib>
 using namespace llvm;
 
-MCStreamer::MCStreamer(MCContext &Ctx) : Context(Ctx), CurSection(0) {
+MCStreamer::MCStreamer(MCContext &Ctx) : Context(Ctx), CurSection(0),
+                                         PrevSection(0) {
 }
 
 MCStreamer::~MCStreamer() {
@@ -32,6 +35,18 @@ raw_ostream &MCStreamer::GetCommentOS() {
 void MCStreamer::EmitIntValue(uint64_t Value, unsigned Size,
                               unsigned AddrSpace) {
   EmitValue(MCConstantExpr::Create(Value, getContext()), Size, AddrSpace);
+}
+
+/// EmitULEB128Value - Special case of EmitULEB128Value that avoids the
+/// client having to pass in a MCExpr for constant integers.
+void MCStreamer::EmitULEB128IntValue(uint64_t Value, unsigned AddrSpace) {
+  EmitULEB128Value(MCConstantExpr::Create(Value, getContext()), AddrSpace);
+}
+
+/// EmitSLEB128Value - Special case of EmitSLEB128Value that avoids the
+/// client having to pass in a MCExpr for constant integers.
+void MCStreamer::EmitSLEB128IntValue(int64_t Value, unsigned AddrSpace) {
+  EmitSLEB128Value(MCConstantExpr::Create(Value, getContext()), AddrSpace);
 }
 
 void MCStreamer::EmitSymbolValue(const MCSymbol *Sym, unsigned Size,

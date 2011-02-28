@@ -402,3 +402,89 @@ if.else:                                          ; preds = %entry
   store i32 %tmp5, i32* %res
   br label %if.end
 }
+
+; PR4413
+declare i32 @ext()
+; CHECK: @test17
+define i32 @test17(i1 %a) {
+entry:
+    br i1 %a, label %bb1, label %bb2
+
+bb1:        ; preds = %entry
+    %0 = tail call i32 @ext()        ; <i32> [#uses=1]
+    br label %bb2
+
+bb2:        ; preds = %bb1, %entry
+    %cond = phi i1 [ true, %bb1 ], [ false, %entry ]        ; <i1> [#uses=1]
+; CHECK-NOT: %val = phi i32 [ %0, %bb1 ], [ 0, %entry ]
+    %val = phi i32 [ %0, %bb1 ], [ 0, %entry ]        ; <i32> [#uses=1]
+    %res = select i1 %cond, i32 %val, i32 0        ; <i32> [#uses=1]
+; CHECK: ret i32 %cond
+    ret i32 %res
+}
+
+define i1 @test18(i1 %cond) {
+  %zero = alloca i32
+  %one = alloca i32
+  br i1 %cond, label %true, label %false
+true:
+  br label %ret
+false:
+  br label %ret
+ret:
+  %ptr = phi i32* [ %zero, %true ] , [ %one, %false ]
+  %isnull = icmp eq i32* %ptr, null
+  ret i1 %isnull
+; CHECK: @test18
+; CHECK: ret i1 false
+}
+
+define i1 @test19(i1 %cond, double %x) {
+  br i1 %cond, label %true, label %false
+true:
+  br label %ret
+false:
+  br label %ret
+ret:
+  %p = phi double [ %x, %true ], [ 0x7FF0000000000000, %false ]; RHS = +infty
+  %cmp = fcmp ule double %x, %p
+  ret i1 %cmp
+; CHECK: @test19
+; CHECK: ret i1 true
+}
+
+define i1 @test20(i1 %cond) {
+  %a = alloca i32
+  %b = alloca i32
+  %c = alloca i32
+  br i1 %cond, label %true, label %false
+true:
+  br label %ret
+false:
+  br label %ret
+ret:
+  %p = phi i32* [ %a, %true ], [ %b, %false ]
+  %r = icmp eq i32* %p, %c
+  ret i1 %r
+; CHECK: @test20
+; CHECK: ret i1 false
+}
+
+define i1 @test21(i1 %c1, i1 %c2) {
+  %a = alloca i32
+  %b = alloca i32
+  %c = alloca i32
+  br i1 %c1, label %true, label %false
+true:
+  br label %loop
+false:
+  br label %loop
+loop:
+  %p = phi i32* [ %a, %true ], [ %b, %false ], [ %p, %loop ]
+  %r = icmp eq i32* %p, %c
+  br i1 %c2, label %ret, label %loop
+ret:
+  ret i1 %r
+; CHECK: @test21
+; CHECK: ret i1 false
+}

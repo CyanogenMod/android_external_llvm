@@ -46,6 +46,7 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Type.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -64,13 +65,16 @@ STATISTIC(NumNested  , "Number of nested loops split out");
 namespace {
   struct LoopSimplify : public LoopPass {
     static char ID; // Pass identification, replacement for typeid
-    LoopSimplify() : LoopPass(ID) {}
+    LoopSimplify() : LoopPass(ID) {
+      initializeLoopSimplifyPass(*PassRegistry::getPassRegistry());
+    }
 
     // AA - If we have an alias analysis object to update, this is it, otherwise
     // this is null.
     AliasAnalysis *AA;
     LoopInfo *LI;
     DominatorTree *DT;
+    ScalarEvolution *SE;
     Loop *L;
     virtual bool runOnLoop(Loop *L, LPPassManager &LPM);
 
@@ -83,7 +87,7 @@ namespace {
       AU.addPreserved<LoopInfo>();
 
       AU.addPreserved<AliasAnalysis>();
-      AU.addPreserved("scalar-evolution");
+      AU.addPreserved<ScalarEvolution>();
       AU.addPreservedID(BreakCriticalEdgesID);  // No critical edges added.
       AU.addPreserved<DominanceFrontier>();
       AU.addPreservedID(LCSSAID);
@@ -105,8 +109,12 @@ namespace {
 }
 
 char LoopSimplify::ID = 0;
-INITIALIZE_PASS(LoopSimplify, "loopsimplify",
-                "Canonicalize natural loops", true, false);
+INITIALIZE_PASS_BEGIN(LoopSimplify, "loopsimplify",
+                "Canonicalize natural loops", true, false)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_PASS_END(LoopSimplify, "loopsimplify",
+                "Canonicalize natural loops", true, false)
 
 // Publically exposed interface to pass...
 char &llvm::LoopSimplifyID = LoopSimplify::ID;
@@ -121,6 +129,7 @@ bool LoopSimplify::runOnLoop(Loop *l, LPPassManager &LPM) {
   LI = &getAnalysis<LoopInfo>();
   AA = getAnalysisIfAvailable<AliasAnalysis>();
   DT = &getAnalysis<DominatorTree>();
+  SE = getAnalysisIfAvailable<ScalarEvolution>();
 
   Changed |= ProcessLoop(L, LPM);
 
@@ -531,6 +540,12 @@ Loop *LoopSimplify::SeparateNestedLoop(Loop *L, LPPassManager &LPM) {
     }
 
   DEBUG(dbgs() << "LoopSimplify: Splitting out a new outer loop\n");
+
+  // If ScalarEvolution is around and knows anything about values in
+  // this loop, tell it to forget them, because we're about to
+  // substantially change it.
+  if (SE)
+    SE->forgetLoop(L);
 
   BasicBlock *Header = L->getHeader();
   BasicBlock *NewBB = SplitBlockPredecessors(Header, &OuterLoopPreds[0],

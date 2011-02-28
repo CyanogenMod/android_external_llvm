@@ -70,6 +70,8 @@ std::string Attribute::getAsString(Attributes Attrs) {
     Result += "noimplicitfloat ";
   if (Attrs & Attribute::Naked)
     Result += "naked ";
+  if (Attrs & Attribute::Hotpatch)
+    Result += "hotpatch ";
   if (Attrs & Attribute::StackAlignment) {
     Result += "alignstack(";
     Result += utostr(Attribute::getStackAlignmentFromAttrs(Attrs));
@@ -104,7 +106,10 @@ Attributes Attribute::typeIncompatible(const Type *Ty) {
 // AttributeListImpl Definition
 //===----------------------------------------------------------------------===//
 
+
 namespace llvm {
+static ManagedStatic<sys::SmartMutex<true> > ALMutex;
+
 class AttributeListImpl : public FoldingSetNode {
   sys::cas_flag RefCount;
   
@@ -120,10 +125,15 @@ public:
     RefCount = 0;
   }
   
-  void AddRef() { sys::AtomicIncrement(&RefCount); }
+  void AddRef() {
+    sys::SmartScopedLock<true> Lock(*ALMutex);
+    ++RefCount;
+  }
   void DropRef() {
-    sys::cas_flag old = sys::AtomicDecrement(&RefCount);
-    if (old == 0) delete this;
+    sys::SmartScopedLock<true> Lock(*ALMutex);
+    sys::cas_flag new_val = --RefCount;
+    if (new_val == 0)
+      delete this;
   }
   
   void Profile(FoldingSetNodeID &ID) const {
@@ -137,11 +147,10 @@ public:
 };
 }
 
-static ManagedStatic<sys::SmartMutex<true> > ALMutex;
 static ManagedStatic<FoldingSet<AttributeListImpl> > AttributesLists;
 
 AttributeListImpl::~AttributeListImpl() {
-  sys::SmartScopedLock<true> Lock(*ALMutex);
+  // NOTE: Lock must be acquired by caller.
   AttributesLists->RemoveNode(this);
 }
 
@@ -195,6 +204,7 @@ AttrListPtr::AttrListPtr(const AttrListPtr &P) : AttrList(P.AttrList) {
 }
 
 const AttrListPtr &AttrListPtr::operator=(const AttrListPtr &RHS) {
+  sys::SmartScopedLock<true> Lock(*ALMutex);
   if (AttrList == RHS.AttrList) return *this;
   if (AttrList) AttrList->DropRef();
   AttrList = RHS.AttrList;

@@ -12,14 +12,18 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCCodeEmitter.h"
+#include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/Target/TargetAsmBackend.h"
 using namespace llvm;
 
 MCObjectStreamer::MCObjectStreamer(MCContext &Context, TargetAsmBackend &TAB,
-                                   raw_ostream &_OS, MCCodeEmitter *_Emitter)
+                                   raw_ostream &_OS, MCCodeEmitter *_Emitter,
+                                   bool _PadSectionToAlignment)
   : MCStreamer(Context), Assembler(new MCAssembler(Context, TAB,
-                                                   *_Emitter, _OS)),
+                                                   *_Emitter,
+                                                   _PadSectionToAlignment,
+                                                   _OS)),
     CurSectionData(0)
 {
 }
@@ -71,14 +75,63 @@ const MCExpr *MCObjectStreamer::AddValueSymbols(const MCExpr *Value) {
   return Value;
 }
 
+void MCObjectStreamer::EmitULEB128Value(const MCExpr *Value,
+                                        unsigned AddrSpace) {
+  new MCLEBFragment(*Value, false, getCurrentSectionData());
+}
+
+void MCObjectStreamer::EmitSLEB128Value(const MCExpr *Value,
+                                        unsigned AddrSpace) {
+  new MCLEBFragment(*Value, true, getCurrentSectionData());
+}
+
+void MCObjectStreamer::EmitWeakReference(MCSymbol *Alias,
+                                         const MCSymbol *Symbol) {
+  report_fatal_error("This file format doesn't support weak aliases.");
+}
+
 void MCObjectStreamer::SwitchSection(const MCSection *Section) {
   assert(Section && "Cannot switch to a null section!");
 
   // If already in this section, then this is a noop.
   if (Section == CurSection) return;
 
+  PrevSection = CurSection;
   CurSection = Section;
   CurSectionData = &getAssembler().getOrCreateSectionData(*Section);
+}
+
+void MCObjectStreamer::EmitInstruction(const MCInst &Inst) {
+  // Scan for values.
+  for (unsigned i = Inst.getNumOperands(); i--; )
+    if (Inst.getOperand(i).isExpr())
+      AddValueSymbols(Inst.getOperand(i).getExpr());
+
+  getCurrentSectionData()->setHasInstructions(true);
+
+  // Now that a machine instruction has been assembled into this section, make
+  // a line entry for any .loc directive that has been seen.
+  MCLineEntry::Make(this, getCurrentSection());
+
+  // If this instruction doesn't need relaxation, just emit it as data.
+  if (!getAssembler().getBackend().MayNeedRelaxation(Inst)) {
+    EmitInstToData(Inst);
+    return;
+  }
+
+  // Otherwise, if we are relaxing everything, relax the instruction as much as
+  // possible and emit it as data.
+  if (getAssembler().getRelaxAll()) {
+    MCInst Relaxed;
+    getAssembler().getBackend().RelaxInstruction(Inst, Relaxed);
+    while (getAssembler().getBackend().MayNeedRelaxation(Relaxed))
+      getAssembler().getBackend().RelaxInstruction(Relaxed, Relaxed);
+    EmitInstToData(Relaxed);
+    return;
+  }
+
+  // Otherwise emit to a separate fragment.
+  EmitInstToFragment(Inst);
 }
 
 void MCObjectStreamer::Finish() {

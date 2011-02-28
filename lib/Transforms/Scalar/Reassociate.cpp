@@ -77,7 +77,9 @@ namespace {
     bool MadeChange;
   public:
     static char ID; // Pass identification, replacement for typeid
-    Reassociate() : FunctionPass(ID) {}
+    Reassociate() : FunctionPass(ID) {
+      initializeReassociatePass(*PassRegistry::getPassRegistry());
+    }
 
     bool runOnFunction(Function &F);
 
@@ -104,7 +106,7 @@ namespace {
 
 char Reassociate::ID = 0;
 INITIALIZE_PASS(Reassociate, "reassociate",
-                "Reassociate expressions", false, false);
+                "Reassociate expressions", false, false)
 
 // Public interface to the Reassociate pass
 FunctionPass *llvm::createReassociatePass() { return new Reassociate(); }

@@ -176,7 +176,7 @@ include "X86CallingConv.td"
 
 
 //===----------------------------------------------------------------------===//
-// Assembly Printers
+// Assembly Parser
 //===----------------------------------------------------------------------===//
 
 // Currently the X86 assembly parser only supports ATT syntax.
@@ -191,15 +191,21 @@ def ATTAsmParser : AsmParser {
   string RegisterPrefix = "%";
 }
 
+//===----------------------------------------------------------------------===//
+// Assembly Printers
+//===----------------------------------------------------------------------===//
+
 // The X86 target supports two different syntaxes for emitting machine code.
 // This is controlled by the -x86-asm-syntax={att|intel}
 def ATTAsmWriter : AsmWriter {
   string AsmWriterClassName  = "ATTInstPrinter";
   int Variant = 0;
+  bit isMCAsmWriter = 1;
 }
 def IntelAsmWriter : AsmWriter {
   string AsmWriterClassName  = "IntelInstPrinter";
   int Variant = 1;
+  bit isMCAsmWriter = 1;
 }
 
 def X86 : Target {

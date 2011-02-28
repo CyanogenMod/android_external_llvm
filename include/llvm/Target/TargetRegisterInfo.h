@@ -123,7 +123,7 @@ public:
   /// hasType - return true if this TargetRegisterClass has the ValueType vt.
   ///
   bool hasType(EVT vt) const {
-    for(int i = 0; VTs[i].getSimpleVT().SimpleTy != MVT::Other; ++i)
+    for(int i = 0; VTs[i] != MVT::Other; ++i)
       if (VTs[i] == vt)
         return true;
     return false;
@@ -137,7 +137,7 @@ public:
 
   vt_iterator vt_end() const {
     vt_iterator I = VTs;
-    while (I->getSimpleVT().SimpleTy != MVT::Other) ++I;
+    while (*I != MVT::Other) ++I;
     return I;
   }
 
@@ -227,9 +227,12 @@ public:
   /// cheaper to allocate caller saved registers.
   ///
   /// These methods take a MachineFunction argument, which can be used to tune
-  /// the allocatable registers based on the characteristics of the function.
-  /// One simple example is that the frame pointer register can be used if
-  /// frame-pointer-elimination is performed.
+  /// the allocatable registers based on the characteristics of the function,
+  /// subtarget, or other criteria.
+  ///
+  /// Register allocators should account for the fact that an allocation
+  /// order iterator may return a reserved register and always check
+  /// if the register is allocatable (getAllocatableSet()) before using it.
   ///
   /// By default, these methods return all registers in the class.
   ///
@@ -301,7 +304,7 @@ public:
     /// considered to be a 'virtual' register, which is part of the SSA
     /// namespace.  This must be the same for all targets, which means that each
     /// target is limited to this fixed number of registers.
-    FirstVirtualRegister = 1024
+    FirstVirtualRegister = 16384
   };
 
   /// isPhysicalRegister - Return true if the specified register number is in
@@ -574,13 +577,6 @@ public:
     // Do nothing.
   }
 
-  /// targetHandlesStackFrameRounding - Returns true if the target is
-  /// responsible for rounding up the stack frame (probably at emitPrologue
-  /// time).
-  virtual bool targetHandlesStackFrameRounding() const {
-    return false;
-  }
-
   /// requiresRegisterScavenging - returns true if the target requires (and can
   /// make use of) the register scavenger.
   virtual bool requiresRegisterScavenging(const MachineFunction &MF) const {
@@ -745,12 +741,6 @@ public:
   /// instruction.
   virtual void eliminateFrameIndex(MachineBasicBlock::iterator MI,
                                    int SPAdj, RegScavenger *RS=NULL) const = 0;
-
-  /// emitProlog/emitEpilog - These methods insert prolog and epilog code into
-  /// the function.
-  virtual void emitPrologue(MachineFunction &MF) const = 0;
-  virtual void emitEpilogue(MachineFunction &MF,
-                            MachineBasicBlock &MBB) const = 0;
 
   //===--------------------------------------------------------------------===//
   /// Debug information queries.

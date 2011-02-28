@@ -21,15 +21,14 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/Passes.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Target/TargetLowering.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
-#include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetLowering.h"
+#include <set>
 using namespace llvm;
 
 STATISTIC(NumInvokes, "Number of invokes replaced");
@@ -53,6 +52,7 @@ namespace {
     Constant *SelectorFn;
     Constant *ExceptionFn;
     Constant *CallSiteFn;
+    Constant *DispatchSetupFn;
 
     Value *CallSite;
   public:
@@ -116,6 +116,8 @@ bool SjLjEHPass::doInitialization(Module &M) {
   SelectorFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_selector);
   ExceptionFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_exception);
   CallSiteFn = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_callsite);
+  DispatchSetupFn
+    = Intrinsic::getDeclaration(&M, Intrinsic::eh_sjlj_dispatch_setup);
   PersonalityFn = 0;
 
   return true;
@@ -438,9 +440,17 @@ bool SjLjEHPass::insertSjLjEHSupport(Function &F) {
     BasicBlock *DispatchBlock =
             BasicBlock::Create(F.getContext(), "eh.sjlj.setjmp.catch", &F);
 
-    // Insert a load in the Catch block, and a switch on its value.  By default,
-    // we go to a block that just does an unwind (which is the correct action
-    // for a standard call).
+    // Add a call to dispatch_setup at the start of the dispatch block. This
+    // is expanded to any target-specific setup that needs to be done.
+    Value *SetupArg =
+      CastInst::Create(Instruction::BitCast, FunctionContext,
+                       Type::getInt8PtrTy(F.getContext()), "",
+                       DispatchBlock);
+    CallInst::Create(DispatchSetupFn, SetupArg, "", DispatchBlock);
+
+    // Insert a load of the callsite in the dispatch block, and a switch on
+    // its value.  By default, we go to a block that just does an unwind
+    // (which is the correct action for a standard call).
     BasicBlock *UnwindBlock =
       BasicBlock::Create(F.getContext(), "unwindbb", &F);
     Unwinds.push_back(new UnwindInst(F.getContext(), UnwindBlock));

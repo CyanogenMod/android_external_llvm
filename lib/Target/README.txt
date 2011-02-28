@@ -2,6 +2,38 @@ Target Independent Opportunities:
 
 //===---------------------------------------------------------------------===//
 
+We should recognize idioms for add-with-carry and turn it into the appropriate
+intrinsics.  This example:
+
+unsigned add32carry(unsigned sum, unsigned x) {
+ unsigned z = sum + x;
+ if (sum + x < x)
+     z++;
+ return z;
+}
+
+Compiles to: clang t.c -S -o - -O3 -fomit-frame-pointer -m64 -mkernel
+
+_add32carry:                            ## @add32carry
+	addl	%esi, %edi
+	cmpl	%esi, %edi
+	sbbl	%eax, %eax
+	andl	$1, %eax
+	addl	%edi, %eax
+	ret
+
+with clang, but to:
+
+_add32carry:
+	leal	(%rsi,%rdi), %eax
+	cmpl	%esi, %eax
+	adcl	$0, %eax
+	ret
+
+with gcc.
+
+//===---------------------------------------------------------------------===//
+
 Dead argument elimination should be enhanced to handle cases when an argument is
 dead to an externally visible function.  Though the argument can't be removed
 from the externally visible function, the caller doesn't need to pass it in.
@@ -1308,12 +1340,6 @@ void foo (int a, struct T b)
 
 simplifylibcalls should do several optimizations for strspn/strcspn:
 
-strcspn(x, "") -> strlen(x)
-strcspn("", x) -> 0
-strspn("", x) -> 0
-strspn(x, "") -> strlen(x)
-strspn(x, "a") -> strchr(x, 'a')-x
-
 strcspn(x, "a") -> inlined loop for up to 3 letters (similarly for strspn):
 
 size_t __strcspn_c3 (__const char *__s, int __reject1, int __reject2,
@@ -1937,3 +1963,52 @@ bb3:            ; preds = %entry
         ret i32 %b
 }
 //===---------------------------------------------------------------------===//
+
+clang -O3 fails to devirtualize this virtual inheritance case: (GCC PR45875)
+Looks related to PR3100
+
+struct c1 {};
+struct c10 : c1{
+  virtual void foo ();
+};
+struct c11 : c10, c1{
+  virtual void f6 ();
+};
+struct c28 : virtual c11{
+  void f6 ();
+};
+void check_c28 () {
+  c28 obj;
+  c11 *ptr = &obj;
+  ptr->f6 ();
+}
+
+//===---------------------------------------------------------------------===//
+
+We compile this:
+
+int foo(int a) { return (a & (~15)) / 16; }
+
+Into:
+
+define i32 @foo(i32 %a) nounwind readnone ssp {
+entry:
+  %and = and i32 %a, -16
+  %div = sdiv i32 %and, 16
+  ret i32 %div
+}
+
+but this code (X & -A)/A is X >> log2(A) when A is a power of 2, so this case
+should be instcombined into just "a >> 4".
+
+We do get this at the codegen level, so something knows about it, but 
+instcombine should catch it earlier:
+
+_foo:                                   ## @foo
+## BB#0:                                ## %entry
+	movl	%edi, %eax
+	sarl	$4, %eax
+	ret
+
+//===---------------------------------------------------------------------===//
+

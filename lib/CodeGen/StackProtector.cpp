@@ -62,9 +62,13 @@ namespace {
     bool RequiresStackProtector() const;
   public:
     static char ID;             // Pass identification, replacement for typeid.
-    StackProtector() : FunctionPass(ID), TLI(0) {}
+    StackProtector() : FunctionPass(ID), TLI(0) {
+      initializeStackProtectorPass(*PassRegistry::getPassRegistry());
+    }
     StackProtector(const TargetLowering *tli)
-      : FunctionPass(ID), TLI(tli) {}
+      : FunctionPass(ID), TLI(tli) {
+        initializeStackProtectorPass(*PassRegistry::getPassRegistry());
+      }
 
     virtual bool runOnFunction(Function &Fn);
   };
@@ -72,7 +76,7 @@ namespace {
 
 char StackProtector::ID = 0;
 INITIALIZE_PASS(StackProtector, "stack-protector",
-                "Insert stack protectors", false, false);
+                "Insert stack protectors", false, false)
 
 FunctionPass *llvm::createStackProtectorPass(const TargetLowering *tli) {
   return new StackProtector(tli);

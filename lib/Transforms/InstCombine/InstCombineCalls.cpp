@@ -280,7 +280,8 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
 
     // memmove/cpy/set of zero bytes is a noop.
     if (Constant *NumBytes = dyn_cast<Constant>(MI->getLength())) {
-      if (NumBytes->isNullValue()) return EraseInstFromFunction(CI);
+      if (NumBytes->isNullValue())
+        return EraseInstFromFunction(CI);
 
       if (ConstantInt *CI = dyn_cast<ConstantInt>(NumBytes))
         if (CI->getZExtValue() == 1) {
@@ -289,6 +290,10 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
           // alignment is sufficient.
         }
     }
+    
+    // No other transformations apply to volatile transfers.
+    if (MI->isVolatile())
+      return 0;
 
     // If we have a memmove and the source operation is a constant global,
     // then the source and dest pointers can't alias, so we can change this
@@ -696,6 +701,32 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
       }
     }
     break;
+
+  case Intrinsic::arm_neon_vld1:
+  case Intrinsic::arm_neon_vld2:
+  case Intrinsic::arm_neon_vld3:
+  case Intrinsic::arm_neon_vld4:
+  case Intrinsic::arm_neon_vld2lane:
+  case Intrinsic::arm_neon_vld3lane:
+  case Intrinsic::arm_neon_vld4lane:
+  case Intrinsic::arm_neon_vst1:
+  case Intrinsic::arm_neon_vst2:
+  case Intrinsic::arm_neon_vst3:
+  case Intrinsic::arm_neon_vst4:
+  case Intrinsic::arm_neon_vst2lane:
+  case Intrinsic::arm_neon_vst3lane:
+  case Intrinsic::arm_neon_vst4lane: {
+    unsigned MemAlign = GetOrEnforceKnownAlignment(II->getArgOperand(0));
+    unsigned AlignArg = II->getNumArgOperands() - 1;
+    ConstantInt *IntrAlign = dyn_cast<ConstantInt>(II->getArgOperand(AlignArg));
+    if (IntrAlign && IntrAlign->getZExtValue() < MemAlign) {
+      II->setArgOperand(AlignArg,
+                        ConstantInt::get(Type::getInt32Ty(II->getContext()),
+                                         MemAlign, false));
+      return II;
+    }
+    break;
+  }
 
   case Intrinsic::stackrestore: {
     // If the save is right next to the restore, remove the restore.  This can

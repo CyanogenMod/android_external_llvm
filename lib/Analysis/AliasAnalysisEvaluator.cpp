@@ -50,7 +50,9 @@ namespace {
 
   public:
     static char ID; // Pass identification, replacement for typeid
-    AAEval() : FunctionPass(ID) {}
+    AAEval() : FunctionPass(ID) {
+      initializeAAEvalPass(*PassRegistry::getPassRegistry());
+    }
 
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequired<AliasAnalysis>();
@@ -74,8 +76,11 @@ namespace {
 }
 
 char AAEval::ID = 0;
-INITIALIZE_PASS(AAEval, "aa-eval",
-                "Exhaustive Alias Analysis Precision Evaluator", false, true);
+INITIALIZE_PASS_BEGIN(AAEval, "aa-eval",
+                "Exhaustive Alias Analysis Precision Evaluator", false, true)
+INITIALIZE_AG_DEPENDENCY(AliasAnalysis)
+INITIALIZE_PASS_END(AAEval, "aa-eval",
+                "Exhaustive Alias Analysis Precision Evaluator", false, true)
 
 FunctionPass *llvm::createAAEvalPass() { return new AAEval(); }
 
@@ -163,12 +168,12 @@ bool AAEval::runOnFunction(Function &F) {
   // iterate over the worklist, and run the full (n^2)/2 disambiguations
   for (SetVector<Value *>::iterator I1 = Pointers.begin(), E = Pointers.end();
        I1 != E; ++I1) {
-    unsigned I1Size = ~0u;
+    uint64_t I1Size = AliasAnalysis::UnknownSize;
     const Type *I1ElTy = cast<PointerType>((*I1)->getType())->getElementType();
     if (I1ElTy->isSized()) I1Size = AA.getTypeStoreSize(I1ElTy);
 
     for (SetVector<Value *>::iterator I2 = Pointers.begin(); I2 != I1; ++I2) {
-      unsigned I2Size = ~0u;
+      uint64_t I2Size = AliasAnalysis::UnknownSize;
       const Type *I2ElTy =cast<PointerType>((*I2)->getType())->getElementType();
       if (I2ElTy->isSized()) I2Size = AA.getTypeStoreSize(I2ElTy);
 
@@ -195,7 +200,7 @@ bool AAEval::runOnFunction(Function &F) {
 
     for (SetVector<Value *>::iterator V = Pointers.begin(), Ve = Pointers.end();
          V != Ve; ++V) {
-      unsigned Size = ~0u;
+      uint64_t Size = AliasAnalysis::UnknownSize;
       const Type *ElTy = cast<PointerType>((*V)->getType())->getElementType();
       if (ElTy->isSized()) Size = AA.getTypeStoreSize(ElTy);
 

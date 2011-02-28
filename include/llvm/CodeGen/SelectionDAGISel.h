@@ -34,6 +34,7 @@ namespace llvm {
   class ScheduleHazardRecognizer;
   class GCFunctionInfo;
   class ScheduleDAGSDNodes;
+  class LoadInst;
  
 /// SelectionDAGISel - This is the common base class used for SelectionDAG-based
 /// pattern-matching instruction selectors.
@@ -91,8 +92,8 @@ public:
 
   /// IsLegalToFold - Returns true if the specific operand node N of
   /// U can be folded during instruction selection that starts at Root.
-  /// FIXME: This is a static member function because the PIC16 target,
-  /// which uses it during lowering.
+  /// FIXME: This is a static member function because the MSP430/SystemZ/X86
+  /// targets, which uses it during isel.  This could become a proper member.
   static bool IsLegalToFold(SDValue N, SDNode *U, SDNode *Root,
                             CodeGenOpt::Level OptLevel,
                             bool IgnoreChains = false);
@@ -253,8 +254,9 @@ public:
     return 0;
   }
   
-  virtual bool CheckComplexPattern(SDNode *Root, SDValue N, unsigned PatternNo,
-                                   SmallVectorImpl<SDValue> &Result) {
+  virtual bool CheckComplexPattern(SDNode *Root, SDNode *Parent, SDValue N,
+                                   unsigned PatternNo,
+                        SmallVectorImpl<std::pair<SDValue, SDNode*> > &Result) {
     assert(0 && "Tblgen should generate the implementation of this!");
     return false;
   }
@@ -282,6 +284,7 @@ private:
   
   void PrepareEHLandingPad();
   void SelectAllBasicBlocks(const Function &Fn);
+  bool TryToFoldFastISelLoad(const LoadInst *LI, FastISel *FastIS);
   void FinishBasicBlock();
 
   void SelectBasicBlock(BasicBlock::const_iterator Begin,

@@ -292,7 +292,7 @@ void ARMJITInfo::relocate(void *Function, MachineRelocation *MR,
       *((intptr_t*)RelocPos) |= ResultPtr;
       // Set register Rn to PC.
       *((intptr_t*)RelocPos) |=
-        ARMRegisterInfo::getRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
+        getARMRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
       break;
     }
     case ARM::reloc_arm_so_imm_cp_entry: {
@@ -315,7 +315,7 @@ void ARMJITInfo::relocate(void *Function, MachineRelocation *MR,
       *((intptr_t*)RelocPos) |= ARM_AM::getSOImmValImm((unsigned)SoImmVal);
       // Set register Rn to PC.
       *((intptr_t*)RelocPos) |=
-        ARMRegisterInfo::getRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
+        getARMRegisterNumbering(ARM::PC) << ARMII::RegRnShift;
       break;
     }
     case ARM::reloc_arm_pic_jt:

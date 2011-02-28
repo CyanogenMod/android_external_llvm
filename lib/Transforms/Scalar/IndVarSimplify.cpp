@@ -77,7 +77,9 @@ namespace {
   public:
 
     static char ID; // Pass identification, replacement for typeid
-    IndVarSimplify() : LoopPass(ID) {}
+    IndVarSimplify() : LoopPass(ID) {
+      initializeIndVarSimplifyPass(*PassRegistry::getPassRegistry());
+    }
 
     virtual bool runOnLoop(Loop *L, LPPassManager &LPM);
 
@@ -117,8 +119,16 @@ namespace {
 }
 
 char IndVarSimplify::ID = 0;
-INITIALIZE_PASS(IndVarSimplify, "indvars",
-                "Canonicalize Induction Variables", false, false);
+INITIALIZE_PASS_BEGIN(IndVarSimplify, "indvars",
+                "Canonicalize Induction Variables", false, false)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
+INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
+INITIALIZE_PASS_DEPENDENCY(LCSSA)
+INITIALIZE_PASS_DEPENDENCY(IVUsers)
+INITIALIZE_PASS_END(IndVarSimplify, "indvars",
+                "Canonicalize Induction Variables", false, false)
 
 Pass *llvm::createIndVarSimplifyPass() {
   return new IndVarSimplify();
@@ -346,7 +356,7 @@ void IndVarSimplify::RewriteNonIntegerIVs(Loop *L) {
     PHIs.push_back(PN);
 
   for (unsigned i = 0, e = PHIs.size(); i != e; ++i)
-    if (PHINode *PN = dyn_cast_or_null<PHINode>(PHIs[i]))
+    if (PHINode *PN = dyn_cast_or_null<PHINode>(&*PHIs[i]))
       HandleFloatingPointIV(L, PN);
 
   // If the loop previously had floating-point IV, ScalarEvolution
@@ -395,7 +405,7 @@ void IndVarSimplify::EliminateIVComparisons() {
   // which are now dead.
   while (!DeadInsts.empty())
     if (Instruction *Inst =
-          dyn_cast_or_null<Instruction>(DeadInsts.pop_back_val()))
+        dyn_cast_or_null<Instruction>(&*DeadInsts.pop_back_val()))
       RecursivelyDeleteTriviallyDeadInstructions(Inst);
 }
 
@@ -462,7 +472,7 @@ void IndVarSimplify::EliminateIVRemainders() {
   // which are now dead.
   while (!DeadInsts.empty())
     if (Instruction *Inst =
-          dyn_cast_or_null<Instruction>(DeadInsts.pop_back_val()))
+          dyn_cast_or_null<Instruction>(&*DeadInsts.pop_back_val()))
       RecursivelyDeleteTriviallyDeadInstructions(Inst);
 }
 
@@ -725,7 +735,7 @@ void IndVarSimplify::RewriteIVExpressions(Loop *L, SCEVExpander &Rewriter) {
   // which are now dead.
   while (!DeadInsts.empty())
     if (Instruction *Inst =
-          dyn_cast_or_null<Instruction>(DeadInsts.pop_back_val()))
+          dyn_cast_or_null<Instruction>(&*DeadInsts.pop_back_val()))
       RecursivelyDeleteTriviallyDeadInstructions(Inst);
 }
 

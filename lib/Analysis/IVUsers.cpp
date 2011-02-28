@@ -21,7 +21,6 @@
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
-#include "llvm/Assembly/AsmAnnotationWriter.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
@@ -29,7 +28,13 @@
 using namespace llvm;
 
 char IVUsers::ID = 0;
-INITIALIZE_PASS(IVUsers, "iv-users", "Induction Variable Users", false, true);
+INITIALIZE_PASS_BEGIN(IVUsers, "iv-users",
+                      "Induction Variable Users", false, true)
+INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_PASS_DEPENDENCY(DominatorTree)
+INITIALIZE_PASS_DEPENDENCY(ScalarEvolution)
+INITIALIZE_PASS_END(IVUsers, "iv-users",
+                      "Induction Variable Users", false, true)
 
 Pass *llvm::createIVUsersPass() {
   return new IVUsers();
@@ -144,7 +149,8 @@ IVStrideUse &IVUsers::AddUser(Instruction *User, Value *Operand) {
 }
 
 IVUsers::IVUsers()
- : LoopPass(ID) {
+    : LoopPass(ID) {
+  initializeIVUsersPass(*PassRegistry::getPassRegistry());
 }
 
 void IVUsers::getAnalysisUsage(AnalysisUsage &AU) const {
@@ -179,9 +185,6 @@ void IVUsers::print(raw_ostream &OS, const Module *M) const {
   }
   OS << ":\n";
 
-  // Use a default AssemblyAnnotationWriter to suppress the default info
-  // comments, which aren't relevant here.
-  AssemblyAnnotationWriter Annotator;
   for (ilist<IVStrideUse>::const_iterator UI = IVUses.begin(),
        E = IVUses.end(); UI != E; ++UI) {
     OS << "  ";
@@ -195,7 +198,7 @@ void IVUsers::print(raw_ostream &OS, const Module *M) const {
       OS << ")";
     }
     OS << " in  ";
-    UI->getUser()->print(OS, &Annotator);
+    UI->getUser()->print(OS);
     OS << '\n';
   }
 }

@@ -40,7 +40,9 @@ namespace {
     void printVariableDeclaration(const Value *V);
   public:
     static char ID; // Pass identification
-    PrintDbgInfo() : FunctionPass(ID), Out(errs()) {}
+    PrintDbgInfo() : FunctionPass(ID), Out(errs()) {
+      initializePrintDbgInfoPass(*PassRegistry::getPassRegistry());
+    }
 
     virtual bool runOnFunction(Function &F);
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
@@ -48,9 +50,10 @@ namespace {
     }
   };
   char PrintDbgInfo::ID = 0;
-  INITIALIZE_PASS(PrintDbgInfo, "print-dbginfo",
-                  "Print debug info in human readable form", false, false);
 }
+
+INITIALIZE_PASS(PrintDbgInfo, "print-dbginfo",
+                "Print debug info in human readable form", false, false)
 
 FunctionPass *llvm::createDbgInfoPrinterPass() { return new PrintDbgInfo(); }
 

@@ -23,6 +23,7 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/UniqueVector.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/Support/DebugLoc.h"
 
 namespace llvm {
 
@@ -174,9 +175,6 @@ class DwarfDebug {
   /// DbgVariableToDbgInstMap - Maps DbgVariable to corresponding DBG_VALUE
   /// machine instruction.
   DenseMap<const DbgVariable *, const MachineInstr *> DbgVariableToDbgInstMap;
-
-  /// DbgVariableLabelsMap - Maps DbgVariable to corresponding MCSymbol.
-  DenseMap<const DbgVariable *, const MCSymbol *> DbgVariableLabelsMap;
 
   /// DotDebugLocEntry - This struct describes location entries emitted in
   /// .debug_loc section.
@@ -349,13 +347,13 @@ private:
                   const MachineLocation &Location);
 
   /// addRegisterAddress - Add register location entry in variable DIE.
-  bool addRegisterAddress(DIE *Die, const MCSymbol *VS, const MachineOperand &MO);
+  bool addRegisterAddress(DIE *Die, const MachineOperand &MO);
 
   /// addConstantValue - Add constant value entry in variable DIE.
-  bool addConstantValue(DIE *Die, const MCSymbol *VS, const MachineOperand &MO);
+  bool addConstantValue(DIE *Die, const MachineOperand &MO);
 
   /// addConstantFPValue - Add constant value entry in variable DIE.
-  bool addConstantFPValue(DIE *Die, const MCSymbol *VS, const MachineOperand &MO);
+  bool addConstantFPValue(DIE *Die, const MachineOperand &MO);
 
   /// addComplexAddress - Start with the address based on the location provided,
   /// and generate the DWARF information necessary to find the actual variable
@@ -375,9 +373,9 @@ private:
   void addBlockByrefAddress(DbgVariable *&DV, DIE *Die, unsigned Attribute,
                             const MachineLocation &Location);
 
-  /// addVariableAddress - Add DW_AT_location attribute for a DbgVariable.
-  void addVariableAddress(DbgVariable *&DV, DIE *Die, unsigned Attribute,
-                          const MachineLocation &Location);
+  /// addVariableAddress - Add DW_AT_location attribute for a DbgVariable based
+  /// on provided frame index.
+  void addVariableAddress(DbgVariable *&DV, DIE *Die, int64_t FI);
 
   /// addToContextOwner - Add Die into the list of its context owner's children.
   void addToContextOwner(DIE *Die, DIDescriptor Context);
@@ -421,7 +419,7 @@ private:
   DIE *createMemberDIE(DIDerivedType DT);
 
   /// createSubprogramDIE - Create new DIE using SP.
-  DIE *createSubprogramDIE(DISubprogram SP, bool MakeDecl = false);
+  DIE *createSubprogramDIE(DISubprogram SP);
 
   /// getOrCreateDbgScope - Create DbgScope for the scope.
   DbgScope *getOrCreateDbgScope(const MDNode *Scope, const MDNode *InlinedAt);
@@ -578,9 +576,6 @@ private:
   /// is found. Update FI to hold value of the index.
   bool findVariableFrameIndex(const DbgVariable *V, int *FI);
 
-  /// findVariableLabel - Find MCSymbol for the variable.
-  const MCSymbol *findVariableLabel(const DbgVariable *V);
-
   /// findDbgScope - Find DbgScope for the debug loc attached with an 
   /// instruction.
   DbgScope *findDbgScope(const MachineInstr *MI);
@@ -630,11 +625,11 @@ public:
   /// getLabelAfterInsn - Return Label immediately following the instruction.
   const MCSymbol *getLabelAfterInsn(const MachineInstr *MI);
 
-  /// beginScope - Process beginning of a scope.
-  void beginScope(const MachineInstr *MI);
+  /// beginInstruction - Process beginning of an instruction.
+  void beginInstruction(const MachineInstr *MI);
 
-  /// endScope - Prcess end of a scope.
-  void endScope(const MachineInstr *MI);
+  /// endInstruction - Prcess end of an instruction.
+  void endInstruction(const MachineInstr *MI);
 };
 } // End of namespace llvm
 

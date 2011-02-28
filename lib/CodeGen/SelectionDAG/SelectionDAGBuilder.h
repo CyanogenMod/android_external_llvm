@@ -398,6 +398,10 @@ public:
   void LowerCallTo(ImmutableCallSite CS, SDValue Callee, bool IsTailCall,
                    MachineBasicBlock *LandingPad = NULL);
 
+  /// UpdateSplitBlock - When an MBB was split during scheduling, update the
+  /// references that ned to refer to the last resulting block.
+  void UpdateSplitBlock(MachineBasicBlock *First, MachineBasicBlock *Last);
+
 private:
   // Terminator instructions.
   void visitRet(const ReturnInst &I);
@@ -529,7 +533,7 @@ private:
   /// corresponding DBG_VALUE machine instruction for it now. At the end of 
   /// instruction selection, they will be inserted to the entry BB.
   bool EmitFuncArgumentDbgValue(const Value *V, MDNode *Variable,
-                                uint64_t Offset, const SDValue &N);
+                                int64_t Offset, const SDValue &N);
 };
 
 } // end namespace llvm

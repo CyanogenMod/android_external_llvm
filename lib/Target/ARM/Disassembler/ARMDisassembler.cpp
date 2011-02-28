@@ -89,7 +89,8 @@ static unsigned decodeARMInstruction(uint32_t &insn) {
       return ARM::BFI;
   }
 
-  // Ditto for STRBT, which is a super-instruction for A8.6.199 Encoding A1 & A2.
+  // Ditto for STRBT, which is a super-instruction for A8.6.199 Encodings
+  // A1 & A2.
   // As a result, the decoder fails to deocode USAT properly.
   if (slice(insn, 27, 21) == 0x37 && slice(insn, 5, 4) == 1)
     return ARM::USAT;
@@ -298,7 +299,7 @@ static unsigned T2Morph2LoadLiteral(unsigned Opcode) {
 /// decodeInstruction(insn) is invoked on the original insn.
 ///
 /// Otherwise, decodeThumbInstruction is called with the original insn.
-static unsigned decodeThumbSideEffect(bool IsThumb2, uint32_t &insn) {
+static unsigned decodeThumbSideEffect(bool IsThumb2, unsigned &insn) {
   if (IsThumb2) {
     uint16_t op1 = slice(insn, 28, 27);
     uint16_t op2 = slice(insn, 26, 20);
@@ -354,11 +355,11 @@ static inline bool Thumb2PreloadOpcodeNoPCI(unsigned Opcode) {
   default:
     return false;
   case ARM::t2PLDi12:   case ARM::t2PLDi8:
-  case ARM::t2PLDr:     case ARM::t2PLDs:
+  case ARM::t2PLDs:
   case ARM::t2PLDWi12:  case ARM::t2PLDWi8:
-  case ARM::t2PLDWr:    case ARM::t2PLDWs:
+  case ARM::t2PLDWs:
   case ARM::t2PLIi12:   case ARM::t2PLIi8:
-  case ARM::t2PLIr:     case ARM::t2PLIs:
+  case ARM::t2PLIs:
     return true;
   }
 }
@@ -368,13 +369,13 @@ static inline unsigned T2Morph2Preload2PCI(unsigned Opcode) {
   default:
     return 0;
   case ARM::t2PLDi12:   case ARM::t2PLDi8:
-  case ARM::t2PLDr:     case ARM::t2PLDs:
+  case ARM::t2PLDs:
     return ARM::t2PLDpci;
   case ARM::t2PLDWi12:  case ARM::t2PLDWi8:
-  case ARM::t2PLDWr:    case ARM::t2PLDWs:
+  case ARM::t2PLDWs:
     return ARM::t2PLDWpci;
   case ARM::t2PLIi12:   case ARM::t2PLIi8:
-  case ARM::t2PLIr:     case ARM::t2PLIs:
+  case ARM::t2PLIs:
     return ARM::t2PLIpci;
   }
 }
@@ -436,7 +437,7 @@ bool ThumbDisassembler::getInstruction(MCInst &MI,
   // passed to decodeThumbInstruction().  For 16-bit Thumb instruction, the top
   // halfword of insn is 0x00 0x00; otherwise, the first halfword is moved to
   // the top half followed by the second halfword.
-  uint32_t insn = 0;
+  unsigned insn = 0;
   // Possible second halfword.
   uint16_t insn1 = 0;
 

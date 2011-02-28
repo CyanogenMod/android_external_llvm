@@ -40,6 +40,7 @@
 /* Need these includes to support the LLVM 'cast' template for the C++ 'wrap' 
    and 'unwrap' conversion functions. */
 #include "llvm/Module.h"
+#include "llvm/PassRegistry.h"
 #include "llvm/Support/IRBuilder.h"
 
 extern "C" {
@@ -91,6 +92,9 @@ typedef struct LLVMOpaqueMemoryBuffer *LLVMMemoryBufferRef;
 
 /** See the llvm::PassManagerBase class. */
 typedef struct LLVMOpaquePassManager *LLVMPassManagerRef;
+
+/** See the llvm::PassRegistry class. */
+typedef struct LLVMOpaquePassRegistry *LLVMPassRegistryRef;
 
 /** Used to get the users and usees of a Value. See the llvm::Use class. */
 typedef struct LLVMOpaqueUse *LLVMUseRef;
@@ -204,7 +208,8 @@ typedef enum {
   LLVMPointerTypeKind,     /**< Pointers */
   LLVMOpaqueTypeKind,      /**< Opaque: type with unknown structure */
   LLVMVectorTypeKind,      /**< SIMD 'packed' format, or other vector type */
-  LLVMMetadataTypeKind     /**< Metadata */
+  LLVMMetadataTypeKind,    /**< Metadata */
+  LLVMX86_MMXTypeKind      /**< X86 MMX */
 } LLVMTypeKind;
 
 typedef enum {
@@ -408,10 +413,12 @@ unsigned LLVMGetVectorSize(LLVMTypeRef VectorTy);
 LLVMTypeRef LLVMVoidTypeInContext(LLVMContextRef C);
 LLVMTypeRef LLVMLabelTypeInContext(LLVMContextRef C);
 LLVMTypeRef LLVMOpaqueTypeInContext(LLVMContextRef C);
+LLVMTypeRef LLVMX86MMXTypeInContext(LLVMContextRef C);
 
 LLVMTypeRef LLVMVoidType(void);
 LLVMTypeRef LLVMLabelType(void);
 LLVMTypeRef LLVMOpaqueType(void);
+LLVMTypeRef LLVMX86MMXType(void);
 
 /* Operations on type handles */
 LLVMTypeHandleRef LLVMCreateTypeHandle(LLVMTypeRef PotentiallyAbstractTy);
@@ -1013,6 +1020,11 @@ LLVMBool LLVMCreateMemoryBufferWithSTDIN(LLVMMemoryBufferRef *OutMemBuf,
                                          char **OutMessage);
 void LLVMDisposeMemoryBuffer(LLVMMemoryBufferRef MemBuf);
 
+/*===-- Pass Registry -----------------------------------------------------===*/
+
+/** Return the global pass registry, for use with initialization functions.
+    See llvm::PassRegistry::getPassRegistry. */
+LLVMPassRegistryRef LLVMGetGlobalPassRegistry(void);
 
 /*===-- Pass Managers -----------------------------------------------------===*/
 
@@ -1101,6 +1113,7 @@ namespace llvm {
   DEFINE_SIMPLE_CONVERSION_FUNCTIONS(LLVMContext,        LLVMContextRef       )
   DEFINE_SIMPLE_CONVERSION_FUNCTIONS(Use,                LLVMUseRef           )
   DEFINE_STDCXX_CONVERSION_FUNCTIONS(PassManagerBase,    LLVMPassManagerRef   )
+  DEFINE_STDCXX_CONVERSION_FUNCTIONS(PassRegistry,       LLVMPassRegistryRef  )
   /* LLVMModuleProviderRef exists for historical reasons, but now just holds a
    * Module.
    */

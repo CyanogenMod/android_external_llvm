@@ -36,7 +36,9 @@ namespace {
 
   public:
     static char ID; // Pass identification, replacement for typeid
-    DeadMachineInstructionElim() : MachineFunctionPass(ID) {}
+    DeadMachineInstructionElim() : MachineFunctionPass(ID) {
+     initializeDeadMachineInstructionElimPass(*PassRegistry::getPassRegistry());
+    }
 
   private:
     bool isDead(const MachineInstr *MI) const;
@@ -45,7 +47,7 @@ namespace {
 char DeadMachineInstructionElim::ID = 0;
 
 INITIALIZE_PASS(DeadMachineInstructionElim, "dead-mi-elimination",
-                "Remove dead machine instructions", false, false);
+                "Remove dead machine instructions", false, false)
 
 FunctionPass *llvm::createDeadMachineInstructionElimPass() {
   return new DeadMachineInstructionElim();
@@ -80,9 +82,8 @@ bool DeadMachineInstructionElim::runOnMachineFunction(MachineFunction &MF) {
   TRI = MF.getTarget().getRegisterInfo();
   TII = MF.getTarget().getInstrInfo();
 
-  // Compute a bitvector to represent all non-allocatable physregs.
-  BitVector NonAllocatableRegs = TRI->getAllocatableSet(MF);
-  NonAllocatableRegs.flip();
+  // Treat reserved registers as always live.
+  BitVector ReservedRegs = TRI->getReservedRegs(MF);
 
   // Loop over all instructions in all blocks, from bottom to top, so that it's
   // more likely that chains of dependent but ultimately dead instructions will
@@ -91,9 +92,8 @@ bool DeadMachineInstructionElim::runOnMachineFunction(MachineFunction &MF) {
        I != E; ++I) {
     MachineBasicBlock *MBB = &*I;
 
-    // Start out assuming that all non-allocatable registers are live
-    // out of this block.
-    LivePhysRegs = NonAllocatableRegs;
+    // Start out assuming that reserved registers are live out of this block.
+    LivePhysRegs = ReservedRegs;
 
     // Also add any explicit live-out physregs for this block.
     if (!MBB->empty() && MBB->back().getDesc().isReturn())
@@ -103,6 +103,10 @@ bool DeadMachineInstructionElim::runOnMachineFunction(MachineFunction &MF) {
         if (TargetRegisterInfo::isPhysicalRegister(Reg))
           LivePhysRegs.set(Reg);
       }
+
+    // FIXME: Add live-ins from sucessors to LivePhysRegs. Normally, physregs
+    // are not live across blocks, but some targets (x86) can have flags live
+    // out of a block.
 
     // Now scan the instructions and delete dead ones, tracking physreg
     // liveness as we go.

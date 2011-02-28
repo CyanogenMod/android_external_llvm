@@ -35,7 +35,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SystemUtils.h"
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/System/Signals.h"
 #include "llvm/Config/config.h"
 #include <memory>
@@ -98,7 +98,7 @@ static cl::list<std::string> PostLinkOpts("post-link-opts",
 static cl::list<std::string> XLinker("Xlinker", cl::value_desc("option"),
   cl::desc("Pass options to the system linker"));
 
-// Compatibility options that llvm-ld ignores but are supported for 
+// Compatibility options that llvm-ld ignores but are supported for
 // compatibility with LD
 static cl::opt<std::string> CO3("soname", cl::Hidden,
   cl::desc("Compatibility option: ignored"));
@@ -112,13 +112,13 @@ static cl::opt<bool> CO5("eh-frame-hdr", cl::Hidden,
 static  cl::opt<std::string> CO6("h", cl::Hidden,
   cl::desc("Compatibility option: ignored"));
 
-static cl::opt<bool> CO7("start-group", cl::Hidden, 
+static cl::opt<bool> CO7("start-group", cl::Hidden,
   cl::desc("Compatibility option: ignored"));
 
-static cl::opt<bool> CO8("end-group", cl::Hidden, 
+static cl::opt<bool> CO8("end-group", cl::Hidden,
   cl::desc("Compatibility option: ignored"));
 
-static cl::opt<std::string> CO9("m", cl::Hidden, 
+static cl::opt<std::string> CO9("m", cl::Hidden,
   cl::desc("Compatibility option: ignored"));
 
 /// This is just for convenience so it doesn't have to be passed around
@@ -142,7 +142,7 @@ static void PrintAndExit(const std::string &Message, Module *M, int errcode = 1)
 }
 
 static void PrintCommand(const std::vector<const char*> &args) {
-  std::vector<const char*>::const_iterator I = args.begin(), E = args.end(); 
+  std::vector<const char*>::const_iterator I = args.begin(), E = args.end();
   for (; I != E; ++I)
     if (*I)
       errs() << "'" << *I << "'" << " ";
@@ -244,7 +244,7 @@ void GenerateBitcode(Module* M, const std::string& FileName) {
   }
 
   // Write it out
-  WriteBitcodeToFile(M, Out);
+  WriteBitcodeToFile(M, Out.os());
   Out.keep();
 }
 
@@ -384,7 +384,7 @@ static int GenerateNative(const std::string &OutputFilename,
     args.push_back("-framework");
     args.push_back(Frameworks[index]);
   }
-      
+
   // Now that "args" owns all the std::strings for the arguments, call the c_str
   // method to get the underlying string array.  We do this game so that the
   // std::string array is guaranteed to outlive the const char* array.
@@ -414,9 +414,9 @@ static void EmitShellScript(char **argv, Module *M) {
   // Windows doesn't support #!/bin/sh style shell scripts in .exe files.  To
   // support windows systems, we copy the llvm-stub.exe executable from the
   // build tree to the destination file.
-  std::string ErrMsg;  
-  sys::Path llvmstub = FindExecutable("llvm-stub.exe", argv[0],
-                                      (void *)(intptr_t)&Optimize);
+  std::string ErrMsg;
+  sys::Path llvmstub = PrependMainExecutablePath("llvm-stub", argv[0],
+                                                 (void *)(intptr_t)&Optimize);
   if (llvmstub.isEmpty())
     PrintAndExit("Could not find llvm-stub.exe executable!", M);
 
@@ -432,10 +432,10 @@ static void EmitShellScript(char **argv, Module *M) {
   if (!ErrorInfo.empty())
     PrintAndExit(ErrorInfo, M);
 
-  Out2 << "#!/bin/sh\n";
+  Out2.os() << "#!/bin/sh\n";
   // Allow user to setenv LLVMINTERP if lli is not in their PATH.
-  Out2 << "lli=${LLVMINTERP-lli}\n";
-  Out2 << "exec $lli \\\n";
+  Out2.os() << "lli=${LLVMINTERP-lli}\n";
+  Out2.os() << "exec $lli \\\n";
   // gcc accepts -l<lib> and implicitly searches /lib and /usr/lib.
   LibPaths.push_back("/lib");
   LibPaths.push_back("/usr/lib");
@@ -455,7 +455,7 @@ static void EmitShellScript(char **argv, Module *M) {
            E = LibPaths.end(); P != E; ++P) {
       FullLibraryPath = *P;
       FullLibraryPath.appendComponent("lib" + *i);
-      FullLibraryPath.appendSuffix(&(LTDL_SHLIB_EXT[1]));
+      FullLibraryPath.appendSuffix(sys::Path::GetDLLSuffix());
       if (!FullLibraryPath.isEmpty()) {
         if (!FullLibraryPath.isDynamicLibrary()) {
           // Not a native shared library; mark as invalid
@@ -466,9 +466,9 @@ static void EmitShellScript(char **argv, Module *M) {
     if (FullLibraryPath.isEmpty())
       FullLibraryPath = sys::Path::FindLibrary(*i);
     if (!FullLibraryPath.isEmpty())
-      Out2 << "    -load=" << FullLibraryPath.str() << " \\\n";
+      Out2.os() << "    -load=" << FullLibraryPath.str() << " \\\n";
   }
-  Out2 << "    "  << BitcodeOutputFilename << " ${1+\"$@\"}\n";
+  Out2.os() << "    "  << BitcodeOutputFilename << " ${1+\"$@\"}\n";
   Out2.keep();
 }
 
@@ -513,7 +513,18 @@ int main(int argc, char **argv, char **envp) {
 
   LLVMContext &Context = getGlobalContext();
   llvm_shutdown_obj Y;  // Call llvm_shutdown() on exit.
-  
+
+  // Initialize passes
+  PassRegistry &Registry = *PassRegistry::getPassRegistry();
+  initializeCore(Registry);
+  initializeScalarOpts(Registry);
+  initializeIPO(Registry);
+  initializeAnalysis(Registry);
+  initializeIPA(Registry);
+  initializeTransformUtils(Registry);
+  initializeInstCombine(Registry);
+  initializeTarget(Registry);
+
   // Initial global variable above for convenience printing of program name.
   progname = sys::Path(argv[0]).getBasename();
 
@@ -653,8 +664,8 @@ int main(int argc, char **argv, char **envp) {
       sys::RemoveFileOnSignal(AssemblyFile);
 
       // Determine the locations of the llc and gcc programs.
-      sys::Path llc = FindExecutable("llc", argv[0],
-                                     (void *)(intptr_t)&Optimize);
+      sys::Path llc = PrependMainExecutablePath("llc", argv[0],
+                                                (void *)(intptr_t)&Optimize);
       if (llc.isEmpty())
         PrintAndExit("Failed to find llc", Composite.get());
 
@@ -680,8 +691,8 @@ int main(int argc, char **argv, char **envp) {
       sys::RemoveFileOnSignal(CFile);
 
       // Determine the locations of the llc and gcc programs.
-      sys::Path llc = FindExecutable("llc", argv[0],
-                                     (void *)(intptr_t)&Optimize);
+      sys::Path llc = PrependMainExecutablePath("llc", argv[0],
+                                                (void *)(intptr_t)&Optimize);
       if (llc.isEmpty())
         PrintAndExit("Failed to find llc", Composite.get());
 
@@ -694,7 +705,7 @@ int main(int argc, char **argv, char **envp) {
       if (GenerateCFile(CFile.str(), BitcodeOutputFilename, llc, ErrMsg))
         PrintAndExit(ErrMsg, Composite.get());
 
-      if (GenerateNative(OutputFilename, CFile.str(), 
+      if (GenerateNative(OutputFilename, CFile.str(),
                          NativeLinkItems, gcc, envp, ErrMsg))
         PrintAndExit(ErrMsg, Composite.get());
     } else {

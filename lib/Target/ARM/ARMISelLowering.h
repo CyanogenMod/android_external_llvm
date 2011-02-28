@@ -71,8 +71,9 @@ namespace llvm {
       VMOVRRD,      // double to two gprs.
       VMOVDRR,      // Two gprs to double.
 
-      EH_SJLJ_SETJMP,    // SjLj exception handling setjmp.
-      EH_SJLJ_LONGJMP,   // SjLj exception handling longjmp.
+      EH_SJLJ_SETJMP,         // SjLj exception handling setjmp.
+      EH_SJLJ_LONGJMP,        // SjLj exception handling longjmp.
+      EH_SJLJ_DISPATCHSETUP,  // SjLj exception handling dispatch setup.
 
       TC_RETURN,    // Tail call return pseudo.
 
@@ -80,13 +81,20 @@ namespace llvm {
 
       DYN_ALLOC,    // Dynamic allocation on the stack.
 
-      MEMBARRIER,   // Memory barrier
-      SYNCBARRIER,  // Memory sync barrier
+      MEMBARRIER,   // Memory barrier (DMB)
+      MEMBARRIER_MCR, // Memory barrier (MCR)
+
+      PRELOAD,      // Preload
       
       VCEQ,         // Vector compare equal.
+      VCEQZ,        // Vector compare equal to zero.
       VCGE,         // Vector compare greater than or equal.
+      VCGEZ,        // Vector compare greater than or equal to zero.
+      VCLEZ,        // Vector compare less than or equal to zero.
       VCGEU,        // Vector compare unsigned greater than or equal.
       VCGT,         // Vector compare greater than.
+      VCGTZ,        // Vector compare greater than zero.
+      VCLTZ,        // Vector compare less than zero.
       VCGTU,        // Vector compare unsigned greater than.
       VTST,         // Vector test bits.
 
@@ -143,6 +151,10 @@ namespace llvm {
       VUZP,         // unzip (deinterleave)
       VTRN,         // transpose
 
+      // Vector multiply long:
+      VMULLs,       // ...signed
+      VMULLu,       // ...unsigned
+
       // Operands of the standard BUILD_VECTOR node are not legalized, which
       // is fine if BUILD_VECTORs are always lowered to shuffles or other
       // operations, but for ARM some BUILD_VECTORs are legal as-is and their
@@ -155,7 +167,12 @@ namespace llvm {
       FMIN,
 
       // Bit-field insert
-      BFI
+      BFI,
+      
+      // Vector OR with immediate
+      VORRIMM,
+      // Vector AND with NOT of immediate
+      VBICIMM
     };
   }
 
@@ -236,6 +253,12 @@ namespace llvm {
 
 
     ConstraintType getConstraintType(const std::string &Constraint) const;
+
+    /// Examine constraint string and operand type and determine a weight value.
+    /// The operand object must already have been set up with the operand type.
+    ConstraintWeight getSingleConstraintMatchWeight(
+      AsmOperandInfo &info, const char *constraint) const;
+
     std::pair<unsigned, const TargetRegisterClass*>
       getRegForInlineAsmConstraint(const std::string &Constraint,
                                    EVT VT) const;
@@ -284,6 +307,9 @@ namespace llvm {
     /// materialize the FP immediate as a load from a constant pool.
     virtual bool isFPImmLegal(const APFloat &Imm, EVT VT) const;
 
+    virtual bool getTgtMemIntrinsic(IntrinsicInfo &Info,
+                                    const CallInst &I,
+                                    unsigned Intrinsic) const;
   protected:
     std::pair<const TargetRegisterClass*, uint8_t>
     findRepresentativeClass(EVT VT) const;
@@ -294,6 +320,8 @@ namespace llvm {
     const ARMSubtarget *Subtarget;
 
     const TargetRegisterInfo *RegInfo;
+
+    const InstrItineraryData *Itins;
 
     /// ARMPCLabelIndex - Keep track of the number of ARM PC labels created.
     ///
@@ -323,6 +351,7 @@ namespace llvm {
                              ISD::ArgFlagsTy Flags) const;
     SDValue LowerEH_SJLJ_SETJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerEH_SJLJ_DISPATCHSETUP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG,
                                     const ARMSubtarget *Subtarget) const;
     SDValue LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const;
@@ -403,6 +432,13 @@ namespace llvm {
                                         unsigned BinOpcode) const;
 
   };
+  
+  enum NEONModImmType {
+    VMOVModImm,
+    VMVNModImm,
+    OtherModImm
+  };
+  
   
   namespace ARM {
     FastISel *createFastISel(FunctionLoweringInfo &funcInfo);

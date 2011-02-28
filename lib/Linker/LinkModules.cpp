@@ -97,15 +97,6 @@ public:
     return 0;
   }
 
-  /// erase - Remove the specified type, returning true if it was in the set.
-  bool erase(const Type *Ty) {
-    if (!TheMap.erase(Ty))
-      return false;
-    if (Ty->isAbstract())
-      Ty->removeAbstractTypeUser(this);
-    return true;
-  }
-
   /// insert - This returns true if the pointer was new to the set, false if it
   /// was already in the set.
   bool insert(const Type *Src, const Type *Dst) {
@@ -677,6 +668,13 @@ static bool LinkAlias(Module *Dest, const Module *Src,
     GlobalValue* DAliasee = cast<GlobalValue>(VMI->second);
     GlobalValue* DGV = NULL;
 
+    // Fixup aliases to bitcasts.  Note that aliases to GEPs are still broken
+    // by this, but aliases to GEPs are broken to a lot of other things, so
+    // it's less important.
+    Constant *DAliaseeConst = DAliasee;
+    if (SGA->getType() != DAliasee->getType())
+      DAliaseeConst = ConstantExpr::getBitCast(DAliasee, SGA->getType());
+
     // Try to find something 'similar' to SGA in destination module.
     if (!DGV && !SGA->hasLocalLinkage()) {
       DGV = Dest->getNamedAlias(SGA->getName());
@@ -730,7 +728,7 @@ static bool LinkAlias(Module *Dest, const Module *Src,
                        "': aliasee is not global variable");
 
         NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
-                                SGA->getName(), DAliasee, Dest);
+                                SGA->getName(), DAliaseeConst, Dest);
         CopyGVAttributes(NewGA, SGA);
 
         // Any uses of DGV need to change to NewGA, with cast, if needed.
@@ -759,7 +757,7 @@ static bool LinkAlias(Module *Dest, const Module *Src,
                        "': aliasee is not function");
 
         NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
-                                SGA->getName(), DAliasee, Dest);
+                                SGA->getName(), DAliaseeConst, Dest);
         CopyGVAttributes(NewGA, SGA);
 
         // Any uses of DF need to change to NewGA, with cast, if needed.
@@ -781,14 +779,8 @@ static bool LinkAlias(Module *Dest, const Module *Src,
     } else {
       // No linking to be performed, simply create an identical version of the
       // alias over in the dest module...
-      Constant *Aliasee = DAliasee;
-      // Fixup aliases to bitcasts.  Note that aliases to GEPs are still broken
-      // by this, but aliases to GEPs are broken to a lot of other things, so
-      // it's less important.
-      if (SGA->getType() != DAliasee->getType())
-        Aliasee = ConstantExpr::getBitCast(DAliasee, SGA->getType());
       NewGA = new GlobalAlias(SGA->getType(), SGA->getLinkage(),
-                              SGA->getName(), Aliasee, Dest);
+                              SGA->getName(), DAliaseeConst, Dest);
       CopyGVAttributes(NewGA, SGA);
 
       // Proceed to 'common' steps

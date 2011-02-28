@@ -77,7 +77,6 @@ namespace {
     bool redoLoop;
 
     Loop *currentLoop;
-    DominanceFrontier *DF;
     DominatorTree *DT;
     BasicBlock *loopHeader;
     BasicBlock *loopPreheader;
@@ -93,14 +92,16 @@ namespace {
     static char ID; // Pass ID, replacement for typeid
     explicit LoopUnswitch(bool Os = false) : 
       LoopPass(ID), OptimizeForSize(Os), redoLoop(false), 
-      currentLoop(NULL), DF(NULL), DT(NULL), loopHeader(NULL),
-      loopPreheader(NULL) {}
+      currentLoop(NULL), DT(NULL), loopHeader(NULL),
+      loopPreheader(NULL) {
+        initializeLoopUnswitchPass(*PassRegistry::getPassRegistry());
+      }
 
     bool runOnLoop(Loop *L, LPPassManager &LPM);
     bool processCurrentLoop();
 
     /// This transformation requires natural loop information & requires that
-    /// loop preheaders be inserted into the CFG...
+    /// loop preheaders be inserted into the CFG.
     ///
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
       AU.addRequiredID(LoopSimplifyID);
@@ -110,7 +111,6 @@ namespace {
       AU.addRequiredID(LCSSAID);
       AU.addPreservedID(LCSSAID);
       AU.addPreserved<DominatorTree>();
-      AU.addPreserved<DominanceFrontier>();
     }
 
   private:
@@ -160,7 +160,13 @@ namespace {
   };
 }
 char LoopUnswitch::ID = 0;
-INITIALIZE_PASS(LoopUnswitch, "loop-unswitch", "Unswitch loops", false, false);
+INITIALIZE_PASS_BEGIN(LoopUnswitch, "loop-unswitch", "Unswitch loops",
+                      false, false)
+INITIALIZE_PASS_DEPENDENCY(LoopSimplify)
+INITIALIZE_PASS_DEPENDENCY(LoopInfo)
+INITIALIZE_PASS_DEPENDENCY(LCSSA)
+INITIALIZE_PASS_END(LoopUnswitch, "loop-unswitch", "Unswitch loops",
+                      false, false)
 
 Pass *llvm::createLoopUnswitchPass(bool Os) { 
   return new LoopUnswitch(Os); 
@@ -201,7 +207,6 @@ static Value *FindLIVLoopCondition(Value *Cond, Loop *L, bool &Changed) {
 bool LoopUnswitch::runOnLoop(Loop *L, LPPassManager &LPM_Ref) {
   LI = &getAnalysis<LoopInfo>();
   LPM = &LPM_Ref;
-  DF = getAnalysisIfAvailable<DominanceFrontier>();
   DT = getAnalysisIfAvailable<DominatorTree>();
   currentLoop = L;
   Function *F = currentLoop->getHeader()->getParent();
@@ -216,8 +221,6 @@ bool LoopUnswitch::runOnLoop(Loop *L, LPPassManager &LPM_Ref) {
     // FIXME: Reconstruct dom info, because it is not preserved properly.
     if (DT)
       DT->runOnFunction(*F);
-    if (DF)
-      DF->runOnFunction(*F);
   }
   return Changed;
 }
@@ -282,19 +285,18 @@ bool LoopUnswitch::processCurrentLoop() {
   return Changed;
 }
 
-/// isTrivialLoopExitBlock - Check to see if all paths from BB either:
-///   1. Exit the loop with no side effects.
-///   2. Branch to the latch block with no side-effects.
+/// isTrivialLoopExitBlock - Check to see if all paths from BB exit the
+/// loop with no side effects (including infinite loops).
 ///
-/// If these conditions are true, we return true and set ExitBB to the block we
+/// If true, we return true and set ExitBB to the block we
 /// exit through.
 ///
 static bool isTrivialLoopExitBlockHelper(Loop *L, BasicBlock *BB,
                                          BasicBlock *&ExitBB,
                                          std::set<BasicBlock*> &Visited) {
   if (!Visited.insert(BB).second) {
-    // Already visited and Ok, end of recursion.
-    return true;
+    // Already visited. Without more analysis, this could indicate an infinte loop.
+    return false;
   } else if (!L->contains(BB)) {
     // Otherwise, this is a loop exit, this is fine so long as this is the
     // first exit.
@@ -324,7 +326,7 @@ static bool isTrivialLoopExitBlockHelper(Loop *L, BasicBlock *BB,
 /// process.  If so, return the block that is exited to, otherwise return null.
 static BasicBlock *isTrivialLoopExitBlock(Loop *L, BasicBlock *BB) {
   std::set<BasicBlock*> Visited;
-  Visited.insert(L->getHeader());  // Branches to header are ok.
+  Visited.insert(L->getHeader());  // Branches to header make infinite loops.
   BasicBlock *ExitBB = 0;
   if (isTrivialLoopExitBlockHelper(L, BB, ExitBB, Visited))
     return ExitBB;
@@ -356,8 +358,8 @@ bool LoopUnswitch::IsTrivialUnswitchCondition(Value *Cond, Constant **Val,
     if (!BI->isConditional() || BI->getCondition() != Cond)
       return false;
   
-    // Check to see if a successor of the branch is guaranteed to go to the
-    // latch block or exit through a one exit block without having any 
+    // Check to see if a successor of the branch is guaranteed to 
+    // exit through a unique exit block without having any 
     // side-effects.  If so, determine the value of Cond that causes it to do
     // this.
     if ((LoopExitBB = isTrivialLoopExitBlock(currentLoop, 
@@ -460,10 +462,10 @@ bool LoopUnswitch::UnswitchIfProfitable(Value *LoopCond, Constant *Val) {
 // current values into those specified by VMap.
 //
 static inline void RemapInstruction(Instruction *I,
-                                    ValueMap<const Value *, Value*> &VMap) {
+                                    ValueToValueMapTy &VMap) {
   for (unsigned op = 0, E = I->getNumOperands(); op != E; ++op) {
     Value *Op = I->getOperand(op);
-    ValueMap<const Value *, Value*>::iterator It = VMap.find(Op);
+    ValueToValueMapTy::iterator It = VMap.find(Op);
     if (It != VMap.end()) Op = It->second;
     I->setOperand(op, Op);
   }
@@ -471,7 +473,7 @@ static inline void RemapInstruction(Instruction *I,
 
 /// CloneLoop - Recursively clone the specified loop and all of its children,
 /// mapping the blocks with the specified map.
-static Loop *CloneLoop(Loop *L, Loop *PL, ValueMap<const Value*, Value*> &VM,
+static Loop *CloneLoop(Loop *L, Loop *PL, ValueToValueMapTy &VM,
                        LoopInfo *LI, LPPassManager *LPM) {
   Loop *New = new Loop();
   LPM->insertLoop(New, PL);
@@ -615,7 +617,7 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
   // the loop preheader and exit blocks), keeping track of the mapping between
   // the instructions and blocks.
   NewBlocks.reserve(LoopBlocks.size());
-  ValueMap<const Value*, Value*> VMap;
+  ValueToValueMapTy VMap;
   for (unsigned i = 0, e = LoopBlocks.size(); i != e; ++i) {
     BasicBlock *NewBB = CloneBasicBlock(LoopBlocks[i], VMap, ".us", F);
     NewBlocks.push_back(NewBB);
@@ -653,7 +655,7 @@ void LoopUnswitch::UnswitchNontrivialCondition(Value *LIC, Constant *Val,
     for (BasicBlock::iterator I = ExitSucc->begin(); isa<PHINode>(I); ++I) {
       PN = cast<PHINode>(I);
       Value *V = PN->getIncomingValueForBlock(ExitBlocks[i]);
-      ValueMap<const Value *, Value*>::iterator It = VMap.find(V);
+      ValueToValueMapTy::iterator It = VMap.find(V);
       if (It != VMap.end()) V = It->second;
       PN->addIncoming(V, NewExit);
     }
@@ -992,7 +994,7 @@ void LoopUnswitch::SimplifyCode(std::vector<Instruction*> &Worklist, Loop *L) {
     // See if instruction simplification can hack this up.  This is common for
     // things like "select false, X, Y" after unswitching made the condition be
     // 'false'.
-    if (Value *V = SimplifyInstruction(I)) {
+    if (Value *V = SimplifyInstruction(I, 0, DT)) {
       ReplaceUsesOfWith(I, V, Worklist, L, LPM);
       continue;
     }

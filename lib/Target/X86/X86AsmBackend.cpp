@@ -11,14 +11,15 @@
 #include "X86.h"
 #include "X86FixupKinds.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/MC/ELFObjectWriter.h"
 #include "llvm/MC/MCAssembler.h"
 #include "llvm/MC/MCExpr.h"
+#include "llvm/MC/MCObjectFormat.h"
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/MC/MCSectionCOFF.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSectionMachO.h"
-#include "llvm/MC/MachObjectWriter.h"
+#include "llvm/Support/ELF.h"
+#include "llvm/Support/MachO.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetRegistry.h"
@@ -36,6 +37,8 @@ static unsigned getFixupKindLog2Size(unsigned Kind) {
   case X86::reloc_pcrel_4byte:
   case X86::reloc_riprel_4byte:
   case X86::reloc_riprel_4byte_movq_load:
+  case X86::reloc_signed_4byte:
+  case X86::reloc_global_offset_table:
   case FK_Data_4: return 2;
   case FK_Data_8: return 3;
   }
@@ -63,9 +66,9 @@ public:
 
   bool WriteNopData(uint64_t Count, MCObjectWriter *OW) const;
 };
-} // end anonymous namespace 
+} // end anonymous namespace
 
-static unsigned getRelaxedOpcode(unsigned Op) {
+static unsigned getRelaxedOpcodeBranch(unsigned Op) {
   switch (Op) {
   default:
     return Op;
@@ -90,16 +93,101 @@ static unsigned getRelaxedOpcode(unsigned Op) {
   }
 }
 
+static unsigned getRelaxedOpcodeArith(unsigned Op) {
+  switch (Op) {
+  default:
+    return Op;
+
+    // IMUL
+  case X86::IMUL16rri8: return X86::IMUL16rri;
+  case X86::IMUL16rmi8: return X86::IMUL16rmi;
+  case X86::IMUL32rri8: return X86::IMUL32rri;
+  case X86::IMUL32rmi8: return X86::IMUL32rmi;
+  case X86::IMUL64rri8: return X86::IMUL64rri32;
+  case X86::IMUL64rmi8: return X86::IMUL64rmi32;
+
+    // AND
+  case X86::AND16ri8: return X86::AND16ri;
+  case X86::AND16mi8: return X86::AND16mi;
+  case X86::AND32ri8: return X86::AND32ri;
+  case X86::AND32mi8: return X86::AND32mi;
+  case X86::AND64ri8: return X86::AND64ri32;
+  case X86::AND64mi8: return X86::AND64mi32;
+
+    // OR
+  case X86::OR16ri8: return X86::OR16ri;
+  case X86::OR16mi8: return X86::OR16mi;
+  case X86::OR32ri8: return X86::OR32ri;
+  case X86::OR32mi8: return X86::OR32mi;
+  case X86::OR64ri8: return X86::OR64ri32;
+  case X86::OR64mi8: return X86::OR64mi32;
+
+    // XOR
+  case X86::XOR16ri8: return X86::XOR16ri;
+  case X86::XOR16mi8: return X86::XOR16mi;
+  case X86::XOR32ri8: return X86::XOR32ri;
+  case X86::XOR32mi8: return X86::XOR32mi;
+  case X86::XOR64ri8: return X86::XOR64ri32;
+  case X86::XOR64mi8: return X86::XOR64mi32;
+
+    // ADD
+  case X86::ADD16ri8: return X86::ADD16ri;
+  case X86::ADD16mi8: return X86::ADD16mi;
+  case X86::ADD32ri8: return X86::ADD32ri;
+  case X86::ADD32mi8: return X86::ADD32mi;
+  case X86::ADD64ri8: return X86::ADD64ri32;
+  case X86::ADD64mi8: return X86::ADD64mi32;
+
+    // SUB
+  case X86::SUB16ri8: return X86::SUB16ri;
+  case X86::SUB16mi8: return X86::SUB16mi;
+  case X86::SUB32ri8: return X86::SUB32ri;
+  case X86::SUB32mi8: return X86::SUB32mi;
+  case X86::SUB64ri8: return X86::SUB64ri32;
+  case X86::SUB64mi8: return X86::SUB64mi32;
+
+    // CMP
+  case X86::CMP16ri8: return X86::CMP16ri;
+  case X86::CMP16mi8: return X86::CMP16mi;
+  case X86::CMP32ri8: return X86::CMP32ri;
+  case X86::CMP32mi8: return X86::CMP32mi;
+  case X86::CMP64ri8: return X86::CMP64ri32;
+  case X86::CMP64mi8: return X86::CMP64mi32;
+  }
+}
+
+static unsigned getRelaxedOpcode(unsigned Op) {
+  unsigned R = getRelaxedOpcodeArith(Op);
+  if (R != Op)
+    return R;
+  return getRelaxedOpcodeBranch(Op);
+}
+
 bool X86AsmBackend::MayNeedRelaxation(const MCInst &Inst) const {
+  // Branches can always be relaxed.
+  if (getRelaxedOpcodeBranch(Inst.getOpcode()) != Inst.getOpcode())
+    return true;
+
   // Check if this instruction is ever relaxable.
-  if (getRelaxedOpcode(Inst.getOpcode()) == Inst.getOpcode())
+  if (getRelaxedOpcodeArith(Inst.getOpcode()) == Inst.getOpcode())
     return false;
 
-  // If so, just assume it can be relaxed. Once we support relaxing more complex
-  // instructions we should check that the instruction actually has symbolic
-  // operands before doing this, but we need to be careful about things like
-  // PCrel.
-  return true;
+
+  // Check if it has an expression and is not RIP relative.
+  bool hasExp = false;
+  bool hasRIP = false;
+  for (unsigned i = 0; i < Inst.getNumOperands(); ++i) {
+    const MCOperand &Op = Inst.getOperand(i);
+    if (Op.isExpr())
+      hasExp = true;
+
+    if (Op.isReg() && Op.getReg() == X86::RIP)
+      hasRIP = true;
+  }
+
+  // FIXME: Why exactly do we need the !hasRIP? Is it just a limitation on
+  // how we do relaxations?
+  return hasExp && !hasRIP;
 }
 
 // FIXME: Can tblgen help at all here to verify there aren't other instructions
@@ -147,10 +235,8 @@ bool X86AsmBackend::WriteNopData(uint64_t Count, MCObjectWriter *OW) const {
     {0x66, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00},
     // nopw %cs:0L(%[re]ax,%[re]ax,1)
     {0x66, 0x2e, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00},
-    // nopl 0(%[re]ax,%[re]ax,1)
-    // nopw 0(%[re]ax,%[re]ax,1)
-    {0x0f, 0x1f, 0x44, 0x00, 0x00,
-     0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00},
+    // nopw %cs:0L(%[re]ax,%[re]ax,1)
+    {0x66, 0x66, 0x2e, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00},
     // nopw 0(%[re]ax,%[re]ax,1)
     // nopw 0(%[re]ax,%[re]ax,1)
     {0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00,
@@ -185,50 +271,85 @@ bool X86AsmBackend::WriteNopData(uint64_t Count, MCObjectWriter *OW) const {
 
 namespace {
 class ELFX86AsmBackend : public X86AsmBackend {
+  MCELFObjectFormat Format;
+
 public:
-  ELFX86AsmBackend(const Target &T)
-    : X86AsmBackend(T) {
-    HasAbsolutizedSet = true;
+  Triple::OSType OSType;
+  ELFX86AsmBackend(const Target &T, Triple::OSType _OSType)
+    : X86AsmBackend(T), OSType(_OSType) {
     HasScatteredSymbols = true;
+    HasReliableSymbolDifference = true;
+  }
+
+  virtual const MCObjectFormat &getObjectFormat() const {
+    return Format;
+  }
+
+  virtual bool doesSectionRequireSymbols(const MCSection &Section) const {
+    const MCSectionELF &ES = static_cast<const MCSectionELF&>(Section);
+    return ES.getFlags() & MCSectionELF::SHF_MERGE;
   }
 
   bool isVirtualSection(const MCSection &Section) const {
     const MCSectionELF &SE = static_cast<const MCSectionELF&>(Section);
-    return SE.getType() == MCSectionELF::SHT_NOBITS;;
+    return SE.getType() == MCSectionELF::SHT_NOBITS;
   }
 };
 
 class ELFX86_32AsmBackend : public ELFX86AsmBackend {
 public:
-  ELFX86_32AsmBackend(const Target &T)
-    : ELFX86AsmBackend(T) {}
+  ELFX86_32AsmBackend(const Target &T, Triple::OSType OSType)
+    : ELFX86AsmBackend(T, OSType) {}
+
+  unsigned getPointerSize() const {
+    return 4;
+  }
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return new ELFObjectWriter(OS, /*Is64Bit=*/false,
-                               /*IsLittleEndian=*/true,
-                               /*HasRelocationAddend=*/false);
+    return createELFObjectWriter(OS, /*Is64Bit=*/false,
+                                 OSType, ELF::EM_386,
+                                 /*IsLittleEndian=*/true,
+                                 /*HasRelocationAddend=*/false);
   }
 };
 
 class ELFX86_64AsmBackend : public ELFX86AsmBackend {
 public:
-  ELFX86_64AsmBackend(const Target &T)
-    : ELFX86AsmBackend(T) {}
+  ELFX86_64AsmBackend(const Target &T, Triple::OSType OSType)
+    : ELFX86AsmBackend(T, OSType) {}
+
+  unsigned getPointerSize() const {
+    return 8;
+  }
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return new ELFObjectWriter(OS, /*Is64Bit=*/true,
-                               /*IsLittleEndian=*/true,
-                               /*HasRelocationAddend=*/true);
+    return createELFObjectWriter(OS, /*Is64Bit=*/true,
+                                 OSType, ELF::EM_X86_64,
+                                 /*IsLittleEndian=*/true,
+                                 /*HasRelocationAddend=*/true);
   }
 };
 
 class WindowsX86AsmBackend : public X86AsmBackend {
   bool Is64Bit;
+  MCCOFFObjectFormat Format;
+
 public:
   WindowsX86AsmBackend(const Target &T, bool is64Bit)
     : X86AsmBackend(T)
     , Is64Bit(is64Bit) {
     HasScatteredSymbols = true;
+  }
+
+  virtual const MCObjectFormat &getObjectFormat() const {
+    return Format;
+  }
+
+  unsigned getPointerSize() const {
+    if (Is64Bit)
+      return 8;
+    else
+      return 4;
   }
 
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
@@ -242,11 +363,16 @@ public:
 };
 
 class DarwinX86AsmBackend : public X86AsmBackend {
+  MCMachOObjectFormat Format;
+
 public:
   DarwinX86AsmBackend(const Target &T)
     : X86AsmBackend(T) {
-    HasAbsolutizedSet = true;
     HasScatteredSymbols = true;
+  }
+
+  virtual const MCObjectFormat &getObjectFormat() const {
+    return Format;
   }
 
   bool isVirtualSection(const MCSection &Section) const {
@@ -262,8 +388,14 @@ public:
   DarwinX86_32AsmBackend(const Target &T)
     : DarwinX86AsmBackend(T) {}
 
+  unsigned getPointerSize() const {
+    return 4;
+  }
+
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return new MachObjectWriter(OS, /*Is64Bit=*/false);
+    return createMachObjectWriter(OS, /*Is64Bit=*/false, MachO::CPUTypeI386,
+                                  MachO::CPUSubType_I386_ALL,
+                                  /*IsLittleEndian=*/true);
   }
 };
 
@@ -274,8 +406,14 @@ public:
     HasReliableSymbolDifference = true;
   }
 
+  unsigned getPointerSize() const {
+    return 8;
+  }
+
   MCObjectWriter *createObjectWriter(raw_ostream &OS) const {
-    return new MachObjectWriter(OS, /*Is64Bit=*/true);
+    return createMachObjectWriter(OS, /*Is64Bit=*/true, MachO::CPUTypeX86_64,
+                                  MachO::CPUSubType_I386_ALL,
+                                  /*IsLittleEndian=*/true);
   }
 
   virtual bool doesSectionRequireSymbols(const MCSection &Section) const {
@@ -312,7 +450,7 @@ public:
   }
 };
 
-} // end anonymous namespace 
+} // end anonymous namespace
 
 TargetAsmBackend *llvm::createX86_32AsmBackend(const Target &T,
                                                const std::string &TT) {
@@ -324,7 +462,7 @@ TargetAsmBackend *llvm::createX86_32AsmBackend(const Target &T,
   case Triple::Win32:
     return new WindowsX86AsmBackend(T, false);
   default:
-    return new ELFX86_32AsmBackend(T);
+    return new ELFX86_32AsmBackend(T, Triple(TT).getOS());
   }
 }
 
@@ -338,6 +476,6 @@ TargetAsmBackend *llvm::createX86_64AsmBackend(const Target &T,
   case Triple::Win32:
     return new WindowsX86AsmBackend(T, true);
   default:
-    return new ELFX86_64AsmBackend(T);
+    return new ELFX86_64AsmBackend(T, Triple(TT).getOS());
   }
 }
