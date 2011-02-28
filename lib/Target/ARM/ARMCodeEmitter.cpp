@@ -368,6 +368,9 @@ unsigned ARMCodeEmitter::getMachineOpValue(const MachineInstr &MI,
     return getARMRegisterNumbering(MO.getReg());
   else if (MO.isImm())
     return static_cast<unsigned>(MO.getImm());
+  else if (MO.isFPImm())
+    return static_cast<unsigned>(MO.getFPImm()->getValueAPF()
+                      .bitcastToAPInt().getHiBits(32).getLimitedValue());
   else if (MO.isGlobal())
     emitGlobalAddress(MO.getGlobal(), ARM::reloc_arm_branch, true, false);
   else if (MO.isSymbol())
