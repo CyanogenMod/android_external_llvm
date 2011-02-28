@@ -73,6 +73,11 @@ $(intermediates)/%GenCodeEmitter.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,emitter)
 endif
 
+ifneq ($(filter %GenMCCodeEmitter.inc,$(tblgen_gen_tables)),)
+$(intermediates)/%GenMCCodeEmitter.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
+	$(call transform-td-to-out,emitter -mc-emitter)
+endif
+
 ifneq ($(filter %GenDAGISel.inc,$(tblgen_gen_tables)),)
 $(intermediates)/%GenDAGISel.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,dag-isel)

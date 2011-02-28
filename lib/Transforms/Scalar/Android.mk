@@ -1,34 +1,35 @@
 LOCAL_PATH:= $(call my-dir)
 
-transforms_scalar_SRC_FILES :=	\
-	ADCE.cpp	\
-	BasicBlockPlacement.cpp	\
-	CodeGenPrepare.cpp	\
-	ConstantProp.cpp	\
-	DCE.cpp	\
-	DeadStoreElimination.cpp	\
-	GEPSplitter.cpp	\
-	GVN.cpp	\
-	IndVarSimplify.cpp	\
-	JumpThreading.cpp	\
-	LICM.cpp	\
-	LoopDeletion.cpp	\
-	LoopIndexSplit.cpp	\
-	LoopRotation.cpp	\
-	LoopStrengthReduce.cpp	\
-	LoopUnrollPass.cpp	\
-	LoopUnswitch.cpp	\
-	MemCpyOptimizer.cpp	\
-	Reassociate.cpp	\
-	Reg2Mem.cpp	\
-	SCCP.cpp	\
-	Scalar.cpp	\
-	ScalarReplAggregates.cpp	\
-	SimplifyCFGPass.cpp	\
-	SimplifyHalfPowrLibCalls.cpp	\
-	SimplifyLibCalls.cpp	\
-        Sink.cpp                \
-	TailDuplication.cpp	\
+transforms_scalar_SRC_FILES := \
+	ADCE.cpp    \
+	BasicBlockPlacement.cpp \
+	CodeGenPrepare.cpp  \
+	ConstantProp.cpp    \
+	CorrelatedValuePropagation.cpp \
+	DCE.cpp \
+	DeadStoreElimination.cpp    \
+	GEPSplitter.cpp \
+	GVN.cpp \
+	IndVarSimplify.cpp  \
+	JumpThreading.cpp   \
+	LICM.cpp    \
+	LoopDeletion.cpp    \
+	LoopRotation.cpp    \
+	LoopStrengthReduce.cpp  \
+	LoopUnrollPass.cpp  \
+	LoopUnswitch.cpp    \
+	LowerAtomic.cpp \
+	MemCpyOptimizer.cpp \
+	Reassociate.cpp \
+	Reg2Mem.cpp \
+	SCCP.cpp    \
+	Scalar.cpp  \
+	ScalarReplAggregates.cpp    \
+	SimplifyCFGPass.cpp \
+	SimplifyHalfPowrLibCalls.cpp    \
+	SimplifyLibCalls.cpp    \
+	Sink.cpp	\
+	TailDuplication.cpp \
 	TailRecursionElimination.cpp
 
 # For the host
@@ -36,9 +37,7 @@ transforms_scalar_SRC_FILES :=	\
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES :=	\
-	$(transforms_scalar_SRC_FILES)	\
-	LowerAtomic.cpp	\
-	ValuePropagation.cpp
+	$(transforms_scalar_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMScalarOpts
 

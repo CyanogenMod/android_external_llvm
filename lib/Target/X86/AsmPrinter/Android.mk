@@ -8,9 +8,7 @@ x86_asm_printer_TBLGEN_TABLES :=	\
 	X86GenRegisterInfo.h.inc
 
 x86_asm_printer_SRC_FILES :=	\
-	X86ATTInstPrinter.cpp	\
-	X86AsmPrinter.cpp	\
-	X86IntelInstPrinter.cpp
+	X86AsmPrinter.cpp
 
 # For the host
 # =====================================================

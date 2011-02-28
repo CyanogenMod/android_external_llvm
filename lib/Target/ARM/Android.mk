@@ -1,46 +1,54 @@
 LOCAL_PATH := $(call my-dir)
 
 arm_codegen_TBLGEN_TABLES :=	\
-	ARMGenRegisterInfo.h.inc	\
+	ARMGenAsmWriter.inc	\
+	ARMGenMCCodeEmitter.inc \
+	ARMGenRegisterInfo.h.inc\
 	ARMGenRegisterNames.inc	\
-    ARMGenRegisterInfo.inc	\
+	ARMGenRegisterInfo.inc	\
 	ARMGenInstrNames.inc	\
-    ARMGenInstrInfo.inc	\
-    ARMGenDAGISel.inc	\
-    ARMGenFastISel.inc	\
+	ARMGenInstrInfo.inc	\
+	ARMGenDAGISel.inc	\
+	ARMGenFastISel.inc	\
 	ARMGenSubtarget.inc	\
-    ARMGenCodeEmitter.inc	\
+	ARMGenCodeEmitter.inc	\
 	ARMGenCallingConv.inc
 
-arm_codegen_SRC_FILES :=	\
-	ARMBaseInstrInfo.cpp	\
-	ARMBaseRegisterInfo.cpp	\
-	ARMCodeEmitter.cpp	\
-	ARMConstantIslandPass.cpp	\
-	ARMConstantPoolValue.cpp	\
-	ARMExpandPseudoInsts.cpp	\
-        ARMFastISel.cpp     \
-        ARMGlobalMerge.cpp  \
-	ARMISelDAGToDAG.cpp	\
-	ARMISelLowering.cpp	\
-	ARMInstrInfo.cpp	\
-	ARMJITInfo.cpp	\
-	ARMLoadStoreOptimizer.cpp	\
-	ARMMCAsmInfo.cpp	\
-        ARMMCInstLower.cpp  \
-	ARMRegisterInfo.cpp	\
-        ARMSelectionDAGInfo.cpp     \
-	ARMSubtarget.cpp	\
-	ARMTargetMachine.cpp	\
-	ARMTargetObjectFile.cpp	\
-	NEONMoveFix.cpp	\
-	NEONPreAllocPass.cpp	\
-	Thumb1InstrInfo.cpp	\
-	Thumb1RegisterInfo.cpp	\
-        Thumb2HazardRecognizer.cpp  \
-	Thumb2ITBlockPass.cpp	\
-	Thumb2InstrInfo.cpp	\
-	Thumb2RegisterInfo.cpp	\
+arm_codegen_SRC_FILES :=   \
+	ARMAsmBackend.cpp \
+	ARMAsmPrinter.cpp \
+	ARMBaseInstrInfo.cpp    \
+	ARMBaseRegisterInfo.cpp \
+	ARMCodeEmitter.cpp  \
+	ARMConstantIslandPass.cpp   \
+	ARMConstantPoolValue.cpp    \
+	ARMELFWriterInfo.cpp \
+	ARMExpandPseudoInsts.cpp    \
+	ARMFastISel.cpp	\
+	ARMFrameInfo.cpp \
+	ARMGlobalMerge.cpp	\
+	ARMISelDAGToDAG.cpp \
+	ARMISelLowering.cpp \
+	ARMInstrInfo.cpp    \
+	ARMJITInfo.cpp  \
+	ARMLoadStoreOptimizer.cpp   \
+	ARMMCAsmInfo.cpp    \
+	ARMMCCodeEmitter.cpp\
+	ARMMCInstLower.cpp	\
+	ARMRegisterInfo.cpp \
+	ARMSelectionDAGInfo.cpp	\
+	ARMSubtarget.cpp    \
+	ARMTargetMachine.cpp    \
+	ARMTargetObjectFile.cpp \
+	InstPrinter/ARMInstPrinter.cpp \
+	NEONMoveFix.cpp \
+	Thumb1FrameInfo.cpp \
+	Thumb1InstrInfo.cpp \
+	Thumb1RegisterInfo.cpp  \
+	Thumb2HazardRecognizer.cpp	\
+	Thumb2ITBlockPass.cpp   \
+	Thumb2InstrInfo.cpp \
+	Thumb2RegisterInfo.cpp  \
 	Thumb2SizeReduction.cpp
 
 # For the host

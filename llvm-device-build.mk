@@ -44,7 +44,8 @@ endif
 
 LOCAL_CPPFLAGS :=	\
 	$(LOCAL_CPPFLAGS)	\
-	-Woverloaded-virtual
+	-Woverloaded-virtual	\
+	-Wno-sign-promo   
 
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\

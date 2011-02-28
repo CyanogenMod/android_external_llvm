@@ -4,6 +4,9 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+/* Relative directory for resource files */
+#define CLANG_RESOURCE_DIR ""
+
 /* 32 bit multilib directory. */
 #define CXX_INCLUDE_32BIT_DIR ""
 

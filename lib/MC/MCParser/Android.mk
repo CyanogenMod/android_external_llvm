@@ -3,6 +3,7 @@ LOCAL_PATH:= $(call my-dir)
 mc_parser_SRC_FILES :=	\
 	AsmLexer.cpp	\
 	AsmParser.cpp	\
+	COFFAsmParser.cpp \
         DarwinAsmParser.cpp	\
         ELFAsmParser.cpp	\
 	MCAsmLexer.cpp	\

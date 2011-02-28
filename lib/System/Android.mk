@@ -47,6 +47,8 @@ REQUIRES_RTTI := 1
 
 LOCAL_SRC_FILES := $(system_SRC_FILES)
 
+LOCAL_CFLAGS := -D__android__
+
 ifneq ($(TARGET_SIMULATOR),true)
 LOCAL_CFLAGS += -I bionic/libc/include
 endif

@@ -25,25 +25,28 @@ analysis_SRC_FILES :=	\
 	LibCallSemantics.cpp	\
 	LiveValues.cpp	\
 	Loads.cpp	\
-	MemoryBuiltins.cpp	\
-	MemoryDependenceAnalysis.cpp	\
-	LoopDependenceAnalysis.cpp	\
-	LoopInfo.cpp	\
-	LoopPass.cpp	\
-	PHITransAddr.cpp	\
-	PointerTracking.cpp	\
-	PostDominators.cpp	\
-	ProfileEstimatorPass.cpp	\
-	ProfileInfo.cpp	\
-	ProfileInfoLoader.cpp	\
-	ProfileInfoLoaderPass.cpp	\
-	ProfileVerifierPass.cpp	\
-	ScalarEvolution.cpp	\
-	ScalarEvolutionAliasAnalysis.cpp	\
-	ScalarEvolutionExpander.cpp	\
-	ScalarEvolutionNormalization.cpp	\
-	SparsePropagation.cpp	\
-	Trace.cpp	\
+	NoAliasAnalysis.cpp \
+	MemDepPrinter.cpp \
+	MemoryBuiltins.cpp  \
+	MemoryDependenceAnalysis.cpp    \
+	RegionPass.cpp  \
+	LoopDependenceAnalysis.cpp  \
+	LoopInfo.cpp    \
+	LoopPass.cpp    \
+	PHITransAddr.cpp    \
+	PostDominators.cpp  \
+	ProfileEstimatorPass.cpp    \
+	ProfileInfo.cpp \
+	ProfileInfoLoader.cpp   \
+	ProfileInfoLoaderPass.cpp   \
+	ProfileVerifierPass.cpp \
+	ScalarEvolution.cpp \
+	ScalarEvolutionAliasAnalysis.cpp    \
+	ScalarEvolutionExpander.cpp \
+	ScalarEvolutionNormalization.cpp    \
+	SparsePropagation.cpp   \
+	Trace.cpp   \
+        TypeBasedAliasAnalysis.cpp \
 	ValueTracking.cpp
 
 # For the host
@@ -55,8 +58,7 @@ LOCAL_SRC_FILES :=	\
 	Lint.cpp	\
 	ModuleDebugInfoPrinter.cpp	\
 	RegionInfo.cpp	\
-	RegionPrinter.cpp	\
-	TypeBasedAliasAnalysis.cpp
+	RegionPrinter.cpp
 
 LOCAL_MODULE:= libLLVMAnalysis
 
