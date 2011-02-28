@@ -590,6 +590,11 @@ void ARMCodeEmitter::emitConstantToMemory(unsigned CPI, const Constant *C) {
       emitConstantToMemory(CPI, CA->getOperand(i));
     break;
   }
+  case Value::ConstantVectorVal:{
+    //FIXME:emit vector
+    const ConstantVector *CV = static_cast<const ConstantVector*>(C);
+    break;
+  }
   }
 
   return;
