@@ -690,8 +690,7 @@ bool ARMExpandPseudo::ExpandMBB(MachineBasicBlock &MBB) {
       break;
     }
 
-    case ARM::MOVi32imm:
-    case ARM::MOVCCi32imm:
+    //FIXME:Expanding MOVi32imm needs more encoding.
     case ARM::t2MOVi32imm:
     case ARM::t2MOVCCi32imm: {
       unsigned PredReg = 0;
