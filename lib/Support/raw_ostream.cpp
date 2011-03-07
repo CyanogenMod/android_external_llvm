@@ -418,13 +418,11 @@ raw_fd_ostream::raw_fd_ostream(const char *Filename, std::string &ErrorInfo,
 raw_fd_ostream::raw_fd_ostream(int fd, bool shouldClose, bool unbuffered)
   : raw_ostream(unbuffered), FD(fd),
     ShouldClose(shouldClose), Error(false) {
-#ifdef LLVM_ON_WIN32
 #ifdef O_BINARY
   // Setting STDOUT and STDERR to binary mode is necessary in Win32
   // to avoid undesirable linefeed conversion.
   if (fd == STDOUT_FILENO || fd == STDERR_FILENO)
     setmode(fd, O_BINARY);
-#endif
 #endif
 }
 
