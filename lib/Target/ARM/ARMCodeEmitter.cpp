@@ -172,7 +172,13 @@ namespace {
     unsigned NEONThumb2DupPostEncoder(const MachineInstr &MI,unsigned Val) 
       const { return 0; }
     unsigned VFPThumb2PostEncoder(const MachineInstr&MI, unsigned Val)
-      const { return 0; }
+      const { 
+      if (IsThumb) {
+        Val &= 0x0FFFFFFF;
+        Val |= 0xE0000000;
+      }
+      return Val;
+    }
     unsigned getAdrLabelOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
     unsigned getThumbAdrLabelOpValue(const MachineInstr &MI, unsigned Op)
