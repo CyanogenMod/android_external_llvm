@@ -12,16 +12,18 @@ mc_SRC_FILES :=    \
 	MCContext.cpp   \
 	MCDisassembler.cpp  \
 	MCDwarf.cpp \
-	MCELFStreamer.cpp	\
+	MCELF.cpp   \
+	MCELFObjectTargetWriter.cpp \
+	MCELFStreamer.cpp   \
 	MCExpr.cpp  \
 	MCInst.cpp  \
 	MCInstPrinter.cpp   \
 	MCLabel.cpp	\
 	MCLoggingStreamer.cpp	\
+	MCMachObjectTargetWriter.cpp \
 	MCMachOStreamer.cpp \
 	MCNullStreamer.cpp  \
-	MCObjectFormat.cpp \
-	MCObjectStreamer.cpp	\
+	MCObjectStreamer.cpp\
 	MCObjectWriter.cpp  \
 	MCSection.cpp   \
 	MCSectionCOFF.cpp	\

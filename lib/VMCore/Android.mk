@@ -30,6 +30,7 @@ vmcore_SRC_FILES :=	\
 	Type.cpp	\
 	TypeSymbolTable.cpp	\
 	Use.cpp	\
+	User.cpp\
 	Value.cpp	\
 	ValueSymbolTable.cpp	\
 	ValueTypes.cpp	\

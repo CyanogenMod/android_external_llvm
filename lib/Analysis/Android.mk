@@ -11,8 +11,10 @@ analysis_SRC_FILES :=	\
 	CFGPrinter.cpp	\
 	CaptureTracking.cpp	\
 	ConstantFolding.cpp	\
+	DIBuilder.cpp		\
 	DbgInfoPrinter.cpp	\
 	DebugInfo.cpp	\
+	DominanceFrontier.cpp	\
 	DomPrinter.cpp	\
 	IVUsers.cpp	\
 	InlineCost.cpp	\
@@ -23,7 +25,6 @@ analysis_SRC_FILES :=	\
 	LazyValueInfo.cpp	\
 	LibCallAliasAnalysis.cpp	\
 	LibCallSemantics.cpp	\
-	LiveValues.cpp	\
 	Loads.cpp	\
 	NoAliasAnalysis.cpp \
 	MemDepPrinter.cpp \
@@ -33,6 +34,9 @@ analysis_SRC_FILES :=	\
 	LoopDependenceAnalysis.cpp  \
 	LoopInfo.cpp    \
 	LoopPass.cpp    \
+	PathNumbering.cpp \
+	PathProfileInfo.cpp \
+	PathProfileVerifier.cpp \
 	PHITransAddr.cpp    \
 	PostDominators.cpp  \
 	ProfileEstimatorPass.cpp    \

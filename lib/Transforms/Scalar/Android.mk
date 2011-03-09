@@ -8,12 +8,13 @@ transforms_scalar_SRC_FILES := \
 	CorrelatedValuePropagation.cpp \
 	DCE.cpp \
 	DeadStoreElimination.cpp    \
-	GEPSplitter.cpp \
+	EarlyCSE.cpp \
 	GVN.cpp \
 	IndVarSimplify.cpp  \
 	JumpThreading.cpp   \
 	LICM.cpp    \
 	LoopDeletion.cpp    \
+	LoopIdiomRecognize.cpp \
 	LoopRotation.cpp    \
 	LoopStrengthReduce.cpp  \
 	LoopUnrollPass.cpp  \
@@ -26,7 +27,6 @@ transforms_scalar_SRC_FILES := \
 	Scalar.cpp  \
 	ScalarReplAggregates.cpp    \
 	SimplifyCFGPass.cpp \
-	SimplifyHalfPowrLibCalls.cpp    \
 	SimplifyLibCalls.cpp    \
 	Sink.cpp	\
 	TailDuplication.cpp \

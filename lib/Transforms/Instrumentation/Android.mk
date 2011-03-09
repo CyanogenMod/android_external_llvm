@@ -6,7 +6,9 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES :=      \
      EdgeProfiling.cpp   \
+     Instrumentation.cpp \
      ProfilingUtils.cpp      \
+     PathProfiling.cpp \
      OptimalEdgeProfiling.cpp
 
 LOCAL_MODULE:= libLLVMInstrumentation

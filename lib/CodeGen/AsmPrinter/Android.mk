@@ -11,9 +11,12 @@ LOCAL_SRC_FILES :=	\
 	AsmPrinter.cpp	\
 	AsmPrinterDwarf.cpp	\
 	AsmPrinterInlineAsm.cpp	\
+	ARMException.cpp	\
 	DIE.cpp	\
+	DwarfCFIException.cpp \
 	DwarfDebug.cpp	\
 	DwarfException.cpp	\
+	DwarfTableException.cpp \
 	OcamlGCPrinter.cpp
 
 LOCAL_MODULE:= libLLVMAsmPrinter

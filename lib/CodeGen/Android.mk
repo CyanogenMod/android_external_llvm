@@ -10,8 +10,10 @@ codegen_SRC_FILES :=   \
 	CriticalAntiDepBreaker.cpp  \
 	DeadMachineInstructionElim.cpp  \
 	DwarfEHPrepare.cpp  \
+	EdgeBundles.cpp \
 	ELFCodeEmitter.cpp  \
 	ELFWriter.cpp   \
+	ExpandISelPseudos.cpp \
 	GCMetadata.cpp  \
 	GCMetadataPrinter.cpp   \
 	GCStrategy.cpp  \
@@ -20,6 +22,7 @@ codegen_SRC_FILES :=   \
 	IntrinsicLowering.cpp   \
 	LLVMTargetMachine.cpp   \
 	LatencyPriorityQueue.cpp    \
+	LiveDebugVariables.cpp \
 	LiveInterval.cpp    \
 	LiveIntervalAnalysis.cpp    \
 	LiveRangeEdit.cpp \
@@ -48,9 +51,9 @@ codegen_SRC_FILES :=   \
 	OcamlGC.cpp \
 	OptimizePHIs.cpp    \
 	PHIElimination.cpp  \
+	PHIEliminationUtils.cpp \
 	Passes.cpp  \
 	PeepholeOptimizer.cpp	\
-	PostRAHazardRecognizer.cpp	\
 	PostRASchedulerList.cpp \
 	PreAllocSplitting.cpp   \
 	ProcessImplicitDefs.cpp \
@@ -66,6 +69,7 @@ codegen_SRC_FILES :=   \
 	ScheduleDAGEmit.cpp \
 	ScheduleDAGInstrs.cpp   \
 	ScheduleDAGPrinter.cpp  \
+	ScoreboardHazardRecognizer.cpp \
 	ShadowStackGC.cpp   \
 	ShrinkWrapping.cpp  \
 	SimpleRegisterCoalescing.cpp    \

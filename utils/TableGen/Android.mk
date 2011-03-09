@@ -10,6 +10,7 @@ LOCAL_SRC_FILES :=	\
 	ClangASTNodesEmitter.cpp	\
 	ClangAttrEmitter.cpp	\
 	ClangDiagnosticsEmitter.cpp \
+	ClangSACheckersEmitter.cpp  \
 	CodeEmitterGen.cpp  \
 	CodeGenDAGPatterns.cpp  \
 	CodeGenInstruction.cpp  \
@@ -22,6 +23,7 @@ LOCAL_SRC_FILES :=	\
 	DisassemblerEmitter.cpp \
 	EDEmitter.cpp   \
 	FastISelEmitter.cpp \
+	FixedLenDecoderEmitter.cpp \
 	InstrEnumEmitter.cpp    \
 	InstrInfoEmitter.cpp    \
 	IntrinsicEmitter.cpp    \
@@ -43,7 +45,7 @@ LOCAL_SRC_FILES :=	\
 REQUIRES_EH := 1
 REQUIRES_RTTI := 1
 
-LOCAL_STATIC_LIBRARIES := libLLVMSupport libLLVMSystem
+LOCAL_STATIC_LIBRARIES := libLLVMSupport
 LOCAL_MODULE := tblgen
 LOCAL_LDLIBS += -lm
 ifeq ($(HOST_OS),windows)

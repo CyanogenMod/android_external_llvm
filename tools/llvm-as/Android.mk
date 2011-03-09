@@ -13,8 +13,7 @@ LOCAL_STATIC_LIBRARIES := \
     libLLVMAsmParser \
     libLLVMBitWriter \
     libLLVMCore \
-    libLLVMSupport \
-    libLLVMSystem
+    libLLVMSupport
 
 LOCAL_LDLIBS += -lpthread -lm -ldl
 

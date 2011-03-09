@@ -5,7 +5,6 @@ LLVM_ENABLE_ASSERTION := false
 include $(CLEAR_VARS)
 
 subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
-		lib/System \
 		lib/Support	\
 		utils/TableGen	\
 		tools/llvm-as	\
@@ -32,10 +31,10 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/Target/ARM/TargetInfo	\
 		lib/Target/X86	\
 		lib/Target/X86/AsmParser 	\
-		lib/Target/X86/AsmPrinter	\
 		lib/Target/X86/InstPrinter	\
 		lib/Target/X86/Disassembler	\
 		lib/Target/X86/TargetInfo	\
+		lib/Target/X86/Utils	\
 		lib/ExecutionEngine/JIT	\
 		lib/MC	\
 		lib/MC/MCParser	\

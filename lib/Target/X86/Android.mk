@@ -1,6 +1,8 @@
 LOCAL_PATH := $(call my-dir)
 
 x86_codegen_TBLGEN_TABLES :=	\
+    X86GenAsmWriter.inc \
+    X86GenAsmWriter1.inc \
     X86GenRegisterInfo.h.inc	\
     X86GenRegisterNames.inc	\
     X86GenRegisterInfo.inc	\
@@ -14,16 +16,18 @@ x86_codegen_TBLGEN_TABLES :=	\
 x86_codegen_SRC_FILES :=	\
     SSEDomainFix.cpp	\
     X86AsmBackend.cpp	\
+    X86AsmPrinter.cpp	\
     X86COFFMachineModuleInfo.cpp	\
     X86CodeEmitter.cpp	\
     X86ELFWriterInfo.cpp	\
     X86FastISel.cpp	\
     X86FloatingPoint.cpp\
-    X86FrameInfo.cpp	\
+    X86FrameLowering.cpp\
     X86ISelDAGToDAG.cpp	\
     X86ISelLowering.cpp	\
     X86InstrInfo.cpp	\
     X86JITInfo.cpp	\
+    X86MachObjectWriter.cpp \
     X86MCAsmInfo.cpp	\
     X86MCCodeEmitter.cpp	\
     X86MCInstLower.cpp	\

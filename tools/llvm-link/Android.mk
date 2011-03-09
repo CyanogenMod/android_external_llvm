@@ -11,7 +11,6 @@ LOCAL_STATIC_LIBRARIES := \
     libLLVMBitWriter \
     libLLVMCore \
     libLLVMSupport \
-    libLLVMSystem \
     libLLVMAsmParser \
     libLLVMTransformUtils
 

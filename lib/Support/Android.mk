@@ -1,10 +1,11 @@
 LOCAL_PATH:= $(call my-dir)
 
 support_SRC_FILES :=   \
+	Allocator.cpp   \
 	APFloat.cpp \
 	APInt.cpp   \
 	APSInt.cpp  \
-	Allocator.cpp   \
+	Atomic.cpp  \
 	CommandLine.cpp \
 	ConstantRange.cpp   \
 	CrashRecoveryContext.cpp	\
@@ -12,19 +13,33 @@ support_SRC_FILES :=   \
 	Debug.cpp   \
 	DeltaAlgorithm.cpp  \
 	Dwarf.cpp   \
+	DynamicLibrary.cpp	\
+	Errno.cpp	\
 	ErrorHandling.cpp   \
 	FileUtilities.cpp   \
 	FoldingSet.cpp  \
 	FormattedStream.cpp \
 	GraphWriter.cpp \
+	Host.cpp	\
+	IntervalMap.cpp \
+	IntEqClasses.cpp\
 	IsInf.cpp   \
 	IsNAN.cpp   \
 	ManagedStatic.cpp   \
+	Memory.cpp	\
 	MemoryBuffer.cpp    \
 	MemoryObject.cpp    \
+	Mutex.cpp \
+	Path.cpp \
+	PathV2.cpp \
 	PluginLoader.cpp    \
 	PrettyStackTrace.cpp    \
+	Process.cpp \
+	Program.cpp \
 	Regex.cpp   \
+	RWMutex.cpp \
+	SearchForAddressOfSpecialSymbol.cpp \
+	Signals.cpp \
 	SmallPtrSet.cpp \
 	SmallVector.cpp \
 	SourceMgr.cpp   \
@@ -35,10 +50,14 @@ support_SRC_FILES :=   \
 	StringRef.cpp   \
 	SystemUtils.cpp \
 	TargetRegistry.cpp  \
+	Threading.cpp \
+	ThreadLocal.cpp \
 	Timer.cpp   \
+	TimeValue.cpp	\
 	ToolOutputFile.cpp \
 	Triple.cpp  \
 	Twine.cpp   \
+	Valgrind.cpp\
 	circular_raw_ostream.cpp    \
 	raw_os_ostream.cpp  \
 	raw_ostream.cpp \
@@ -46,7 +65,8 @@ support_SRC_FILES :=   \
 	regerror.c  \
 	regexec.c   \
 	regfree.c   \
-	regstrlcpy.c
+	regstrlcpy.c\
+	system_error.cpp
 
 # For the host
 # =====================================================
@@ -58,6 +78,8 @@ REQUIRES_RTTI := 1
 LOCAL_SRC_FILES := $(support_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMSupport
+
+LOCAL_CFLAGS := -D__android__
 
 LOCAL_MODULE_TAGS := optional
 
@@ -71,6 +93,8 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := $(support_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMSupport
+
+LOCAL_CFLAGS := -D__android__
 
 LOCAL_MODULE_TAGS := optional
 

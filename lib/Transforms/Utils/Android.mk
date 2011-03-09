@@ -23,6 +23,7 @@ transforms_utils_SRC_FILES :=	\
 	PromoteMemoryToRegister.cpp	\
 	SSAUpdater.cpp	\
 	SimplifyCFG.cpp	\
+	SimplifyInstructions.cpp	\
 	UnifyFunctionExitNodes.cpp	\
 	ValueMapper.cpp
 

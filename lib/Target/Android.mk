@@ -4,13 +4,15 @@ target_SRC_FILES :=	\
 	Mangler.cpp	\
 	SubtargetFeature.cpp	\
 	Target.cpp	\
+	TargetAsmInfo.cpp	\
 	TargetAsmLexer.cpp	\
 	TargetData.cpp	\
 	TargetELFWriterInfo.cpp	\
-	TargetFrameInfo.cpp	\
+	TargetFrameLowering.cpp \
 	TargetInstrInfo.cpp	\
 	TargetIntrinsicInfo.cpp	\
 	TargetLoweringObjectFile.cpp	\
+	TargetLibraryInfo.cpp	\
 	TargetMachine.cpp	\
 	TargetRegisterInfo.cpp	\
 	TargetSubtarget.cpp

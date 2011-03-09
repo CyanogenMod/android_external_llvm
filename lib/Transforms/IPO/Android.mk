@@ -19,7 +19,6 @@ transforms_ipo_SRC_FILES :=	\
 	LowerSetJmp.cpp	\
 	MergeFunctions.cpp	\
 	PartialInlining.cpp	\
-	PartialSpecialization.cpp	\
 	PruneEH.cpp	\
 	StripDeadPrototypes.cpp	\
 	StripSymbols.cpp	\

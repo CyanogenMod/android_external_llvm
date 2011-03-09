@@ -25,8 +25,9 @@ arm_codegen_SRC_FILES :=   \
 	ARMELFWriterInfo.cpp \
 	ARMExpandPseudoInsts.cpp    \
 	ARMFastISel.cpp	\
-	ARMFrameInfo.cpp \
-	ARMGlobalMerge.cpp	\
+	ARMFrameLowering.cpp \
+	ARMGlobalMerge.cpp  \
+	ARMHazardRecognizer.cpp \
 	ARMISelDAGToDAG.cpp \
 	ARMISelLowering.cpp \
 	ARMInstrInfo.cpp    \
@@ -34,18 +35,19 @@ arm_codegen_SRC_FILES :=   \
 	ARMLoadStoreOptimizer.cpp   \
 	ARMMCAsmInfo.cpp    \
 	ARMMCCodeEmitter.cpp\
-	ARMMCInstLower.cpp	\
+	ARMMCExpr.cpp	\
+	ARMMCInstLower.cpp  \
 	ARMRegisterInfo.cpp \
 	ARMSelectionDAGInfo.cpp	\
 	ARMSubtarget.cpp    \
 	ARMTargetMachine.cpp    \
 	ARMTargetObjectFile.cpp \
 	InstPrinter/ARMInstPrinter.cpp \
+	MLxExpansionPass.cpp \
 	NEONMoveFix.cpp \
-	Thumb1FrameInfo.cpp \
+	Thumb1FrameLowering.cpp \
 	Thumb1InstrInfo.cpp \
 	Thumb1RegisterInfo.cpp  \
-	Thumb2HazardRecognizer.cpp	\
 	Thumb2ITBlockPass.cpp   \
 	Thumb2InstrInfo.cpp \
 	Thumb2RegisterInfo.cpp  \

@@ -26,7 +26,7 @@ LOCAL_SRC_FILES := $(x86_instprinter_SRC_FILES)
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/..
 
-LOCAL_MODULE:= libLLVMX86InstPrinter
+LOCAL_MODULE:= libLLVMX86AsmPrinter
 
 LOCAL_MODULE_TAGS := optional
 
@@ -48,7 +48,7 @@ LOCAL_SRC_FILES := $(x86_instprinter_SRC_FILES)
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/..
 
-LOCAL_MODULE := libLLVMX86InstPrinter
+LOCAL_MODULE := libLLVMX86AsmPrinter
 
 LOCAL_MODULE_TAGS := optional
 
