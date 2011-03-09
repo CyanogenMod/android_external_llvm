@@ -22,7 +22,6 @@
 #include "llvm/Support/FormattedStream.h"
 #include "X86GenInstrNames.inc"
 #include <ctype.h>
-
 using namespace llvm;
 
 // Include the auto-generated portion of the assembly writer.
