@@ -897,6 +897,11 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
   switch (Opcode) {
   default:
     llvm_unreachable("ARMCodeEmitter::emitPseudoInstruction");
+  case ARM::BR_JTr:
+  case ARM::BR_JTm:
+  case ARM::BR_JTadd:
+    emitMiscBranchInstruction(MI);
+    break;
   case ARM::BX_CALL:
   case ARM::BMOVPCRX_CALL:
   case ARM::BXr9_CALL:
@@ -1164,6 +1169,11 @@ void ARMCodeEmitter::emitLoadStoreInstruction(const MachineInstr &MI,
     emitWordLE(Binary);
     return;
   }
+
+  if (MI.getOpcode() == ARM::BR_JTm)
+    Binary = 0x710F000;
+  else if (MI.getOpcode() == ARM::BR_JTr)
+    Binary = 0x1A0F000;
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
