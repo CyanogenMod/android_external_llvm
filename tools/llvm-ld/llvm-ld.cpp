@@ -23,7 +23,7 @@
 #include "llvm/LinkAllVMCore.h"
 #include "llvm/Linker.h"
 #include "llvm/LLVMContext.h"
-#include "llvm/System/Program.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Module.h"
 #include "llvm/PassManager.h"
 #include "llvm/Bitcode/ReaderWriter.h"
@@ -36,7 +36,7 @@
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/System/Signals.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Config/config.h"
 #include <memory>
 #include <cstring>
@@ -178,7 +178,7 @@ static char ** CopyEnv(char ** const envp) {
 
   // Allocate a new environment list.
   char **newenv = new char* [entries];
-  if ((newenv = new char* [entries]) == NULL)
+  if (newenv == NULL)
     return NULL;
 
   // Make a copy of the list.  Don't forget the NULL that ends the list.
@@ -410,7 +410,7 @@ static int GenerateNative(const std::string &OutputFilename,
 static void EmitShellScript(char **argv, Module *M) {
   if (Verbose)
     errs() << "Emitting Shell Script\n";
-#if defined(_WIN32) || defined(__CYGWIN__)
+#if defined(_WIN32)
   // Windows doesn't support #!/bin/sh style shell scripts in .exe files.  To
   // support windows systems, we copy the llvm-stub.exe executable from the
   // build tree to the destination file.
@@ -526,7 +526,7 @@ int main(int argc, char **argv, char **envp) {
   initializeTarget(Registry);
 
   // Initial global variable above for convenience printing of program name.
-  progname = sys::Path(argv[0]).getBasename();
+  progname = sys::path::stem(argv[0]);
 
   // Parse the command line options
   cl::ParseCommandLineOptions(argc, argv, "llvm linker\n");
@@ -538,11 +538,8 @@ int main(int argc, char **argv, char **envp) {
       OutputFilename = "a.exe";
 
     // If there is no suffix add an "exe" one.
-    sys::Path ExeFile( OutputFilename );
-    if (ExeFile.getSuffix() == "") {
-      ExeFile.appendSuffix("exe");
-      OutputFilename = ExeFile.str();
-    }
+    if (sys::path::extension(OutputFilename).empty())
+      OutputFilename.append(".exe");
   }
 #endif
 

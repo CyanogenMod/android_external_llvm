@@ -26,8 +26,8 @@
 #include "llvm/Support/MutexGuard.h"
 #include "llvm/Support/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/DynamicLibrary.h"
-#include "llvm/System/Host.h"
+#include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Support/Host.h"
 #include "llvm/Target/TargetData.h"
 #include <cmath>
 #include <cstring>
@@ -37,6 +37,16 @@ STATISTIC(NumInitBytes, "Number of bytes of global vars initialized");
 STATISTIC(NumGlobals  , "Number of global vars initialized");
 
 ExecutionEngine *(*ExecutionEngine::JITCtor)(
+  Module *M,
+  std::string *ErrorStr,
+  JITMemoryManager *JMM,
+  CodeGenOpt::Level OptLevel,
+  bool GVsWithCode,
+  CodeModel::Model CMM,
+  StringRef MArch,
+  StringRef MCPU,
+  const SmallVectorImpl<std::string>& MAttrs) = 0;
+ExecutionEngine *(*ExecutionEngine::MCJITCtor)(
   Module *M,
   std::string *ErrorStr,
   JITMemoryManager *JMM,
@@ -69,9 +79,10 @@ ExecutionEngine::~ExecutionEngine() {
 
 void ExecutionEngine::DeregisterAllTables() {
   if (ExceptionTableDeregister) {
-    for (std::vector<void*>::iterator it = AllExceptionTables.begin(),
-           ie = AllExceptionTables.end(); it != ie; ++it)
-      ExceptionTableDeregister(*it);
+    DenseMap<const Function*, void*>::iterator it = AllExceptionTables.begin();
+    DenseMap<const Function*, void*>::iterator ite = AllExceptionTables.end();
+    for (; it != ite; ++it)
+      ExceptionTableDeregister(it->second);
     AllExceptionTables.clear();
   }
 }
@@ -430,7 +441,13 @@ ExecutionEngine *EngineBuilder::create() {
   // Unless the interpreter was explicitly selected or the JIT is not linked,
   // try making a JIT.
   if (WhichEngine & EngineKind::JIT) {
-    if (ExecutionEngine::JITCtor) {
+    if (UseMCJIT && ExecutionEngine::MCJITCtor) {
+      ExecutionEngine *EE =
+        ExecutionEngine::MCJITCtor(M, ErrorStr, JMM, OptLevel,
+                                   AllocateGVsWithCode, CMModel,
+                                   MArch, MCPU, MAttrs);
+      if (EE) return EE;
+    } else if (ExecutionEngine::JITCtor) {
       ExecutionEngine *EE =
         ExecutionEngine::JITCtor(M, ErrorStr, JMM, OptLevel,
                                  AllocateGVsWithCode, CMModel,
@@ -548,8 +565,7 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
       else if (CE->getType()->isDoubleTy())
         GV.DoubleVal = GV.IntVal.roundToDouble();
       else if (CE->getType()->isX86_FP80Ty()) {
-        const uint64_t zero[] = {0, 0};
-        APFloat apf = APFloat(APInt(80, 2, zero));
+        APFloat apf = APFloat::getZero(APFloat::x87DoubleExtended);
         (void)apf.convertFromAPInt(GV.IntVal,
                                    false,
                                    APFloat::rmNearestTiesToEven);
@@ -564,8 +580,7 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
       else if (CE->getType()->isDoubleTy())
         GV.DoubleVal = GV.IntVal.signedRoundToDouble();
       else if (CE->getType()->isX86_FP80Ty()) {
-        const uint64_t zero[] = { 0, 0};
-        APFloat apf = APFloat(APInt(80, 2, zero));
+        APFloat apf = APFloat::getZero(APFloat::x87DoubleExtended);
         (void)apf.convertFromAPInt(GV.IntVal,
                                    true,
                                    APFloat::rmNearestTiesToEven);
@@ -621,11 +636,11 @@ GenericValue ExecutionEngine::getConstantValue(const Constant *C) {
           break;
         case Type::FloatTyID:
           assert(DestTy->isIntegerTy(32) && "Invalid bitcast");
-          GV.IntVal.floatToBits(GV.FloatVal);
+          GV.IntVal = APInt::floatToBits(GV.FloatVal);
           break;
         case Type::DoubleTyID:
           assert(DestTy->isIntegerTy(64) && "Invalid bitcast");
-          GV.IntVal.doubleToBits(GV.DoubleVal);
+          GV.IntVal = APInt::doubleToBits(GV.DoubleVal);
           break;
         case Type::PointerTyID:
           assert(DestTy->isPointerTy() && "Invalid bitcast");

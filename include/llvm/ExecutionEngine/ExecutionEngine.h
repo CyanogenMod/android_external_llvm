@@ -21,8 +21,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/ValueMap.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/Support/ValueHandle.h"
-#include "llvm/System/Mutex.h"
+#include "llvm/Support/Mutex.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
@@ -126,9 +127,19 @@ protected:
   virtual char *getMemoryForGV(const GlobalVariable *GV);
 
   // To avoid having libexecutionengine depend on the JIT and interpreter
-  // libraries, the JIT and Interpreter set these functions to ctor pointers at
-  // startup time if they are linked in.
+  // libraries, the execution engine implementations set these functions to ctor
+  // pointers at startup time if they are linked in.
   static ExecutionEngine *(*JITCtor)(
+    Module *M,
+    std::string *ErrorStr,
+    JITMemoryManager *JMM,
+    CodeGenOpt::Level OptLevel,
+    bool GVsWithCode,
+    CodeModel::Model CMM,
+    StringRef MArch,
+    StringRef MCPU,
+    const SmallVectorImpl<std::string>& MAttrs);
+  static ExecutionEngine *(*MCJITCtor)(
     Module *M,
     std::string *ErrorStr,
     JITMemoryManager *JMM,
@@ -151,7 +162,9 @@ protected:
   typedef void (*EERegisterFn)(void*);
   EERegisterFn ExceptionTableRegister;
   EERegisterFn ExceptionTableDeregister;
-  std::vector<void*> AllExceptionTables;
+  /// This maps functions to their exception tables frames.
+  DenseMap<const Function*, void*> AllExceptionTables;
+
 
 public:
   /// lock - This lock protects the ExecutionEngine, JIT, JITResolver and
@@ -400,10 +413,21 @@ public:
   
   /// RegisterTable - Registers the given pointer as an exception table.  It
   /// uses the ExceptionTableRegister function.
-  void RegisterTable(void* res) {
+  void RegisterTable(const Function *fn, void* res) {
     if (ExceptionTableRegister) {
       ExceptionTableRegister(res);
-      AllExceptionTables.push_back(res);
+      AllExceptionTables[fn] = res;
+    }
+  }
+
+  /// DeregisterTable - Deregisters the exception frame previously registered for the given function.
+  void DeregisterTable(const Function *Fn) {
+    if (ExceptionTableDeregister) {
+      DenseMap<const Function*, void*>::iterator frame = AllExceptionTables.find(Fn);
+      if(frame != AllExceptionTables.end()) {
+        ExceptionTableDeregister(frame->second);
+        AllExceptionTables.erase(frame);
+      }
     }
   }
 
@@ -447,6 +471,7 @@ private:
   std::string MArch;
   std::string MCPU;
   SmallVector<std::string, 4> MAttrs;
+  bool UseMCJIT;
 
   /// InitEngine - Does the common initialization of default options.
   void InitEngine() {
@@ -456,6 +481,7 @@ private:
     JMM = NULL;
     AllocateGVsWithCode = false;
     CMModel = CodeModel::Default;
+    UseMCJIT = false;
   }
 
 public:
@@ -524,6 +550,12 @@ public:
   EngineBuilder &setMCPU(StringRef mcpu) {
     MCPU.assign(mcpu.begin(), mcpu.end());
     return *this;
+  }
+
+  /// setUseMCJIT - Set whether the MC-JIT implementation should be used
+  /// (experimental).
+  void setUseMCJIT(bool Value) {
+    UseMCJIT = Value;
   }
 
   /// setMAttrs - Set cpu-specific attributes.

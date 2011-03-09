@@ -23,6 +23,7 @@
 #include "llvm/ExecutionEngine/Interpreter.h"
 #include "llvm/ExecutionEngine/JIT.h"
 #include "llvm/ExecutionEngine/JITEventListener.h"
+#include "llvm/ExecutionEngine/MCJIT.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/IRReader.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -30,8 +31,8 @@
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Process.h"
-#include "llvm/System/Signals.h"
+#include "llvm/Support/Process.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Target/TargetSelect.h"
 #include <cerrno>
 
@@ -54,6 +55,10 @@ namespace {
   cl::opt<bool> ForceInterpreter("force-interpreter",
                                  cl::desc("Force interpretation: disable JIT"),
                                  cl::init(false));
+
+  cl::opt<bool> UseMCJIT(
+    "use-mcjit", cl::desc("Enable use of the MC-based JIT (if available)"),
+    cl::init(false));
 
   // Determine optimization level.
   cl::opt<char>
@@ -166,6 +171,10 @@ int main(int argc, char **argv, char * const *envp) {
   // If we are supposed to override the target triple, do so now.
   if (!TargetTriple.empty())
     Mod->setTargetTriple(Triple::normalize(TargetTriple));
+
+  // Enable MCJIT, if desired.
+  if (UseMCJIT)
+    builder.setUseMCJIT(true);
 
   CodeGenOpt::Level OLvl = CodeGenOpt::Default;
   switch (OptLevel) {

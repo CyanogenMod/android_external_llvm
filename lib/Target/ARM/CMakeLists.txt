@@ -27,13 +27,15 @@ add_llvm_target(ARMCodeGen
   ARMELFWriterInfo.cpp
   ARMExpandPseudoInsts.cpp
   ARMFastISel.cpp
-  ARMFrameInfo.cpp
+  ARMFrameLowering.cpp
   ARMGlobalMerge.cpp
+  ARMHazardRecognizer.cpp
   ARMISelDAGToDAG.cpp
   ARMISelLowering.cpp
   ARMInstrInfo.cpp
   ARMJITInfo.cpp
   ARMMCCodeEmitter.cpp
+  ARMMCExpr.cpp
   ARMLoadStoreOptimizer.cpp
   ARMMCAsmInfo.cpp
   ARMMCInstLower.cpp
@@ -42,13 +44,26 @@ add_llvm_target(ARMCodeGen
   ARMSubtarget.cpp
   ARMTargetMachine.cpp
   ARMTargetObjectFile.cpp
+  MLxExpansionPass.cpp
   NEONMoveFix.cpp
   Thumb1InstrInfo.cpp
-  Thumb1FrameInfo.cpp
+  Thumb1FrameLowering.cpp
   Thumb1RegisterInfo.cpp
-  Thumb2HazardRecognizer.cpp
   Thumb2ITBlockPass.cpp
   Thumb2InstrInfo.cpp
   Thumb2RegisterInfo.cpp
   Thumb2SizeReduction.cpp
   )
+
+# workaround for hanging compilation on MSVC10
+if( MSVC_VERSION EQUAL 1600 )
+set_property(
+  SOURCE ARMISelLowering.cpp
+  PROPERTY COMPILE_FLAGS "/Od"
+  )
+endif()
+
+add_subdirectory(TargetInfo)
+add_subdirectory(AsmParser)
+add_subdirectory(Disassembler)
+add_subdirectory(InstPrinter)

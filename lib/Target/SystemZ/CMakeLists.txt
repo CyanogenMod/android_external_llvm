@@ -15,10 +15,12 @@ add_llvm_target(SystemZCodeGen
   SystemZISelDAGToDAG.cpp
   SystemZISelLowering.cpp
   SystemZInstrInfo.cpp
-  SystemZFrameInfo.cpp
+  SystemZFrameLowering.cpp
   SystemZMCAsmInfo.cpp
   SystemZRegisterInfo.cpp
   SystemZSubtarget.cpp
   SystemZTargetMachine.cpp
   SystemZSelectionDAGInfo.cpp
   )
+
+add_subdirectory(TargetInfo)

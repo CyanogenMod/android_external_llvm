@@ -171,7 +171,27 @@ namespace {
       const { return 0; }
     unsigned NEONThumb2DupPostEncoder(const MachineInstr &MI,unsigned Val) 
       const { return 0; }
+    unsigned VFPThumb2PostEncoder(const MachineInstr&MI, unsigned Val)
+      const { return 0; }
+    unsigned getAdrLabelOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getThumbAdrLabelOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getThumbBLTargetOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getThumbBLXTargetOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getThumbBRTargetOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getThumbBCCTargetOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getThumbCBTargetOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
     unsigned getBranchTargetOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getUnconditionalBranchTargetOpValue(const MachineInstr &MI,
+      unsigned Op) const { return 0; }
+    unsigned getARMBranchTargetOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
     unsigned getCCOutOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
@@ -181,18 +201,38 @@ namespace {
       const { return 0; }
     unsigned getSORegOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
+    unsigned getThumbAddrModeRegRegOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getT2AddrModeImm12OpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getT2AddrModeImm8OpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getT2AddrModeImm8s4OpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getT2AddrModeImm8OffsetOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getT2AddrModeImm12OffsetOpValue(const MachineInstr &MI,unsigned Op)
+      const { return 0; }
+    unsigned getT2AddrModeSORegOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
     unsigned getT2SORegOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
     unsigned getRotImmOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
     unsigned getImmMinusOneOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
+    unsigned getT2AdrLabelOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
     unsigned getAddrMode6AddressOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getAddrMode6DupAddressOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
     unsigned getAddrMode6OffsetOpValue(const MachineInstr &MI, unsigned Op)
       const { return 0; }
     unsigned getBitfieldInvertedMaskOpValue(const MachineInstr &MI,
                                             unsigned Op) const { return 0; }
+    unsigned getMsbOpValue(const MachineInstr &MI,
+                           unsigned Op) const { return 0; }
     uint32_t getLdStmModeOpValue(const MachineInstr &MI, unsigned OpIdx)
       const {return 0; }
     uint32_t getLdStSORegOpValue(const MachineInstr &MI, unsigned OpIdx)
@@ -218,14 +258,27 @@ namespace {
       Binary |= (Reg << 13);
       return Binary;
     }
+
+    unsigned getHiLo16ImmOpValue(const MachineInstr &MI, unsigned Op) const {
+      return 0;
+    }
+
     uint32_t getAddrMode2OpValue(const MachineInstr &MI, unsigned OpIdx)
       const { return 0;}
     uint32_t getAddrMode2OffsetOpValue(const MachineInstr &MI, unsigned OpIdx)
       const { return 0;}
     uint32_t getAddrMode3OffsetOpValue(const MachineInstr &MI, unsigned OpIdx)
       const { return 0;}
-    uint32_t getAddrMode3OpValue(const MachineInstr &MI, unsigned Op) const
-      { return 0; }
+    uint32_t getAddrMode3OpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    uint32_t getAddrModeThumbSPOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    uint32_t getAddrModeSOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    uint32_t getAddrModeISOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    uint32_t getAddrModePCOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
     uint32_t getAddrMode5OpValue(const MachineInstr &MI, unsigned Op) const {
       // {12-9}  = reg
       // {8}     = (U)nsigned (add == '1', sub == '0')
@@ -254,6 +307,13 @@ namespace {
       const { return 0; }
 
     unsigned getRegisterListOpValue(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+
+    unsigned getNarrowShiftRight16Imm(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getNarrowShiftRight32Imm(const MachineInstr &MI, unsigned Op)
+      const { return 0; }
+    unsigned getNarrowShiftRight64Imm(const MachineInstr &MI, unsigned Op)
       const { return 0; }
 
     /// getMovi32Value - Return binary encoding of operand for movw/movt. If the
@@ -385,12 +445,8 @@ unsigned ARMCodeEmitter::getMachineOpValue(const MachineInstr &MI,
     emitJumpTableAddress(MO.getIndex(), ARM::reloc_arm_relative);
   else if (MO.isMBB())
     emitMachineBasicBlock(MO.getMBB(), ARM::reloc_arm_branch);
-  else {
-#ifndef NDEBUG
-    errs() << MO;
-#endif
-    llvm_unreachable(0);
-  }
+  else
+    llvm_unreachable("Unable to encode MachineOperand!");
   return 0;
 }
 
@@ -467,6 +523,14 @@ void ARMCodeEmitter::emitInstruction(const MachineInstr &MI) {
     llvm_unreachable("Unhandled instruction encoding format!");
     break;
   }
+  case ARMII::MiscFrm:
+    if (MI.getOpcode() == ARM::LEApcrelJT) {
+      // Materialize jumptable address.
+      emitLEApcrelJTInstruction(MI);
+      break;
+    }
+    llvm_unreachable("Unhandled instruction encoding!");
+    break;
   case ARMII::Pseudo:
     emitPseudoInstruction(MI);
     break;
@@ -744,7 +808,7 @@ void ARMCodeEmitter::emitLEApcrelJTInstruction(const MachineInstr &MI) {
   const TargetInstrDesc &TID = MI.getDesc();
 
   // Emit the 'add' instruction.
-  unsigned Binary = 0x4 << 21;  // add: Insts{21-24} = 0b0100
+  unsigned Binary = 0x4 << 21;  // add: Insts{24-21} = 0b0100
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
@@ -815,10 +879,10 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
   switch (Opcode) {
   default:
     llvm_unreachable("ARMCodeEmitter::emitPseudoInstruction");
-  case ARM::BX:
-  case ARM::BMOVPCRX:
-  case ARM::BXr9:
-  case ARM::BMOVPCRXr9: {
+  case ARM::BX_CALL:
+  case ARM::BMOVPCRX_CALL:
+  case ARM::BXr9_CALL:
+  case ARM::BMOVPCRXr9_CALL: {
     // First emit mov lr, pc
     unsigned Binary = 0x01a0e00f;
     Binary |= II->getPredicate(&MI) << ARMII::CondShift;
@@ -1261,8 +1325,8 @@ void ARMCodeEmitter::emitLoadStoreMultipleInstruction(const MachineInstr &MI) {
   Binary |= getMachineOpValue(MI, OpIdx++) << ARMII::RegRnShift;
 
   // Set addressing mode by modifying bits U(23) and P(24)
-  const MachineOperand &MO = MI.getOperand(OpIdx++);
-  Binary |= getAddrModeUPBits(ARM_AM::getAM4SubMode(MO.getImm()));
+  ARM_AM::AMSubMode Mode = ARM_AM::getLoadStoreMultipleSubMode(MI.getOpcode());
+  Binary |= getAddrModeUPBits(ARM_AM::getAM4SubMode(Mode));
 
   // Set bit W(21)
   if (IsUpdating)
@@ -1715,8 +1779,8 @@ ARMCodeEmitter::emitVFPLoadStoreMultipleInstruction(const MachineInstr &MI) {
   Binary |= getMachineOpValue(MI, OpIdx++) << ARMII::RegRnShift;
 
   // Set addressing mode by modifying bits U(23) and P(24)
-  const MachineOperand &MO = MI.getOperand(OpIdx++);
-  Binary |= getAddrModeUPBits(ARM_AM::getAM4SubMode(MO.getImm()));
+  ARM_AM::AMSubMode Mode = ARM_AM::getLoadStoreMultipleSubMode(MI.getOpcode());
+  Binary |= getAddrModeUPBits(ARM_AM::getAM4SubMode(Mode));
 
   // Set bit W(21)
   if (IsUpdating)

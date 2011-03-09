@@ -48,8 +48,6 @@ public:
   
   bool requiresRegisterScavenging(const MachineFunction &MF) const;
 
-  bool hasFP(const MachineFunction &MF) const;
-
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
                                      MachineBasicBlock &MBB,
                                      MachineBasicBlock::iterator I) const;
@@ -57,15 +55,9 @@ public:
   void eliminateFrameIndex(MachineBasicBlock::iterator II,
                            int SPAdj, RegScavenger *RS = NULL) const;
 
-  void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                                RegScavenger *RS = NULL) const;
-
-  void processFunctionBeforeFrameFinalized(MachineFunction &MF) const;
-
   // Debug information queries.
   unsigned getRARegister() const;
   unsigned getFrameRegister(const MachineFunction &MF) const;
-  void getInitialFrameState(std::vector<MachineMove> &Moves) const;
 
   //! Return the array of argument passing registers
   /*!

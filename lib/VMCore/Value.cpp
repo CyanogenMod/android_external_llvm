@@ -255,7 +255,7 @@ void Value::takeName(Value *V) {
   // Get V's ST, this should always succed, because V has a name.
   ValueSymbolTable *VST;
   bool Failure = getSymTab(V, VST);
-  assert(!Failure && "V has a name, so it should have a ST!"); Failure=Failure;
+  assert(!Failure && "V has a name, so it should have a ST!"); (void)Failure;
 
   // If these values are both in the same symtab, we can do this very fast.
   // This works even if both values have no symtab yet.
@@ -346,27 +346,6 @@ Value *Value::stripPointerCasts() {
   return V;
 }
 
-Value *Value::getUnderlyingObject(unsigned MaxLookup) {
-  if (!getType()->isPointerTy())
-    return this;
-  Value *V = this;
-  for (unsigned Count = 0; MaxLookup == 0 || Count < MaxLookup; ++Count) {
-    if (GEPOperator *GEP = dyn_cast<GEPOperator>(V)) {
-      V = GEP->getPointerOperand();
-    } else if (Operator::getOpcode(V) == Instruction::BitCast) {
-      V = cast<Operator>(V)->getOperand(0);
-    } else if (GlobalAlias *GA = dyn_cast<GlobalAlias>(V)) {
-      if (GA->mayBeOverridden())
-        return V;
-      V = GA->getAliasee();
-    } else {
-      return V;
-    }
-    assert(V->getType()->isPointerTy() && "Unexpected operand type!");
-  }
-  return V;
-}
-
 /// isDereferenceablePointer - Test if this value is always a pointer to
 /// allocated and suitably aligned memory for a simple load or store.
 bool Value::isDereferenceablePointer() const {
@@ -384,6 +363,10 @@ bool Value::isDereferenceablePointer() const {
   if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(this))
     return !GV->hasExternalWeakLinkage();
 
+  // byval arguments are ok.
+  if (const Argument *A = dyn_cast<Argument>(this))
+    return A->hasByValAttr();
+  
   // For GEPs, determine if the indexing lands within the allocated object.
   if (const GEPOperator *GEP = dyn_cast<GEPOperator>(this)) {
     // Conservatively require that the base pointer be fully dereferenceable.
@@ -655,26 +638,3 @@ void ValueHandleBase::ValueIsRAUWd(Value *Old, Value *New) {
 /// ~CallbackVH. Empty, but defined here to avoid emitting the vtable
 /// more than once.
 CallbackVH::~CallbackVH() {}
-
-
-//===----------------------------------------------------------------------===//
-//                                 User Class
-//===----------------------------------------------------------------------===//
-
-// replaceUsesOfWith - Replaces all references to the "From" definition with
-// references to the "To" definition.
-//
-void User::replaceUsesOfWith(Value *From, Value *To) {
-  if (From == To) return;   // Duh what?
-
-  assert((!isa<Constant>(this) || isa<GlobalValue>(this)) &&
-         "Cannot call User::replaceUsesOfWith on a constant!");
-
-  for (unsigned i = 0, E = getNumOperands(); i != E; ++i)
-    if (getOperand(i) == From) {  // Is This operand is pointing to oldval?
-      // The side effects of this setOperand call include linking to
-      // "To", adding "this" to the uses list of To, and
-      // most importantly, removing "this" from the use list of "From".
-      setOperand(i, To); // Fix it now...
-    }
-}

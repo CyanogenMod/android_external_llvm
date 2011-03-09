@@ -63,6 +63,7 @@
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/ScalarEvolutionExpander.h"
+#include "llvm/Assembly/Writer.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/ADT/SmallBitVector.h"
@@ -210,8 +211,7 @@ struct Formula {
 
   Formula() : ScaledReg(0) {}
 
-  void InitialMatch(const SCEV *S, Loop *L,
-                    ScalarEvolution &SE, DominatorTree &DT);
+  void InitialMatch(const SCEV *S, Loop *L, ScalarEvolution &SE);
 
   unsigned getNumRegs() const;
   const Type *getType() const;
@@ -232,9 +232,9 @@ struct Formula {
 static void DoInitialMatch(const SCEV *S, Loop *L,
                            SmallVectorImpl<const SCEV *> &Good,
                            SmallVectorImpl<const SCEV *> &Bad,
-                           ScalarEvolution &SE, DominatorTree &DT) {
+                           ScalarEvolution &SE) {
   // Collect expressions which properly dominate the loop header.
-  if (S->properlyDominates(L->getHeader(), &DT)) {
+  if (SE.properlyDominates(S, L->getHeader())) {
     Good.push_back(S);
     return;
   }
@@ -243,18 +243,18 @@ static void DoInitialMatch(const SCEV *S, Loop *L,
   if (const SCEVAddExpr *Add = dyn_cast<SCEVAddExpr>(S)) {
     for (SCEVAddExpr::op_iterator I = Add->op_begin(), E = Add->op_end();
          I != E; ++I)
-      DoInitialMatch(*I, L, Good, Bad, SE, DT);
+      DoInitialMatch(*I, L, Good, Bad, SE);
     return;
   }
 
   // Look at addrec operands.
   if (const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(S))
     if (!AR->getStart()->isZero()) {
-      DoInitialMatch(AR->getStart(), L, Good, Bad, SE, DT);
+      DoInitialMatch(AR->getStart(), L, Good, Bad, SE);
       DoInitialMatch(SE.getAddRecExpr(SE.getConstant(AR->getType(), 0),
                                       AR->getStepRecurrence(SE),
                                       AR->getLoop()),
-                     L, Good, Bad, SE, DT);
+                     L, Good, Bad, SE);
       return;
     }
 
@@ -266,7 +266,7 @@ static void DoInitialMatch(const SCEV *S, Loop *L,
 
       SmallVector<const SCEV *, 4> MyGood;
       SmallVector<const SCEV *, 4> MyBad;
-      DoInitialMatch(NewMul, L, MyGood, MyBad, SE, DT);
+      DoInitialMatch(NewMul, L, MyGood, MyBad, SE);
       const SCEV *NegOne = SE.getSCEV(ConstantInt::getAllOnesValue(
         SE.getEffectiveSCEVType(NewMul->getType())));
       for (SmallVectorImpl<const SCEV *>::const_iterator I = MyGood.begin(),
@@ -286,11 +286,10 @@ static void DoInitialMatch(const SCEV *S, Loop *L,
 /// InitialMatch - Incorporate loop-variant parts of S into this Formula,
 /// attempting to keep all loop-invariant and loop-computable values in a
 /// single base register.
-void Formula::InitialMatch(const SCEV *S, Loop *L,
-                           ScalarEvolution &SE, DominatorTree &DT) {
+void Formula::InitialMatch(const SCEV *S, Loop *L, ScalarEvolution &SE) {
   SmallVector<const SCEV *, 4> Good;
   SmallVector<const SCEV *, 4> Bad;
-  DoInitialMatch(S, L, Good, Bad, SE, DT);
+  DoInitialMatch(S, L, Good, Bad, SE);
   if (!Good.empty()) {
     const SCEV *Sum = SE.getAddExpr(Good);
     if (!Sum->isZero())
@@ -730,7 +729,7 @@ void Cost::RateRegister(const SCEV *Reg,
     ++SetupCost;
 
     NumIVMuls += isa<SCEVMulExpr>(Reg) &&
-                 Reg->hasComputableLoopEvolution(L);
+                 SE.hasComputableLoopEvolution(Reg, L);
 }
 
 /// RatePrimaryRegister - Record this register in the set. If we haven't seen it
@@ -2056,7 +2055,7 @@ void LSRInstance::CollectFixupsAndInitialFormulae() {
 
         // x == y  -->  x - y == 0
         const SCEV *N = SE.getSCEV(NV);
-        if (N->isLoopInvariant(L)) {
+        if (SE.isLoopInvariant(N, L)) {
           Kind = LSRUse::ICmpZero;
           S = SE.getMinusSCEV(N, S);
         }
@@ -2096,7 +2095,7 @@ void LSRInstance::CollectFixupsAndInitialFormulae() {
 void
 LSRInstance::InsertInitialFormula(const SCEV *S, LSRUse &LU, size_t LUIdx) {
   Formula F;
-  F.InitialMatch(S, L, SE, DT);
+  F.InitialMatch(S, L, SE);
   bool Inserted = InsertFormula(LU, LUIdx, F);
   assert(Inserted && "Initial formula already exists!"); (void)Inserted;
 }
@@ -2196,7 +2195,7 @@ LSRInstance::CollectLoopInvariantFixupsAndFormulae() {
         if (const ICmpInst *ICI = dyn_cast<ICmpInst>(UserInst)) {
           unsigned OtherIdx = !UI.getOperandNo();
           Value *OtherOp = const_cast<Value *>(ICI->getOperand(OtherIdx));
-          if (SE.getSCEV(OtherOp)->hasComputableLoopEvolution(L))
+          if (SE.hasComputableLoopEvolution(SE.getSCEV(OtherOp), L))
             continue;
         }
 
@@ -2279,7 +2278,7 @@ void LSRInstance::GenerateReassociations(LSRUse &LU, unsigned LUIdx,
 
       // Loop-variant "unknown" values are uninteresting; we won't be able to
       // do anything meaningful with them.
-      if (isa<SCEVUnknown>(*J) && !(*J)->isLoopInvariant(L))
+      if (isa<SCEVUnknown>(*J) && !SE.isLoopInvariant(*J, L))
         continue;
 
       // Don't pull a constant into a register if the constant could be folded
@@ -2330,8 +2329,8 @@ void LSRInstance::GenerateCombinations(LSRUse &LU, unsigned LUIdx,
   for (SmallVectorImpl<const SCEV *>::const_iterator
        I = Base.BaseRegs.begin(), E = Base.BaseRegs.end(); I != E; ++I) {
     const SCEV *BaseReg = *I;
-    if (BaseReg->properlyDominates(L->getHeader(), &DT) &&
-        !BaseReg->hasComputableLoopEvolution(L))
+    if (SE.properlyDominates(BaseReg, L->getHeader()) &&
+        !SE.hasComputableLoopEvolution(BaseReg, L))
       Ops.push_back(BaseReg);
     else
       F.BaseRegs.push_back(BaseReg);
@@ -3545,21 +3544,23 @@ void LSRInstance::RewriteForPHI(PHINode *PN,
       // is the canonical backedge for this loop, which complicates post-inc
       // users.
       if (e != 1 && BB->getTerminator()->getNumSuccessors() > 1 &&
-          !isa<IndirectBrInst>(BB->getTerminator()) &&
-          (PN->getParent() != L->getHeader() || !L->contains(BB))) {
-        // Split the critical edge.
-        BasicBlock *NewBB = SplitCriticalEdge(BB, PN->getParent(), P);
+          !isa<IndirectBrInst>(BB->getTerminator())) {
+        Loop *PNLoop = LI.getLoopFor(PN->getParent());
+        if (!PNLoop || PN->getParent() != PNLoop->getHeader()) {
+          // Split the critical edge.
+          BasicBlock *NewBB = SplitCriticalEdge(BB, PN->getParent(), P);
 
-        // If PN is outside of the loop and BB is in the loop, we want to
-        // move the block to be immediately before the PHI block, not
-        // immediately after BB.
-        if (L->contains(BB) && !L->contains(PN))
-          NewBB->moveBefore(PN->getParent());
+          // If PN is outside of the loop and BB is in the loop, we want to
+          // move the block to be immediately before the PHI block, not
+          // immediately after BB.
+          if (L->contains(BB) && !L->contains(PN))
+            NewBB->moveBefore(PN->getParent());
 
-        // Splitting the edge can reduce the number of PHI entries we have.
-        e = PN->getNumIncomingValues();
-        BB = NewBB;
-        i = PN->getBasicBlockIndex(BB);
+          // Splitting the edge can reduce the number of PHI entries we have.
+          e = PN->getNumIncomingValues();
+          BB = NewBB;
+          i = PN->getBasicBlockIndex(BB);
+        }
       }
 
       std::pair<DenseMap<BasicBlock *, Value *>::iterator, bool> Pair =
@@ -3815,7 +3816,6 @@ void LoopStrengthReduce::getAnalysisUsage(AnalysisUsage &AU) const {
   // We split critical edges, so we change the CFG.  However, we do update
   // many analyses if they are around.
   AU.addPreservedID(LoopSimplifyID);
-  AU.addPreserved("domfrontier");
 
   AU.addRequired<LoopInfo>();
   AU.addPreserved<LoopInfo>();
@@ -3824,6 +3824,9 @@ void LoopStrengthReduce::getAnalysisUsage(AnalysisUsage &AU) const {
   AU.addPreserved<DominatorTree>();
   AU.addRequired<ScalarEvolution>();
   AU.addPreserved<ScalarEvolution>();
+  // Requiring LoopSimplify a second time here prevents IVUsers from running
+  // twice, since LoopSimplify was invalidated by running ScalarEvolution.
+  AU.addRequiredID(LoopSimplifyID);
   AU.addRequired<IVUsers>();
   AU.addPreserved<IVUsers>();
 }

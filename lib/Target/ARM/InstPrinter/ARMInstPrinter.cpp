@@ -29,6 +29,9 @@ StringRef ARMInstPrinter::getOpcodeName(unsigned Opcode) const {
   return getInstructionName(Opcode);
 }
 
+StringRef ARMInstPrinter::getRegName(unsigned RegNo) const {
+  return getRegisterName(RegNo);
+}
 
 void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O) {
   unsigned Opcode = MI->getOpcode();
@@ -63,55 +66,47 @@ void ARMInstPrinter::printInst(const MCInst *MI, raw_ostream &O) {
   }
 
   // A8.6.123 PUSH
-  if ((Opcode == ARM::STM_UPD || Opcode == ARM::t2STM_UPD) &&
+  if ((Opcode == ARM::STMDB_UPD || Opcode == ARM::t2STMDB_UPD) &&
       MI->getOperand(0).getReg() == ARM::SP) {
-    const MCOperand &MO1 = MI->getOperand(2);
-    if (ARM_AM::getAM4SubMode(MO1.getImm()) == ARM_AM::db) {
-      O << '\t' << "push";
-      printPredicateOperand(MI, 3, O);
-      O << '\t';
-      printRegisterList(MI, 5, O);
-      return;
-    }
+    O << '\t' << "push";
+    printPredicateOperand(MI, 2, O);
+    if (Opcode == ARM::t2STMDB_UPD)
+      O << ".w";
+    O << '\t';
+    printRegisterList(MI, 4, O);
+    return;
   }
 
   // A8.6.122 POP
-  if ((Opcode == ARM::LDM_UPD || Opcode == ARM::t2LDM_UPD) &&
+  if ((Opcode == ARM::LDMIA_UPD || Opcode == ARM::t2LDMIA_UPD) &&
       MI->getOperand(0).getReg() == ARM::SP) {
-    const MCOperand &MO1 = MI->getOperand(2);
-    if (ARM_AM::getAM4SubMode(MO1.getImm()) == ARM_AM::ia) {
-      O << '\t' << "pop";
-      printPredicateOperand(MI, 3, O);
-      O << '\t';
-      printRegisterList(MI, 5, O);
-      return;
-    }
+    O << '\t' << "pop";
+    printPredicateOperand(MI, 2, O);
+    if (Opcode == ARM::t2LDMIA_UPD)
+      O << ".w";
+    O << '\t';
+    printRegisterList(MI, 4, O);
+    return;
   }
 
   // A8.6.355 VPUSH
-  if ((Opcode == ARM::VSTMS_UPD || Opcode == ARM::VSTMD_UPD) &&
+  if ((Opcode == ARM::VSTMSDB_UPD || Opcode == ARM::VSTMDDB_UPD) &&
       MI->getOperand(0).getReg() == ARM::SP) {
-    const MCOperand &MO1 = MI->getOperand(2);
-    if (ARM_AM::getAM4SubMode(MO1.getImm()) == ARM_AM::db) {
-      O << '\t' << "vpush";
-      printPredicateOperand(MI, 3, O);
-      O << '\t';
-      printRegisterList(MI, 5, O);
-      return;
-    }
+    O << '\t' << "vpush";
+    printPredicateOperand(MI, 2, O);
+    O << '\t';
+    printRegisterList(MI, 4, O);
+    return;
   }
 
   // A8.6.354 VPOP
-  if ((Opcode == ARM::VLDMS_UPD || Opcode == ARM::VLDMD_UPD) &&
+  if ((Opcode == ARM::VLDMSIA_UPD || Opcode == ARM::VLDMDIA_UPD) &&
       MI->getOperand(0).getReg() == ARM::SP) {
-    const MCOperand &MO1 = MI->getOperand(2);
-    if (ARM_AM::getAM4SubMode(MO1.getImm()) == ARM_AM::ia) {
-      O << '\t' << "vpop";
-      printPredicateOperand(MI, 3, O);
-      O << '\t';
-      printRegisterList(MI, 5, O);
-      return;
-    }
+    O << '\t' << "vpop";
+    printPredicateOperand(MI, 2, O);
+    O << '\t';
+    printRegisterList(MI, 4, O);
+    return;
   }
 
   printInstruction(MI, O);
@@ -387,33 +382,32 @@ void ARMInstPrinter::printSetendOperand(const MCInst *MI, unsigned OpNum,
     O << "le";
 }
 
-void ARMInstPrinter::printCPSOptionOperand(const MCInst *MI, unsigned OpNum,
-                                           raw_ostream &O) {
+void ARMInstPrinter::printCPSIMod(const MCInst *MI, unsigned OpNum,
+                                  raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(OpNum);
-  unsigned option = Op.getImm();
-  unsigned mode = option & 31;
-  bool changemode = option >> 5 & 1;
-  unsigned AIF = option >> 6 & 7;
-  unsigned imod = option >> 9 & 3;
-  if (imod == 2)
-    O << "ie";
-  else if (imod == 3)
-    O << "id";
-  O << '\t';
-  if (imod > 1) {
-    if (AIF & 4) O << 'a';
-    if (AIF & 2) O << 'i';
-    if (AIF & 1) O << 'f';
-    if (AIF > 0 && changemode) O << ", ";
-  }
-  if (changemode)
-    O << '#' << mode;
+  O << ARM_PROC::IModToString(Op.getImm());
+}
+
+void ARMInstPrinter::printCPSIFlag(const MCInst *MI, unsigned OpNum,
+                                   raw_ostream &O) {
+  const MCOperand &Op = MI->getOperand(OpNum);
+  unsigned IFlags = Op.getImm();
+  for (int i=2; i >= 0; --i)
+    if (IFlags & (1 << i))
+      O << ARM_PROC::IFlagsToString(1 << i);
 }
 
 void ARMInstPrinter::printMSRMaskOperand(const MCInst *MI, unsigned OpNum,
                                          raw_ostream &O) {
   const MCOperand &Op = MI->getOperand(OpNum);
-  unsigned Mask = Op.getImm();
+  unsigned SpecRegRBit = Op.getImm() >> 4;
+  unsigned Mask = Op.getImm() & 0xf;
+
+  if (SpecRegRBit)
+    O << "spsr";
+  else
+    O << "cpsr";
+
   if (Mask) {
     O << '_';
     if (Mask & 8) O << 'f';
@@ -461,6 +455,16 @@ void ARMInstPrinter::printNoHashImmediate(const MCInst *MI, unsigned OpNum,
   O << MI->getOperand(OpNum).getImm();
 }
 
+void ARMInstPrinter::printPImmediate(const MCInst *MI, unsigned OpNum,
+                                          raw_ostream &O) {
+  O << "p" << MI->getOperand(OpNum).getImm();
+}
+
+void ARMInstPrinter::printCImmediate(const MCInst *MI, unsigned OpNum,
+                                          raw_ostream &O) {
+  O << "c" << MI->getOperand(OpNum).getImm();
+}
+
 void ARMInstPrinter::printPCLabel(const MCInst *MI, unsigned OpNum,
                                   raw_ostream &O) {
   llvm_unreachable("Unhandled PC-relative pseudo-instruction!");
@@ -490,17 +494,7 @@ void ARMInstPrinter::printThumbITMask(const MCInst *MI, unsigned OpNum,
 void ARMInstPrinter::printThumbAddrModeRROperand(const MCInst *MI, unsigned Op,
                                                  raw_ostream &O) {
   const MCOperand &MO1 = MI->getOperand(Op);
-  const MCOperand &MO2 = MI->getOperand(Op+1);
-  O << "[" << getRegisterName(MO1.getReg());
-  O << ", " << getRegisterName(MO2.getReg()) << "]";
-}
-
-void ARMInstPrinter::printThumbAddrModeRI5Operand(const MCInst *MI, unsigned Op,
-                                                  raw_ostream &O,
-                                                  unsigned Scale) {
-  const MCOperand &MO1 = MI->getOperand(Op);
-  const MCOperand &MO2 = MI->getOperand(Op+1);
-  const MCOperand &MO3 = MI->getOperand(Op+2);
+  const MCOperand &MO2 = MI->getOperand(Op + 1);
 
   if (!MO1.isReg()) {   // FIXME: This is for CP entries, but isn't right.
     printOperand(MI, Op, O);
@@ -508,44 +502,50 @@ void ARMInstPrinter::printThumbAddrModeRI5Operand(const MCInst *MI, unsigned Op,
   }
 
   O << "[" << getRegisterName(MO1.getReg());
-  if (MO3.getReg())
-    O << ", " << getRegisterName(MO3.getReg());
-  else if (unsigned ImmOffs = MO2.getImm())
+  if (unsigned RegNum = MO2.getReg())
+    O << ", " << getRegisterName(RegNum);
+  O << "]";
+}
+
+void ARMInstPrinter::printThumbAddrModeImm5SOperand(const MCInst *MI,
+                                                    unsigned Op,
+                                                    raw_ostream &O,
+                                                    unsigned Scale) {
+  const MCOperand &MO1 = MI->getOperand(Op);
+  const MCOperand &MO2 = MI->getOperand(Op + 1);
+
+  if (!MO1.isReg()) {   // FIXME: This is for CP entries, but isn't right.
+    printOperand(MI, Op, O);
+    return;
+  }
+
+  O << "[" << getRegisterName(MO1.getReg());
+  if (unsigned ImmOffs = MO2.getImm())
     O << ", #" << ImmOffs * Scale;
   O << "]";
 }
 
-void ARMInstPrinter::printThumbAddrModeS1Operand(const MCInst *MI, unsigned Op,
-                                                 raw_ostream &O) {
-  printThumbAddrModeRI5Operand(MI, Op, O, 1);
+void ARMInstPrinter::printThumbAddrModeImm5S1Operand(const MCInst *MI,
+                                                     unsigned Op,
+                                                     raw_ostream &O) {
+  printThumbAddrModeImm5SOperand(MI, Op, O, 1);
 }
 
-void ARMInstPrinter::printThumbAddrModeS2Operand(const MCInst *MI, unsigned Op,
-                                                 raw_ostream &O) {
-  printThumbAddrModeRI5Operand(MI, Op, O, 2);
+void ARMInstPrinter::printThumbAddrModeImm5S2Operand(const MCInst *MI,
+                                                     unsigned Op,
+                                                     raw_ostream &O) {
+  printThumbAddrModeImm5SOperand(MI, Op, O, 2);
 }
 
-void ARMInstPrinter::printThumbAddrModeS4Operand(const MCInst *MI, unsigned Op,
-                                                 raw_ostream &O) {
-  printThumbAddrModeRI5Operand(MI, Op, O, 4);
+void ARMInstPrinter::printThumbAddrModeImm5S4Operand(const MCInst *MI,
+                                                     unsigned Op,
+                                                     raw_ostream &O) {
+  printThumbAddrModeImm5SOperand(MI, Op, O, 4);
 }
 
 void ARMInstPrinter::printThumbAddrModeSPOperand(const MCInst *MI, unsigned Op,
                                                  raw_ostream &O) {
-  const MCOperand &MO1 = MI->getOperand(Op);
-  const MCOperand &MO2 = MI->getOperand(Op+1);
-  O << "[" << getRegisterName(MO1.getReg());
-  if (unsigned ImmOffs = MO2.getImm())
-    O << ", #" << ImmOffs*4;
-  O << "]";
-}
-
-void ARMInstPrinter::printTBAddrMode(const MCInst *MI, unsigned OpNum,
-                                     raw_ostream &O) {
-  O << "[pc, " << getRegisterName(MI->getOperand(OpNum).getReg());
-  if (MI->getOpcode() == ARM::t2TBH)
-    O << ", lsl #1";
-  O << ']';
+  printThumbAddrModeImm5SOperand(MI, Op, O, 4);
 }
 
 // Constant shifts t2_so_reg is a 2-operand unit corresponding to the Thumb2
@@ -672,12 +672,37 @@ void ARMInstPrinter::printT2AddrModeSoRegOperand(const MCInst *MI,
 
 void ARMInstPrinter::printVFPf32ImmOperand(const MCInst *MI, unsigned OpNum,
                                            raw_ostream &O) {
-  O << '#' << (float)MI->getOperand(OpNum).getFPImm();
+  const MCOperand &MO = MI->getOperand(OpNum);
+  O << '#';
+  if (MO.isFPImm()) {
+    O << (float)MO.getFPImm();
+  } else {
+    union {
+      uint32_t I;
+      float F;
+    } FPUnion;
+
+    FPUnion.I = MO.getImm();
+    O << FPUnion.F;
+  }
 }
 
 void ARMInstPrinter::printVFPf64ImmOperand(const MCInst *MI, unsigned OpNum,
                                            raw_ostream &O) {
-  O << '#' << MI->getOperand(OpNum).getFPImm();
+  const MCOperand &MO = MI->getOperand(OpNum);
+  O << '#';
+  if (MO.isFPImm()) {
+    O << MO.getFPImm();
+  } else {
+    // We expect the binary encoding of a floating point number here.
+    union {
+      uint64_t I;
+      double D;
+    } FPUnion;
+
+    FPUnion.I = MO.getImm();
+    O << FPUnion.D;
+  }
 }
 
 void ARMInstPrinter::printNEONModImmOperand(const MCInst *MI, unsigned OpNum,

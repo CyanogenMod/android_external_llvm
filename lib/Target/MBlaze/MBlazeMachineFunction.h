@@ -14,6 +14,7 @@
 #ifndef MBLAZE_MACHINE_FUNCTION_INFO_H
 #define MBLAZE_MACHINE_FUNCTION_INFO_H
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/VectorExtras.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -33,12 +34,6 @@ private:
   /// Holds for each function where on the stack the Return Address must be
   /// saved. This is used on Prologue and Epilogue to emit RA save/restore
   int RAStackOffset;
-
-  /// At each function entry a special bitmask directive must be emitted
-  /// to help in debugging CPU callee saved registers. It needs a negative
-  /// offset from the final stack size and its higher register location on
-  /// the stack.
-  int CPUTopSavedRegOff;
 
   /// MBlazeFIHolder - Holds a FrameIndex and it's Stack Pointer Offset
   struct MBlazeFIHolder {
@@ -69,6 +64,11 @@ private:
   SmallVector<MBlazeFIHolder, 4> FnStoreVarArgs;
   bool HasStoreVarArgs;
 
+  // When determining the final stack layout some of the frame indexes may
+  // be replaced by new frame indexes that reside in the caller's stack
+  // frame. The replacements are recorded in this structure.
+  DenseMap<int,int> FIReplacements;
+
   /// SRetReturnReg - Some subtargets require that sret lowering includes
   /// returning the value of the returned struct in a register. This field
   /// holds the virtual register into which the sret argument is passed.
@@ -82,11 +82,15 @@ private:
   // VarArgsFrameIndex - FrameIndex for start of varargs area.
   int VarArgsFrameIndex;
 
+  /// LiveInFI - keeps track of the frame indexes in a callers stack
+  /// frame that are live into a function.
+  SmallVector<int, 16> LiveInFI;
+
 public:
   MBlazeFunctionInfo(MachineFunction& MF)
-  : FPStackOffset(0), RAStackOffset(0), CPUTopSavedRegOff(0),
-    GPHolder(-1,-1), HasLoadArgs(false), HasStoreVarArgs(false),
-    SRetReturnReg(0), GlobalBaseReg(0), VarArgsFrameIndex(0)
+  : FPStackOffset(0), RAStackOffset(0), GPHolder(-1,-1), HasLoadArgs(false),
+    HasStoreVarArgs(false), SRetReturnReg(0), GlobalBaseReg(0),
+    VarArgsFrameIndex(0), LiveInFI()
   {}
 
   int getFPStackOffset() const { return FPStackOffset; }
@@ -94,9 +98,6 @@ public:
 
   int getRAStackOffset() const { return RAStackOffset; }
   void setRAStackOffset(int Off) { RAStackOffset = Off; }
-
-  int getCPUTopSavedRegOff() const { return CPUTopSavedRegOff; }
-  void setCPUTopSavedRegOff(int Off) { CPUTopSavedRegOff = Off; }
 
   int getGPStackOffset() const { return GPHolder.SPOffset; }
   int getGPFI() const { return GPHolder.FI; }
@@ -107,10 +108,36 @@ public:
   bool hasLoadArgs() const { return HasLoadArgs; }
   bool hasStoreVarArgs() const { return HasStoreVarArgs; }
 
+  void recordLiveIn(int FI) {
+    LiveInFI.push_back(FI);
+  }
+
+  bool isLiveIn(int FI) {
+    for (unsigned i = 0, e = LiveInFI.size(); i < e; ++i)
+      if (FI == LiveInFI[i]) return true;
+
+    return false;
+  }
+
+  const SmallVector<int, 16>& getLiveIn() const { return LiveInFI; }
+
+  void recordReplacement(int OFI, int NFI) {
+    FIReplacements.insert(std::make_pair(OFI,NFI));
+  }
+
+  bool hasReplacement(int OFI) const {
+    return FIReplacements.find(OFI) != FIReplacements.end();
+  }
+
+  int getReplacement(int OFI) const {
+    return FIReplacements.lookup(OFI);
+  }
+
   void recordLoadArgsFI(int FI, int SPOffset) {
     if (!HasLoadArgs) HasLoadArgs=true;
     FnLoadArgs.push_back(MBlazeFIHolder(FI, SPOffset));
   }
+
   void recordStoreVarArgsFI(int FI, int SPOffset) {
     if (!HasStoreVarArgs) HasStoreVarArgs=true;
     FnStoreVarArgs.push_back(MBlazeFIHolder(FI, SPOffset));
@@ -121,6 +148,7 @@ public:
     for (unsigned i = 0, e = FnLoadArgs.size(); i != e; ++i)
       MFI->setObjectOffset(FnLoadArgs[i].FI, FnLoadArgs[i].SPOffset);
   }
+
   void adjustStoreVarArgsFI(MachineFrameInfo *MFI) const {
     if (!hasStoreVarArgs()) return;
     for (unsigned i = 0, e = FnStoreVarArgs.size(); i != e; ++i)

@@ -41,6 +41,8 @@ def MRM_F8 : Format<41>;
 def MRM_F9 : Format<42>;
 def RawFrmImm8 : Format<43>;
 def RawFrmImm16 : Format<44>;
+def MRM_D0 : Format<45>;
+def MRM_D1 : Format<46>;
 
 // ImmType - This specifies the immediate type used by an instruction. This is
 // part of the ad-hoc solution used to emit machine instruction encodings by our
@@ -135,17 +137,17 @@ class X86Inst<bits<8> opcod, Format f, ImmType i, dag outs, dag ins,
   bit hasAdSizePrefix = 0;  // Does this inst have a 0x67 prefix?
 
   bits<4> Prefix = 0;       // Which prefix byte does this inst have?
-  bit hasREX_WPrefix  = 0;  // Does this inst requires the REX.W prefix?
+  bit hasREX_WPrefix  = 0;  // Does this inst require the REX.W prefix?
   FPFormat FPForm = NotFP;  // What flavor of FP instruction is this?
   bit hasLockPrefix = 0;    // Does this inst have a 0xF0 prefix?
   bits<2> SegOvrBits = 0;   // Segment override prefix.
   Domain ExeDomain = d;
-  bit hasVEXPrefix = 0;     // Does this inst requires a VEX prefix?
+  bit hasVEXPrefix = 0;     // Does this inst require a VEX prefix?
   bit hasVEX_WPrefix = 0;   // Does this inst set the VEX_W field?
-  bit hasVEX_4VPrefix = 0;  // Does this inst requires the VEX.VVVV field?
-  bit hasVEX_i8ImmReg = 0;  // Does this inst requires the last source register
+  bit hasVEX_4VPrefix = 0;  // Does this inst require the VEX.VVVV field?
+  bit hasVEX_i8ImmReg = 0;  // Does this inst require the last source register
                             // to be encoded in a immediate field?
-  bit hasVEX_L = 0;         // Does this inst uses large (256-bit) registers?
+  bit hasVEX_L = 0;         // Does this inst use large (256-bit) registers?
   bit has3DNow0F0FOpcode =0;// Wacky 3dNow! encoding?
 
   // TSFlags layout should be kept in sync with X86InstrInfo.h.
@@ -166,6 +168,11 @@ class X86Inst<bits<8> opcod, Format f, ImmType i, dag outs, dag ins,
   let TSFlags{35}    = hasVEX_i8ImmReg;
   let TSFlags{36}    = hasVEX_L;
   let TSFlags{37}    = has3DNow0F0FOpcode;
+}
+
+class PseudoI<dag oops, dag iops, list<dag> pattern>
+  : X86Inst<0, Pseudo, NoImm, oops, iops, ""> {
+  let Pattern = pattern;
 }
 
 class I<bits<8> o, Format f, dag outs, dag ins, string asm,

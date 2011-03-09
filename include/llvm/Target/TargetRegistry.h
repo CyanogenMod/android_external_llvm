@@ -42,9 +42,11 @@ namespace llvm {
   class formatted_raw_ostream;
 
   MCStreamer *createAsmStreamer(MCContext &Ctx, formatted_raw_ostream &OS,
-                                bool isLittleEndian, bool isVerboseAsm,
+                                bool isVerboseAsm,
+                                bool useLoc,
                                 MCInstPrinter *InstPrint,
                                 MCCodeEmitter *CE,
+                                TargetAsmBackend *TAB,
                                 bool ShowInst);
 
   /// Target - Wrapper for Target specific information.
@@ -87,13 +89,15 @@ namespace llvm {
                                                 TargetAsmBackend &TAB,
                                                 raw_ostream &_OS,
                                                 MCCodeEmitter *_Emitter,
-                                                bool RelaxAll);
+                                                bool RelaxAll,
+                                                bool NoExecStack);
     typedef MCStreamer *(*AsmStreamerCtorTy)(MCContext &Ctx,
                                              formatted_raw_ostream &OS,
-                                             bool isLittleEndian,
                                              bool isVerboseAsm,
+                                             bool useLoc,
                                              MCInstPrinter *InstPrint,
                                              MCCodeEmitter *CE,
+                                             TargetAsmBackend *TAB,
                                              bool ShowInst);
 
   private:
@@ -305,27 +309,31 @@ namespace llvm {
     /// \arg _OS - The stream object.
     /// \arg _Emitter - The target independent assembler object.Takes ownership.
     /// \arg RelaxAll - Relax all fixups?
+    /// \arg NoExecStack - Mark file as not needing a executable stack.
     MCStreamer *createObjectStreamer(const std::string &TT, MCContext &Ctx,
                                      TargetAsmBackend &TAB,
                                      raw_ostream &_OS,
                                      MCCodeEmitter *_Emitter,
-                                     bool RelaxAll) const {
+                                     bool RelaxAll,
+                                     bool NoExecStack) const {
       if (!ObjectStreamerCtorFn)
         return 0;
-      return ObjectStreamerCtorFn(*this, TT, Ctx, TAB, _OS, _Emitter, RelaxAll);
+      return ObjectStreamerCtorFn(*this, TT, Ctx, TAB, _OS, _Emitter, RelaxAll,
+                                  NoExecStack);
     }
 
     /// createAsmStreamer - Create a target specific MCStreamer.
     MCStreamer *createAsmStreamer(MCContext &Ctx,
                                   formatted_raw_ostream &OS,
-                                  bool isLittleEndian,
                                   bool isVerboseAsm,
+                                  bool useLoc,
                                   MCInstPrinter *InstPrint,
                                   MCCodeEmitter *CE,
+                                  TargetAsmBackend *TAB,
                                   bool ShowInst) const {
       // AsmStreamerCtorFn is default to llvm::createAsmStreamer
-      return AsmStreamerCtorFn(Ctx, OS, isLittleEndian, isVerboseAsm,
-                               InstPrint, CE, ShowInst);
+      return AsmStreamerCtorFn(Ctx, OS, isVerboseAsm, useLoc,
+                               InstPrint, CE, TAB, ShowInst);
     }
 
     /// @}

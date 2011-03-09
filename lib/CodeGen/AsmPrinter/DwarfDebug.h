@@ -52,6 +52,8 @@ class DIType;
 class DINameSpace;
 class DISubrange;
 class DICompositeType;
+class DITemplateTypeParameter;
+class DITemplateValueParameter;
 
 //===----------------------------------------------------------------------===//
 /// SrcLineInfo - This class is used to record source line correspondence.
@@ -71,6 +73,28 @@ public:
   unsigned getSourceID() const { return SourceID; }
   MCSymbol *getLabel() const { return Label; }
 };
+
+/// DotDebugLocEntry - This struct describes location entries emitted in
+/// .debug_loc section.
+typedef struct DotDebugLocEntry {
+  const MCSymbol *Begin;
+  const MCSymbol *End;
+  MachineLocation Loc;
+  bool Merged;
+  DotDebugLocEntry() : Begin(0), End(0), Merged(false) {}
+  DotDebugLocEntry(const MCSymbol *B, const MCSymbol *E, MachineLocation &L) 
+    : Begin(B), End(E), Loc(L), Merged(false) {}
+  /// Empty entries are also used as a trigger to emit temp label. Such
+  /// labels are referenced is used to find debug_loc offset for a given DIE.
+  bool isEmpty() { return Begin == 0 && End == 0; }
+  bool isMerged() { return Merged; }
+  void Merge(DotDebugLocEntry *Next) {
+    if (!(Begin && Loc == Next->Loc && End == Next->Begin))
+      return;
+    Next->Begin = Begin;
+    Merged = true;
+  }
+} DotDebugLocEntry;
 
 class DwarfDebug {
   /// Asm - Target of Dwarf emission.
@@ -94,30 +118,9 @@ class DwarfDebug {
   ///
   std::vector<DIEAbbrev *> Abbreviations;
 
-  /// DirectoryIdMap - Directory name to directory id map.
-  ///
-  StringMap<unsigned> DirectoryIdMap;
-
-  /// DirectoryNames - A list of directory names.
-  SmallVector<std::string, 8> DirectoryNames;
-
-  /// SourceFileIdMap - Source file name to source file id map.
-  ///
-  StringMap<unsigned> SourceFileIdMap;
-
-  /// SourceFileNames - A list of source file names.
-  SmallVector<std::string, 8> SourceFileNames;
-
   /// SourceIdMap - Source id map, i.e. pair of directory id and source file
   /// id mapped to a unique id.
-  DenseMap<std::pair<unsigned, unsigned>, unsigned> SourceIdMap;
-
-  /// SourceIds - Reverse map from source id to directory id + file id pair.
-  ///
-  SmallVector<std::pair<unsigned, unsigned>, 8> SourceIds;
-
-  /// Lines - List of source line correspondence.
-  std::vector<SrcLineInfo> Lines;
+  StringMap<unsigned> SourceIdMap;
 
   /// DIEBlocks - A list of all the DIEBlocks in use.
   std::vector<DIEBlock *> DIEBlocks;
@@ -136,14 +139,13 @@ class DwarfDebug {
   ///
   UniqueVector<const MCSection*> SectionMap;
 
-  /// SectionSourceLines - Tracks line numbers per text section.
+  /// CurrentFnDbgScope - Top level scope for the current function.
   ///
-  std::vector<std::vector<SrcLineInfo> > SectionSourceLines;
-
-  // CurrentFnDbgScope - Top level scope for the current function.
-  //
   DbgScope *CurrentFnDbgScope;
   
+  /// CurrentFnArguments - List of Arguments (DbgValues) for current function.
+  SmallVector<DbgVariable *, 8> CurrentFnArguments;
+
   /// DbgScopeMap - Tracks the scopes in the current function.  Owns the
   /// contained DbgScope*s.
   ///
@@ -175,20 +177,6 @@ class DwarfDebug {
   /// DbgVariableToDbgInstMap - Maps DbgVariable to corresponding DBG_VALUE
   /// machine instruction.
   DenseMap<const DbgVariable *, const MachineInstr *> DbgVariableToDbgInstMap;
-
-  /// DotDebugLocEntry - This struct describes location entries emitted in
-  /// .debug_loc section.
-  typedef struct DotDebugLocEntry {
-    const MCSymbol *Begin;
-    const MCSymbol *End;
-    MachineLocation Loc;
-    DotDebugLocEntry() : Begin(0), End(0) {}
-    DotDebugLocEntry(const MCSymbol *B, const MCSymbol *E, 
-                  MachineLocation &L) : Begin(B), End(E), Loc(L) {}
-    /// Empty entries are also used as a trigger to emit temp label. Such
-    /// labels are referenced is used to find debug_loc offset for a given DIE.
-    bool isEmpty() { return Begin == 0 && End == 0; }
-  } DotDebugLocEntry;
 
   /// DotDebugLocEntries - Collection of DotDebugLocEntry.
   SmallVector<DotDebugLocEntry, 4> DotDebugLocEntries;
@@ -263,35 +251,10 @@ class DwarfDebug {
 
   DIEInteger *DIEIntegerOne;
 private:
-  
-  /// getSourceDirectoryAndFileIds - Return the directory and file ids that
-  /// maps to the source id. Source id starts at 1.
-  std::pair<unsigned, unsigned>
-  getSourceDirectoryAndFileIds(unsigned SId) const {
-    return SourceIds[SId-1];
-  }
-
-  /// getNumSourceDirectories - Return the number of source directories in the
-  /// debug info.
-  unsigned getNumSourceDirectories() const {
-    return DirectoryNames.size();
-  }
-
-  /// getSourceDirectoryName - Return the name of the directory corresponding
-  /// to the id.
-  const std::string &getSourceDirectoryName(unsigned Id) const {
-    return DirectoryNames[Id - 1];
-  }
-
-  /// getSourceFileName - Return the name of the source file corresponding
-  /// to the id.
-  const std::string &getSourceFileName(unsigned Id) const {
-    return SourceFileNames[Id - 1];
-  }
 
   /// getNumSourceIds - Return the number of unique source ids.
   unsigned getNumSourceIds() const {
-    return SourceIds.size();
+    return SourceIdMap.size();
   }
 
   /// assignAbbrevNumber - Define a unique number for the abbreviation.
@@ -351,6 +314,7 @@ private:
 
   /// addConstantValue - Add constant value entry in variable DIE.
   bool addConstantValue(DIE *Die, const MachineOperand &MO);
+  bool addConstantValue(DIE *Die, ConstantInt *CI, bool Unsigned);
 
   /// addConstantFPValue - Add constant value entry in variable DIE.
   bool addConstantFPValue(DIE *Die, const MachineOperand &MO);
@@ -390,6 +354,14 @@ private:
   /// getOrCreateTypeDIE - Find existing DIE or create new DIE for the
   /// given DIType.
   DIE *getOrCreateTypeDIE(DIType Ty);
+
+  /// getOrCreateTemplateTypeParameterDIE - Find existing DIE or create new DIE 
+  /// for the given DITemplateTypeParameter.
+  DIE *getOrCreateTemplateTypeParameterDIE(DITemplateTypeParameter TP);
+
+  /// getOrCreateTemplateValueParameterDIE - Find existing DIE or create new DIE 
+  /// for the given DITemplateValueParameter.
+  DIE *getOrCreateTemplateValueParameterDIE(DITemplateValueParameter TVP);
 
   void addPubTypes(DISubprogram SP);
 
@@ -479,10 +451,6 @@ private:
   ///
   void emitEndOfLineMatrix(unsigned SectionEnd);
 
-  /// emitDebugLines - Emit source line information.
-  ///
-  void emitDebugLines();
-
   /// emitCommonDebugFrame - Emit common frame info into a debug frame section.
   ///
   void emitCommonDebugFrame();
@@ -541,9 +509,8 @@ private:
 
   /// GetOrCreateSourceID - Look up the source id with the given directory and
   /// source file names. If none currently exists, create a new id and insert it
-  /// in the SourceIds map. This can update DirectoryNames and SourceFileNames
-  /// maps as well.
-  unsigned GetOrCreateSourceID(StringRef DirName, StringRef FileName);
+  /// in the SourceIds map.
+  unsigned GetOrCreateSourceID(StringRef FullName);
 
   /// constructCompileUnit - Create new CompileUnit for the given 
   /// metadata node with tag DW_TAG_compile_unit.
@@ -562,12 +529,6 @@ private:
   /// unique label that was emitted and which provides correspondence to
   /// the source line list.
   MCSymbol *recordSourceLine(unsigned Line, unsigned Col, const MDNode *Scope);
-  
-  /// getSourceLineCount - Return the number of source lines in the debug
-  /// info.
-  unsigned getSourceLineCount() const {
-    return Lines.size();
-  }
   
   /// recordVariableFrameIndex - Record a variable's index.
   void recordVariableFrameIndex(const DbgVariable *V, int Index);
@@ -588,6 +549,11 @@ private:
   /// and collect DbgScopes. Return true, if atleast one scope was found.
   bool extractScopeInformation();
   
+  /// addCurrentFnArgument - If Var is an current function argument that add
+  /// it in CurrentFnArguments list.
+  bool addCurrentFnArgument(const MachineFunction *MF,
+                            DbgVariable *Var, DbgScope *Scope);
+
   /// collectVariableInfo - Populate DbgScope entries with variables' info.
   void collectVariableInfo(const MachineFunction *,
                            SmallPtrSet<const MDNode *, 16> &ProcessedVars);

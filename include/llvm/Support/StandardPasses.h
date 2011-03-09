@@ -20,20 +20,35 @@
 #define LLVM_SUPPORT_STANDARDPASSES_H
 
 #include "llvm/PassManager.h"
-#include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/IPO.h"
 
 namespace llvm {
+
+  static inline void createStandardAliasAnalysisPasses(PassManagerBase *PM) {
+    // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
+    // BasicAliasAnalysis wins if they disagree. This is intended to help
+    // support "obvious" type-punning idioms.
+    PM->add(createTypeBasedAliasAnalysisPass());
+    PM->add(createBasicAliasAnalysisPass());
+  }
+
   /// createStandardFunctionPasses - Add the standard list of function passes to
   /// the provided pass manager.
   ///
   /// \arg OptimizationLevel - The optimization level, corresponding to -O0,
   /// -O1, etc.
   static inline void createStandardFunctionPasses(PassManagerBase *PM,
-                                                  unsigned OptimizationLevel);
+                                                  unsigned OptimizationLevel) {
+    if (OptimizationLevel > 0) {
+      createStandardAliasAnalysisPasses(PM);
+      PM->add(createCFGSimplificationPass());
+      PM->add(createScalarReplAggregatesPass());
+      PM->add(createEarlyCSEPass());
+    }
+  }
 
   /// createStandardModulePasses - Add the standard list of module passes to the
   /// provided pass manager.
@@ -47,51 +62,6 @@ namespace llvm {
   /// \arg HaveExceptions - Whether the module may have code using exceptions.
   /// \arg InliningPass - The inlining pass to use, if any, or null. This will
   /// always be added, even at -O0.a
-  static inline void createStandardModulePasses(PassManagerBase *PM,
-                                                unsigned OptimizationLevel,
-                                                bool OptimizeSize,
-                                                bool UnitAtATime,
-                                                bool UnrollLoops,
-                                                bool SimplifyLibCalls,
-                                                bool HaveExceptions,
-                                                Pass *InliningPass);
-
-  /// createStandardLTOPasses - Add the standard list of module passes suitable
-  /// for link time optimization.
-  ///
-  /// Internalize - Run the internalize pass.
-  /// RunInliner - Use a function inlining pass.
-  /// VerifyEach - Run the verifier after each pass.
-  static inline void createStandardLTOPasses(PassManagerBase *PM,
-                                             bool Internalize,
-                                             bool RunInliner,
-                                             bool VerifyEach);
-
-  // Implementations
-
-  static inline void createStandardAliasAnalysisPasses(PassManagerBase *PM) {
-    // Add TypeBasedAliasAnalysis before BasicAliasAnalysis so that
-    // BasicAliasAnalysis wins if they disagree. This is intended to help
-    // support "obvious" type-punning idioms.
-    PM->add(createTypeBasedAliasAnalysisPass());
-    PM->add(createBasicAliasAnalysisPass());
-  }
-
-  static inline void createStandardFunctionPasses(PassManagerBase *PM,
-                                                  unsigned OptimizationLevel) {
-    if (OptimizationLevel > 0) {
-      createStandardAliasAnalysisPasses(PM);
-      PM->add(createCFGSimplificationPass());
-      if (OptimizationLevel == 1)
-        PM->add(createPromoteMemoryToRegisterPass());
-      else
-        PM->add(createScalarReplAggregatesPass());
-      PM->add(createInstructionCombiningPass());
-    }
-  }
-
-  /// createStandardModulePasses - Add the standard module passes.  This is
-  /// expected to be run after the standard function passes.
   static inline void createStandardModulePasses(PassManagerBase *PM,
                                                 unsigned OptimizationLevel,
                                                 bool OptimizeSize,
@@ -119,7 +89,7 @@ namespace llvm {
     
     // Start of CallGraph SCC passes.
     if (UnitAtATime && HaveExceptions)
-      PM->add(createPruneEHPass());           // Remove dead EH info
+      PM->add(createPruneEHPass());             // Remove dead EH info
     if (InliningPass)
       PM->add(InliningPass);
     if (UnitAtATime)
@@ -128,10 +98,11 @@ namespace llvm {
       PM->add(createArgumentPromotionPass());   // Scalarize uninlined fn args
     
     // Start of function pass.
-    PM->add(createScalarReplAggregatesPass());  // Break up aggregate allocas
+    // Break up aggregate allocas, using SSAUpdater.
+    PM->add(createScalarReplAggregatesPass(-1, false));
+    PM->add(createEarlyCSEPass());              // Catch trivial redundancies
     if (SimplifyLibCalls)
       PM->add(createSimplifyLibCallsPass());    // Library Call Optimizations
-    PM->add(createInstructionCombiningPass());  // Cleanup for scalarrepl.
     PM->add(createJumpThreadingPass());         // Thread jumps.
     PM->add(createCorrelatedValuePropagationPass()); // Propagate conditionals
     PM->add(createCFGSimplificationPass());     // Merge & remove BBs
@@ -145,6 +116,7 @@ namespace llvm {
     PM->add(createLoopUnswitchPass(OptimizeSize || OptimizationLevel < 3));
     PM->add(createInstructionCombiningPass());  
     PM->add(createIndVarSimplifyPass());        // Canonicalize indvars
+    PM->add(createLoopIdiomPass());             // Recognize idioms like memset.
     PM->add(createLoopDeletionPass());          // Delete dead loops
     if (UnrollLoops)
       PM->add(createLoopUnrollPass());          // Unroll small loops
@@ -184,6 +156,12 @@ namespace llvm {
       PM->add(createVerifierPass());
   }
 
+  /// createStandardLTOPasses - Add the standard list of module passes suitable
+  /// for link time optimization.
+  ///
+  /// Internalize - Run the internalize pass.
+  /// RunInliner - Use a function inlining pass.
+  /// VerifyEach - Run the verifier after each pass.
   static inline void createStandardLTOPasses(PassManagerBase *PM,
                                              bool Internalize,
                                              bool RunInliner,

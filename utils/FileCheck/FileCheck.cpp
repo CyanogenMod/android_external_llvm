@@ -16,13 +16,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/ADT/OwningPtr.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Regex.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/System/Signals.h"
+#include "llvm/Support/Signals.h"
+#include "llvm/Support/system_error.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringMap.h"
 #include <algorithm>
@@ -488,14 +490,14 @@ static MemoryBuffer *CanonicalizeInputFile(MemoryBuffer *MB) {
 static bool ReadCheckFile(SourceMgr &SM,
                           std::vector<CheckString> &CheckStrings) {
   // Open the check file, and tell SourceMgr about it.
-  std::string ErrorStr;
-  MemoryBuffer *F =
-    MemoryBuffer::getFileOrSTDIN(CheckFilename.c_str(), &ErrorStr);
-  if (F == 0) {
+  OwningPtr<MemoryBuffer> File;
+  if (error_code ec =
+        MemoryBuffer::getFileOrSTDIN(CheckFilename.c_str(), File)) {
     errs() << "Could not open check file '" << CheckFilename << "': "
-           << ErrorStr << '\n';
+           << ec.message() << '\n';
     return true;
   }
+  MemoryBuffer *F = File.take();
 
   // If we want to canonicalize whitespace, strip excess whitespace from the
   // buffer containing the CHECK lines.
@@ -648,15 +650,20 @@ int main(int argc, char **argv) {
     return 2;
 
   // Open the file to check and add it to SourceMgr.
-  std::string ErrorStr;
-  MemoryBuffer *F =
-    MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), &ErrorStr);
-  if (F == 0) {
+  OwningPtr<MemoryBuffer> File;
+  if (error_code ec =
+        MemoryBuffer::getFileOrSTDIN(InputFilename.c_str(), File)) {
     errs() << "Could not open input file '" << InputFilename << "': "
-           << ErrorStr << '\n';
+           << ec.message() << '\n';
     return true;
   }
+  MemoryBuffer *F = File.take();
 
+  if (F->getBufferSize() == 0) {
+    errs() << "FileCheck error: '" << InputFilename << "' is empty.\n";
+    return 1;
+  }
+  
   // Remove duplicate spaces in the input file if requested.
   if (!NoCanonicalizeWhiteSpace)
     F = CanonicalizeInputFile(F);

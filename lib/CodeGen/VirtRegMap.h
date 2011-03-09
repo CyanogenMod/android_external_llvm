@@ -35,6 +35,7 @@ namespace llvm {
   class TargetInstrInfo;
   class TargetRegisterInfo;
   class raw_ostream;
+  class SlotIndexes;
 
   class VirtRegMap : public MachineFunctionPass {
   public:
@@ -80,7 +81,7 @@ namespace llvm {
 
     /// Virt2SplitKillMap - This is splitted virtual register to its last use
     /// (kill) index mapping.
-    IndexedMap<SlotIndex> Virt2SplitKillMap;
+    IndexedMap<SlotIndex, VirtReg2IndexFunctor> Virt2SplitKillMap;
 
     /// ReMatMap - This is virtual register to re-materialized instruction
     /// mapping. Each virtual register whose definition is going to be
@@ -156,9 +157,12 @@ namespace llvm {
     }
 
     MachineFunction &getMachineFunction() const {
-      assert(MF && "getMachineFunction called before runOnMAchineFunction");
+      assert(MF && "getMachineFunction called before runOnMachineFunction");
       return *MF;
     }
+
+    MachineRegisterInfo &getRegInfo() const { return *MRI; }
+    const TargetRegisterInfo &getTargetRegInfo() const { return *TRI; }
 
     void grow();
 
@@ -210,8 +214,17 @@ namespace llvm {
     }
 
     /// @brief returns the live interval virtReg is split from.
-    unsigned getPreSplitReg(unsigned virtReg) {
+    unsigned getPreSplitReg(unsigned virtReg) const {
       return Virt2SplitMap[virtReg];
+    }
+
+    /// getOriginal - Return the original virtual register that VirtReg descends
+    /// from through splitting.
+    /// A register that was not created by splitting is its own original.
+    /// This operation is idempotent.
+    unsigned getOriginal(unsigned VirtReg) const {
+      unsigned Orig = getPreSplitReg(VirtReg);
+      return Orig ? Orig : VirtReg;
     }
 
     /// @brief returns true if the specified virtual register is not
@@ -429,12 +442,12 @@ namespace llvm {
 
     /// @brief Mark the specified register as being implicitly defined.
     void setIsImplicitlyDefined(unsigned VirtReg) {
-      ImplicitDefed.set(VirtReg-TargetRegisterInfo::FirstVirtualRegister);
+      ImplicitDefed.set(TargetRegisterInfo::virtReg2Index(VirtReg));
     }
 
     /// @brief Returns true if the virtual register is implicitly defined.
     bool isImplicitlyDefined(unsigned VirtReg) const {
-      return ImplicitDefed[VirtReg-TargetRegisterInfo::FirstVirtualRegister];
+      return ImplicitDefed[TargetRegisterInfo::virtReg2Index(VirtReg)];
     }
 
     /// @brief Updates information about the specified virtual register's value
@@ -489,6 +502,13 @@ namespace llvm {
       }
       return 0;
     }
+
+    /// rewrite - Rewrite all instructions in MF to use only physical registers
+    /// by mapping all virtual register operands to their assigned physical
+    /// registers.
+    ///
+    /// @param Indexes Optionally remove deleted instructions from indexes.
+    void rewrite(SlotIndexes *Indexes);
 
     void print(raw_ostream &OS, const Module* M = 0) const;
     void dump() const;

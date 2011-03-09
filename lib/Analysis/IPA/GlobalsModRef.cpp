@@ -24,6 +24,7 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
+#include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/InstIterator.h"
 #include "llvm/ADT/Statistic.h"
@@ -151,6 +152,7 @@ namespace {
 
     virtual void deleteValue(Value *V);
     virtual void copyValue(Value *From, Value *To);
+    virtual void addEscapingUse(Use &U);
 
     /// getAdjustedAnalysisPointer - This method is used when a pass implements
     /// an analysis interface through multiple inheritance.  If needed, it
@@ -324,7 +326,7 @@ bool GlobalsModRef::AnalyzeIndirectGlobalMemory(GlobalValue *GV) {
         continue;
 
       // Check the value being stored.
-      Value *Ptr = SI->getOperand(0)->getUnderlyingObject();
+      Value *Ptr = GetUnderlyingObject(SI->getOperand(0));
 
       if (isMalloc(Ptr)) {
         // Okay, easy case.
@@ -489,8 +491,8 @@ AliasAnalysis::AliasResult
 GlobalsModRef::alias(const Location &LocA,
                      const Location &LocB) {
   // Get the base object these pointers point to.
-  const Value *UV1 = LocA.Ptr->getUnderlyingObject();
-  const Value *UV2 = LocB.Ptr->getUnderlyingObject();
+  const Value *UV1 = GetUnderlyingObject(LocA.Ptr);
+  const Value *UV2 = GetUnderlyingObject(LocB.Ptr);
 
   // If either of the underlying values is a global, they may be non-addr-taken
   // globals, which we can answer queries about.
@@ -549,7 +551,7 @@ GlobalsModRef::getModRefInfo(ImmutableCallSite CS,
   // If we are asking for mod/ref info of a direct call with a pointer to a
   // global we are tracking, return information if we have it.
   if (const GlobalValue *GV =
-        dyn_cast<GlobalValue>(Loc.Ptr->getUnderlyingObject()))
+        dyn_cast<GlobalValue>(GetUnderlyingObject(Loc.Ptr)))
     if (GV->hasLocalLinkage())
       if (const Function *F = CS.getCalledFunction())
         if (NonAddressTakenGlobals.count(GV))
@@ -594,4 +596,14 @@ void GlobalsModRef::deleteValue(Value *V) {
 
 void GlobalsModRef::copyValue(Value *From, Value *To) {
   AliasAnalysis::copyValue(From, To);
+}
+
+void GlobalsModRef::addEscapingUse(Use &U) {
+  // For the purposes of this analysis, it is conservatively correct to treat
+  // a newly escaping value equivalently to a deleted one.  We could perhaps
+  // be more precise by processing the new use and attempting to update our
+  // saved analysis results to accomodate it.
+  deleteValue(U);
+  
+  AliasAnalysis::addEscapingUse(U);
 }

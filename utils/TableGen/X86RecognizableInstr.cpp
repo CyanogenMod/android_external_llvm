@@ -34,7 +34,9 @@ using namespace llvm;
   MAP(E8, 39)           \
   MAP(F0, 40)           \
   MAP(F8, 41)           \
-  MAP(F9, 42)
+  MAP(F9, 42)           \
+  MAP(D0, 45)           \
+  MAP(D1, 46)
 
 // A clone of X86 since we can't depend on something that is generated.
 namespace X86Local {
@@ -857,6 +859,7 @@ OperandType RecognizableInstr::typeFromString(const std::string &s,
   TYPE("i32imm_pcrel",        TYPE_REL32)
   TYPE("SSECC",               TYPE_IMM3)
   TYPE("brtarget",            TYPE_RELv)
+  TYPE("uncondbrtarget",      TYPE_RELv)
   TYPE("brtarget8",           TYPE_REL8)
   TYPE("f80mem",              TYPE_M80FP)
   TYPE("lea32mem",            TYPE_LEA)

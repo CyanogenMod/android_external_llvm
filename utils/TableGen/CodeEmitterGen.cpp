@@ -19,6 +19,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include <map>
 using namespace llvm;
 
 // FIXME: Somewhat hackish to use a command line option for this. There should
@@ -141,7 +142,7 @@ AddCodeToMergeInOperand(Record *R, BitsInit *BI, const std::string &VarName,
       continue;
     }
     
-    // Figure out the consequtive range of bits covered by this operand, in
+    // Figure out the consecutive range of bits covered by this operand, in
     // order to generate better encoding code.
     int beginInstBit = bit;
     int beginVarBit = varBit;
@@ -198,14 +199,13 @@ std::string CodeEmitterGen::getInstructionCase(Record *R,
 }
 
 void CodeEmitterGen::run(raw_ostream &o) {
-  CodeGenTarget Target;
+  CodeGenTarget Target(Records);
   std::vector<Record*> Insts = Records.getAllDerivedDefinitions("Instruction");
 
   // For little-endian instruction bit encodings, reverse the bit order
   if (Target.isLittleEndianEncoding()) reverseBits(Insts);
 
   EmitSourceFileHeader("Machine Code Emitter", o);
-  std::string Namespace = Insts[0]->getValueAsString("Namespace") + "::";
 
   const std::vector<const CodeGenInstruction*> &NumberedInstructions =
     Target.getInstructionsByEnumValue();
@@ -253,7 +253,8 @@ void CodeEmitterGen::run(raw_ostream &o) {
     Record *R = *IC;
     if (R->getValueAsString("Namespace") == "TargetOpcode")
       continue;
-    const std::string &InstName = R->getName();
+    const std::string &InstName = R->getValueAsString("Namespace") + "::"
+      + R->getName();
     std::string Case = getInstructionCase(R, Target);
 
     CaseMap[Case].push_back(InstName);
@@ -263,7 +264,7 @@ void CodeEmitterGen::run(raw_ostream &o) {
   o << "  const unsigned opcode = MI.getOpcode();\n"
     << "  unsigned Value = InstBits[opcode];\n"
     << "  unsigned op = 0;\n"
-    << "  op = op;  // suppress warning\n"
+    << "  (void)op;  // suppress warning\n"
     << "  switch (opcode) {\n";
 
   // Emit each case statement
@@ -274,7 +275,7 @@ void CodeEmitterGen::run(raw_ostream &o) {
 
     for (int i = 0, N = InstList.size(); i < N; i++) {
       if (i) o << "\n";
-      o << "    case " << Namespace << InstList[i]  << ":";
+      o << "    case " << InstList[i]  << ":";
     }
     o << " {\n";
     o << Case;

@@ -68,7 +68,7 @@
 <ol>
 
   <li><p><a href="http://www.cmake.org/cmake/resources/software.html">Download</a>
-      and install CMake. Version 2.6.2 is the minimum required.</p>
+      and install CMake. Version 2.8 is the minimum required.</p>
 
   <li><p>Open a shell. Your development tools must be reachable from this
       shell through the PATH environment variable.</p>
@@ -286,6 +286,12 @@
     ON. You can use that option for disabling the generation of build
     targets for the LLVM unit tests.</dd>
 
+  <dt><b>LLVM_APPEND_VC_REV</b>:BOOL</dt>
+  <dd>Append version control revision info (svn revision number or git
+    revision id) to LLVM version string (stored in the PACKAGE_VERSION
+    macro). For this to work cmake must be invoked before the
+    build. Defaults to OFF.</dd>
+
   <dt><b>LLVM_ENABLE_THREADS</b>:BOOL</dt>
   <dd>Build with threads support, if available. Defaults to ON.</dd>
 
@@ -332,6 +338,18 @@
     By default, <tt>&quot;-sv --no-progress-bar&quot;</tt>
     on Visual C++ and Xcode,
     <tt>&quot;-sv&quot;</tt> on others.</dd>
+
+  <dt><b>LLVM_LIT_TOOLS_DIR</b>:STRING</dt>
+  <dd>The path to GnuWin32 tools for tests. Valid on Windows host.
+    Defaults to "", then Lit seeks tools according to %PATH%.
+    Lit can find tools(eg. grep, sort, &c) on LLVM_LIT_TOOLS_DIR at first,
+    without specifying GnuWin32 to %PATH%.</dd>
+
+  <dt><b>LLVM_ENABLE_FFI</b>:BOOL</dt>
+  <dd>Indicates whether LLVM Interpreter will be linked with Foreign
+    Function Interface library. If the library or its headers are
+    installed on a custom location, you can set the variables
+    FFI_INCLUDE_DIR and FFI_LIBRARY_DIR. Defaults to OFF.</dd>
 </dl>
 
 </div>
@@ -352,7 +370,7 @@
   <p><tt>make check</tt></p>
 </div>
 
-<p>Testing is not supported on Visual Studio.</p>
+<p>On Visual Studio, you may run tests to build the project "check".</p>
 
 </div>
 
@@ -431,6 +449,22 @@
 <div class="doc_text">
 
 <p>Notes for specific compilers and/or platforms.</p>
+
+</div>
+
+<div class="doc_subsection">
+  <a name="msvc">Microsoft Visual C++</a>
+</div>
+
+<div class="doc_text">
+
+<dl>
+  <dt><b>LLVM_COMPILER_JOBS</b>:STRING</dt>
+  <dd>Specifies the maximum number of parallell compiler jobs to use
+    per project when building with msbuild or Visual Studio. Only supported for
+    Visual Studio 2008 and Visual Studio 2010 CMake generators. 0 means use all
+    processors. Default is 0.</dd>
+</dl>
 
 </div>
 

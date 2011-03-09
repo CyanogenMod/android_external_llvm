@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "regalloc"
+#include "LiveDebugVariables.h"
 #include "VirtRegMap.h"
 #include "VirtRegRewriter.h"
 #include "Spiller.h"
@@ -91,6 +92,7 @@ namespace {
   struct RALinScan : public MachineFunctionPass {
     static char ID;
     RALinScan() : MachineFunctionPass(ID) {
+      initializeLiveDebugVariablesPass(*PassRegistry::getPassRegistry());
       initializeLiveIntervalsPass(*PassRegistry::getPassRegistry());
       initializeStrongPHIEliminationPass(*PassRegistry::getPassRegistry());
       initializeRegisterCoalescerAnalysisGroup(
@@ -212,6 +214,8 @@ namespace {
       AU.addPreserved<MachineLoopInfo>();
       AU.addRequired<VirtRegMap>();
       AU.addPreserved<VirtRegMap>();
+      AU.addRequired<LiveDebugVariables>();
+      AU.addPreserved<LiveDebugVariables>();
       AU.addRequiredID(MachineDominatorsID);
       AU.addPreservedID(MachineDominatorsID);
       MachineFunctionPass::getAnalysisUsage(AU);
@@ -427,8 +431,12 @@ void RALinScan::ComputeRelatedRegClasses() {
     for (DenseMap<unsigned, const TargetRegisterClass*>::iterator
          I = OneClassForEachPhysReg.begin(), E = OneClassForEachPhysReg.end();
          I != E; ++I)
-      for (const unsigned *AS = tri_->getAliasSet(I->first); *AS; ++AS)
-        RelatedRegClasses.unionSets(I->second, OneClassForEachPhysReg[*AS]);
+      for (const unsigned *AS = tri_->getAliasSet(I->first); *AS; ++AS) {
+        const TargetRegisterClass *AliasClass = 
+          OneClassForEachPhysReg.lookup(*AS);
+        if (AliasClass)
+          RelatedRegClasses.unionSets(I->second, AliasClass);
+      }
 }
 
 /// attemptTrivialCoalescing - If a simple interval is defined by a copy, try
@@ -450,7 +458,7 @@ unsigned RALinScan::attemptTrivialCoalescing(LiveInterval &cur, unsigned Reg) {
   const LiveRange &range = cur.ranges.front();
 
   VNInfo *vni = range.valno;
-  if (vni->isUnused())
+  if (vni->isUnused() || !vni->def.isValid())
     return Reg;
 
   unsigned CandReg;
@@ -465,6 +473,10 @@ unsigned RALinScan::attemptTrivialCoalescing(LiveInterval &cur, unsigned Reg) {
       // Only used by a copy, try to extend DstReg backwards
       CandReg = CopyMI->getOperand(0).getReg();
     else
+      return Reg;
+
+    // If the target of the copy is a sub-register then don't coalesce.
+    if(CopyMI->getOperand(0).getSubReg())
       return Reg;
   }
 
@@ -527,6 +539,9 @@ bool RALinScan::runOnMachineFunction(MachineFunction &fn) {
 
   // Rewrite spill code and update the PhysRegsUsed set.
   rewriter_->runOnMachineFunction(*mf_, *vrm_, li_);
+
+  // Write out new DBG_VALUE instructions.
+  getAnalysis<LiveDebugVariables>().emitDebugValues(vrm_);
 
   assert(unhandled_.empty() && "Unhandled live intervals remain!");
 
@@ -922,13 +937,9 @@ LiveInterval *RALinScan::hasNextReloadInterval(LiveInterval *cur) {
 }
 
 void RALinScan::DowngradeRegister(LiveInterval *li, unsigned Reg) {
-  bool isNew = DowngradedRegs.insert(Reg);
-  isNew = isNew; // Silence compiler warning.
-  assert(isNew && "Multiple reloads holding the same register?");
-  DowngradeMap.insert(std::make_pair(li->reg, Reg));
-  for (const unsigned *AS = tri_->getAliasSet(Reg); *AS; ++AS) {
-    isNew = DowngradedRegs.insert(*AS);
-    isNew = isNew; // Silence compiler warning.
+  for (const unsigned *AS = tri_->getOverlaps(Reg); *AS; ++AS) {
+    bool isNew = DowngradedRegs.insert(*AS);
+    (void)isNew; // Silence compiler warning.
     assert(isNew && "Multiple reloads holding the same register?");
     DowngradeMap.insert(std::make_pair(li->reg, *AS));
   }
@@ -954,10 +965,11 @@ namespace {
 /// assignRegOrStackSlotAtInterval - assign a register if one is available, or
 /// spill.
 void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
-  DEBUG(dbgs() << "\tallocating current interval: ");
+  const TargetRegisterClass *RC = mri_->getRegClass(cur->reg);
+  DEBUG(dbgs() << "\tallocating current interval from "
+               << RC->getName() << ": ");
 
   // This is an implicitly defined live interval, just assign any register.
-  const TargetRegisterClass *RC = mri_->getRegClass(cur->reg);
   if (cur->empty()) {
     unsigned physReg = vrm_->getRegAllocPref(cur->reg);
     if (!physReg)
@@ -981,7 +993,7 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
   // one, e.g. X86::mov32to32_. These move instructions are not coalescable.
   if (!vrm_->getRegAllocPref(cur->reg) && cur->hasAtLeastOneValue()) {
     VNInfo *vni = cur->begin()->valno;
-    if (!vni->isUnused()) {
+    if (!vni->isUnused() && vni->def.isValid()) {
       MachineInstr *CopyMI = li_->getInstructionFromIndex(vni->def);
       if (CopyMI && CopyMI->isCopy()) {
         unsigned DstSubReg = CopyMI->getOperand(0).getSubReg();
@@ -1413,8 +1425,7 @@ unsigned RALinScan::getFreePhysReg(LiveInterval* cur,
   std::pair<unsigned, unsigned> Hint = mri_->getRegAllocationHint(cur->reg);
   // Resolve second part of the hint (if possible) given the current allocation.
   unsigned physReg = Hint.second;
-  if (physReg &&
-      TargetRegisterInfo::isVirtualRegister(physReg) && vrm_->hasPhys(physReg))
+  if (TargetRegisterInfo::isVirtualRegister(physReg) && vrm_->hasPhys(physReg))
     physReg = vrm_->getPhys(physReg);
 
   TargetRegisterClass::iterator I, E;

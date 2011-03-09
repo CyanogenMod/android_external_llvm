@@ -13,7 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARM.h"
-#include "llvm/CodeGen/AsmPrinter.h"
+#include "ARMAsmPrinter.h"
+#include "ARMMCExpr.h"
 #include "llvm/Constants.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/MC/MCExpr.h"
@@ -23,35 +24,44 @@ using namespace llvm;
 
 
 static MCOperand GetSymbolRef(const MachineOperand &MO, const MCSymbol *Symbol,
-                              AsmPrinter &Printer) {
+                              ARMAsmPrinter &Printer) {
   MCContext &Ctx = Printer.OutContext;
   const MCExpr *Expr;
   switch (MO.getTargetFlags()) {
-  default: assert(0 && "Unknown target flag on symbol operand");
-  case 0:
+  default: {
     Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_None, Ctx);
+    switch (MO.getTargetFlags()) {
+    default:
+      assert(0 && "Unknown target flag on symbol operand");
+    case 0:
+      break;
+    case ARMII::MO_LO16:
+      Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_None, Ctx);
+      Expr = ARMMCExpr::CreateLower16(Expr, Ctx);
+      break;
+    case ARMII::MO_HI16:
+      Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_None, Ctx);
+      Expr = ARMMCExpr::CreateUpper16(Expr, Ctx);
+      break;
+    }
     break;
-  case ARMII::MO_LO16:
-    Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_ARM_LO16, Ctx);
-    break;
-  case ARMII::MO_HI16:
-    Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_ARM_HI16, Ctx);
-    break;
+  }
+
   case ARMII::MO_PLT:
     Expr = MCSymbolRefExpr::Create(Symbol, MCSymbolRefExpr::VK_ARM_PLT, Ctx);
     break;
   }
-  
+
   if (!MO.isJTI() && MO.getOffset())
     Expr = MCBinaryExpr::CreateAdd(Expr,
                                    MCConstantExpr::Create(MO.getOffset(), Ctx),
                                    Ctx);
   return MCOperand::CreateExpr(Expr);
-  
+
 }
 
 void llvm::LowerARMMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
-                                        AsmPrinter &AP) {
+                                        ARMAsmPrinter &AP) {
   OutMI.setOpcode(MI->getOpcode());
 
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
@@ -79,7 +89,7 @@ void llvm::LowerARMMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
       MCOp = GetSymbolRef(MO, AP.Mang->getSymbol(MO.getGlobal()), AP);
       break;
     case MachineOperand::MO_ExternalSymbol:
-      MCOp = GetSymbolRef(MO, 
+      MCOp = GetSymbolRef(MO,
                           AP.GetExternalSymbolSymbol(MO.getSymbolName()), AP);
       break;
     case MachineOperand::MO_JumpTableIndex:
@@ -91,12 +101,13 @@ void llvm::LowerARMMachineInstrToMCInst(const MachineInstr *MI, MCInst &OutMI,
     case MachineOperand::MO_BlockAddress:
       MCOp = GetSymbolRef(MO,AP.GetBlockAddressSymbol(MO.getBlockAddress()),AP);
       break;
-    case MachineOperand::MO_FPImmediate:
+    case MachineOperand::MO_FPImmediate: {
       APFloat Val = MO.getFPImm()->getValueAPF();
       bool ignored;
       Val.convert(APFloat::IEEEdouble, APFloat::rmTowardZero, &ignored);
       MCOp = MCOperand::CreateFPImm(Val.convertToDouble());
       break;
+    }
     }
 
     OutMI.addOperand(MCOp);

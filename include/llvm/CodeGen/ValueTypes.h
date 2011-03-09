@@ -18,7 +18,7 @@
 
 #include <cassert>
 #include <string>
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include "llvm/Support/MathExtras.h"
 
 namespace llvm {
@@ -79,7 +79,7 @@ namespace llvm {
 
       x86mmx         =  33,   // This is an X86 MMX value
 
-      Flag           =  34,   // This glues nodes together during pre-RA sched
+      Glue           =  34,   // This glues nodes together during pre-RA sched
 
       isVoid         =  35,   // This has no value
 

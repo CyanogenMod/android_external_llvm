@@ -44,19 +44,15 @@ struct MBlazeRegisterInfo : public MBlazeGenRegisterInfo {
   /// MBlaze::RA, return the number that it corresponds to (e.g. 31).
   static unsigned getRegisterNumbering(unsigned RegEnum);
   static unsigned getRegisterFromNumbering(unsigned RegEnum);
+  static unsigned getSpecialRegisterFromNumbering(unsigned RegEnum);
 
   /// Get PIC indirect call register
   static unsigned getPICCallReg();
-
-  /// Adjust the MBlaze stack frame.
-  void adjustMBlazeStackFrame(MachineFunction &MF) const;
 
   /// Code Generation virtual methods...
   const unsigned *getCalleeSavedRegs(const MachineFunction* MF = 0) const;
 
   BitVector getReservedRegs(const MachineFunction &MF) const;
-
-  bool hasFP(const MachineFunction &MF) const;
 
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
                                      MachineBasicBlock &MBB,

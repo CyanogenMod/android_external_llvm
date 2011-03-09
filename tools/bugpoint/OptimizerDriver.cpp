@@ -26,8 +26,8 @@
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/System/Path.h"
-#include "llvm/System/Program.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
 
 #define DONT_GET_PLUGIN_LOADER_OPTION
 #include "llvm/Support/PluginLoader.h"
@@ -89,7 +89,8 @@ void BugDriver::EmitProgressBitcode(const Module *M,
   outs() << getPassesString(PassesToRun) << "\n";
 }
 
-cl::opt<bool> SilencePasses("silence-passes", cl::desc("Suppress output of running passes (both stdout and stderr)"));
+cl::opt<bool> SilencePasses("silence-passes",
+        cl::desc("Suppress output of running passes (both stdout and stderr)"));
 
 static cl::list<std::string> OptArgs("opt-args", cl::Positional,
                                      cl::desc("<opt arguments>..."),

@@ -17,7 +17,7 @@
 #include "PPCInstrBuilder.h"
 #include "PPCMachineFunctionInfo.h"
 #include "PPCRegisterInfo.h"
-#include "PPCFrameInfo.h"
+#include "PPCFrameLowering.h"
 #include "PPCSubtarget.h"
 #include "llvm/CallingConv.h"
 #include "llvm/Constants.h"
@@ -31,7 +31,7 @@
 #include "llvm/CodeGen/MachineLocation.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
@@ -58,14 +58,11 @@ cl::opt<bool> EnablePPC64RS("enable-ppc64-regscavenger",
 
 using namespace llvm;
 
-#define EnableRegisterScavenging \
-  ((EnablePPC32RS && !Subtarget.isPPC64()) || \
-   (EnablePPC64RS && Subtarget.isPPC64()))
-
 // FIXME (64-bit): Should be inlined.
 bool
 PPCRegisterInfo::requiresRegisterScavenging(const MachineFunction &) const {
-  return EnableRegisterScavenging;
+  return ((EnablePPC32RS && !Subtarget.isPPC64()) ||
+          (EnablePPC64RS && Subtarget.isPPC64()));
 }
 
 /// getRegisterNumbering - Given the enum value for some register, e.g.
@@ -259,26 +256,11 @@ PPCRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   return Subtarget.isPPC64() ? SVR4_64_CalleeSavedRegs : SVR4_CalleeSavedRegs;
 }
 
-// needsFP - Return true if the specified function should have a dedicated frame
-// pointer register.  This is true if the function has variable sized allocas or
-// if frame pointer elimination is disabled.
-//
-static bool needsFP(const MachineFunction &MF) {
-  const MachineFrameInfo *MFI = MF.getFrameInfo();
-  // Naked functions have no stack frame pushed, so we don't have a frame pointer.
-  if (MF.getFunction()->hasFnAttr(Attribute::Naked))
-    return false;
-  return DisableFramePointerElim(MF) || MFI->hasVarSizedObjects() ||
-    (GuaranteedTailCallOpt && MF.getInfo<PPCFunctionInfo>()->hasFastCall());
-}
-
-static bool spillsCR(const MachineFunction &MF) {
-  const PPCFunctionInfo *FuncInfo = MF.getInfo<PPCFunctionInfo>();
-  return FuncInfo->isCRSpilled();
-}
-
 BitVector PPCRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
+  const PPCFrameLowering *PPCFI =
+    static_cast<const PPCFrameLowering*>(MF.getTarget().getFrameLowering());
+
   Reserved.set(PPC::R0);
   Reserved.set(PPC::R1);
   Reserved.set(PPC::LR);
@@ -304,7 +286,7 @@ BitVector PPCRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
     Reserved.set(PPC::R13);
     Reserved.set(PPC::R31);
 
-    if (!EnableRegisterScavenging)
+    if (!requiresRegisterScavenging(MF))
       Reserved.set(PPC::R0);    // FIXME (64-bit): Remove
 
     Reserved.set(PPC::X0);
@@ -324,7 +306,7 @@ BitVector PPCRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
     }
   }
 
-  if (needsFP(MF))
+  if (PPCFI->needsFP(MF))
     Reserved.set(PPC::R31);
 
   return Reserved;
@@ -333,30 +315,6 @@ BitVector PPCRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
 //===----------------------------------------------------------------------===//
 // Stack Frame Processing methods
 //===----------------------------------------------------------------------===//
-
-// hasFP - Return true if the specified function actually has a dedicated frame
-// pointer register.  This is true if the function needs a frame pointer and has
-// a non-zero stack size.
-bool PPCRegisterInfo::hasFP(const MachineFunction &MF) const {
-  const MachineFrameInfo *MFI = MF.getFrameInfo();
-  return MFI->getStackSize() && needsFP(MF);
-}
-
-/// MustSaveLR - Return true if this function requires that we save the LR
-/// register onto the stack in the prolog and restore it in the epilog of the
-/// function.
-static bool MustSaveLR(const MachineFunction &MF, unsigned LR) {
-  const PPCFunctionInfo *MFI = MF.getInfo<PPCFunctionInfo>();
-  
-  // We need a save/restore of LR if there is any def of LR (which is
-  // defined by calls, including the PIC setup sequence), or if there is
-  // some use of the LR stack slot (e.g. for builtin_return_address).
-  // (LR comes in 32 and 64 bit versions.)
-  MachineRegisterInfo::def_iterator RI = MF.getRegInfo().def_begin(LR);
-  return RI !=MF.getRegInfo().def_end() || MFI->isLRStoreRequired();
-}
-
-
 
 void PPCRegisterInfo::
 eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
@@ -437,7 +395,7 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
   unsigned FrameSize = MFI->getStackSize();
   
   // Get stack alignments.
-  unsigned TargetAlign = MF.getTarget().getFrameInfo()->getStackAlignment();
+  unsigned TargetAlign = MF.getTarget().getFrameLowering()->getStackAlignment();
   unsigned MaxAlign = MFI->getMaxAlignment();
   if (MaxAlign > TargetAlign)
     report_fatal_error("Dynamic alloca with large aligns not supported");
@@ -454,7 +412,7 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
 
   // FIXME (64-bit): Use "findScratchRegister"
   unsigned Reg;
-  if (EnableRegisterScavenging)
+  if (requiresRegisterScavenging(MF))
     Reg = findScratchRegister(II, RS, RC, SPAdj);
   else
     Reg = PPC::R0;
@@ -464,7 +422,7 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
       .addReg(PPC::R31)
       .addImm(FrameSize);
   } else if (LP64) {
-    if (EnableRegisterScavenging) // FIXME (64-bit): Use "true" part.
+    if (requiresRegisterScavenging(MF)) // FIXME (64-bit): Use "true" part.
       BuildMI(MBB, II, dl, TII.get(PPC::LD), Reg)
         .addImm(0)
         .addReg(PPC::X1);
@@ -481,7 +439,7 @@ void PPCRegisterInfo::lowerDynamicAlloc(MachineBasicBlock::iterator II,
   // Grow the stack and update the stack pointer link, then determine the
   // address of new allocated space.
   if (LP64) {
-    if (EnableRegisterScavenging) // FIXME (64-bit): Use "true" part.
+    if (requiresRegisterScavenging(MF)) // FIXME (64-bit): Use "true" part.
       BuildMI(MBB, II, dl, TII.get(PPC::STDUX))
         .addReg(Reg, RegState::Kill)
         .addReg(PPC::X1)
@@ -583,6 +541,7 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MachineFunction &MF = *MBB.getParent();
   // Get the frame info.
   MachineFrameInfo *MFI = MF.getFrameInfo();
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
   DebugLoc dl = MI.getDebugLoc();
 
   // Find out which operand is the frame index.
@@ -615,14 +574,15 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   }
 
   // Special case for pseudo-op SPILL_CR.
-  if (EnableRegisterScavenging) // FIXME (64-bit): Enable by default.
+  if (requiresRegisterScavenging(MF)) // FIXME (64-bit): Enable by default.
     if (OpC == PPC::SPILL_CR) {
       lowerCRSpilling(II, FrameIndex, SPAdj, RS);
       return;
     }
 
   // Replace the FrameIndex with base register with GPR1 (SP) or GPR31 (FP).
-  MI.getOperand(FIOperandNo).ChangeToRegister(hasFP(MF) ? PPC::R31 : PPC::R1,
+  MI.getOperand(FIOperandNo).ChangeToRegister(TFI->hasFP(MF) ?
+                                              PPC::R31 : PPC::R1,
                                               false);
 
   // Figure out if the offset in the instruction is shifted right two bits. This
@@ -672,7 +632,7 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   // FIXME (64-bit): Use "findScratchRegister".
   unsigned SReg;
-  if (EnableRegisterScavenging)
+  if (requiresRegisterScavenging(MF))
     SReg = findScratchRegister(II, RS, &PPC::GPRCRegClass, SPAdj);
   else
     SReg = PPC::R0;
@@ -705,262 +665,17 @@ PPCRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MI.getOperand(OperandBase + 1).ChangeToRegister(SReg, false);
 }
 
-void
-PPCRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                                      RegScavenger *RS) const {
-  //  Save and clear the LR state.
-  PPCFunctionInfo *FI = MF.getInfo<PPCFunctionInfo>();
-  unsigned LR = getRARegister();
-  FI->setMustSaveLR(MustSaveLR(MF, LR));
-  MF.getRegInfo().setPhysRegUnused(LR);
-
-  //  Save R31 if necessary
-  int FPSI = FI->getFramePointerSaveIndex();
-  bool isPPC64 = Subtarget.isPPC64();
-  bool isDarwinABI  = Subtarget.isDarwinABI();
-  MachineFrameInfo *MFI = MF.getFrameInfo();
- 
-  // If the frame pointer save index hasn't been defined yet.
-  if (!FPSI && needsFP(MF)) {
-    // Find out what the fix offset of the frame pointer save area.
-    int FPOffset = PPCFrameInfo::getFramePointerSaveOffset(isPPC64,
-                                                           isDarwinABI);
-    // Allocate the frame index for frame pointer save area.
-    FPSI = MF.getFrameInfo()->CreateFixedObject(isPPC64? 8 : 4, FPOffset, true);
-    // Save the result.
-    FI->setFramePointerSaveIndex(FPSI);
-  }
-
-  // Reserve stack space to move the linkage area to in case of a tail call.
-  int TCSPDelta = 0;
-  if (GuaranteedTailCallOpt && (TCSPDelta = FI->getTailCallSPDelta()) < 0) {
-    MF.getFrameInfo()->CreateFixedObject(-1 * TCSPDelta, TCSPDelta, true);
-  }
-  
-  // Reserve a slot closest to SP or frame pointer if we have a dynalloc or
-  // a large stack, which will require scavenging a register to materialize a
-  // large offset.
-  // FIXME: this doesn't actually check stack size, so is a bit pessimistic
-  // FIXME: doesn't detect whether or not we need to spill vXX, which requires
-  //        r0 for now.
-
-  if (EnableRegisterScavenging) // FIXME (64-bit): Enable.
-    if (needsFP(MF) || spillsCR(MF)) {
-      const TargetRegisterClass *GPRC = &PPC::GPRCRegClass;
-      const TargetRegisterClass *G8RC = &PPC::G8RCRegClass;
-      const TargetRegisterClass *RC = isPPC64 ? G8RC : GPRC;
-      RS->setScavengingFrameIndex(MFI->CreateStackObject(RC->getSize(),
-                                                         RC->getAlignment(),
-                                                         false));
-    }
-}
-
-void
-PPCRegisterInfo::processFunctionBeforeFrameFinalized(MachineFunction &MF)
-                                                     const {
-  // Early exit if not using the SVR4 ABI.
-  if (!Subtarget.isSVR4ABI()) {
-    return;
-  }
-
-  // Get callee saved register information.
-  MachineFrameInfo *FFI = MF.getFrameInfo();
-  const std::vector<CalleeSavedInfo> &CSI = FFI->getCalleeSavedInfo();
-
-  // Early exit if no callee saved registers are modified!
-  if (CSI.empty() && !needsFP(MF)) {
-    return;
-  }
-  
-  unsigned MinGPR = PPC::R31;
-  unsigned MinG8R = PPC::X31;
-  unsigned MinFPR = PPC::F31;
-  unsigned MinVR = PPC::V31;
-  
-  bool HasGPSaveArea = false;
-  bool HasG8SaveArea = false;
-  bool HasFPSaveArea = false;
-  bool HasCRSaveArea = false;
-  bool HasVRSAVESaveArea = false;
-  bool HasVRSaveArea = false;
-  
-  SmallVector<CalleeSavedInfo, 18> GPRegs;
-  SmallVector<CalleeSavedInfo, 18> G8Regs;
-  SmallVector<CalleeSavedInfo, 18> FPRegs;
-  SmallVector<CalleeSavedInfo, 18> VRegs;
-  
-  for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
-    unsigned Reg = CSI[i].getReg();
-    if (PPC::GPRCRegisterClass->contains(Reg)) {
-      HasGPSaveArea = true;
-      
-      GPRegs.push_back(CSI[i]);
-      
-      if (Reg < MinGPR) {
-        MinGPR = Reg;
-      }
-    } else if (PPC::G8RCRegisterClass->contains(Reg)) {
-      HasG8SaveArea = true;
-
-      G8Regs.push_back(CSI[i]);
-
-      if (Reg < MinG8R) {
-        MinG8R = Reg;
-      }
-    } else if (PPC::F8RCRegisterClass->contains(Reg)) {
-      HasFPSaveArea = true;
-      
-      FPRegs.push_back(CSI[i]);
-      
-      if (Reg < MinFPR) {
-        MinFPR = Reg;
-      }
-// FIXME SVR4: Disable CR save area for now.
-    } else if (PPC::CRBITRCRegisterClass->contains(Reg)
-               || PPC::CRRCRegisterClass->contains(Reg)) {
-//      HasCRSaveArea = true;
-    } else if (PPC::VRSAVERCRegisterClass->contains(Reg)) {
-      HasVRSAVESaveArea = true;
-    } else if (PPC::VRRCRegisterClass->contains(Reg)) {
-      HasVRSaveArea = true;
-      
-      VRegs.push_back(CSI[i]);
-      
-      if (Reg < MinVR) {
-        MinVR = Reg;
-      }
-    } else {
-      llvm_unreachable("Unknown RegisterClass!");
-    }
-  }
-
-  PPCFunctionInfo *PFI = MF.getInfo<PPCFunctionInfo>();
-  
-  int64_t LowerBound = 0;
-
-  // Take into account stack space reserved for tail calls.
-  int TCSPDelta = 0;
-  if (GuaranteedTailCallOpt && (TCSPDelta = PFI->getTailCallSPDelta()) < 0) {
-    LowerBound = TCSPDelta;
-  }
-
-  // The Floating-point register save area is right below the back chain word
-  // of the previous stack frame.
-  if (HasFPSaveArea) {
-    for (unsigned i = 0, e = FPRegs.size(); i != e; ++i) {
-      int FI = FPRegs[i].getFrameIdx();
-      
-      FFI->setObjectOffset(FI, LowerBound + FFI->getObjectOffset(FI));
-    }
-    
-    LowerBound -= (31 - getRegisterNumbering(MinFPR) + 1) * 8; 
-  }
-
-  // Check whether the frame pointer register is allocated. If so, make sure it
-  // is spilled to the correct offset.
-  if (needsFP(MF)) {
-    HasGPSaveArea = true;
-    
-    int FI = PFI->getFramePointerSaveIndex();
-    assert(FI && "No Frame Pointer Save Slot!");
-    
-    FFI->setObjectOffset(FI, LowerBound + FFI->getObjectOffset(FI));
-  }
-  
-  // General register save area starts right below the Floating-point
-  // register save area.
-  if (HasGPSaveArea || HasG8SaveArea) {
-    // Move general register save area spill slots down, taking into account
-    // the size of the Floating-point register save area.
-    for (unsigned i = 0, e = GPRegs.size(); i != e; ++i) {
-      int FI = GPRegs[i].getFrameIdx();
-      
-      FFI->setObjectOffset(FI, LowerBound + FFI->getObjectOffset(FI));
-    }
-    
-    // Move general register save area spill slots down, taking into account
-    // the size of the Floating-point register save area.
-    for (unsigned i = 0, e = G8Regs.size(); i != e; ++i) {
-      int FI = G8Regs[i].getFrameIdx();
-
-      FFI->setObjectOffset(FI, LowerBound + FFI->getObjectOffset(FI));
-    }
-
-    unsigned MinReg = std::min<unsigned>(getRegisterNumbering(MinGPR),
-                                         getRegisterNumbering(MinG8R));
-
-    if (Subtarget.isPPC64()) {
-      LowerBound -= (31 - MinReg + 1) * 8;
-    } else {
-      LowerBound -= (31 - MinReg + 1) * 4;
-    }
-  }
-  
-  // The CR save area is below the general register save area.
-  if (HasCRSaveArea) {
-    // FIXME SVR4: Is it actually possible to have multiple elements in CSI
-    //             which have the CR/CRBIT register class?
-    // Adjust the frame index of the CR spill slot.
-    for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
-      unsigned Reg = CSI[i].getReg();
-    
-      if (PPC::CRBITRCRegisterClass->contains(Reg) ||
-          PPC::CRRCRegisterClass->contains(Reg)) {
-        int FI = CSI[i].getFrameIdx();
-
-        FFI->setObjectOffset(FI, LowerBound + FFI->getObjectOffset(FI));
-      }
-    }
-    
-    LowerBound -= 4; // The CR save area is always 4 bytes long.
-  }
-  
-  if (HasVRSAVESaveArea) {
-    // FIXME SVR4: Is it actually possible to have multiple elements in CSI
-    //             which have the VRSAVE register class?
-    // Adjust the frame index of the VRSAVE spill slot.
-    for (unsigned i = 0, e = CSI.size(); i != e; ++i) {
-      unsigned Reg = CSI[i].getReg();
-    
-      if (PPC::VRSAVERCRegisterClass->contains(Reg)) {
-        int FI = CSI[i].getFrameIdx();
-
-        FFI->setObjectOffset(FI, LowerBound + FFI->getObjectOffset(FI));
-      }
-    }
-    
-    LowerBound -= 4; // The VRSAVE save area is always 4 bytes long.
-  }
-  
-  if (HasVRSaveArea) {
-    // Insert alignment padding, we need 16-byte alignment.
-    LowerBound = (LowerBound - 15) & ~(15);
-    
-    for (unsigned i = 0, e = VRegs.size(); i != e; ++i) {
-      int FI = VRegs[i].getFrameIdx();
-      
-      FFI->setObjectOffset(FI, LowerBound + FFI->getObjectOffset(FI));
-    }
-  }
-}
-
 unsigned PPCRegisterInfo::getRARegister() const {
   return !Subtarget.isPPC64() ? PPC::LR : PPC::LR8;
 }
 
 unsigned PPCRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  if (!Subtarget.isPPC64())
-    return hasFP(MF) ? PPC::R31 : PPC::R1;
-  else
-    return hasFP(MF) ? PPC::X31 : PPC::X1;
-}
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
 
-void PPCRegisterInfo::getInitialFrameState(std::vector<MachineMove> &Moves)
-                                                                         const {
-  // Initial state of the frame pointer is R1.
-  MachineLocation Dst(MachineLocation::VirtualFP);
-  MachineLocation Src(PPC::R1, 0);
-  Moves.push_back(MachineMove(0, Dst, Src));
+  if (!Subtarget.isPPC64())
+    return TFI->hasFP(MF) ? PPC::R31 : PPC::R1;
+  else
+    return TFI->hasFP(MF) ? PPC::X31 : PPC::X1;
 }
 
 unsigned PPCRegisterInfo::getEHExceptionRegister() const {

@@ -831,7 +831,8 @@ static void WriteOptimizationInfo(raw_ostream &Out, const User *U) {
       Out << " nuw";
     if (OBO->hasNoSignedWrap())
       Out << " nsw";
-  } else if (const SDivOperator *Div = dyn_cast<SDivOperator>(U)) {
+  } else if (const PossiblyExactOperator *Div =
+               dyn_cast<PossiblyExactOperator>(U)) {
     if (Div->isExact())
       Out << " exact";
   } else if (const GEPOperator *GEP = dyn_cast<GEPOperator>(U)) {
@@ -1337,9 +1338,12 @@ void AssemblyWriter::printModule(const Module *M) {
       CurPos = NewLine+1;
       NewLine = Asm.find_first_of('\n', CurPos);
     }
-    Out << "module asm \"";
-    PrintEscapedString(std::string(Asm.begin()+CurPos, Asm.end()), Out);
-    Out << "\"\n";
+    std::string rest(Asm.begin()+CurPos, Asm.end());
+    if (!rest.empty()) {
+      Out << "module asm \"";
+      PrintEscapedString(rest, Out);
+      Out << "\"\n";
+    }
   }
 
   // Loop over the dependent libraries and emit them.
@@ -1459,6 +1463,7 @@ void AssemblyWriter::printGlobal(const GlobalVariable *GV) {
   if (GV->isThreadLocal()) Out << "thread_local ";
   if (unsigned AddressSpace = GV->getType()->getAddressSpace())
     Out << "addrspace(" << AddressSpace << ") ";
+  if (GV->hasUnnamedAddr()) Out << "unnamed_addr ";
   Out << (GV->isConstant() ? "constant " : "global ");
   TypePrinter.print(GV->getType()->getElementType(), Out);
 
@@ -1628,6 +1633,8 @@ void AssemblyWriter::printFunction(const Function *F) {
     Out << "...";  // Output varargs portion of signature!
   }
   Out << ')';
+  if (F->hasUnnamedAddr())
+    Out << " unnamed_addr";
   Attributes FnAttrs = Attrs.getFnAttributes();
   if (FnAttrs != Attribute::None)
     Out << ' ' << Attribute::getAsString(Attrs.getFnAttributes());
@@ -2043,15 +2050,7 @@ static void WriteMDNodeComment(const MDNode *Node,
     return;
   
   Out.PadToColumn(50);
-  if (Tag == dwarf::DW_TAG_auto_variable)
-    Out << "; [ DW_TAG_auto_variable ]";
-  else if (Tag == dwarf::DW_TAG_arg_variable)
-    Out << "; [ DW_TAG_arg_variable ]";
-  else if (Tag == dwarf::DW_TAG_return_variable)
-    Out << "; [ DW_TAG_return_variable ]";
-  else if (Tag == dwarf::DW_TAG_vector_type)
-    Out << "; [ DW_TAG_vector_type ]";
-  else if (Tag == dwarf::DW_TAG_user_base)
+  if (Tag == dwarf::DW_TAG_user_base)
     Out << "; [ DW_TAG_user_base ]";
   else if (Tag.isIntN(32)) {
     if (const char *TagName = dwarf::TagString(Tag.getZExtValue()))

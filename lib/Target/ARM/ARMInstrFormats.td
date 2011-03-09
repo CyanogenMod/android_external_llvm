@@ -1,4 +1,4 @@
-//===- ARMInstrFormats.td - ARM Instruction Formats --*- tablegen -*---------=//
+//===- ARMInstrFormats.td - ARM Instruction Formats ----------*- tablegen -*-=//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -71,7 +71,7 @@ def NVTBLFrm      : Format<41>;
 
 // Misc flags.
 
-// the instruction has a Rn register operand.
+// The instruction has an Rn register operand.
 // UnaryDP - Indicates this is a unary data processing instruction, i.e.
 // it doesn't have a Rn operand.
 class UnaryDP    { bit isUnaryDataProc = 1; }
@@ -84,6 +84,7 @@ class Xform16Bit { bit canXformTo16Bit = 1; }
 // ARM Instruction flags.  These need to match ARMBaseInstrInfo.h.
 //
 
+// FIXME: Once the JIT is MC-ized, these can go away.
 // Addressing mode.
 class AddrMode<bits<5> val> {
   bits<5> Value = val;
@@ -126,22 +127,55 @@ def IndexModePost : IndexMode<2>;
 def IndexModeUpd  : IndexMode<3>;
 
 // Instruction execution domain.
-class Domain<bits<2> val> {
-  bits<2> Value = val;
+class Domain<bits<3> val> {
+  bits<3> Value = val;
 }
 def GenericDomain : Domain<0>;
 def VFPDomain     : Domain<1>; // Instructions in VFP domain only
 def NeonDomain    : Domain<2>; // Instructions in Neon domain only
 def VFPNeonDomain : Domain<3>; // Instructions in both VFP & Neon domains
+def VFPNeonA8Domain : Domain<5>; // Instructions in VFP & Neon under A8
 
 //===----------------------------------------------------------------------===//
-
 // ARM special operands.
 //
 
 def CondCodeOperand : AsmOperandClass {
   let Name = "CondCode";
   let SuperClasses = [];
+}
+
+def CCOutOperand : AsmOperandClass {
+  let Name = "CCOut";
+  let SuperClasses = [];
+}
+
+def MemBarrierOptOperand : AsmOperandClass {
+  let Name = "MemBarrierOpt";
+  let SuperClasses = [];
+  let ParserMethod = "tryParseMemBarrierOptOperand";
+}
+
+def ProcIFlagsOperand : AsmOperandClass {
+  let Name = "ProcIFlags";
+  let SuperClasses = [];
+  let ParserMethod = "tryParseProcIFlagsOperand";
+}
+
+def MSRMaskOperand : AsmOperandClass {
+  let Name = "MSRMask";
+  let SuperClasses = [];
+  let ParserMethod = "tryParseMSRMaskOperand";
+}
+
+// ARM imod and iflag operands, used only by the CPS instruction.
+def imod_op : Operand<i32> {
+  let PrintMethod = "printCPSIMod";
+}
+
+def iflags_op : Operand<i32> {
+  let PrintMethod = "printCPSIFlag";
+  let ParserMatchClass = ProcIFlagsOperand;
 }
 
 // ARM Predicate operand. Default to 14 = always (AL). Second part is CC
@@ -156,12 +190,14 @@ def pred : PredicateOperand<OtherVT, (ops i32imm, CCR),
 def cc_out : OptionalDefOperand<OtherVT, (ops CCR), (ops (i32 zero_reg))> {
   let EncoderMethod = "getCCOutOpValue";
   let PrintMethod = "printSBitModifierOperand";
+  let ParserMatchClass = CCOutOperand;
 }
 
 // Same as cc_out except it defaults to setting CPSR.
 def s_cc_out : OptionalDefOperand<OtherVT, (ops CCR), (ops (i32 CPSR))> {
   let EncoderMethod = "getCCOutOpValue";
   let PrintMethod = "printSBitModifierOperand";
+  let ParserMatchClass = CCOutOperand;
 }
 
 // ARM special operands for disassembly only.
@@ -176,6 +212,7 @@ def cps_opt : Operand<i32> {
 
 def msr_mask : Operand<i32> {
   let PrintMethod = "printMSRMaskOperand";
+  let ParserMatchClass = MSRMaskOperand;
 }
 
 // A8.6.117, A8.6.118.  Different instructions are generated for #0 and #-0.
@@ -184,8 +221,23 @@ def neg_zero : Operand<i32> {
   let PrintMethod = "printNegZeroOperand";
 }
 
-//===----------------------------------------------------------------------===//
+// Narrow Shift Right Immediate - A narrow shift right immediate is encoded
+// differently from other shift immediates. The imm6 field is encoded like so:
+//
+//   16-bit: imm6<5:3> = '001', 8 - <imm> is encded in imm6<2:0>
+//   32-bit: imm6<5:4> = '01',16 - <imm> is encded in imm6<3:0>
+//   64-bit: imm6<5> = '1', 32 - <imm> is encded in imm6<4:0>
+def nsr16_imm : Operand<i32> {
+  let EncoderMethod = "getNarrowShiftRight16Imm";
+}
+def nsr32_imm : Operand<i32> {
+  let EncoderMethod = "getNarrowShiftRight32Imm";
+}
+def nsr64_imm : Operand<i32> {
+  let EncoderMethod = "getNarrowShiftRight64Imm";
+}
 
+//===----------------------------------------------------------------------===//
 // ARM Instruction templates.
 //
 
@@ -203,7 +255,7 @@ class InstTemplate<AddrMode am, SizeFlagVal sz, IndexMode im,
   Domain D = d;
   bit isUnaryDataProc = 0;
   bit canXformTo16Bit = 0;
-  
+
   // If this is a pseudo instruction, mark it isCodeGenOnly.
   let isCodeGenOnly = !eq(!cast<string>(f), "Pseudo");
 
@@ -214,7 +266,7 @@ class InstTemplate<AddrMode am, SizeFlagVal sz, IndexMode im,
   let TSFlags{15-10} = Form;
   let TSFlags{16}    = isUnaryDataProc;
   let TSFlags{17}    = canXformTo16Bit;
-  let TSFlags{19-18} = D.Value;
+  let TSFlags{20-18} = D.Value;
 
   let Constraints = cstr;
   let Itinerary = itin;
@@ -234,16 +286,40 @@ class InstThumb<AddrMode am, SizeFlagVal sz, IndexMode im,
                 Format f, Domain d, string cstr, InstrItinClass itin>
   : InstTemplate<am, sz, im, f, d, cstr, itin>;
 
-class PseudoInst<dag oops, dag iops, InstrItinClass itin,
-                 string asm, list<dag> pattern>
+class PseudoInst<dag oops, dag iops, InstrItinClass itin, list<dag> pattern>
+  // FIXME: This really should derive from InstTemplate instead, as pseudos
+  //        don't need encoding information. TableGen doesn't like that
+  //        currently. Need to figure out why and fix it.
   : InstARM<AddrModeNone, SizeSpecial, IndexModeNone, Pseudo, GenericDomain,
             "", itin> {
   let OutOperandList = oops;
   let InOperandList = iops;
-  let AsmString = asm;
   let Pattern = pattern;
 }
 
+// PseudoInst that's ARM-mode only.
+class ARMPseudoInst<dag oops, dag iops, SizeFlagVal sz, InstrItinClass itin,
+                    list<dag> pattern>
+  : PseudoInst<oops, iops, itin, pattern> {
+  let SZ = sz;
+  list<Predicate> Predicates = [IsARM];
+}
+
+// PseudoInst that's Thumb-mode only.
+class tPseudoInst<dag oops, dag iops, SizeFlagVal sz, InstrItinClass itin,
+                    list<dag> pattern>
+  : PseudoInst<oops, iops, itin, pattern> {
+  let SZ = sz;
+  list<Predicate> Predicates = [IsThumb];
+}
+
+// PseudoInst that's Thumb2-mode only.
+class t2PseudoInst<dag oops, dag iops, SizeFlagVal sz, InstrItinClass itin,
+                    list<dag> pattern>
+  : PseudoInst<oops, iops, itin, pattern> {
+  let SZ = sz;
+  list<Predicate> Predicates = [IsThumb2];
+}
 // Almost all ARM instructions are predicable.
 class I<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
         IndexMode im, Format f, InstrItinClass itin,
@@ -335,10 +411,6 @@ class ABXI<bits<4> opcod, dag oops, dag iops, InstrItinClass itin,
        asm, "", pattern> {
   let Inst{27-24} = opcod;
 }
-class ABXIx2<dag oops, dag iops, InstrItinClass itin,
-             string asm, list<dag> pattern>
-  : XI<oops, iops, AddrModeNone, Size8Bytes, IndexModeNone, Pseudo, itin,
-       asm, "", pattern>;
 
 // BR_JT instructions
 class JTI<dag oops, dag iops, InstrItinClass itin,
@@ -411,16 +483,11 @@ class AXI1<bits<4> opcod, dag oops, dag iops, Format f, InstrItinClass itin,
   let Inst{24-21} = opcod;
   let Inst{27-26} = 0b00;
 }
-class AI1x2<dag oops, dag iops, Format f, InstrItinClass itin,
-            string opc, string asm, list<dag> pattern>
-  : I<oops, iops, AddrMode1, Size8Bytes, IndexModeNone, f, itin,
-      opc, asm, "", pattern>;
-
 
 // loads
 
-// LDR/LDRB/STR/STRB
-class AIldst1<bits<3> op, bit isLd, bit isByte, dag oops, dag iops, AddrMode am,
+// LDR/LDRB/STR/STRB/...
+class AI2ldst<bits<3> op, bit isLd, bit isByte, dag oops, dag iops, AddrMode am,
              Format f, InstrItinClass itin, string opc, string asm,
              list<dag> pattern>
   : I<oops, iops, am, Size4Bytes, IndexModeNone, f, itin, opc, asm,
@@ -434,7 +501,7 @@ class AIldst1<bits<3> op, bit isLd, bit isByte, dag oops, dag iops, AddrMode am,
 }
 // Indexed load/stores
 class AI2ldstidx<bit isLd, bit isByte, bit isPre, dag oops, dag iops,
-               IndexMode im, Format f, InstrItinClass itin, string opc,
+                IndexMode im, Format f, InstrItinClass itin, string opc,
                 string asm, string cstr, list<dag> pattern>
   : I<oops, iops, AddrMode2, Size4Bytes, im, f, itin,
       opc, asm, cstr, pattern> {
@@ -446,88 +513,26 @@ class AI2ldstidx<bit isLd, bit isByte, bit isPre, dag oops, dag iops,
   let Inst{20}    = isLd; // L bit
   let Inst{15-12} = Rt;
 }
-
-class AXI2ldw<dag oops, dag iops, Format f, InstrItinClass itin,
-              string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode2, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern> {
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{22}    = 0; // B bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-26} = 0b01;
-}
-class AXI2ldb<dag oops, dag iops, Format f, InstrItinClass itin,
-              string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode2, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern> {
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{22}    = 1; // B bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-26} = 0b01;
-}
-
-// stores
-class AXI2stw<dag oops, dag iops, Format f, InstrItinClass itin,
-              string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode2, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern> {
-  let Inst{20}    = 0; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{22}    = 0; // B bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-26} = 0b01;
-}
-class AXI2stb<dag oops, dag iops, Format f, InstrItinClass itin,
-              string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode2, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern> {
-  let Inst{20}    = 0; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{22}    = 1; // B bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-26} = 0b01;
+class AI2stridx<bit isByte, bit isPre, dag oops, dag iops,
+                IndexMode im, Format f, InstrItinClass itin, string opc,
+                string asm, string cstr, list<dag> pattern>
+  : AI2ldstidx<0, isByte, isPre, oops, iops, im, f, itin, opc, asm, cstr,
+               pattern> {
+  // AM2 store w/ two operands: (GPR, am2offset)
+  // {13}     1 == Rm, 0 == imm12
+  // {12}     isAdd
+  // {11-0}   imm12/Rm
+  bits<14> offset;
+  bits<4> Rn;
+  let Inst{25} = offset{13};
+  let Inst{23} = offset{12};
+  let Inst{19-16} = Rn;
+  let Inst{11-0} = offset{11-0};
 }
 
 // addrmode3 instructions
-class AI3<dag oops, dag iops, Format f, InstrItinClass itin,
-          string opc, string asm, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-      opc, asm, "", pattern>;
-class AXI3<dag oops, dag iops, Format f, InstrItinClass itin,
-           string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern>;
-
-// loads
-class AI3ldh<dag oops, dag iops, Format f, InstrItinClass itin,
-             string opc, string asm, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-      opc, asm, "", pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 1; // H bit
-  let Inst{6}     = 0; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-25} = 0b000;
-}
-class AXI3ldh<dag oops, dag iops, Format f, InstrItinClass itin,
-              string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 1; // H bit
-  let Inst{6}     = 0; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 1; // P bit
-}
-class AI3ldsh<dag oops, dag iops, Format f, InstrItinClass itin,
-              string opc, string asm, list<dag> pattern>
+class AI3ld<bits<4> op, bit op20, dag oops, dag iops, Format f,
+            InstrItinClass itin, string opc, string asm, list<dag> pattern>
   : I<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
       opc, asm, "", pattern> {
   bits<14> addr;
@@ -537,71 +542,48 @@ class AI3ldsh<dag oops, dag iops, Format f, InstrItinClass itin,
   let Inst{23}    = addr{8};      // U bit
   let Inst{22}    = addr{13};     // 1 == imm8, 0 == Rm
   let Inst{21}    = 0;            // W bit
-  let Inst{20}    = 1;            // L bit
+  let Inst{20}    = op20;         // L bit
   let Inst{19-16} = addr{12-9};   // Rn
   let Inst{15-12} = Rt;           // Rt
   let Inst{11-8}  = addr{7-4};    // imm7_4/zero
-  let Inst{7-4}   = 0b1111;
+  let Inst{7-4}   = op;
   let Inst{3-0}   = addr{3-0};    // imm3_0/Rm
 }
-class AXI3ldsh<dag oops, dag iops, Format f, InstrItinClass itin,
-               string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 1; // H bit
-  let Inst{6}     = 1; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 1; // P bit
-}
-class AI3ldsb<dag oops, dag iops, Format f, InstrItinClass itin,
-              string opc, string asm, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-      opc, asm, "", pattern> {
-  bits<14> addr;
+
+class AI3ldstidx<bits<4> op, bit op20, bit isLd, bit isPre, dag oops, dag iops,
+                IndexMode im, Format f, InstrItinClass itin, string opc,
+                string asm, string cstr, list<dag> pattern>
+  : I<oops, iops, AddrMode3, Size4Bytes, im, f, itin,
+      opc, asm, cstr, pattern> {
   bits<4> Rt;
   let Inst{27-25} = 0b000;
-  let Inst{24}    = 1; // P bit
-  let Inst{23}    = addr{8};      // U bit
-  let Inst{22}    = addr{13};     // 1 == imm8, 0 == Rm
-  let Inst{21}    = 0; // W bit
-  let Inst{20}    = 1; // L bit
-  let Inst{19-16} = addr{12-9};   // Rn
+  let Inst{24}    = isPre;        // P bit
+  let Inst{21}    = isPre;        // W bit
+  let Inst{20}    = op20;         // L bit
   let Inst{15-12} = Rt;           // Rt
-  let Inst{11-8}  = addr{7-4};    // imm7_4/zero
-  let Inst{7-4}   = 0b1101;
-  let Inst{3-0}   = addr{3-0};    // imm3_0/Rm
+  let Inst{7-4}   = op;
 }
-class AXI3ldsb<dag oops, dag iops, Format f, InstrItinClass itin,
-               string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 0; // H bit
-  let Inst{6}     = 1; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 1; // P bit
-}
-class AI3ldd<dag oops, dag iops, Format f, InstrItinClass itin,
-             string opc, string asm, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-      opc, asm, "", pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 0; // H bit
-  let Inst{6}     = 1; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 0; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 1; // P bit
+class AI3stridx<bits<4> op, bit isByte, bit isPre, dag oops, dag iops,
+                IndexMode im, Format f, InstrItinClass itin, string opc,
+                string asm, string cstr, list<dag> pattern>
+  : AI2ldstidx<0, isByte, isPre, oops, iops, im, f, itin, opc, asm, cstr,
+               pattern> {
+  // AM3 store w/ two operands: (GPR, am3offset)
+  bits<14> offset;
+  bits<4> Rt;
+  bits<4> Rn;
   let Inst{27-25} = 0b000;
+  let Inst{23}    = offset{8};
+  let Inst{22}    = offset{9};
+  let Inst{19-16} = Rn;
+  let Inst{15-12} = Rt;           // Rt
+  let Inst{11-8}  = offset{7-4};  // imm7_4/zero
+  let Inst{7-4}   = op;
+  let Inst{3-0}   = offset{3-0};  // imm3_0/Rm
 }
 
 // stores
-class AI3sth<dag oops, dag iops, Format f, InstrItinClass itin,
+class AI3str<bits<4> op, dag oops, dag iops, Format f, InstrItinClass itin,
              string opc, string asm, list<dag> pattern>
   : I<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
       opc, asm, "", pattern> {
@@ -616,94 +598,9 @@ class AI3sth<dag oops, dag iops, Format f, InstrItinClass itin,
   let Inst{19-16} = addr{12-9};   // Rn
   let Inst{15-12} = Rt;           // Rt
   let Inst{11-8}  = addr{7-4};    // imm7_4/zero
-  let Inst{7-4}   = 0b1011;
+  let Inst{7-4}   = op;
   let Inst{3-0}   = addr{3-0};    // imm3_0/Rm
 }
-class AXI3sth<dag oops, dag iops, Format f, InstrItinClass itin,
-              string asm, list<dag> pattern>
-  : XI<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-       asm, "", pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 1; // H bit
-  let Inst{6}     = 0; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 0; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 1; // P bit
-}
-class AI3std<dag oops, dag iops, Format f, InstrItinClass itin,
-             string opc, string asm, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModeNone, f, itin,
-      opc, asm, "", pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 1; // H bit
-  let Inst{6}     = 1; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 0; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-25} = 0b000;
-}
-
-// Pre-indexed loads
-class AI3ldhpr<dag oops, dag iops, Format f, InstrItinClass itin,
-               string opc, string asm, string cstr, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModePre, f, itin,
-      opc, asm, cstr, pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 1; // H bit
-  let Inst{6}     = 0; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 1; // W bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-25} = 0b000;
-}
-class AI3ldshpr<dag oops, dag iops, Format f, InstrItinClass itin,
-                string opc, string asm, string cstr, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModePre, f, itin,
-      opc, asm, cstr, pattern> {
-  bits<14> addr;
-  bits<4> Rt;
-  let Inst{27-25} = 0b000;
-  let Inst{24}    = 1;            // P bit
-  let Inst{23}    = addr{8};      // U bit
-  let Inst{22}    = addr{13};     // 1 == imm8, 0 == Rm
-  let Inst{21}    = 1;            // W bit
-  let Inst{20}    = 1;            // L bit
-  let Inst{19-16} = addr{12-9};   // Rn
-  let Inst{15-12} = Rt;           // Rt
-  let Inst{11-8}  = addr{7-4};    // imm7_4/zero
-  let Inst{7-4}   = 0b1111;
-  let Inst{3-0}   = addr{3-0};    // imm3_0/Rm
-}
-class AI3ldsbpr<dag oops, dag iops, Format f, InstrItinClass itin,
-                string opc, string asm, string cstr, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModePre, f, itin,
-      opc, asm, cstr, pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 0; // H bit
-  let Inst{6}     = 1; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 1; // W bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-25} = 0b000;
-}
-class AI3lddpr<dag oops, dag iops, Format f, InstrItinClass itin,
-             string opc, string asm, string cstr, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModePre, f, itin,
-      opc, asm, cstr, pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 0; // H bit
-  let Inst{6}     = 1; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 0; // L bit
-  let Inst{21}    = 1; // W bit
-  let Inst{24}    = 1; // P bit
-  let Inst{27-25} = 0b000;
-}
-
 
 // Pre-indexed stores
 class AI3sthpr<dag oops, dag iops, Format f, InstrItinClass itin,
@@ -730,66 +627,6 @@ class AI3stdpr<dag oops, dag iops, Format f, InstrItinClass itin,
   let Inst{20}    = 0; // L bit
   let Inst{21}    = 1; // W bit
   let Inst{24}    = 1; // P bit
-  let Inst{27-25} = 0b000;
-}
-
-// Post-indexed loads
-class AI3ldhpo<dag oops, dag iops, Format f, InstrItinClass itin,
-               string opc, string asm, string cstr, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModePost, f, itin,
-      opc, asm, cstr,pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 1; // H bit
-  let Inst{6}     = 0; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 0; // P bit
-  let Inst{27-25} = 0b000;
-}
-class AI3ldshpo<dag oops, dag iops, Format f, InstrItinClass itin,
-                string opc, string asm, string cstr, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModePost, f, itin,
-      opc, asm, cstr,pattern> {
-  bits<10> offset;
-  bits<4> Rt;
-  bits<4> Rn;
-  let Inst{27-25} = 0b000;
-  let Inst{24}    = 0;            // P bit
-  let Inst{23}    = offset{8};    // U bit
-  let Inst{22}    = offset{9};    // 1 == imm8, 0 == Rm
-  let Inst{21}    = 0;            // W bit
-  let Inst{20}    = 1;            // L bit
-  let Inst{19-16} = Rn;           // Rn
-  let Inst{15-12} = Rt;           // Rt
-  let Inst{11-8}  = offset{7-4};  // imm7_4/zero
-  let Inst{7-4}   = 0b1111;
-  let Inst{3-0}   = offset{3-0};  // imm3_0/Rm
-}
-class AI3ldsbpo<dag oops, dag iops, Format f, InstrItinClass itin,
-                string opc, string asm, string cstr, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModePost, f, itin,
-      opc, asm, cstr,pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 0; // H bit
-  let Inst{6}     = 1; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 1; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 0; // P bit
-  let Inst{27-25} = 0b000;
-}
-class AI3lddpo<dag oops, dag iops, Format f, InstrItinClass itin,
-             string opc, string asm, string cstr, list<dag> pattern>
-  : I<oops, iops, AddrMode3, Size4Bytes, IndexModePost, f, itin,
-      opc, asm, cstr, pattern> {
-  let Inst{4}     = 1;
-  let Inst{5}     = 0; // H bit
-  let Inst{6}     = 1; // S bit
-  let Inst{7}     = 1;
-  let Inst{20}    = 0; // L bit
-  let Inst{21}    = 0; // W bit
-  let Inst{24}    = 0; // P bit
   let Inst{27-25} = 0b000;
 }
 
@@ -833,38 +670,6 @@ class AXI4<dag oops, dag iops, IndexMode im, Format f, InstrItinClass itin,
   let Inst{22}    = 0; // S bit
   let Inst{19-16} = Rn;
   let Inst{15-0}  = regs;
-}
-class AXI4ld<dag oops, dag iops, IndexMode im, Format f, InstrItinClass itin,
-             string asm, string cstr, list<dag> pattern>
-  : XI<oops, iops, AddrMode4, Size4Bytes, im, f, itin,
-       asm, cstr, pattern> {
-  bits<4> p;
-  bits<16> dsts;
-  bits<4> Rn;
-  bits<2> amode;
-  let Inst{31-28} = p;
-  let Inst{27-25} = 0b100;
-  let Inst{24-23} = amode;
-  let Inst{22}    = 0; // S bit
-  let Inst{20}    = 1; // L bit
-  let Inst{19-16} = Rn;
-  let Inst{15-0}  = dsts;
-}
-class AXI4st<dag oops, dag iops, IndexMode im, Format f, InstrItinClass itin,
-             string asm, string cstr, list<dag> pattern>
-  : XI<oops, iops, AddrMode4, Size4Bytes, im, f, itin,
-       asm, cstr, pattern> {
-  bits<4> p;
-  bits<16> srcs;
-  bits<4> Rn;
-  bits<2> amode;
-  let Inst{31-28} = p;
-  let Inst{27-25} = 0b100;
-  let Inst{24-23} = amode;
-  let Inst{22}    = 0; // S bit
-  let Inst{20}    = 0; // L bit
-  let Inst{19-16} = Rn;
-  let Inst{15-0}  = srcs;
 }
 
 // Unsigned multiply, multiply-accumulate instructions.
@@ -1008,11 +813,8 @@ class ARMV6Pat<dag pattern, dag result> : Pat<pattern, result> {
 }
 
 //===----------------------------------------------------------------------===//
-//
 // Thumb Instruction Format Definitions.
 //
-
-// TI - Thumb instruction.
 
 class ThumbI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
              InstrItinClass itin, string asm, string cstr, list<dag> pattern>
@@ -1024,6 +826,7 @@ class ThumbI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   list<Predicate> Predicates = [IsThumb];
 }
 
+// TI - Thumb instruction.
 class TI<dag oops, dag iops, InstrItinClass itin, string asm, list<dag> pattern>
   : ThumbI<oops, iops, AddrModeNone, Size2Bytes, itin, asm, "", pattern>;
 
@@ -1042,6 +845,13 @@ class TIx2<bits<5> opcod1, bits<2> opcod2, bit opcod3,
   let Inst{31-27} = opcod1;
   let Inst{15-14} = opcod2;
   let Inst{12}    = opcod3;
+}
+
+// Move to/from coprocessor instructions
+class T1Cop<dag oops, dag iops, string asm, list<dag> pattern>
+  : ThumbI<oops, iops, AddrModeNone, Size4Bytes, NoItinerary, asm, "", pattern>,
+    Encoding, Requires<[IsThumb, HasV6]> {
+  let Inst{31-28} = 0b1110;
 }
 
 // BR_JT instructions
@@ -1066,9 +876,6 @@ class T1I<dag oops, dag iops, InstrItinClass itin,
 class T1Ix2<dag oops, dag iops, InstrItinClass itin,
             string asm, list<dag> pattern>
   : Thumb1I<oops, iops, AddrModeNone, Size4Bytes, itin, asm, "", pattern>;
-class T1JTI<dag oops, dag iops, InstrItinClass itin,
-            string asm, list<dag> pattern>
-  : Thumb1I<oops, iops, AddrModeNone, SizeSpecial, itin, asm, "", pattern>;
 
 // Two-address instructions
 class T1It<dag oops, dag iops, InstrItinClass itin,
@@ -1096,7 +903,7 @@ class T1sI<dag oops, dag iops, InstrItinClass itin,
 class T1sIt<dag oops, dag iops, InstrItinClass itin,
             string opc, string asm, list<dag> pattern>
   : Thumb1sI<oops, iops, AddrModeNone, Size2Bytes, itin, opc, asm,
-             "$lhs = $dst", pattern>;
+             "$Rn = $Rdn", pattern>;
 
 // Thumb1 instruction that can be predicated.
 class Thumb1pI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
@@ -1118,17 +925,8 @@ class T1pI<dag oops, dag iops, InstrItinClass itin,
 class T1pIt<dag oops, dag iops, InstrItinClass itin,
             string opc, string asm, list<dag> pattern>
   : Thumb1pI<oops, iops, AddrModeNone, Size2Bytes, itin, opc, asm,
-             "$lhs = $dst", pattern>;
+             "$Rn = $Rdn", pattern>;
 
-class T1pI1<dag oops, dag iops, InstrItinClass itin,
-            string opc, string asm, list<dag> pattern>
-  : Thumb1pI<oops, iops, AddrModeT1_1, Size2Bytes, itin, opc, asm, "", pattern>;
-class T1pI2<dag oops, dag iops, InstrItinClass itin,
-            string opc, string asm, list<dag> pattern>
-  : Thumb1pI<oops, iops, AddrModeT1_2, Size2Bytes, itin, opc, asm, "", pattern>;
-class T1pI4<dag oops, dag iops, InstrItinClass itin,
-            string opc, string asm, list<dag> pattern>
-  : Thumb1pI<oops, iops, AddrModeT1_4, Size2Bytes, itin, opc, asm, "", pattern>;
 class T1pIs<dag oops, dag iops,
             InstrItinClass itin, string opc, string asm, list<dag> pattern>
   : Thumb1pI<oops, iops, AddrModeT1_s, Size2Bytes, itin, opc, asm, "", pattern>;
@@ -1157,7 +955,7 @@ class T1DataProcessing<bits<4> opcode> : Encoding16 {
 // A6.2.3 Special data instructions and branch and exchange encoding.
 class T1Special<bits<4> opcode> : Encoding16 {
   let Inst{15-10} = 0b010001;
-  let Inst{9-6} = opcode;
+  let Inst{9-6}   = opcode;
 }
 
 // A6.2.4 Load/store single data item encoding.
@@ -1165,11 +963,36 @@ class T1LoadStore<bits<4> opA, bits<3> opB> : Encoding16 {
   let Inst{15-12} = opA;
   let Inst{11-9}  = opB;
 }
-class T1LdSt<bits<3> opB>     : T1LoadStore<0b0101, opB>;
-class T1LdSt4Imm<bits<3> opB> : T1LoadStore<0b0110, opB>; // Immediate, 4 bytes
-class T1LdSt1Imm<bits<3> opB> : T1LoadStore<0b0111, opB>; // Immediate, 1 byte
-class T1LdSt2Imm<bits<3> opB> : T1LoadStore<0b1000, opB>; // Immediate, 2 bytes
 class T1LdStSP<bits<3> opB>   : T1LoadStore<0b1001, opB>; // SP relative
+
+// Helper classes to encode Thumb1 loads and stores. For immediates, the
+// following bits are used for "opA" (see A6.2.4):
+//
+//   0b0110 => Immediate, 4 bytes
+//   0b1000 => Immediate, 2 bytes
+//   0b0111 => Immediate, 1 byte
+class T1pILdStEncode<bits<3> opcode, dag oops, dag iops, AddrMode am,
+                     InstrItinClass itin, string opc, string asm,
+                     list<dag> pattern>
+  : Thumb1pI<oops, iops, am, Size2Bytes, itin, opc, asm, "", pattern>,
+    T1LoadStore<0b0101, opcode> {
+  bits<3> Rt;
+  bits<8> addr;
+  let Inst{8-6} = addr{5-3};    // Rm
+  let Inst{5-3} = addr{2-0};    // Rn
+  let Inst{2-0} = Rt;
+}
+class T1pILdStEncodeImm<bits<4> opA, bit opB, dag oops, dag iops, AddrMode am,
+                        InstrItinClass itin, string opc, string asm,
+                        list<dag> pattern>
+  : Thumb1pI<oops, iops, am, Size2Bytes, itin, opc, asm, "", pattern>,
+    T1LoadStore<opA, {opB,?,?}> {
+  bits<3> Rt;
+  bits<8> addr;
+  let Inst{10-6} = addr{7-3};   // imm5
+  let Inst{5-3}  = addr{2-0};   // Rn
+  let Inst{2-0}  = Rt;
+}
 
 // A6.2.5 Miscellaneous 16-bit instructions encoding.
 class T1Misc<bits<7> opcode> : Encoding16 {
@@ -1199,6 +1022,9 @@ class Thumb2sI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
                InstrItinClass itin,
                string opc, string asm, string cstr, list<dag> pattern>
   : InstARM<am, sz, IndexModeNone, ThumbFrm, GenericDomain, cstr, itin> {
+  bits<1> s; // condition-code set flag ('1' if the insn should set the flags)
+  let Inst{20} = s;
+
   let OutOperandList = oops;
   let InOperandList = !con(iops, (ins pred:$p, cc_out:$s));
   let AsmString = !strconcat(opc, "${s}${p}", asm);
@@ -1244,17 +1070,23 @@ class T2Iso<dag oops, dag iops, InstrItinClass itin,
 class T2Ipc<dag oops, dag iops, InstrItinClass itin,
             string opc, string asm, list<dag> pattern>
   : Thumb2I<oops, iops, AddrModeT2_pc, Size4Bytes, itin, opc, asm, "", pattern>;
-class T2Ii8s4<bit P, bit W, bit load, dag oops, dag iops, InstrItinClass itin,
+class T2Ii8s4<bit P, bit W, bit isLoad, dag oops, dag iops, InstrItinClass itin,
               string opc, string asm, list<dag> pattern>
   : Thumb2I<oops, iops, AddrModeT2_i8s4, Size4Bytes, itin, opc, asm, "",
             pattern> {
-  let Inst{31-27} = 0b11101;
-  let Inst{26-25} = 0b00;
+  bits<4> Rt;
+  bits<4> Rt2;
+  bits<13> addr;
+  let Inst{31-25} = 0b1110100;
   let Inst{24}    = P;
-  let Inst{23}    = ?; // The U bit.
+  let Inst{23}    = addr{8};
   let Inst{22}    = 1;
   let Inst{21}    = W;
-  let Inst{20}    = load;
+  let Inst{20}    = isLoad;
+  let Inst{19-16} = addr{12-9};
+  let Inst{15-12} = Rt{3-0};
+  let Inst{11-8}  = Rt2{3-0};
+  let Inst{7-0}   = addr{7-0};
 }
 
 class T2sI<dag oops, dag iops, InstrItinClass itin,
@@ -1268,9 +1100,11 @@ class T2JTI<dag oops, dag iops, InstrItinClass itin,
             string asm, list<dag> pattern>
   : Thumb2XI<oops, iops, AddrModeNone, SizeSpecial, itin, asm, "", pattern>;
 
-class T2Ix2<dag oops, dag iops, InstrItinClass itin,
-            string opc, string asm, list<dag> pattern>
-  : Thumb2I<oops, iops, AddrModeNone, Size8Bytes, itin, opc, asm, "", pattern>;
+// Move to/from coprocessor instructions
+class T2Cop<dag oops, dag iops, string asm, list<dag> pattern>
+  : T2XI<oops, iops, NoItinerary, asm, pattern>, Requires<[IsThumb2, HasV6]> {
+  let Inst{31-28} = 0b1111;
+}
 
 // Two-address instructions
 class T2XIt<dag oops, dag iops, InstrItinClass itin,
@@ -1298,19 +1132,15 @@ class T2Iidxldst<bit signed, bits<2> opcod, bit load, bit pre,
   // (P, W) = (1, 1) Pre-indexed or (0, 1) Post-indexed
   let Inst{10}    = pre; // The P bit.
   let Inst{8}     = 1; // The W bit.
-}
 
-// Helper class for disassembly only
-// A6.3.16 & A6.3.17
-// T2Imac - Thumb2 multiply [accumulate, and absolute difference] instructions.
-class T2I_mac<bit long, bits<3> op22_20, bits<4> op7_4, dag oops, dag iops,
-             InstrItinClass itin, string opc, string asm, list<dag> pattern>
-  : T2I<oops, iops, itin, opc, asm, pattern> {
-  let Inst{31-27} = 0b11111;
-  let Inst{26-24} = 0b011;
-  let Inst{23}    = long;
-  let Inst{22-20} = op22_20;
-  let Inst{7-4}   = op7_4;
+  bits<9> addr;
+  let Inst{7-0} = addr{7-0};
+  let Inst{9}   = addr{8}; // Sign bit
+
+  bits<4> Rt;
+  bits<4> Rn;
+  let Inst{15-12} = Rt{3-0};
+  let Inst{19-16} = Rn{3-0};
 }
 
 // Tv5Pat - Same as Pat<>, but requires V5T Thumb mode.
@@ -1345,6 +1175,7 @@ class VFPI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
   let InOperandList = !con(iops, (ins pred:$p));
   let AsmString = !strconcat(opc, "${p}", asm);
   let Pattern = pattern;
+  let PostEncoderMethod = "VFPThumb2PostEncoder";
   list<Predicate> Predicates = [HasVFP2];
 }
 
@@ -1353,17 +1184,22 @@ class VFPXI<dag oops, dag iops, AddrMode am, SizeFlagVal sz,
             IndexMode im, Format f, InstrItinClass itin,
             string asm, string cstr, list<dag> pattern>
   : InstARM<am, sz, im, f, VFPDomain, cstr, itin> {
+  bits<4> p;
+  let Inst{31-28} = p;
   let OutOperandList = oops;
   let InOperandList = iops;
   let AsmString = asm;
   let Pattern = pattern;
+  let PostEncoderMethod = "VFPThumb2PostEncoder";
   list<Predicate> Predicates = [HasVFP2];
 }
 
 class VFPAI<dag oops, dag iops, Format f, InstrItinClass itin,
             string opc, string asm, list<dag> pattern>
   : VFPI<oops, iops, AddrModeNone, Size4Bytes, IndexModeNone, f, itin,
-         opc, asm, "", pattern>;
+         opc, asm, "", pattern> {
+  let PostEncoderMethod = "VFPThumb2PostEncoder";
+}
 
 // ARM VFP addrmode5 loads and stores
 class ADI5<bits<4> opcod1, bits<2> opcod2, dag oops, dag iops,
@@ -1388,7 +1224,7 @@ class ADI5<bits<4> opcod1, bits<2> opcod2, dag oops, dag iops,
   let Inst{11-9}  = 0b101;
   let Inst{8}     = 1;          // Double precision
 
-  // 64-bit loads & stores operate on both NEON and VFP pipelines.
+  // Loads & stores operate on both NEON and VFP pipelines.
   let D = VFPNeonDomain;
 }
 
@@ -1413,6 +1249,9 @@ class ASI5<bits<4> opcod1, bits<2> opcod2, dag oops, dag iops,
   let Inst{21-20} = opcod2;
   let Inst{11-9}  = 0b101;
   let Inst{8}     = 0;          // Single precision
+
+  // Loads & stores operate on both NEON and VFP pipelines.
+  let D = VFPNeonDomain;
 }
 
 // VFP Load / store multiple pseudo instructions.
@@ -1431,19 +1270,36 @@ class AXDI4<dag oops, dag iops, IndexMode im, InstrItinClass itin,
             string asm, string cstr, list<dag> pattern>
   : VFPXI<oops, iops, AddrMode4, Size4Bytes, im,
           VFPLdStMulFrm, itin, asm, cstr, pattern> {
+  // Instruction operands.
+  bits<4>  Rn;
+  bits<13> regs;
+
+  // Encode instruction operands.
+  let Inst{19-16} = Rn;
+  let Inst{22}    = regs{12};
+  let Inst{15-12} = regs{11-8};
+  let Inst{7-0}   = regs{7-0};
+
   // TODO: Mark the instructions with the appropriate subtarget info.
   let Inst{27-25} = 0b110;
   let Inst{11-9}  = 0b101;
   let Inst{8}     = 1;          // Double precision
-
-  // 64-bit loads & stores operate on both NEON and VFP pipelines.
-  let D = VFPNeonDomain;
 }
 
 class AXSI4<dag oops, dag iops, IndexMode im, InstrItinClass itin,
             string asm, string cstr, list<dag> pattern>
   : VFPXI<oops, iops, AddrMode4, Size4Bytes, im,
           VFPLdStMulFrm, itin, asm, cstr, pattern> {
+  // Instruction operands.
+  bits<4> Rn;
+  bits<13> regs;
+
+  // Encode instruction operands.
+  let Inst{19-16} = Rn;
+  let Inst{22}    = regs{8};
+  let Inst{15-12} = regs{12-9};
+  let Inst{7-0}   = regs{7-0};
+
   // TODO: Mark the instructions with the appropriate subtarget info.
   let Inst{27-25} = 0b110;
   let Inst{11-9}  = 0b101;
@@ -1524,8 +1380,8 @@ class ASuI<bits<5> opcod1, bits<2> opcod2, bits<4> opcod3, bits<2> opcod4,
   let Inst{4}     = opcod5;
 }
 
-// Single precision unary, if no NEON
-// Same as ASuI except not available if NEON is enabled
+// Single precision unary, if no NEON. Same as ASuI except not available if
+// NEON is enabled.
 class ASuIn<bits<5> opcod1, bits<2> opcod2, bits<4> opcod3, bits<2> opcod4,
             bit opcod5, dag oops, dag iops, InstrItinClass itin, string opc,
             string asm, list<dag> pattern>
@@ -1559,8 +1415,8 @@ class ASbI<bits<5> opcod1, bits<2> opcod2, bit op6, bit op4, dag oops, dag iops,
   let Inst{4}     = op4;
 }
 
-// Single precision binary, if no NEON
-// Same as ASbI except not available if NEON is enabled
+// Single precision binary, if no NEON. Same as ASbI except not available if
+// NEON is enabled.
 class ASbIn<bits<5> opcod1, bits<2> opcod2, bit op6, bit op4, dag oops,
             dag iops, InstrItinClass itin, string opc, string asm,
             list<dag> pattern>
@@ -1676,13 +1532,13 @@ class NLdSt<bit op23, bits<2> op21_20, bits<4> op11_8, bits<4> op7_4,
   let Inst{21-20} = op21_20;
   let Inst{11-8}  = op11_8;
   let Inst{7-4}   = op7_4;
-  
+
   let PostEncoderMethod = "NEONThumb2LoadStorePostEncoder";
-  
+
   bits<5> Vd;
   bits<6> Rn;
   bits<4> Rm;
-  
+
   let Inst{22}    = Vd{4};
   let Inst{15-12} = Vd{3-0};
   let Inst{19-16} = Rn{3-0};
@@ -1728,6 +1584,7 @@ class NDataXI<dag oops, dag iops, Format f, InstrItinClass itin,
   : NeonXI<oops, iops, AddrModeNone, IndexModeNone, f, itin, opc, asm,
            cstr, pattern> {
   let Inst{31-25} = 0b1111001;
+  let PostEncoderMethod = "NEONThumb2DataIPostEncoder";
 }
 
 // NEON "one register and a modified immediate" format.
@@ -1744,11 +1601,11 @@ class N1ModImm<bit op23, bits<3> op21_19, bits<4> op11_8, bit op7, bit op6,
   let Inst{6}     = op6;
   let Inst{5}     = op5;
   let Inst{4}     = op4;
-  
+
   // Instruction operands.
   bits<5> Vd;
   bits<13> SIMM;
-  
+
   let Inst{15-12} = Vd{3-0};
   let Inst{22}    = Vd{4};
   let Inst{24}    = SIMM{7};
@@ -1769,7 +1626,7 @@ class N2V<bits<2> op24_23, bits<2> op21_20, bits<2> op19_18, bits<2> op17_16,
   let Inst{11-7}  = op11_7;
   let Inst{6}     = op6;
   let Inst{4}     = op4;
-  
+
   // Instruction operands.
   bits<5> Vd;
   bits<5> Vm;
@@ -1793,7 +1650,7 @@ class N2VX<bits<2> op24_23, bits<2> op21_20, bits<2> op19_18, bits<2> op17_16,
   let Inst{11-7}  = op11_7;
   let Inst{6}     = op6;
   let Inst{4}     = op4;
-  
+
   // Instruction operands.
   bits<5> Vd;
   bits<5> Vm;
@@ -1815,7 +1672,7 @@ class N2VImm<bit op24, bit op23, bits<4> op11_8, bit op7, bit op6, bit op4,
   let Inst{7}    = op7;
   let Inst{6}    = op6;
   let Inst{4}    = op4;
-  
+
   // Instruction operands.
   bits<5> Vd;
   bits<5> Vm;
@@ -1839,7 +1696,7 @@ class N3V<bit op24, bit op23, bits<2> op21_20, bits<4> op11_8, bit op6, bit op4,
   let Inst{11-8}  = op11_8;
   let Inst{6}     = op6;
   let Inst{4}     = op4;
-  
+
   // Instruction operands.
   bits<5> Vd;
   bits<5> Vn;
@@ -1865,7 +1722,7 @@ class N3VX<bit op24, bit op23, bits<2> op21_20, bits<4> op11_8, bit op6,
   let Inst{11-8}  = op11_8;
   let Inst{6}     = op6;
   let Inst{4}     = op4;
-  
+
   // Instruction operands.
   bits<5> Vd;
   bits<5> Vn;
@@ -1895,14 +1752,14 @@ class NVLaneOp<bits<8> opcod1, bits<4> opcod2, bits<2> opcod3,
   let AsmString = !strconcat(opc, "${p}", ".", dt, "\t", asm);
   let Pattern = pattern;
   list<Predicate> Predicates = [HasNEON];
-  
+
   let PostEncoderMethod = "NEONThumb2DupPostEncoder";
-  
+
   bits<5> V;
   bits<4> R;
   bits<4> p;
   bits<4> lane;
-  
+
   let Inst{31-28} = p{3-0};
   let Inst{7}     = V{4};
   let Inst{19-16} = V{3-0};
@@ -1935,11 +1792,11 @@ class NVDupLane<bits<4> op19_16, bit op6, dag oops, dag iops,
   let Inst{11-7}  = 0b11000;
   let Inst{6}     = op6;
   let Inst{4}     = 0;
-  
+
   bits<5> Vd;
   bits<5> Vm;
   bits<4> lane;
-  
+
   let Inst{22}     = Vd{4};
   let Inst{15-12} = Vd{3-0};
   let Inst{5}     = Vm{4};

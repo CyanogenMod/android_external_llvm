@@ -21,7 +21,7 @@
 
 namespace llvm {
   class SimpleRegisterCoalescing;
-  class LiveVariables;
+  class LiveDebugVariables;
   class TargetRegisterInfo;
   class TargetInstrInfo;
   class VirtRegMap;
@@ -44,6 +44,7 @@ namespace llvm {
     const TargetRegisterInfo* tri_;
     const TargetInstrInfo* tii_;
     LiveIntervals *li_;
+    LiveDebugVariables *ldv_;
     const MachineLoopInfo* loopInfo;
     AliasAnalysis *AA;
     
@@ -142,8 +143,10 @@ namespace llvm {
 
     /// ReMaterializeTrivialDef - If the source of a copy is defined by a trivial
     /// computation, replace the copy by rematerialize the definition.
-    bool ReMaterializeTrivialDef(LiveInterval &SrcInt, unsigned DstReg,
-                                 unsigned DstSubIdx, MachineInstr *CopyMI);
+    /// If PreserveSrcInt is true, make sure SrcInt is valid after the call.
+    bool ReMaterializeTrivialDef(LiveInterval &SrcInt, bool PreserveSrcInt,
+                                 unsigned DstReg, unsigned DstSubIdx,
+                                 MachineInstr *CopyMI);
 
     /// isWinToJoinCrossClass - Return true if it's profitable to coalesce
     /// two virtual registers from different register classes.

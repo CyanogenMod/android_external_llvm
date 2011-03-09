@@ -44,8 +44,6 @@ private:
 
   bool Error(SMLoc L, const Twine &Msg) { return Parser.Error(L, Msg); }
 
-  bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc);
-
   X86Operand *ParseOperand();
   X86Operand *ParseMemOperand(unsigned SegReg, SMLoc StartLoc);
 
@@ -71,6 +69,7 @@ public:
     setAvailableFeatures(ComputeAvailableFeatures(
                            &TM.getSubtarget<X86Subtarget>()));
   }
+  virtual bool ParseRegister(unsigned &RegNo, SMLoc &StartLoc, SMLoc &EndLoc);
 
   virtual bool ParseInstruction(StringRef Name, SMLoc NameLoc,
                                 SmallVectorImpl<MCParsedAsmOperand*> &Operands);
@@ -622,6 +621,11 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
                  SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   StringRef PatchedName = Name;
 
+  // FIXME: Hack to recognize setneb as setne.
+  if (PatchedName.startswith("set") && PatchedName.endswith("b") &&
+      PatchedName != "setb" && PatchedName != "setnb")
+    PatchedName = PatchedName.substr(0, Name.size()-1);
+  
   // FIXME: Hack to recognize cmp<comparison code>{ss,sd,ps,pd}.
   const MCExpr *ExtraImmOp = 0;
   if ((PatchedName.startswith("cmp") || PatchedName.startswith("vcmp")) &&
@@ -707,7 +711,8 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
   bool isPrefix =
     Name == "lock" || Name == "rep" ||
     Name == "repe" || Name == "repz" ||
-    Name == "repne" || Name == "repnz";
+    Name == "repne" || Name == "repnz" ||
+    Name == "rex64" || Name == "data16";
 
 
   // This does the actual operand parsing.  Don't parse any more if we have a
@@ -744,13 +749,16 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
     }
 
     if (getLexer().isNot(AsmToken::EndOfStatement)) {
+      SMLoc Loc = getLexer().getLoc();
       Parser.EatToEndOfStatement();
-      return TokError("unexpected token in argument list");
+      return Error(Loc, "unexpected token in argument list");
     }
   }
 
   if (getLexer().is(AsmToken::EndOfStatement))
     Parser.Lex(); // Consume the EndOfStatement
+  else if (isPrefix && getLexer().is(AsmToken::Slash))
+    Parser.Lex(); // Consume the prefix separator Slash
 
   // This is a terrible hack to handle "out[bwl]? %al, (%dx)" ->
   // "outb %al, %dx".  Out doesn't take a memory form, but this is a widely
@@ -764,6 +772,19 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
         Op.Mem.BaseReg == MatchRegisterName("dx") && Op.Mem.IndexReg == 0) {
       SMLoc Loc = Op.getEndLoc();
       Operands.back() = X86Operand::CreateReg(Op.Mem.BaseReg, Loc, Loc);
+      delete &Op;
+    }
+  }
+  // Same hack for "in[bwl]? (%dx), %al" -> "inb %dx, %al".
+  if ((Name == "inb" || Name == "inw" || Name == "inl" || Name == "in") &&
+      Operands.size() == 3) {
+    X86Operand &Op = *(X86Operand*)Operands.begin()[1];
+    if (Op.isMem() && Op.Mem.SegReg == 0 &&
+        isa<MCConstantExpr>(Op.Mem.Disp) &&
+        cast<MCConstantExpr>(Op.Mem.Disp)->getValue() == 0 &&
+        Op.Mem.BaseReg == MatchRegisterName("dx") && Op.Mem.IndexReg == 0) {
+      SMLoc Loc = Op.getEndLoc();
+      Operands.begin()[1] = X86Operand::CreateReg(Op.Mem.BaseReg, Loc, Loc);
       delete &Op;
     }
   }
@@ -834,6 +855,8 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   case Match_MissingFeature:
     Error(IDLoc, "instruction requires a CPU feature not currently enabled");
     return true;
+  case Match_ConversionFail:
+    return Error(IDLoc, "unable to convert operands to instruction");
   case Match_InvalidOperand:
     WasOriginallyInvalidOperand = true;
     break;

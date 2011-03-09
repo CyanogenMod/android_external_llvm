@@ -322,8 +322,12 @@ static int X86TypeFromOpName(LiteralConstantEmitter *type,
   PCR("offset32");
   PCR("offset64");
   PCR("brtarget");
+  PCR("uncondbrtarget");
   PCR("bltarget");
 
+  // all I, ARM mode only, conditional/unconditional
+  PCR("br_target");
+  PCR("bl_target");
   return 1;
 }
 
@@ -353,7 +357,8 @@ static void X86PopulateOperands(
     const CGIOperandList::OperandInfo &operandInfo = inst.Operands[index];
     Record &rec = *operandInfo.Rec;
 
-    if (X86TypeFromOpName(operandTypes[index], rec.getName())) {
+    if (X86TypeFromOpName(operandTypes[index], rec.getName()) &&
+        !rec.isSubClassOf("PointerLikeRegClass")) {
       errs() << "Operand type: " << rec.getName().c_str() << "\n";
       errs() << "Operand name: " << operandInfo.Name.c_str() << "\n";
       errs() << "Instruction name: " << inst.TheDef->getName().c_str() << "\n";
@@ -563,9 +568,16 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   REG("QQQQPR");
 
   IMM("i32imm");
+  IMM("i32imm_hilo16");
   IMM("bf_inv_mask_imm");
+  IMM("lsb_pos_imm");
+  IMM("width_imm");
   IMM("jtblock_operand");
   IMM("nohash_imm");
+  IMM("p_imm");
+  IMM("c_imm");
+  IMM("imod_op");
+  IMM("iflags_op");
   IMM("cpinst_operand");
   IMM("setend_op");
   IMM("cps_opt");
@@ -581,11 +593,27 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   IMM("jt2block_operand");
   IMM("t_imm_s4");
   IMM("pclabel");
+  IMM("adrlabel");
+  IMM("t_adrlabel");
+  IMM("t2adrlabel");
   IMM("shift_imm");
   IMM("neon_vcvt_imm32");
+  IMM("nsr16_imm");
+  IMM("nsr32_imm");
+  IMM("nsr64_imm");
 
   MISC("brtarget", "kOperandTypeARMBranchTarget");                // ?
+  MISC("uncondbrtarget", "kOperandTypeARMBranchTarget");           // ?
+  MISC("t_brtarget", "kOperandTypeARMBranchTarget");              // ?
+  MISC("t_bcctarget", "kOperandTypeARMBranchTarget");             // ?
+  MISC("t_cbtarget", "kOperandTypeARMBranchTarget");              // ?
   MISC("bltarget", "kOperandTypeARMBranchTarget");                // ?
+
+  MISC("br_target", "kOperandTypeARMBranchTarget");                // ?
+  MISC("bl_target", "kOperandTypeARMBranchTarget");                // ?
+
+  MISC("t_bltarget", "kOperandTypeARMBranchTarget");              // ?
+  MISC("t_blxtarget", "kOperandTypeARMBranchTarget");             // ?
   MISC("so_reg", "kOperandTypeARMSoReg");                         // R, R, I
   MISC("shift_so_reg", "kOperandTypeARMSoReg");                   // R, R, I
   MISC("t2_so_reg", "kOperandTypeThumb2SoReg");                   // R, I
@@ -605,8 +633,11 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   MISC("addrmode5", "kOperandTypeARMAddrMode5");                  // R, I
   MISC("addrmode6", "kOperandTypeARMAddrMode6");                  // R, R, I, I
   MISC("am6offset", "kOperandTypeARMAddrMode6Offset");            // R, I, I
+  MISC("addrmode6dup", "kOperandTypeARMAddrMode6");               // R, R, I, I
   MISC("addrmodepc", "kOperandTypeARMAddrModePC");                // R, I
   MISC("reglist", "kOperandTypeARMRegisterList");                 // I, R, ...
+  MISC("dpr_reglist", "kOperandTypeARMDPRRegisterList");          // I, R, ...
+  MISC("spr_reglist", "kOperandTypeARMSPRRegisterList");          // I, R, ...
   MISC("it_mask", "kOperandTypeThumbITMask");                     // I
   MISC("t2addrmode_imm8", "kOperandTypeThumb2AddrModeImm8");      // R, I
   MISC("t2am_imm8_offset", "kOperandTypeThumb2AddrModeImm8Offset");//I
@@ -616,11 +647,15 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   MISC("t2am_imm8s4_offset", "kOperandTypeThumb2AddrModeImm8s4Offset");
                                                                   // R, I
   MISC("tb_addrmode", "kOperandTypeARMTBAddrMode");               // I
-  MISC("t_addrmode_s1", "kOperandTypeThumbAddrModeS1");           // R, I, R
-  MISC("t_addrmode_s2", "kOperandTypeThumbAddrModeS2");           // R, I, R
-  MISC("t_addrmode_s4", "kOperandTypeThumbAddrModeS4");           // R, I, R
+  MISC("t_addrmode_rrs1", "kOperandTypeThumbAddrModeRegS");       // R, R
+  MISC("t_addrmode_rrs2", "kOperandTypeThumbAddrModeRegS");       // R, R
+  MISC("t_addrmode_rrs4", "kOperandTypeThumbAddrModeRegS");       // R, R
+  MISC("t_addrmode_is1", "kOperandTypeThumbAddrModeImmS");        // R, I
+  MISC("t_addrmode_is2", "kOperandTypeThumbAddrModeImmS");        // R, I
+  MISC("t_addrmode_is4", "kOperandTypeThumbAddrModeImmS");        // R, I
   MISC("t_addrmode_rr", "kOperandTypeThumbAddrModeRR");           // R, R
   MISC("t_addrmode_sp", "kOperandTypeThumbAddrModeSP");           // R, I
+  MISC("t_addrmode_pc", "kOperandTypeThumbAddrModePC");           // R, I
 
   return 1;
 }
@@ -823,13 +858,15 @@ static void emitCommonEnums(raw_ostream &o, unsigned int &i) {
   operandTypes.addEntry("kOperandTypeARMAddrMode6Offset");
   operandTypes.addEntry("kOperandTypeARMAddrModePC");
   operandTypes.addEntry("kOperandTypeARMRegisterList");
+  operandTypes.addEntry("kOperandTypeARMDPRRegisterList");
+  operandTypes.addEntry("kOperandTypeARMSPRRegisterList");
   operandTypes.addEntry("kOperandTypeARMTBAddrMode");
   operandTypes.addEntry("kOperandTypeThumbITMask");
-  operandTypes.addEntry("kOperandTypeThumbAddrModeS1");
-  operandTypes.addEntry("kOperandTypeThumbAddrModeS2");
-  operandTypes.addEntry("kOperandTypeThumbAddrModeS4");
+  operandTypes.addEntry("kOperandTypeThumbAddrModeRegS");
+  operandTypes.addEntry("kOperandTypeThumbAddrModeImmS");
   operandTypes.addEntry("kOperandTypeThumbAddrModeRR");
   operandTypes.addEntry("kOperandTypeThumbAddrModeSP");
+  operandTypes.addEntry("kOperandTypeThumbAddrModePC");
   operandTypes.addEntry("kOperandTypeThumb2SoReg");
   operandTypes.addEntry("kOperandTypeThumb2SoImm");
   operandTypes.addEntry("kOperandTypeThumb2AddrModeImm8");
@@ -866,7 +903,7 @@ void EDEmitter::run(raw_ostream &o) {
   unsigned int i = 0;
 
   CompoundConstantEmitter infoArray;
-  CodeGenTarget target;
+  CodeGenTarget target(Records);
 
   populateInstInfo(infoArray, target);
 

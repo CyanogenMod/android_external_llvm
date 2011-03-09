@@ -493,7 +493,7 @@
 
 <pre class="doc_code">
 <i>; Declare the string constant as a global constant.</i>&nbsp;
-<a href="#identifiers">@.LC0</a> = <a href="#linkage_internal">internal</a> <a href="#globalvars">constant</a> <a href="#t_array">[13 x i8]</a> c"hello world\0A\00"      <i>; [13 x i8]*</i>&nbsp;
+<a href="#identifiers">@.LC0</a> = <a href="#linkage_internal">internal</a>&nbsp;<a href="#globalvars">constant</a>&nbsp;<a href="#t_array">[13 x i8]</a> c"hello world\0A\00"      <i>; [13 x i8]*</i>&nbsp;
 
 <i>; External declaration of the puts function</i>&nbsp;
 <a href="#functionstructure">declare</a> i32 @puts(i8*)                                      <i>; i32 (i8*)* </i>&nbsp;
@@ -846,6 +846,13 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
    region of memory, and all memory objects in LLVM are accessed through
    pointers.</p>
 
+<p>Global variables can be marked with <tt>unnamed_addr</tt> which indicates
+  that the address is not significant, only the content. Constants marked
+  like this can be merged with other constants if they have the same
+  initializer. Note that a constant with significant address <em>can</em>
+  be merged with a <tt>unnamed_addr</tt> constant, the result being a
+  constant whose address is significant.</p>
+
 <p>A global variable may be declared to reside in a target-specific numbered
    address space. For targets that support them, address spaces may affect how
    optimizations are performed and/or what target instructions are used to
@@ -885,7 +892,8 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
 <p>LLVM function definitions consist of the "<tt>define</tt>" keyword, an
    optional <a href="#linkage">linkage type</a>, an optional
    <a href="#visibility">visibility style</a>, an optional
-   <a href="#callingconv">calling convention</a>, a return type, an optional
+   <a href="#callingconv">calling convention</a>,
+   an optional <tt>unnamed_addr</tt> attribute, a return type, an optional
    <a href="#paramattrs">parameter attribute</a> for the return type, a function
    name, a (possibly empty) argument list (each with optional
    <a href="#paramattrs">parameter attributes</a>), optional
@@ -896,7 +904,8 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
 <p>LLVM function declarations consist of the "<tt>declare</tt>" keyword, an
    optional <a href="#linkage">linkage type</a>, an optional
    <a href="#visibility">visibility style</a>, an optional
-   <a href="#callingconv">calling convention</a>, a return type, an optional
+   <a href="#callingconv">calling convention</a>,
+   an optional <tt>unnamed_addr</tt> attribute, a return type, an optional
    <a href="#paramattrs">parameter attribute</a> for the return type, a function
    name, a possibly empty list of arguments, an optional alignment, and an
    optional <a href="#gc">garbage collector name</a>.</p>
@@ -921,6 +930,9 @@ define i32 @main() {   <i>; i32()* </i>&nbsp;
    target to whatever it feels convenient.  If an explicit alignment is
    specified, the function is forced to have at least that much alignment.  All
    alignments must be a power of 2.</p>
+
+<p>If the <tt>unnamed_addr</tt> attribute is given, the address is know to not
+  be significant and two identical functions can be merged</p>.
 
 <h5>Syntax:</h5>
 <pre class="doc_code">
@@ -1021,8 +1033,9 @@ declare signext i8 @returns_signed_char()
       registers).  Use of this attribute is target-specific.</dd>
 
   <dt><tt><b><a name="byval">byval</a></b></tt></dt>
-  <dd>This indicates that the pointer parameter should really be passed by value
-      to the function.  The attribute implies that a hidden copy of the pointee
+  <dd><p>This indicates that the pointer parameter should really be passed by
+      value to the function.  The attribute implies that a hidden copy of the
+      pointee
       is made between the caller and the callee, so the callee is unable to
       modify the value in the callee.  This attribute is only valid on LLVM
       pointer arguments.  It is generally used to pass structs and arrays by
@@ -1030,10 +1043,13 @@ declare signext i8 @returns_signed_char()
       to belong to the caller not the callee (for example,
       <tt><a href="#readonly">readonly</a></tt> functions should not write to
       <tt>byval</tt> parameters). This is not a valid attribute for return
-      values.  The byval attribute also supports specifying an alignment with
-      the align attribute.  This has a target-specific effect on the code
-      generator that usually indicates a desired alignment for the synthesized
-      stack slot.</dd>
+      values.</p>
+      
+      <p>The byval attribute also supports specifying an alignment with
+      the align attribute.  It indicates the alignment of the stack slot to
+      form and the known alignment of the pointer specified to the call site. If
+      the alignment is not specified, then the code generator makes a
+      target-specific assumption.</p></dd>
 
   <dt><tt><b><a name="sret">sret</a></b></tt></dt>
   <dd>This indicates that the pointer parameter specifies the address of a
@@ -1492,6 +1508,7 @@ Classifications</a> </div>
       <td><a href="#t_primitive">primitive</a></td>
       <td><a href="#t_label">label</a>,
           <a href="#t_void">void</a>,
+          <a href="#t_integer">integer</a>,
           <a href="#t_floating">floating point</a>,
           <a href="#t_x86mmx">x86mmx</a>,
           <a href="#t_metadata">metadata</a>.</td>
@@ -2625,8 +2642,8 @@ call void asm alignstack "eieio", ""()
 <div class="doc_text">
 
 <p>The call instructions that wrap inline asm nodes may have a "!srcloc" MDNode
-   attached to it that contains a constant integer.  If present, the code
-   generator will use the integer as the location cookie value when report
+   attached to it that contains a list of constant integers.  If present, the
+  code generator will use the integer as the location cookie value when report
    errors through the LLVMContext error reporting mechanisms.  This allows a
    front-end to correlate backend errors that occur with inline asm back to the
    source code that produced it.  For example:</p>
@@ -2638,7 +2655,8 @@ call void asm sideeffect "something bad", ""()<b>, !srcloc !42</b>
 </pre>
 
 <p>It is up to the front-end to make sense of the magic numbers it places in the
-   IR.</p>
+   IR.  If the MDNode contains multiple constants, the code generator will use
+   the one that corresponds to the line of the asm that the error occurs on.</p>
 
 </div>
 
@@ -2672,16 +2690,21 @@ call void asm sideeffect "something bad", ""()<b>, !srcloc !42</b>
 <p>Metadata can be used as function arguments. Here <tt>llvm.dbg.value</tt> 
    function is using two metadata arguments.</p>
 
-     <pre class="doc_code">
-       call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
-     </pre>
+<div class="doc_code">
+<pre>
+call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
+</pre>
+</div>
 
 <p>Metadata can be attached with an instruction. Here metadata <tt>!21</tt> is
    attached with <tt>add</tt> instruction using <tt>!dbg</tt> identifier.</p>
 
-    <pre class="doc_code">
-      %indvar.next = add i64 %indvar, 1, !dbg !21
-    </pre>
+<div class="doc_code">
+<pre>
+%indvar.next = add i64 %indvar, 1, !dbg !21
+</pre>
+</div>
+
 </div>
 
 
@@ -3423,7 +3446,8 @@ Instruction</a> </div>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;result&gt; = udiv &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;   <i>; yields {ty}:result</i>
+  &lt;result&gt; = udiv &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;         <i>; yields {ty}:result</i>
+  &lt;result&gt; = udiv exact &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;   <i>; yields {ty}:result</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -3441,6 +3465,11 @@ Instruction</a> </div>
    operations; for signed integer division, use '<tt>sdiv</tt>'.</p>
 
 <p>Division by zero leads to undefined behavior.</p>
+
+<p>If the <tt>exact</tt> keyword is present, the result value of the
+   <tt>udiv</tt> is a <a href="#trapvalues">trap value</a> if %op1 is not a
+  multiple of %op2 (as such, "((a udiv exact b) mul b) == a").</p>
+
 
 <h5>Example:</h5>
 <pre>
@@ -3660,7 +3689,10 @@ Instruction</a> </div>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;result&gt; = shl &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;   <i>; yields {ty}:result</i>
+  &lt;result&gt; = shl &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;           <i>; yields {ty}:result</i>
+  &lt;result&gt; = shl nuw &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;       <i>; yields {ty}:result</i>
+  &lt;result&gt; = shl nsw &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;       <i>; yields {ty}:result</i>
+  &lt;result&gt; = shl nuw nsw &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;   <i>; yields {ty}:result</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -3679,6 +3711,14 @@ Instruction</a> </div>
    of bits in <tt>op1</tt>, the result is undefined.  If the arguments are
    vectors, each vector element of <tt>op1</tt> is shifted by the corresponding
    shift amount in <tt>op2</tt>.</p>
+
+<p>If the <tt>nuw</tt> keyword is present, then the shift produces a 
+   <a href="#trapvalues">trap value</a> if it shifts out any non-zero bits.  If
+   the <tt>nsw</tt> keyword is present, then the shift produces a
+   <a href="#trapvalues">trap value</a> if it shifts out any bits that disagree
+   with the resultant sign bit.  As such, NUW/NSW have the same semantics as
+   they would if the shift were expressed as a mul instruction with the same
+   nsw/nuw bits in (mul %op1, (shl 1, %op2)).</p>
 
 <h5>Example:</h5>
 <pre>
@@ -3699,7 +3739,8 @@ Instruction</a> </div>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;result&gt; = lshr &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;   <i>; yields {ty}:result</i>
+  &lt;result&gt; = lshr &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;         <i>; yields {ty}:result</i>
+  &lt;result&gt; = lshr exact &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;   <i>; yields {ty}:result</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -3718,6 +3759,11 @@ Instruction</a> </div>
    number of bits in <tt>op1</tt>, the result is undefined. If the arguments are
    vectors, each vector element of <tt>op1</tt> is shifted by the corresponding
    shift amount in <tt>op2</tt>.</p>
+
+<p>If the <tt>exact</tt> keyword is present, the result value of the
+   <tt>lshr</tt> is a <a href="#trapvalues">trap value</a> if any of the bits
+   shifted out are non-zero.</p>
+
 
 <h5>Example:</h5>
 <pre>
@@ -3738,7 +3784,8 @@ Instruction</a> </div>
 
 <h5>Syntax:</h5>
 <pre>
-  &lt;result&gt; = ashr &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;   <i>; yields {ty}:result</i>
+  &lt;result&gt; = ashr &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;         <i>; yields {ty}:result</i>
+  &lt;result&gt; = ashr exact &lt;ty&gt; &lt;op1&gt;, &lt;op2&gt;   <i>; yields {ty}:result</i>
 </pre>
 
 <h5>Overview:</h5>
@@ -3758,6 +3805,10 @@ Instruction</a> </div>
    larger than the number of bits in <tt>op1</tt>, the result is undefined. If
    the arguments are vectors, each vector element of <tt>op1</tt> is shifted by
    the corresponding shift amount in <tt>op2</tt>.</p>
+
+<p>If the <tt>exact</tt> keyword is present, the result value of the
+   <tt>ashr</tt> is a <a href="#trapvalues">trap value</a> if any of the bits
+   shifted out are non-zero.</p>
 
 <h5>Example:</h5>
 <pre>
@@ -4126,6 +4177,14 @@ Instruction</a> </div>
    <a href="#t_array">array</a> type.  The operands are constant indices to
    specify which value to extract in a similar manner as indices in a
    '<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.</p>
+   <p>The major differences to <tt>getelementptr</tt> indexing are:</p>
+     <ul>
+       <li>Since the value being indexed is not a pointer, the first index is
+           omitted and assumed to be zero.</li>
+       <li>At least one index must be specified.</li>
+       <li>Not only struct indices but also array indices must be in
+           bounds.</li>
+     </ul>
 
 <h5>Semantics:</h5>
 <p>The result is the value at the position in the aggregate specified by the
@@ -4160,7 +4219,7 @@ Instruction</a> </div>
    <a href="#t_array">array</a> type.  The second operand is a first-class
    value to insert.  The following operands are constant indices indicating
    the position at which to insert the value in a similar manner as indices in a
-   '<tt><a href="#i_getelementptr">getelementptr</a></tt>' instruction.  The
+   '<tt><a href="#i_extractvalue">extractvalue</a></tt>' instruction.  The
    value to insert must have the same type as the value identified by the
    indices.</p>
 
@@ -4521,12 +4580,12 @@ entry:
    type <tt>ty2</tt>.</p>
 
 <h5>Arguments:</h5>
-<p>The '<tt>trunc</tt>' instruction takes a <tt>value</tt> to trunc, which must
-   be an <a href="#t_integer">integer</a> type, and a type that specifies the
-   size and type of the result, which must be
-   an <a href="#t_integer">integer</a> type. The bit size of <tt>value</tt> must
-   be larger than the bit size of <tt>ty2</tt>. Equal sized types are not
-   allowed.</p>
+<p>The '<tt>trunc</tt>' instruction takes a value to trunc, and a type to trunc it to.
+   Both types must be of <a href="#t_integer">integer</a> types, or vectors
+   of the same number of integers.
+   The bit size of the <tt>value</tt> must be larger than
+   the bit size of the destination type, <tt>ty2</tt>.
+   Equal sized types are not allowed.</p>
 
 <h5>Semantics:</h5>
 <p>The '<tt>trunc</tt>' instruction truncates the high order bits
@@ -4536,9 +4595,10 @@ entry:
 
 <h5>Example:</h5>
 <pre>
-  %X = trunc i32 257 to i8              <i>; yields i8:1</i>
-  %Y = trunc i32 123 to i1              <i>; yields i1:true</i>
-  %Z = trunc i32 122 to i1              <i>; yields i1:false</i>
+  %X = trunc i32 257 to i8                        <i>; yields i8:1</i>
+  %Y = trunc i32 123 to i1                        <i>; yields i1:true</i>
+  %Z = trunc i32 122 to i1                        <i>; yields i1:false</i>
+  %W = trunc &lt;2 x i16&gt; &lt;i16 8, i16 7&gt; to &lt;2 x i8&gt; <i>; yields &lt;i8 8, i8 7&gt;</i>
 </pre>
 
 </div>
@@ -4560,10 +4620,11 @@ entry:
 
 
 <h5>Arguments:</h5>
-<p>The '<tt>zext</tt>' instruction takes a value to cast, which must be of
-   <a href="#t_integer">integer</a> type, and a type to cast it to, which must
-   also be of <a href="#t_integer">integer</a> type. The bit size of the
-   <tt>value</tt> must be smaller than the bit size of the destination type,
+<p>The '<tt>zext</tt>' instruction takes a value to cast, and a type to cast it to.
+   Both types must be of <a href="#t_integer">integer</a> types, or vectors
+   of the same number of integers.
+   The bit size of the <tt>value</tt> must be smaller than
+   the bit size of the destination type,
    <tt>ty2</tt>.</p>
 
 <h5>Semantics:</h5>
@@ -4576,6 +4637,7 @@ entry:
 <pre>
   %X = zext i32 257 to i64              <i>; yields i64:257</i>
   %Y = zext i1 true to i32              <i>; yields i32:1</i>
+  %Z = zext &lt;2 x i16&gt; &lt;i16 8, i16 7&gt; to &lt;2 x i32&gt; <i>; yields &lt;i32 8, i32 7&gt;</i>
 </pre>
 
 </div>
@@ -4595,10 +4657,11 @@ entry:
 <p>The '<tt>sext</tt>' sign extends <tt>value</tt> to the type <tt>ty2</tt>.</p>
 
 <h5>Arguments:</h5>
-<p>The '<tt>sext</tt>' instruction takes a value to cast, which must be of
-   <a href="#t_integer">integer</a> type, and a type to cast it to, which must
-   also be of <a href="#t_integer">integer</a> type.  The bit size of the
-   <tt>value</tt> must be smaller than the bit size of the destination type,
+<p>The '<tt>sext</tt>' instruction takes a value to cast, and a type to cast it to.
+   Both types must be of <a href="#t_integer">integer</a> types, or vectors
+   of the same number of integers.
+   The bit size of the <tt>value</tt> must be smaller than
+   the bit size of the destination type,
    <tt>ty2</tt>.</p>
 
 <h5>Semantics:</h5>
@@ -4612,6 +4675,7 @@ entry:
 <pre>
   %X = sext i8  -1 to i16              <i>; yields i16   :65535</i>
   %Y = sext i1 true to i32             <i>; yields i32:-1</i>
+  %Z = sext &lt;2 x i16&gt; &lt;i16 8, i16 7&gt; to &lt;2 x i32&gt; <i>; yields &lt;i32 8, i32 7&gt;</i>
 </pre>
 
 </div>
@@ -7501,7 +7565,7 @@ LLVM</a>.</p>
 
 <h5>Syntax:</h5>
 <pre>
-  declare {}* @llvm.invariant.start(i64 &lt;size&gt;, i8* nocapture &lt;ptr&gt;) readonly
+  declare {}* @llvm.invariant.start(i64 &lt;size&gt;, i8* nocapture &lt;ptr&gt;)
 </pre>
 
 <h5>Overview:</h5>

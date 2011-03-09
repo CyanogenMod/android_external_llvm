@@ -17,21 +17,9 @@
 
 #define DEBUG_TYPE "gvn"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/BasicBlock.h"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
 #include "llvm/GlobalVariable.h"
-#include "llvm/Function.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/LLVMContext.h"
-#include "llvm/Operator.h"
-#include "llvm/Value.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DepthFirstIterator.h"
-#include "llvm/ADT/PostOrderIterator.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/Dominators.h"
@@ -40,17 +28,19 @@
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
 #include "llvm/Analysis/PHITransAddr.h"
-#include "llvm/Support/CFG.h"
-#include "llvm/Support/CommandLine.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/GetElementPtrTypeIterator.h"
-#include "llvm/Support/IRBuilder.h"
-#include "llvm/Support/raw_ostream.h"
+#include "llvm/Analysis/ValueTracking.h"
+#include "llvm/Assembly/Writer.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DepthFirstIterator.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/Statistic.h"
+#include "llvm/Support/Allocator.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/IRBuilder.h"
 using namespace llvm;
 
 STATISTIC(NumGVNInstr,  "Number of instructions deleted");
@@ -72,77 +62,24 @@ static cl::opt<bool> EnableLoadPRE("enable-load-pre", cl::init(true));
 /// two values.
 namespace {
   struct Expression {
-    enum ExpressionOpcode { 
-      ADD = Instruction::Add,
-      FADD = Instruction::FAdd,
-      SUB = Instruction::Sub,
-      FSUB = Instruction::FSub,
-      MUL = Instruction::Mul,
-      FMUL = Instruction::FMul,
-      UDIV = Instruction::UDiv,
-      SDIV = Instruction::SDiv,
-      FDIV = Instruction::FDiv,
-      UREM = Instruction::URem,
-      SREM = Instruction::SRem,
-      FREM = Instruction::FRem,
-      SHL = Instruction::Shl,
-      LSHR = Instruction::LShr,
-      ASHR = Instruction::AShr,
-      AND = Instruction::And,
-      OR = Instruction::Or,
-      XOR = Instruction::Xor,
-      TRUNC = Instruction::Trunc,
-      ZEXT = Instruction::ZExt,
-      SEXT = Instruction::SExt,
-      FPTOUI = Instruction::FPToUI,
-      FPTOSI = Instruction::FPToSI,
-      UITOFP = Instruction::UIToFP,
-      SITOFP = Instruction::SIToFP,
-      FPTRUNC = Instruction::FPTrunc,
-      FPEXT = Instruction::FPExt,
-      PTRTOINT = Instruction::PtrToInt,
-      INTTOPTR = Instruction::IntToPtr,
-      BITCAST = Instruction::BitCast,
-      ICMPEQ, ICMPNE, ICMPUGT, ICMPUGE, ICMPULT, ICMPULE,
-      ICMPSGT, ICMPSGE, ICMPSLT, ICMPSLE, FCMPOEQ,
-      FCMPOGT, FCMPOGE, FCMPOLT, FCMPOLE, FCMPONE,
-      FCMPORD, FCMPUNO, FCMPUEQ, FCMPUGT, FCMPUGE,
-      FCMPULT, FCMPULE, FCMPUNE, EXTRACT, INSERT,
-      SHUFFLE, SELECT, GEP, CALL, CONSTANT,
-      INSERTVALUE, EXTRACTVALUE, EMPTY, TOMBSTONE };
-
-    ExpressionOpcode opcode;
+    uint32_t opcode;
     const Type* type;
     SmallVector<uint32_t, 4> varargs;
-    Value *function;
 
     Expression() { }
-    Expression(ExpressionOpcode o) : opcode(o) { }
+    Expression(uint32_t o) : opcode(o) { }
 
     bool operator==(const Expression &other) const {
       if (opcode != other.opcode)
         return false;
-      else if (opcode == EMPTY || opcode == TOMBSTONE)
+      else if (opcode == ~0U || opcode == ~1U)
         return true;
       else if (type != other.type)
         return false;
-      else if (function != other.function)
+      else if (varargs != other.varargs)
         return false;
-      else {
-        if (varargs.size() != other.varargs.size())
-          return false;
-
-        for (size_t i = 0; i < varargs.size(); ++i)
-          if (varargs[i] != other.varargs[i])
-            return false;
-
-        return true;
-      }
+      return true;
     }
-
-    /*bool operator!=(const Expression &other) const {
-      return !(*this == other);
-    }*/
   };
 
   class ValueTable {
@@ -155,19 +92,7 @@ namespace {
 
       uint32_t nextValueNumber;
 
-      Expression::ExpressionOpcode getOpcode(CmpInst* C);
-      Expression create_expression(BinaryOperator* BO);
-      Expression create_expression(CmpInst* C);
-      Expression create_expression(ShuffleVectorInst* V);
-      Expression create_expression(ExtractElementInst* C);
-      Expression create_expression(InsertElementInst* V);
-      Expression create_expression(SelectInst* V);
-      Expression create_expression(CastInst* C);
-      Expression create_expression(GetElementPtrInst* G);
-      Expression create_expression(CallInst* C);
-      Expression create_expression(ExtractValueInst* C);
-      Expression create_expression(InsertValueInst* C);
-      
+      Expression create_expression(Instruction* I);
       uint32_t lookup_or_add_call(CallInst* C);
     public:
       ValueTable() : nextValueNumber(1) { }
@@ -188,11 +113,11 @@ namespace {
 namespace llvm {
 template <> struct DenseMapInfo<Expression> {
   static inline Expression getEmptyKey() {
-    return Expression(Expression::EMPTY);
+    return ~0U;
   }
 
   static inline Expression getTombstoneKey() {
-    return Expression(Expression::TOMBSTONE);
+    return ~1U;
   }
 
   static unsigned getHashValue(const Expression e) {
@@ -204,20 +129,13 @@ template <> struct DenseMapInfo<Expression> {
     for (SmallVector<uint32_t, 4>::const_iterator I = e.varargs.begin(),
          E = e.varargs.end(); I != E; ++I)
       hash = *I + hash * 37;
-
-    hash = ((unsigned)((uintptr_t)e.function >> 4) ^
-            (unsigned)((uintptr_t)e.function >> 9)) +
-           hash * 37;
-
+    
     return hash;
   }
   static bool isEqual(const Expression &LHS, const Expression &RHS) {
     return LHS == RHS;
   }
 };
-  
-template <>
-struct isPodLike<Expression> { static const bool value = true; };
 
 }
 
@@ -225,185 +143,27 @@ struct isPodLike<Expression> { static const bool value = true; };
 //                     ValueTable Internal Functions
 //===----------------------------------------------------------------------===//
 
-Expression::ExpressionOpcode ValueTable::getOpcode(CmpInst* C) {
-  if (isa<ICmpInst>(C)) {
-    switch (C->getPredicate()) {
-    default:  // THIS SHOULD NEVER HAPPEN
-      llvm_unreachable("Comparison with unknown predicate?");
-    case ICmpInst::ICMP_EQ:  return Expression::ICMPEQ;
-    case ICmpInst::ICMP_NE:  return Expression::ICMPNE;
-    case ICmpInst::ICMP_UGT: return Expression::ICMPUGT;
-    case ICmpInst::ICMP_UGE: return Expression::ICMPUGE;
-    case ICmpInst::ICMP_ULT: return Expression::ICMPULT;
-    case ICmpInst::ICMP_ULE: return Expression::ICMPULE;
-    case ICmpInst::ICMP_SGT: return Expression::ICMPSGT;
-    case ICmpInst::ICMP_SGE: return Expression::ICMPSGE;
-    case ICmpInst::ICMP_SLT: return Expression::ICMPSLT;
-    case ICmpInst::ICMP_SLE: return Expression::ICMPSLE;
-    }
-  } else {
-    switch (C->getPredicate()) {
-    default: // THIS SHOULD NEVER HAPPEN
-      llvm_unreachable("Comparison with unknown predicate?");
-    case FCmpInst::FCMP_OEQ: return Expression::FCMPOEQ;
-    case FCmpInst::FCMP_OGT: return Expression::FCMPOGT;
-    case FCmpInst::FCMP_OGE: return Expression::FCMPOGE;
-    case FCmpInst::FCMP_OLT: return Expression::FCMPOLT;
-    case FCmpInst::FCMP_OLE: return Expression::FCMPOLE;
-    case FCmpInst::FCMP_ONE: return Expression::FCMPONE;
-    case FCmpInst::FCMP_ORD: return Expression::FCMPORD;
-    case FCmpInst::FCMP_UNO: return Expression::FCMPUNO;
-    case FCmpInst::FCMP_UEQ: return Expression::FCMPUEQ;
-    case FCmpInst::FCMP_UGT: return Expression::FCMPUGT;
-    case FCmpInst::FCMP_UGE: return Expression::FCMPUGE;
-    case FCmpInst::FCMP_ULT: return Expression::FCMPULT;
-    case FCmpInst::FCMP_ULE: return Expression::FCMPULE;
-    case FCmpInst::FCMP_UNE: return Expression::FCMPUNE;
-    }
+
+Expression ValueTable::create_expression(Instruction *I) {
+  Expression e;
+  e.type = I->getType();
+  e.opcode = I->getOpcode();
+  for (Instruction::op_iterator OI = I->op_begin(), OE = I->op_end();
+       OI != OE; ++OI)
+    e.varargs.push_back(lookup_or_add(*OI));
+  
+  if (CmpInst *C = dyn_cast<CmpInst>(I))
+    e.opcode = (C->getOpcode() << 8) | C->getPredicate();
+  else if (ExtractValueInst *E = dyn_cast<ExtractValueInst>(I)) {
+    for (ExtractValueInst::idx_iterator II = E->idx_begin(), IE = E->idx_end();
+         II != IE; ++II)
+      e.varargs.push_back(*II);
+  } else if (InsertValueInst *E = dyn_cast<InsertValueInst>(I)) {
+    for (InsertValueInst::idx_iterator II = E->idx_begin(), IE = E->idx_end();
+         II != IE; ++II)
+      e.varargs.push_back(*II);
   }
-}
-
-Expression ValueTable::create_expression(CallInst* C) {
-  Expression e;
-
-  e.type = C->getType();
-  e.function = C->getCalledFunction();
-  e.opcode = Expression::CALL;
-
-  CallSite CS(C);
-  for (CallInst::op_iterator I = CS.arg_begin(), E = CS.arg_end();
-       I != E; ++I)
-    e.varargs.push_back(lookup_or_add(*I));
-
-  return e;
-}
-
-Expression ValueTable::create_expression(BinaryOperator* BO) {
-  Expression e;
-  e.varargs.push_back(lookup_or_add(BO->getOperand(0)));
-  e.varargs.push_back(lookup_or_add(BO->getOperand(1)));
-  e.function = 0;
-  e.type = BO->getType();
-  e.opcode = static_cast<Expression::ExpressionOpcode>(BO->getOpcode());
-
-  return e;
-}
-
-Expression ValueTable::create_expression(CmpInst* C) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(C->getOperand(0)));
-  e.varargs.push_back(lookup_or_add(C->getOperand(1)));
-  e.function = 0;
-  e.type = C->getType();
-  e.opcode = getOpcode(C);
-
-  return e;
-}
-
-Expression ValueTable::create_expression(CastInst* C) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(C->getOperand(0)));
-  e.function = 0;
-  e.type = C->getType();
-  e.opcode = static_cast<Expression::ExpressionOpcode>(C->getOpcode());
-
-  return e;
-}
-
-Expression ValueTable::create_expression(ShuffleVectorInst* S) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(S->getOperand(0)));
-  e.varargs.push_back(lookup_or_add(S->getOperand(1)));
-  e.varargs.push_back(lookup_or_add(S->getOperand(2)));
-  e.function = 0;
-  e.type = S->getType();
-  e.opcode = Expression::SHUFFLE;
-
-  return e;
-}
-
-Expression ValueTable::create_expression(ExtractElementInst* E) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(E->getOperand(0)));
-  e.varargs.push_back(lookup_or_add(E->getOperand(1)));
-  e.function = 0;
-  e.type = E->getType();
-  e.opcode = Expression::EXTRACT;
-
-  return e;
-}
-
-Expression ValueTable::create_expression(InsertElementInst* I) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(I->getOperand(0)));
-  e.varargs.push_back(lookup_or_add(I->getOperand(1)));
-  e.varargs.push_back(lookup_or_add(I->getOperand(2)));
-  e.function = 0;
-  e.type = I->getType();
-  e.opcode = Expression::INSERT;
-
-  return e;
-}
-
-Expression ValueTable::create_expression(SelectInst* I) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(I->getCondition()));
-  e.varargs.push_back(lookup_or_add(I->getTrueValue()));
-  e.varargs.push_back(lookup_or_add(I->getFalseValue()));
-  e.function = 0;
-  e.type = I->getType();
-  e.opcode = Expression::SELECT;
-
-  return e;
-}
-
-Expression ValueTable::create_expression(GetElementPtrInst* G) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(G->getPointerOperand()));
-  e.function = 0;
-  e.type = G->getType();
-  e.opcode = Expression::GEP;
-
-  for (GetElementPtrInst::op_iterator I = G->idx_begin(), E = G->idx_end();
-       I != E; ++I)
-    e.varargs.push_back(lookup_or_add(*I));
-
-  return e;
-}
-
-Expression ValueTable::create_expression(ExtractValueInst* E) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(E->getAggregateOperand()));
-  for (ExtractValueInst::idx_iterator II = E->idx_begin(), IE = E->idx_end();
-       II != IE; ++II)
-    e.varargs.push_back(*II);
-  e.function = 0;
-  e.type = E->getType();
-  e.opcode = Expression::EXTRACTVALUE;
-
-  return e;
-}
-
-Expression ValueTable::create_expression(InsertValueInst* E) {
-  Expression e;
-
-  e.varargs.push_back(lookup_or_add(E->getAggregateOperand()));
-  e.varargs.push_back(lookup_or_add(E->getInsertedValueOperand()));
-  for (InsertValueInst::idx_iterator II = E->idx_begin(), IE = E->idx_end();
-       II != IE; ++II)
-    e.varargs.push_back(*II);
-  e.function = 0;
-  e.type = E->getType();
-  e.opcode = Expression::INSERTVALUE;
-
+  
   return e;
 }
 
@@ -562,12 +322,8 @@ uint32_t ValueTable::lookup_or_add(Value *V) {
     case Instruction::And:
     case Instruction::Or :
     case Instruction::Xor:
-      exp = create_expression(cast<BinaryOperator>(I));
-      break;
     case Instruction::ICmp:
     case Instruction::FCmp:
-      exp = create_expression(cast<CmpInst>(I));
-      break;
     case Instruction::Trunc:
     case Instruction::ZExt:
     case Instruction::SExt:
@@ -580,28 +336,14 @@ uint32_t ValueTable::lookup_or_add(Value *V) {
     case Instruction::PtrToInt:
     case Instruction::IntToPtr:
     case Instruction::BitCast:
-      exp = create_expression(cast<CastInst>(I));
-      break;
     case Instruction::Select:
-      exp = create_expression(cast<SelectInst>(I));
-      break;
     case Instruction::ExtractElement:
-      exp = create_expression(cast<ExtractElementInst>(I));
-      break;
     case Instruction::InsertElement:
-      exp = create_expression(cast<InsertElementInst>(I));
-      break;
     case Instruction::ShuffleVector:
-      exp = create_expression(cast<ShuffleVectorInst>(I));
-      break;
     case Instruction::ExtractValue:
-      exp = create_expression(cast<ExtractValueInst>(I));
-      break;
     case Instruction::InsertValue:
-      exp = create_expression(cast<InsertValueInst>(I));
-      break;      
     case Instruction::GetElementPtr:
-      exp = create_expression(cast<GetElementPtrInst>(I));
+      exp = create_expression(I);
       break;
     default:
       valueNumbering[V] = nextValueNumber;
@@ -648,15 +390,6 @@ void ValueTable::verifyRemoved(const Value *V) const {
 //===----------------------------------------------------------------------===//
 
 namespace {
-  struct ValueNumberScope {
-    ValueNumberScope* parent;
-    DenseMap<uint32_t, Value*> table;
-
-    ValueNumberScope(ValueNumberScope* p) : parent(p) { }
-  };
-}
-
-namespace {
 
   class GVN : public FunctionPass {
     bool runOnFunction(Function &F);
@@ -674,7 +407,59 @@ namespace {
     const TargetData* TD;
 
     ValueTable VN;
-    DenseMap<BasicBlock*, ValueNumberScope*> localAvail;
+    
+    /// LeaderTable - A mapping from value numbers to lists of Value*'s that
+    /// have that value number.  Use findLeader to query it.
+    struct LeaderTableEntry {
+      Value *Val;
+      BasicBlock *BB;
+      LeaderTableEntry *Next;
+    };
+    DenseMap<uint32_t, LeaderTableEntry> LeaderTable;
+    BumpPtrAllocator TableAllocator;
+    
+    /// addToLeaderTable - Push a new Value to the LeaderTable onto the list for
+    /// its value number.
+    void addToLeaderTable(uint32_t N, Value *V, BasicBlock *BB) {
+      LeaderTableEntry& Curr = LeaderTable[N];
+      if (!Curr.Val) {
+        Curr.Val = V;
+        Curr.BB = BB;
+        return;
+      }
+      
+      LeaderTableEntry* Node = TableAllocator.Allocate<LeaderTableEntry>();
+      Node->Val = V;
+      Node->BB = BB;
+      Node->Next = Curr.Next;
+      Curr.Next = Node;
+    }
+    
+    /// removeFromLeaderTable - Scan the list of values corresponding to a given
+    /// value number, and remove the given value if encountered.
+    void removeFromLeaderTable(uint32_t N, Value *V, BasicBlock *BB) {
+      LeaderTableEntry* Prev = 0;
+      LeaderTableEntry* Curr = &LeaderTable[N];
+
+      while (Curr->Val != V || Curr->BB != BB) {
+        Prev = Curr;
+        Curr = Curr->Next;
+      }
+      
+      if (Prev) {
+        Prev->Next = Curr->Next;
+      } else {
+        if (!Curr->Next) {
+          Curr->Val = 0;
+          Curr->BB = 0;
+        } else {
+          LeaderTableEntry* Next = Curr->Next;
+          Curr->Val = Next->Val;
+          Curr->BB = Next->BB;
+          Curr->Next = Next->Next;
+        }
+      }
+    }
 
     // List of critical edges to be split between iterations.
     SmallVector<std::pair<TerminatorInst*, unsigned>, 4> toSplit;
@@ -701,9 +486,8 @@ namespace {
     bool processBlock(BasicBlock *BB);
     void dump(DenseMap<uint32_t, Value*>& d);
     bool iterateOnFunction(Function &F);
-    Value *CollapsePhi(PHINode* p);
     bool performPRE(Function& F);
-    Value *lookupNumber(BasicBlock *BB, uint32_t num);
+    Value *findLeader(BasicBlock *BB, uint32_t num);
     void cleanupGlobalSets();
     void verifyRemoved(const Instruction *I) const;
     bool splitCriticalEdges();
@@ -731,33 +515,6 @@ void GVN::dump(DenseMap<uint32_t, Value*>& d) {
       I->second->dump();
   }
   errs() << "}\n";
-}
-
-static bool isSafeReplacement(PHINode* p, Instruction *inst) {
-  if (!isa<PHINode>(inst))
-    return true;
-
-  for (Instruction::use_iterator UI = p->use_begin(), E = p->use_end();
-       UI != E; ++UI)
-    if (PHINode* use_phi = dyn_cast<PHINode>(*UI))
-      if (use_phi->getParent() == inst->getParent())
-        return false;
-
-  return true;
-}
-
-Value *GVN::CollapsePhi(PHINode *PN) {
-  Value *ConstVal = PN->hasConstantValue(DT);
-  if (!ConstVal) return 0;
-
-  Instruction *Inst = dyn_cast<Instruction>(ConstVal);
-  if (!Inst)
-    return ConstVal;
-
-  if (DT->dominates(Inst, PN))
-    if (isSafeReplacement(PN, Inst))
-      return Inst;
-  return 0;
 }
 
 /// IsValueFullyAvailableInBlock - Return true if we can prove that the value
@@ -943,47 +700,6 @@ static Value *CoerceAvailableValueToLoadType(Value *StoredVal,
   return new BitCastInst(StoredVal, LoadedTy, "bitcast", InsertPt);
 }
 
-/// GetBaseWithConstantOffset - Analyze the specified pointer to see if it can
-/// be expressed as a base pointer plus a constant offset.  Return the base and
-/// offset to the caller.
-static Value *GetBaseWithConstantOffset(Value *Ptr, int64_t &Offset,
-                                        const TargetData &TD) {
-  Operator *PtrOp = dyn_cast<Operator>(Ptr);
-  if (PtrOp == 0) return Ptr;
-  
-  // Just look through bitcasts.
-  if (PtrOp->getOpcode() == Instruction::BitCast)
-    return GetBaseWithConstantOffset(PtrOp->getOperand(0), Offset, TD);
-  
-  // If this is a GEP with constant indices, we can look through it.
-  GEPOperator *GEP = dyn_cast<GEPOperator>(PtrOp);
-  if (GEP == 0 || !GEP->hasAllConstantIndices()) return Ptr;
-  
-  gep_type_iterator GTI = gep_type_begin(GEP);
-  for (User::op_iterator I = GEP->idx_begin(), E = GEP->idx_end(); I != E;
-       ++I, ++GTI) {
-    ConstantInt *OpC = cast<ConstantInt>(*I);
-    if (OpC->isZero()) continue;
-    
-    // Handle a struct and array indices which add their offset to the pointer.
-    if (const StructType *STy = dyn_cast<StructType>(*GTI)) {
-      Offset += TD.getStructLayout(STy)->getElementOffset(OpC->getZExtValue());
-    } else {
-      uint64_t Size = TD.getTypeAllocSize(GTI.getIndexedType());
-      Offset += OpC->getSExtValue()*Size;
-    }
-  }
-  
-  // Re-sign extend from the pointer size if needed to get overflow edge cases
-  // right.
-  unsigned PtrSize = TD.getPointerSizeInBits();
-  if (PtrSize < 64)
-    Offset = (Offset << (64-PtrSize)) >> (64-PtrSize);
-  
-  return GetBaseWithConstantOffset(GEP->getPointerOperand(), Offset, TD);
-}
-
-
 /// AnalyzeLoadFromClobberingWrite - This function is called when we have a
 /// memdep query of a load that ends up being a clobbering memory write (store,
 /// memset, memcpy, memmove).  This means that the write *may* provide bits used
@@ -1002,9 +718,8 @@ static int AnalyzeLoadFromClobberingWrite(const Type *LoadTy, Value *LoadPtr,
     return -1;
   
   int64_t StoreOffset = 0, LoadOffset = 0;
-  Value *StoreBase = GetBaseWithConstantOffset(WritePtr, StoreOffset, TD);
-  Value *LoadBase = 
-    GetBaseWithConstantOffset(LoadPtr, LoadOffset, TD);
+  Value *StoreBase = GetPointerBaseWithConstantOffset(WritePtr, StoreOffset,TD);
+  Value *LoadBase = GetPointerBaseWithConstantOffset(LoadPtr, LoadOffset, TD);
   if (StoreBase != LoadBase)
     return -1;
   
@@ -1026,8 +741,6 @@ static int AnalyzeLoadFromClobberingWrite(const Type *LoadTy, Value *LoadPtr,
   // If the load and store don't overlap at all, the store doesn't provide
   // anything to the load.  In this case, they really don't alias at all, AA
   // must have gotten confused.
-  // FIXME: Investigate cases where this bails out, e.g. rdar://7238614. Then
-  // remove this check, as it is duplicated with what we have below.
   uint64_t LoadSize = TD.getTypeSizeInBits(LoadTy);
   
   if ((WriteSizeInBits & 7) | (LoadSize & 7))
@@ -1105,7 +818,7 @@ static int AnalyzeLoadFromClobberingMemInst(const Type *LoadTy, Value *LoadPtr,
   Constant *Src = dyn_cast<Constant>(MTI->getSource());
   if (Src == 0) return -1;
   
-  GlobalVariable *GV = dyn_cast<GlobalVariable>(Src->getUnderlyingObject());
+  GlobalVariable *GV = dyn_cast<GlobalVariable>(GetUnderlyingObject(Src, &TD));
   if (GV == 0 || !GV->isConstant()) return -1;
   
   // See if the access is within the bounds of the transfer.
@@ -1337,6 +1050,15 @@ static Value *ConstructSSAForLoadSet(LoadInst *LI,
   if (V->getType()->isPointerTy())
     for (unsigned i = 0, e = NewPHIs.size(); i != e; ++i)
       AA->copyValue(LI, NewPHIs[i]);
+    
+    // Now that we've copied information to the new PHIs, scan through
+    // them again and inform alias analysis that we've added potentially
+    // escaping uses to any values that are operands to these PHIs.
+    for (unsigned i = 0, e = NewPHIs.size(); i != e; ++i) {
+      PHINode *P = NewPHIs[i];
+      for (unsigned ii = 0, ee = P->getNumIncomingValues(); ii != ee; ++ii)
+        AA->addEscapingUse(P->getOperandUse(2*ii));
+    }
 
   return V;
 }
@@ -1643,8 +1365,8 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
     //  @1 = getelementptr (i8* p, ...
     //  test p and branch if == 0
     //  load @1
-    // It is valid to have the getelementptr before the test, even if p can be 0,
-    // as getelementptr only does address arithmetic.
+    // It is valid to have the getelementptr before the test, even if p can
+    // be 0, as getelementptr only does address arithmetic.
     // If we are not pushing the value through any multiple-successor blocks
     // we do not have this case.  Otherwise, check that the load is safe to
     // put anywhere; this can be improved, but should be conservatively safe.
@@ -1661,8 +1383,11 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
   }
 
   if (!CanDoPRE) {
-    while (!NewInsts.empty())
-      NewInsts.pop_back_val()->eraseFromParent();
+    while (!NewInsts.empty()) {
+      Instruction *I = NewInsts.pop_back_val();
+      if (MD) MD->removeInstruction(I);
+      I->eraseFromParent();
+    }
     return false;
   }
 
@@ -1688,9 +1413,13 @@ bool GVN::processNonLocalLoad(LoadInst *LI,
     BasicBlock *UnavailablePred = I->first;
     Value *LoadPtr = I->second;
 
-    Value *NewLoad = new LoadInst(LoadPtr, LI->getName()+".pre", false,
-                                  LI->getAlignment(),
-                                  UnavailablePred->getTerminator());
+    Instruction *NewLoad = new LoadInst(LoadPtr, LI->getName()+".pre", false,
+                                        LI->getAlignment(),
+                                        UnavailablePred->getTerminator());
+
+    // Transfer the old load's TBAA tag to the new load.
+    if (MDNode *Tag = LI->getMetadata(LLVMContext::MD_tbaa))
+      NewLoad->setMetadata(LLVMContext::MD_tbaa, Tag);
 
     // Add the newly created load.
     ValuesPerBlock.push_back(AvailableValueInBlock::get(UnavailablePred,
@@ -1874,20 +1603,32 @@ bool GVN::processLoad(LoadInst *L, SmallVectorImpl<Instruction*> &toErase) {
   return false;
 }
 
-Value *GVN::lookupNumber(BasicBlock *BB, uint32_t num) {
-  DenseMap<BasicBlock*, ValueNumberScope*>::iterator I = localAvail.find(BB);
-  if (I == localAvail.end())
-    return 0;
-
-  ValueNumberScope *Locals = I->second;
-  while (Locals) {
-    DenseMap<uint32_t, Value*>::iterator I = Locals->table.find(num);
-    if (I != Locals->table.end())
-      return I->second;
-    Locals = Locals->parent;
+// findLeader - In order to find a leader for a given value number at a 
+// specific basic block, we first obtain the list of all Values for that number,
+// and then scan the list to find one whose block dominates the block in 
+// question.  This is fast because dominator tree queries consist of only
+// a few comparisons of DFS numbers.
+Value *GVN::findLeader(BasicBlock *BB, uint32_t num) {
+  LeaderTableEntry Vals = LeaderTable[num];
+  if (!Vals.Val) return 0;
+  
+  Value *Val = 0;
+  if (DT->dominates(Vals.BB, BB)) {
+    Val = Vals.Val;
+    if (isa<Constant>(Val)) return Val;
+  }
+  
+  LeaderTableEntry* Next = Vals.Next;
+  while (Next) {
+    if (DT->dominates(Next->BB, BB)) {
+      if (isa<Constant>(Next->Val)) return Next->Val;
+      if (!Val) Val = Next->Val;
+    }
+    
+    Next = Next->Next;
   }
 
-  return 0;
+  return Val;
 }
 
 
@@ -1917,80 +1658,74 @@ bool GVN::processInstruction(Instruction *I,
 
     if (!Changed) {
       unsigned Num = VN.lookup_or_add(LI);
-      localAvail[I->getParent()]->table.insert(std::make_pair(Num, LI));
+      addToLeaderTable(Num, LI, LI->getParent());
     }
 
     return Changed;
   }
 
+  // For conditions branches, we can perform simple conditional propagation on
+  // the condition value itself.
+  if (BranchInst *BI = dyn_cast<BranchInst>(I)) {
+    if (!BI->isConditional() || isa<Constant>(BI->getCondition()))
+      return false;
+    
+    Value *BranchCond = BI->getCondition();
+    uint32_t CondVN = VN.lookup_or_add(BranchCond);
+  
+    BasicBlock *TrueSucc = BI->getSuccessor(0);
+    BasicBlock *FalseSucc = BI->getSuccessor(1);
+  
+    if (TrueSucc->getSinglePredecessor())
+      addToLeaderTable(CondVN,
+                   ConstantInt::getTrue(TrueSucc->getContext()),
+                   TrueSucc);
+    if (FalseSucc->getSinglePredecessor())
+      addToLeaderTable(CondVN,
+                   ConstantInt::getFalse(TrueSucc->getContext()),
+                   FalseSucc);
+    
+    return false;
+  }
+  
+  // Instructions with void type don't return a value, so there's
+  // no point in trying to find redudancies in them.
+  if (I->getType()->isVoidTy()) return false;
+  
   uint32_t NextNum = VN.getNextUnusedValueNumber();
   unsigned Num = VN.lookup_or_add(I);
 
-  if (BranchInst *BI = dyn_cast<BranchInst>(I)) {
-    localAvail[I->getParent()]->table.insert(std::make_pair(Num, I));
-
-    if (!BI->isConditional() || isa<Constant>(BI->getCondition()))
-      return false;
-
-    Value *BranchCond = BI->getCondition();
-    uint32_t CondVN = VN.lookup_or_add(BranchCond);
-
-    BasicBlock *TrueSucc = BI->getSuccessor(0);
-    BasicBlock *FalseSucc = BI->getSuccessor(1);
-
-    if (TrueSucc->getSinglePredecessor())
-      localAvail[TrueSucc]->table[CondVN] =
-        ConstantInt::getTrue(TrueSucc->getContext());
-    if (FalseSucc->getSinglePredecessor())
-      localAvail[FalseSucc]->table[CondVN] =
-        ConstantInt::getFalse(TrueSucc->getContext());
-
-    return false;
-
   // Allocations are always uniquely numbered, so we can save time and memory
   // by fast failing them.
-  } else if (isa<AllocaInst>(I) || isa<TerminatorInst>(I)) {
-    localAvail[I->getParent()]->table.insert(std::make_pair(Num, I));
+  if (isa<AllocaInst>(I) || isa<TerminatorInst>(I) || isa<PHINode>(I)) {
+    addToLeaderTable(Num, I, I->getParent());
     return false;
   }
-
-  // Collapse PHI nodes
-  if (PHINode* p = dyn_cast<PHINode>(I)) {
-    Value *constVal = CollapsePhi(p);
-
-    if (constVal) {
-      p->replaceAllUsesWith(constVal);
-      if (MD && constVal->getType()->isPointerTy())
-        MD->invalidateCachedPointerInfo(constVal);
-      VN.erase(p);
-
-      toErase.push_back(p);
-    } else {
-      localAvail[I->getParent()]->table.insert(std::make_pair(Num, I));
-    }
 
   // If the number we were assigned was a brand new VN, then we don't
   // need to do a lookup to see if the number already exists
   // somewhere in the domtree: it can't!
-  } else if (Num == NextNum) {
-    localAvail[I->getParent()]->table.insert(std::make_pair(Num, I));
-
+  if (Num == NextNum) {
+    addToLeaderTable(Num, I, I->getParent());
+    return false;
+  }
+  
   // Perform fast-path value-number based elimination of values inherited from
   // dominators.
-  } else if (Value *repl = lookupNumber(I->getParent(), Num)) {
-    // Remove it!
-    VN.erase(I);
-    I->replaceAllUsesWith(repl);
-    if (MD && repl->getType()->isPointerTy())
-      MD->invalidateCachedPointerInfo(repl);
-    toErase.push_back(I);
-    return true;
-
-  } else {
-    localAvail[I->getParent()]->table.insert(std::make_pair(Num, I));
+  Value *repl = findLeader(I->getParent(), Num);
+  if (repl == 0) {
+    // Failure, just remember this instance for future use.
+    addToLeaderTable(Num, I, I->getParent());
+    return false;
   }
-
-  return false;
+  
+  // Remove it!
+  VN.erase(I);
+  I->replaceAllUsesWith(repl);
+  if (MD && repl->getType()->isPointerTy())
+    MD->invalidateCachedPointerInfo(repl);
+  toErase.push_back(I);
+  return true;
 }
 
 /// runOnFunction - This is the main transformation entry point for a function.
@@ -2009,8 +1744,8 @@ bool GVN::runOnFunction(Function& F) {
   // Merge unconditional branches, allowing PRE to catch more
   // optimization opportunities.
   for (Function::iterator FI = F.begin(), FE = F.end(); FI != FE; ) {
-    BasicBlock *BB = FI;
-    ++FI;
+    BasicBlock *BB = FI++;
+    
     bool removedBlock = MergeBlockIntoPredecessor(BB, this);
     if (removedBlock) ++NumGVNBlocks;
 
@@ -2018,7 +1753,6 @@ bool GVN::runOnFunction(Function& F) {
   }
 
   unsigned Iteration = 0;
-
   while (ShouldContinue) {
     DEBUG(dbgs() << "GVN iteration: " << Iteration << "\n");
     ShouldContinue = iterateOnFunction(F);
@@ -2136,20 +1870,19 @@ bool GVN::performPRE(Function &F) {
         if (P == CurrentBlock) {
           NumWithout = 2;
           break;
-        } else if (!localAvail.count(P))  {
+        } else if (!DT->dominates(&F.getEntryBlock(), P))  {
           NumWithout = 2;
           break;
         }
 
-        DenseMap<uint32_t, Value*>::iterator predV =
-                                            localAvail[P]->table.find(ValNo);
-        if (predV == localAvail[P]->table.end()) {
+        Value* predV = findLeader(P, ValNo);
+        if (predV == 0) {
           PREPred = P;
           ++NumWithout;
-        } else if (predV->second == CurInst) {
+        } else if (predV == CurInst) {
           NumWithout = 2;
         } else {
-          predMap[P] = predV->second;
+          predMap[P] = predV;
           ++NumWith;
         }
       }
@@ -2184,7 +1917,7 @@ bool GVN::performPRE(Function &F) {
         if (isa<Argument>(Op) || isa<Constant>(Op) || isa<GlobalValue>(Op))
           continue;
 
-        if (Value *V = lookupNumber(PREPred, VN.lookup(Op))) {
+        if (Value *V = findLeader(PREPred, VN.lookup(Op))) {
           PREInstr->setOperand(i, V);
         } else {
           success = false;
@@ -2208,7 +1941,7 @@ bool GVN::performPRE(Function &F) {
       ++NumGVNPRE;
 
       // Update the availability map to include the new instruction.
-      localAvail[PREPred]->table.insert(std::make_pair(ValNo, PREInstr));
+      addToLeaderTable(ValNo, PREInstr, PREPred);
 
       // Create a PHI to make the value available in this block.
       PHINode* Phi = PHINode::Create(CurInst->getType(),
@@ -2221,12 +1954,21 @@ bool GVN::performPRE(Function &F) {
       }
 
       VN.add(Phi, ValNo);
-      localAvail[CurrentBlock]->table[ValNo] = Phi;
+      addToLeaderTable(ValNo, Phi, CurrentBlock);
 
       CurInst->replaceAllUsesWith(Phi);
-      if (MD && Phi->getType()->isPointerTy())
-        MD->invalidateCachedPointerInfo(Phi);
+      if (Phi->getType()->isPointerTy()) {
+        // Because we have added a PHI-use of the pointer value, it has now
+        // "escaped" from alias analysis' perspective.  We need to inform
+        // AA of this.
+        for (unsigned ii = 0, ee = Phi->getNumIncomingValues(); ii != ee; ++ii)
+          VN.getAliasAnalysis()->addEscapingUse(Phi->getOperandUse(2*ii));
+        
+        if (MD)
+          MD->invalidateCachedPointerInfo(Phi);
+      }
       VN.erase(CurInst);
+      removeFromLeaderTable(ValNo, CurInst, CurrentBlock);
 
       DEBUG(dbgs() << "GVN PRE removed: " << *CurInst << '\n');
       if (MD) MD->removeInstruction(CurInst);
@@ -2258,16 +2000,7 @@ bool GVN::splitCriticalEdges() {
 /// iterateOnFunction - Executes one iteration of GVN
 bool GVN::iterateOnFunction(Function &F) {
   cleanupGlobalSets();
-
-  for (df_iterator<DomTreeNode*> DI = df_begin(DT->getRootNode()),
-       DE = df_end(DT->getRootNode()); DI != DE; ++DI) {
-    if (DI->getIDom())
-      localAvail[DI->getBlock()] =
-                   new ValueNumberScope(localAvail[DI->getIDom()->getBlock()]);
-    else
-      localAvail[DI->getBlock()] = new ValueNumberScope(0);
-  }
-
+  
   // Top-down walk of the dominator tree
   bool Changed = false;
 #if 0
@@ -2287,11 +2020,8 @@ bool GVN::iterateOnFunction(Function &F) {
 
 void GVN::cleanupGlobalSets() {
   VN.clear();
-
-  for (DenseMap<BasicBlock*, ValueNumberScope*>::iterator
-       I = localAvail.begin(), E = localAvail.end(); I != E; ++I)
-    delete I->second;
-  localAvail.clear();
+  LeaderTable.clear();
+  TableAllocator.Reset();
 }
 
 /// verifyRemoved - Verify that the specified instruction does not occur in our
@@ -2301,17 +2031,14 @@ void GVN::verifyRemoved(const Instruction *Inst) const {
 
   // Walk through the value number scope to make sure the instruction isn't
   // ferreted away in it.
-  for (DenseMap<BasicBlock*, ValueNumberScope*>::const_iterator
-         I = localAvail.begin(), E = localAvail.end(); I != E; ++I) {
-    const ValueNumberScope *VNS = I->second;
-
-    while (VNS) {
-      for (DenseMap<uint32_t, Value*>::const_iterator
-             II = VNS->table.begin(), IE = VNS->table.end(); II != IE; ++II) {
-        assert(II->second != Inst && "Inst still in value numbering scope!");
-      }
-
-      VNS = VNS->parent;
+  for (DenseMap<uint32_t, LeaderTableEntry>::const_iterator
+       I = LeaderTable.begin(), E = LeaderTable.end(); I != E; ++I) {
+    const LeaderTableEntry *Node = &I->second;
+    assert(Node->Val != Inst && "Inst still in value numbering scope!");
+    
+    while (Node->Next) {
+      Node = Node->Next;
+      assert(Node->Val != Inst && "Inst still in value numbering scope!");
     }
   }
 }

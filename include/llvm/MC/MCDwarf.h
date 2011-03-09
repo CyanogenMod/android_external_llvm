@@ -16,16 +16,19 @@
 #define LLVM_MC_MCDWARF_H
 
 #include "llvm/ADT/StringRef.h"
-#include "llvm/MC/MCStreamer.h"
-#include "llvm/MC/MCObjectStreamer.h"
+#include "llvm/CodeGen/MachineLocation.h" // FIXME
 #include "llvm/MC/MCObjectWriter.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Dwarf.h"
 #include <vector>
 
 namespace llvm {
+  class MachineMove;
   class MCContext;
+  class MCExpr;
   class MCSection;
+  class MCSectionData;
+  class MCStreamer;
   class MCSymbol;
   class MCObjectStreamer;
   class raw_ostream;
@@ -107,22 +110,22 @@ namespace llvm {
 
   public:
     /// getFileNum - Get the FileNum of this MCDwarfLoc.
-    unsigned getFileNum() { return FileNum; }
+    unsigned getFileNum() const { return FileNum; }
 
     /// getLine - Get the Line of this MCDwarfLoc.
-    unsigned getLine() { return Line; }
+    unsigned getLine() const { return Line; }
 
     /// getColumn - Get the Column of this MCDwarfLoc.
-    unsigned getColumn() { return Column; }
+    unsigned getColumn() const { return Column; }
 
     /// getFlags - Get the Flags of this MCDwarfLoc.
-    unsigned getFlags() { return Flags; }
+    unsigned getFlags() const { return Flags; }
 
     /// getIsa - Get the Isa of this MCDwarfLoc.
-    unsigned getIsa() { return Isa; }
+    unsigned getIsa() const { return Isa; }
 
     /// getDiscriminator - Get the Discriminator of this MCDwarfLoc.
-    unsigned getDiscriminator() { return Discriminator; }
+    unsigned getDiscriminator() const { return Discriminator; }
 
     /// setFileNum - Set the FileNum of this MCDwarfLoc.
     void setFileNum(unsigned fileNum) { FileNum = fileNum; }
@@ -162,12 +165,12 @@ namespace llvm {
     MCLineEntry(MCSymbol *label, const MCDwarfLoc loc) : MCDwarfLoc(loc),
                 Label(label) {}
 
-    MCSymbol *getLabel() { return Label; }
+    MCSymbol *getLabel() const { return Label; }
 
     // This is called when an instruction is assembled into the specified
     // section and if there is information from the last .loc directive that
     // has yet to have a line entry made for it is made.
-    static void Make(MCObjectStreamer *MCOS, const MCSection *Section);
+    static void Make(MCStreamer *MCOS, const MCSection *Section);
   };
 
   /// MCLineSection - Instances of this class represent the line information
@@ -192,12 +195,15 @@ namespace llvm {
 
     typedef std::vector<MCLineEntry> MCLineEntryCollection;
     typedef MCLineEntryCollection::iterator iterator;
+    typedef MCLineEntryCollection::const_iterator const_iterator;
 
   private:
     MCLineEntryCollection MCLineEntries;
 
   public:
-    MCLineEntryCollection *getMCLineEntries() { return &MCLineEntries; }
+    const MCLineEntryCollection *getMCLineEntries() const {
+      return &MCLineEntries;
+    }
   };
 
   class MCDwarfFileTable {
@@ -205,7 +211,7 @@ namespace llvm {
     //
     // This emits the Dwarf file and the line tables.
     //
-    static void Emit(MCObjectStreamer *MCOS, const MCSection *DwarfLineSection);
+    static void Emit(MCStreamer *MCOS);
   };
 
   class MCDwarfLineAddr {
@@ -214,15 +220,59 @@ namespace llvm {
     static void Encode(int64_t LineDelta, uint64_t AddrDelta, raw_ostream &OS);
 
     /// Utility function to emit the encoding to a streamer.
-    static void Emit(MCObjectStreamer *MCOS,
+    static void Emit(MCStreamer *MCOS,
                      int64_t LineDelta,uint64_t AddrDelta);
-
-    /// Utility function to compute the size of the encoding.
-    static uint64_t ComputeSize(int64_t LineDelta, uint64_t AddrDelta);
 
     /// Utility function to write the encoding to an object writer.
     static void Write(MCObjectWriter *OW,
                       int64_t LineDelta, uint64_t AddrDelta);
+  };
+
+  class MCCFIInstruction {
+  public:
+    enum OpType { Remember, Restore, Move };
+  private:
+    OpType Operation;
+    MCSymbol *Label;
+    // Move to & from location.
+    MachineLocation Destination;
+    MachineLocation Source;
+  public:
+    MCCFIInstruction(OpType Op, MCSymbol *L)
+      : Operation(Op), Label(L) {
+      assert(Op == Remember || Op == Restore);
+    }
+    MCCFIInstruction(MCSymbol *L, const MachineLocation &D,
+                     const MachineLocation &S)
+      : Operation(Move), Label(L), Destination(D), Source(S) {
+    }
+    OpType getOperation() const { return Operation; }
+    MCSymbol *getLabel() const { return Label; }
+    const MachineLocation &getDestination() const { return Destination; }
+    const MachineLocation &getSource() const { return Source; }
+  };
+
+  struct MCDwarfFrameInfo {
+    MCDwarfFrameInfo() : Begin(0), End(0), Personality(0), Lsda(0),
+                         Instructions(), PersonalityEncoding(0),
+                         LsdaEncoding(0) {}
+    MCSymbol *Begin;
+    MCSymbol *End;
+    const MCSymbol *Personality;
+    const MCSymbol *Lsda;
+    std::vector<MCCFIInstruction> Instructions;
+    unsigned PersonalityEncoding;
+    unsigned LsdaEncoding;
+  };
+
+  class MCDwarfFrameEmitter {
+  public:
+    //
+    // This emits the frame info section.
+    //
+    static void Emit(MCStreamer &streamer);
+    static void EmitAdvanceLoc(MCStreamer &Streamer, uint64_t AddrDelta);
+    static void EncodeAdvanceLoc(uint64_t AddrDelta, raw_ostream &OS);
   };
 } // end namespace llvm
 

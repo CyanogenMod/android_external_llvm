@@ -77,10 +77,6 @@ MSP430TargetLowering::MSP430TargetLowering(MSP430TargetMachine &tm) :
   // Division is expensive
   setIntDivIsCheap(false);
 
-  // Even if we have only 1 bit shift here, we can perform
-  // shifts of the whole bitwidth 1 bit per step.
-  setShiftAmountType(MVT::i8);
-
   setStackPointerRegisterToSaveRestore(MSP430::SPW);
   setBooleanContents(ZeroOrOneBooleanContent);
   setSchedulingPreference(Sched::Latency);
@@ -330,7 +326,7 @@ MSP430TargetLowering::LowerCCCArguments(SDValue Chain,
       // Arguments passed in registers
       EVT RegVT = VA.getLocVT();
       switch (RegVT.getSimpleVT().SimpleTy) {
-      default: 
+      default:
         {
 #ifndef NDEBUG
           errs() << "LowerFormalArguments Unhandled argument type: "
@@ -536,7 +532,7 @@ MSP430TargetLowering::LowerCCCCallTo(SDValue Chain, SDValue Callee,
     Callee = DAG.getTargetExternalSymbol(E->getSymbol(), MVT::i16);
 
   // Returns a chain & a flag for retval copy to use.
-  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Flag);
+  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
   SmallVector<SDValue, 8> Ops;
   Ops.push_back(Chain);
   Ops.push_back(Callee);
@@ -747,7 +743,7 @@ static SDValue EmitCMP(SDValue &LHS, SDValue &RHS, SDValue &TargetCC,
   }
 
   TargetCC = DAG.getConstant(TCC, MVT::i8);
-  return DAG.getNode(MSP430ISD::CMP, dl, MVT::Flag, LHS, RHS);
+  return DAG.getNode(MSP430ISD::CMP, dl, MVT::Glue, LHS, RHS);
 }
 
 
@@ -836,7 +832,7 @@ SDValue MSP430TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
     return SR;
   } else {
     SDValue Zero = DAG.getConstant(0, VT);
-    SDVTList VTs = DAG.getVTList(Op.getValueType(), MVT::Flag);
+    SDVTList VTs = DAG.getVTList(Op.getValueType(), MVT::Glue);
     SmallVector<SDValue, 4> Ops;
     Ops.push_back(One);
     Ops.push_back(Zero);
@@ -858,7 +854,7 @@ SDValue MSP430TargetLowering::LowerSELECT_CC(SDValue Op,
   SDValue TargetCC;
   SDValue Flag = EmitCMP(LHS, RHS, TargetCC, CC, dl, DAG);
 
-  SDVTList VTs = DAG.getVTList(Op.getValueType(), MVT::Flag);
+  SDVTList VTs = DAG.getVTList(Op.getValueType(), MVT::Glue);
   SmallVector<SDValue, 4> Ops;
   Ops.push_back(TrueV);
   Ops.push_back(FalseV);

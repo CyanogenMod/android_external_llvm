@@ -18,14 +18,17 @@
 #include "llvm/CallGraphSCCPass.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Assembly/PrintModulePass.h"
+#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/RegionPass.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/Support/PassNameParser.h"
-#include "llvm/System/Signals.h"
+#include "llvm/Support/Signals.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/IRReader.h"
 #include "llvm/Support/ManagedStatic.h"
@@ -127,6 +130,10 @@ QuietA("quiet", cl::desc("Alias for -q"), cl::aliasopt(Quiet));
 
 static cl::opt<bool>
 AnalyzeOnly("analyze", cl::desc("Only perform analysis, no optimization"));
+
+static cl::opt<bool>
+PrintBreakpoints("print-breakpoints-for-testing", 
+                 cl::desc("Print select breakpoints location for testing"));
 
 static cl::opt<std::string>
 DefaultDataLayout("default-data-layout", 
@@ -277,7 +284,7 @@ struct RegionPassPrinter : public RegionPass {
   RegionPassPrinter(const PassInfo *PI, raw_ostream &out) : RegionPass(ID),
     PassToPrint(PI), Out(out) {
     std::string PassToPrintName =  PassToPrint->getPassName();
-    PassName = "LoopPass Printer: " + PassToPrintName;
+    PassName = "RegionPass Printer: " + PassToPrintName;
   }
 
   virtual bool runOnRegion(Region *R, RGPassManager &RGM) {
@@ -292,7 +299,7 @@ struct RegionPassPrinter : public RegionPass {
     return false;
   }
 
-  virtual const char *getPassName() const { return "'Pass' Printer"; }
+  virtual const char *getPassName() const { return PassName.c_str(); }
 
   virtual void getAnalysisUsage(AnalysisUsage &AU) const {
     AU.addRequiredID(PassToPrint->getTypeInfo());
@@ -334,6 +341,39 @@ struct BasicBlockPassPrinter : public BasicBlockPass {
 };
 
 char BasicBlockPassPrinter::ID = 0;
+
+struct BreakpointPrinter : public FunctionPass {
+  raw_ostream &Out;
+  static char ID;
+
+  BreakpointPrinter(raw_ostream &out)
+    : FunctionPass(ID), Out(out) {
+    }
+
+  virtual bool runOnFunction(Function &F) {
+    BasicBlock &EntryBB = F.getEntryBlock();
+    BasicBlock::const_iterator BI = EntryBB.end();
+    --BI;
+    do {
+      const Instruction *In = BI;
+      const DebugLoc DL = In->getDebugLoc();
+      if (!DL.isUnknown()) {
+        DIScope S(DL.getScope(getGlobalContext()));
+        Out << S.getFilename() << " " << DL.getLine() << "\n";
+        break;
+      }
+      --BI;
+    } while (BI != EntryBB.begin());
+    return false;
+  }
+
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    AU.setPreservesAll();
+  }
+};
+
+char BreakpointPrinter::ID = 0;
+
 inline void addPass(PassManagerBase &PM, Pass *P) {
   // Add the pass to the pass manager...
   PM.add(P);
@@ -389,7 +429,7 @@ void AddStandardCompilePasses(PassManagerBase &PM) {
                              /*OptimizeSize=*/ false,
                              /*UnitAtATime=*/ true,
                              /*UnrollLoops=*/ true,
-                             /*SimplifyLibCalls=*/ true,
+                             !DisableSimplifyLibCalls,
                              /*HaveExceptions=*/ true,
                              InliningPass);
 }
@@ -418,11 +458,6 @@ int main(int argc, char **argv) {
   sys::PrintStackTraceOnErrorSignal();
   llvm::PrettyStackTraceProgram X(argc, argv);
 
-  if (AnalyzeOnly && NoOutput) {
-    errs() << argv[0] << ": analyze mode conflicts with no-output mode.\n";
-    return 1;
-  }
-  
   // Enable debug stream buffering.
   EnableDebugBuffering = true;
 
@@ -443,6 +478,11 @@ int main(int argc, char **argv) {
   
   cl::ParseCommandLineOptions(argc, argv,
     "llvm .bc -> .bc modular optimizer and analysis printer\n");
+
+  if (AnalyzeOnly && NoOutput) {
+    errs() << argv[0] << ": analyze mode conflicts with no-output mode.\n";
+    return 1;
+  }
 
   // Allocate a full target machine description only if necessary.
   // FIXME: The choice of target should be controllable on the command line.
@@ -487,11 +527,19 @@ int main(int argc, char **argv) {
       NoOutput = true;
 
   // Create a PassManager to hold and optimize the collection of passes we are
-  // about to build...
+  // about to build.
   //
   PassManager Passes;
 
-  // Add an appropriate TargetData instance for this module...
+  // Add an appropriate TargetLibraryInfo pass for the module's triple.
+  TargetLibraryInfo *TLI = new TargetLibraryInfo(Triple(M->getTargetTriple()));
+  
+  // The -disable-simplify-libcalls flag actually disables all builtin optzns.
+  if (DisableSimplifyLibCalls)
+    TLI->disableAllFunctions();
+  Passes.add(TLI);
+  
+  // Add an appropriate TargetData instance for this module.
   TargetData *TD = 0;
   const std::string &ModuleDataLayout = M.get()->getDataLayout();
   if (!ModuleDataLayout.empty())
@@ -507,6 +555,24 @@ int main(int argc, char **argv) {
     FPasses.reset(new PassManager());
     if (TD)
       FPasses->add(new TargetData(*TD));
+  }
+
+  if (PrintBreakpoints) {
+    // Default to standard output.
+    if (!Out) {
+      if (OutputFilename.empty())
+        OutputFilename = "-";
+      
+      std::string ErrorInfo;
+      Out.reset(new tool_output_file(OutputFilename.c_str(), ErrorInfo,
+                                     raw_fd_ostream::F_Binary));
+      if (!ErrorInfo.empty()) {
+        errs() << ErrorInfo << '\n';
+        return 1;
+      }
+    }
+    Passes.add(new BreakpointPrinter(Out->os()));
+    NoOutput = true;
   }
 
   // If the -strip-debug command line option was specified, add it.  If
@@ -623,7 +689,7 @@ int main(int argc, char **argv) {
   Passes.run(*M.get());
 
   // Declare success.
-  if (!NoOutput)
+  if (!NoOutput || PrintBreakpoints)
     Out->keep();
 
   return 0;

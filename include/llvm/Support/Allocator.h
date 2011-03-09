@@ -16,13 +16,15 @@
 
 #include "llvm/Support/AlignOf.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/System/DataTypes.h"
+#include "llvm/Support/DataTypes.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdlib>
 #include <cstddef>
 
 namespace llvm {
+template <typename T> struct ReferenceAdder { typedef T& result; };
+template <typename T> struct ReferenceAdder<T&> { typedef T result; };
 
 class MallocAllocator {
 public:

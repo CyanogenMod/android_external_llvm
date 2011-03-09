@@ -26,7 +26,7 @@ class Type;
 struct MipsRegisterInfo : public MipsGenRegisterInfo {
   const MipsSubtarget &Subtarget;
   const TargetInstrInfo &TII;
-  
+
   MipsRegisterInfo(const MipsSubtarget &Subtarget, const TargetInstrInfo &tii);
 
   /// getRegisterNumbering - Given the enum value for some register, e.g.
@@ -43,8 +43,6 @@ struct MipsRegisterInfo : public MipsGenRegisterInfo {
   const unsigned *getCalleeSavedRegs(const MachineFunction* MF = 0) const;
 
   BitVector getReservedRegs(const MachineFunction &MF) const;
-
-  bool hasFP(const MachineFunction &MF) const;
 
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
                                      MachineBasicBlock &MBB,

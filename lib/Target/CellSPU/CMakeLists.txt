@@ -13,15 +13,17 @@ tablegen(SPUGenCallingConv.inc -gen-callingconv)
 
 add_llvm_target(CellSPUCodeGen
   SPUAsmPrinter.cpp
-  SPUFrameInfo.cpp
   SPUHazardRecognizers.cpp
   SPUInstrInfo.cpp
   SPUISelDAGToDAG.cpp
   SPUISelLowering.cpp
-  SPUFrameInfo.cpp
+  SPUFrameLowering.cpp
   SPUMCAsmInfo.cpp
   SPURegisterInfo.cpp
   SPUSubtarget.cpp
   SPUTargetMachine.cpp
   SPUSelectionDAGInfo.cpp
+  SPUNopFiller.cpp
   )
+
+add_subdirectory(TargetInfo)

@@ -17,6 +17,8 @@
 #include "ARM.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallSet.h"
 
 namespace llvm {
   class ARMSubtarget;
@@ -153,10 +155,11 @@ namespace ARMII {
     //===------------------------------------------------------------------===//
     // Code domain.
     DomainShift   = 18,
-    DomainMask    = 3 << DomainShift,
+    DomainMask    = 7 << DomainShift,
     DomainGeneral = 0 << DomainShift,
     DomainVFP     = 1 << DomainShift,
     DomainNEON    = 2 << DomainShift,
+    DomainNEONA8  = 4 << DomainShift,
 
     //===------------------------------------------------------------------===//
     // Field shifts - such shifts are used to set field while generating
@@ -191,9 +194,11 @@ namespace ARMII {
 
 class ARMBaseInstrInfo : public TargetInstrInfoImpl {
   const ARMSubtarget &Subtarget;
+
 protected:
   // Can be only subclassed.
   explicit ARMBaseInstrInfo(const ARMSubtarget &STI);
+
 public:
   // Return the non-pre/post incrementing version of 'Opc'. Return 0
   // if there is not such an opcode.
@@ -206,10 +211,13 @@ public:
   virtual const ARMBaseRegisterInfo &getRegisterInfo() const =0;
   const ARMSubtarget &getSubtarget() const { return Subtarget; }
 
-  bool spillCalleeSavedRegisters(MachineBasicBlock &MBB,
-                                 MachineBasicBlock::iterator MI,
-                                 const std::vector<CalleeSavedInfo> &CSI,
-                                 const TargetRegisterInfo *TRI) const;
+  ScheduleHazardRecognizer *
+  CreateTargetHazardRecognizer(const TargetMachine *TM,
+                               const ScheduleDAG *DAG) const;
+
+  ScheduleHazardRecognizer *
+  CreateTargetPostRAHazardRecognizer(const InstrItineraryData *II,
+                                     const ScheduleDAG *DAG) const;
 
   // Branch analysis.
   virtual bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
@@ -291,7 +299,8 @@ public:
   MachineInstr *duplicate(MachineInstr *Orig, MachineFunction &MF) const;
 
   virtual bool produceSameValue(const MachineInstr *MI0,
-                                const MachineInstr *MI1) const;
+                                const MachineInstr *MI1,
+                                const MachineRegisterInfo *MRI) const;
 
   /// areLoadsFromSameBasePtr - This is used by the pre-regalloc scheduler to
   /// determine if two loads are loading from the same base address. It should
@@ -346,6 +355,11 @@ public:
                                     int CmpMask, int CmpValue,
                                     const MachineRegisterInfo *MRI) const;
 
+  /// FoldImmediate - 'Reg' is known to be defined by a move immediate
+  /// instruction, try to fold the immediate into the use instruction.
+  virtual bool FoldImmediate(MachineInstr *UseMI, MachineInstr *DefMI,
+                             unsigned Reg, MachineRegisterInfo *MRI) const;
+
   virtual unsigned getNumMicroOps(const InstrItineraryData *ItinData,
                                   const MachineInstr *MI) const;
 
@@ -392,6 +406,38 @@ private:
                              const MachineInstr *UseMI, unsigned UseIdx) const;
   bool hasLowDefLatency(const InstrItineraryData *ItinData,
                         const MachineInstr *DefMI, unsigned DefIdx) const;
+
+private:
+  /// Modeling special VFP / NEON fp MLA / MLS hazards.
+
+  /// MLxEntryMap - Map fp MLA / MLS to the corresponding entry in the internal
+  /// MLx table.
+  DenseMap<unsigned, unsigned> MLxEntryMap;
+
+  /// MLxHazardOpcodes - Set of add / sub and multiply opcodes that would cause
+  /// stalls when scheduled together with fp MLA / MLS opcodes.
+  SmallSet<unsigned, 16> MLxHazardOpcodes;
+
+public:
+  /// isFpMLxInstruction - Return true if the specified opcode is a fp MLA / MLS
+  /// instruction.
+  bool isFpMLxInstruction(unsigned Opcode) const {
+    return MLxEntryMap.count(Opcode);
+  }
+
+  /// isFpMLxInstruction - This version also returns the multiply opcode and the
+  /// addition / subtraction opcode to expand to. Return true for 'HasLane' for
+  /// the MLX instructions with an extra lane operand.
+  bool isFpMLxInstruction(unsigned Opcode, unsigned &MulOpc,
+                          unsigned &AddSubOpc, bool &NegAcc,
+                          bool &HasLane) const;
+
+  /// canCauseFpMLxStall - Return true if an instruction of the specified opcode
+  /// will cause stalls when scheduled after (within 4-cycle window) a fp
+  /// MLA / MLS instruction.
+  bool canCauseFpMLxStall(unsigned Opcode) const {
+    return MLxHazardOpcodes.count(Opcode);
+  }
 };
 
 static inline
@@ -433,7 +479,7 @@ bool isJumpTableBranchOpcode(int Opc) {
 
 static inline
 bool isIndirectBranchOpcode(int Opc) {
-  return Opc == ARM::BRIND || Opc == ARM::MOVPCRX || Opc == ARM::tBRIND;
+  return Opc == ARM::BX || Opc == ARM::MOVPCRX || Opc == ARM::tBRIND;
 }
 
 /// getInstrPredicate - If instruction is predicated, returns its predicate
@@ -450,19 +496,19 @@ void emitARMRegPlusImmediate(MachineBasicBlock &MBB,
                              MachineBasicBlock::iterator &MBBI, DebugLoc dl,
                              unsigned DestReg, unsigned BaseReg, int NumBytes,
                              ARMCC::CondCodes Pred, unsigned PredReg,
-                             const ARMBaseInstrInfo &TII);
+                             const ARMBaseInstrInfo &TII, unsigned MIFlags = 0);
 
 void emitT2RegPlusImmediate(MachineBasicBlock &MBB,
                             MachineBasicBlock::iterator &MBBI, DebugLoc dl,
                             unsigned DestReg, unsigned BaseReg, int NumBytes,
                             ARMCC::CondCodes Pred, unsigned PredReg,
-                            const ARMBaseInstrInfo &TII);
+                            const ARMBaseInstrInfo &TII, unsigned MIFlags = 0);
 void emitThumbRegPlusImmediate(MachineBasicBlock &MBB,
-                               MachineBasicBlock::iterator &MBBI,
+                               MachineBasicBlock::iterator &MBBI, DebugLoc dl,
                                unsigned DestReg, unsigned BaseReg,
                                int NumBytes, const TargetInstrInfo &TII,
                                const ARMBaseRegisterInfo& MRI,
-                               DebugLoc dl);
+                               unsigned MIFlags = 0);
 
 
 /// rewriteARMFrameIndex / rewriteT2FrameIndex -

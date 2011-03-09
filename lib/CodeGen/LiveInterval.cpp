@@ -33,16 +33,18 @@ using namespace llvm;
 // CompEnd - Compare LiveRange ends.
 namespace {
 struct CompEnd {
-  bool operator()(const LiveRange &A, const LiveRange &B) const {
-    return A.end < B.end;
+  bool operator()(SlotIndex A, const LiveRange &B) const {
+    return A < B.end;
+  }
+  bool operator()(const LiveRange &A, SlotIndex B) const {
+    return A.end < B;
   }
 };
 }
 
 LiveInterval::iterator LiveInterval::find(SlotIndex Pos) {
   assert(Pos.isValid() && "Cannot search for an invalid index");
-  return std::upper_bound(begin(), end(), LiveRange(SlotIndex(), Pos, 0),
-                          CompEnd());
+  return std::upper_bound(begin(), end(), Pos, CompEnd());
 }
 
 /// killedInRange - Return true if the interval has kills in [Start,End).
@@ -291,6 +293,22 @@ LiveInterval::addRangeFrom(LiveRange LR, iterator From) {
   return ranges.insert(it, LR);
 }
 
+/// extendInBlock - If this interval is live before UseIdx in the basic
+/// block that starts at StartIdx, extend it to be live at UseIdx and return
+/// the value. If there is no live range before UseIdx, return NULL.
+VNInfo *LiveInterval::extendInBlock(SlotIndex StartIdx, SlotIndex UseIdx) {
+  if (empty())
+    return 0;
+  iterator I = std::upper_bound(begin(), end(), UseIdx);
+  if (I == begin())
+    return 0;
+  --I;
+  if (I->end <= StartIdx)
+    return 0;
+  if (I->end <= UseIdx)
+    extendIntervalEndTo(I, UseIdx.getNextSlot());
+  return I->valno;
+}
 
 /// removeRange - Remove the specified range from this interval.  Note that
 /// the range must be in a single LiveRange in its entirety.
@@ -650,14 +668,9 @@ void LiveRange::dump() const {
 }
 
 void LiveInterval::print(raw_ostream &OS, const TargetRegisterInfo *TRI) const {
-  if (isStackSlot())
-    OS << "SS#" << getStackSlotIndex();
-  else if (TRI && TargetRegisterInfo::isPhysicalRegister(reg))
-    OS << TRI->getName(reg);
-  else
-    OS << "%reg" << reg;
-
-  OS << ',' << weight;
+  OS << PrintReg(reg, TRI);
+  if (weight != 0)
+    OS << ',' << weight;
 
   if (empty())
     OS << " EMPTY";
@@ -703,42 +716,10 @@ void LiveRange::print(raw_ostream &os) const {
   os << *this;
 }
 
-/// ConnectedVNInfoEqClasses - Helper class that can divide VNInfos in a
-/// LiveInterval into equivalence clases of connected components. A
-/// LiveInterval that has multiple connected components can be broken into
-/// multiple LiveIntervals.
-
-void ConnectedVNInfoEqClasses::Connect(unsigned a, unsigned b) {
-  while (eqClass_[a] != eqClass_[b]) {
-    if (eqClass_[a] > eqClass_[b])
-      std::swap(a, b);
-    unsigned t = eqClass_[b];
-    assert(t <= b && "Invariant broken");
-    eqClass_[b] = eqClass_[a];
-    b = t;
-  }
-}
-
-unsigned ConnectedVNInfoEqClasses::Renumber() {
-  // Assign final class numbers.
-  // We use the fact that eqClass_[i] == i for class leaders.
-  // For others, eqClass_[i] points to an earlier value in the same class.
-  unsigned count = 0;
-  for (unsigned i = 0, e = eqClass_.size(); i != e; ++i) {
-    unsigned q = eqClass_[i];
-    assert(q <= i && "Invariant broken");
-    eqClass_[i] = q == i ? count++ : eqClass_[q];
-  }
-
-  return count;
-}
-
 unsigned ConnectedVNInfoEqClasses::Classify(const LiveInterval *LI) {
   // Create initial equivalence classes.
   eqClass_.clear();
-  eqClass_.reserve(LI->getNumValNums());
-  for (unsigned i = 0, e = LI->getNumValNums(); i != e; ++i)
-    eqClass_.push_back(i);
+  eqClass_.grow(LI->getNumValNums());
 
   const VNInfo *used = 0, *unused = 0;
 
@@ -749,7 +730,7 @@ unsigned ConnectedVNInfoEqClasses::Classify(const LiveInterval *LI) {
     // Group all unused values into one class.
     if (VNI->isUnused()) {
       if (unused)
-        Connect(unused->id, VNI->id);
+        eqClass_.join(unused->id, VNI->id);
       unused = VNI;
       continue;
     }
@@ -762,28 +743,28 @@ unsigned ConnectedVNInfoEqClasses::Classify(const LiveInterval *LI) {
            PE = MBB->pred_end(); PI != PE; ++PI)
         if (const VNInfo *PVNI =
               LI->getVNInfoAt(lis_.getMBBEndIdx(*PI).getPrevSlot()))
-          Connect(VNI->id, PVNI->id);
+          eqClass_.join(VNI->id, PVNI->id);
     } else {
       // Normal value defined by an instruction. Check for two-addr redef.
       // FIXME: This could be coincidental. Should we really check for a tied
       // operand constraint?
-      if (const VNInfo *UVNI = LI->getVNInfoAt(VNI->def.getUseIndex()))
-        Connect(VNI->id, UVNI->id);
+      // Note that VNI->def may be a use slot for an early clobber def.
+      if (const VNInfo *UVNI = LI->getVNInfoAt(VNI->def.getPrevSlot()))
+        eqClass_.join(VNI->id, UVNI->id);
     }
   }
 
   // Lump all the unused values in with the last used value.
   if (used && unused)
-    Connect(used->id, unused->id);
+    eqClass_.join(used->id, unused->id);
 
-  return Renumber();
+  eqClass_.compress();
+  return eqClass_.getNumClasses();
 }
 
 void ConnectedVNInfoEqClasses::Distribute(LiveInterval *LIV[]) {
   assert(LIV[0] && "LIV[0] must be set");
   LiveInterval &LI = *LIV[0];
-  // Check that they likely ran Classify() on LIV[0] first.
-  assert(eqClass_.size() == LI.getNumValNums() && "Bad classification data");
 
   // First move runs to new intervals.
   LiveInterval::iterator J = LI.begin(), E = LI.end();

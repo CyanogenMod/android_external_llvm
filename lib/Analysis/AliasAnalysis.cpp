@@ -65,6 +65,12 @@ void AliasAnalysis::copyValue(Value *From, Value *To) {
   AA->copyValue(From, To);
 }
 
+void AliasAnalysis::addEscapingUse(Use &U) {
+  assert(AA && "AA didn't call InitializeAliasAnalysis in its run method!");
+  AA->addEscapingUse(U);
+}
+
+
 AliasAnalysis::ModRefResult
 AliasAnalysis::getModRefInfo(ImmutableCallSite CS,
                              const Location &Loc) {
@@ -211,6 +217,35 @@ AliasAnalysis::Location AliasAnalysis::getLocation(const VAArgInst *VI) {
                   UnknownSize,
                   VI->getMetadata(LLVMContext::MD_tbaa));
 }
+
+
+AliasAnalysis::Location 
+AliasAnalysis::getLocationForSource(const MemTransferInst *MTI) {
+  uint64_t Size = UnknownSize;
+  if (ConstantInt *C = dyn_cast<ConstantInt>(MTI->getLength()))
+    Size = C->getValue().getZExtValue();
+
+  // memcpy/memmove can have TBAA tags. For memcpy, they apply
+  // to both the source and the destination.
+  MDNode *TBAATag = MTI->getMetadata(LLVMContext::MD_tbaa);
+
+  return Location(MTI->getRawSource(), Size, TBAATag);
+}
+
+AliasAnalysis::Location 
+AliasAnalysis::getLocationForDest(const MemIntrinsic *MTI) {
+  uint64_t Size = UnknownSize;
+  if (ConstantInt *C = dyn_cast<ConstantInt>(MTI->getLength()))
+    Size = C->getValue().getZExtValue();
+
+  // memcpy/memmove can have TBAA tags. For memcpy, they apply
+  // to both the source and the destination.
+  MDNode *TBAATag = MTI->getMetadata(LLVMContext::MD_tbaa);
+  
+  return Location(MTI->getRawDest(), Size, TBAATag);
+}
+
+
 
 AliasAnalysis::ModRefResult
 AliasAnalysis::getModRefInfo(const LoadInst *L, const Location &Loc) {

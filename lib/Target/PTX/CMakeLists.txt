@@ -14,7 +14,7 @@ add_llvm_target(PTXCodeGen
   PTXISelDAGToDAG.cpp
   PTXISelLowering.cpp
   PTXInstrInfo.cpp
-  PTXFrameInfo.cpp
+  PTXFrameLowering.cpp
   PTXMCAsmInfo.cpp
   PTXMCAsmStreamer.cpp
   PTXMFInfoExtract.cpp
@@ -22,3 +22,5 @@ add_llvm_target(PTXCodeGen
   PTXSubtarget.cpp
   PTXTargetMachine.cpp
   )
+
+add_subdirectory(TargetInfo)

@@ -252,6 +252,12 @@ public:
     return SubclassOptionalData;
   }
 
+  /// clearSubclassOptionalData - Clear the optional flags contained in
+  /// this value.
+  void clearSubclassOptionalData() {
+    SubclassOptionalData = 0;
+  }
+
   /// hasSameSubclassOptionalData - Test whether the optional flags contained
   /// in this value are equal to the optional flags in the given value.
   bool hasSameSubclassOptionalData(const Value *V) const {
@@ -283,16 +289,6 @@ public:
   Value *stripPointerCasts();
   const Value *stripPointerCasts() const {
     return const_cast<Value*>(this)->stripPointerCasts();
-  }
-
-  /// getUnderlyingObject - This method strips off any GEP address adjustments
-  /// and pointer casts from the specified value, returning the original object
-  /// being addressed.  Note that the returned value has pointer type if the
-  /// specified value does.  If the MaxLookup value is non-zero, it limits the
-  /// number of instructions to be stripped off.
-  Value *getUnderlyingObject(unsigned MaxLookup = 6);
-  const Value *getUnderlyingObject(unsigned MaxLookup = 6) const {
-    return const_cast<Value*>(this)->getUnderlyingObject(MaxLookup);
   }
 
   /// isDereferenceablePointer - Test if this value is always a pointer to

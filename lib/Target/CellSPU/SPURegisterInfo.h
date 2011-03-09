@@ -56,8 +56,6 @@ namespace llvm {
     //! Return the reserved registers
     BitVector getReservedRegs(const MachineFunction &MF) const;
 
-    //! Prediate: Target has dedicated frame pointer
-    bool hasFP(const MachineFunction &MF) const;
     //! Eliminate the call frame setup pseudo-instructions
     void eliminateCallFramePseudoInstr(MachineFunction &MF,
                                        MachineBasicBlock &MBB,
@@ -66,15 +64,10 @@ namespace llvm {
     void eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                              RegScavenger *RS = NULL) const;
 
-    void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                              RegScavenger *RS = NULL) const;
-
     //! Get return address register (LR, aka R0)
     unsigned getRARegister() const;
     //! Get the stack frame register (SP, aka R1)
     unsigned getFrameRegister(const MachineFunction &MF) const;
-    //! Perform target-specific stack frame setup.
-    void getInitialFrameState(std::vector<MachineMove> &Moves) const;
 
     //------------------------------------------------------------------------
     // New methods added:

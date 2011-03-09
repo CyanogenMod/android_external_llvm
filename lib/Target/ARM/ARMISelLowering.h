@@ -34,6 +34,10 @@ namespace llvm {
 
       Wrapper,      // Wrapper - A wrapper node for TargetConstantPool,
                     // TargetExternalSymbol, and TargetGlobalAddress.
+      WrapperDYN,   // WrapperDYN - A wrapper node for TargetGlobalAddress in
+                    // DYN mode.
+      WrapperPIC,   // WrapperPIC - A wrapper node for TargetGlobalAddress in
+                    // PIC mode.
       WrapperJT,    // WrapperJT - A wrapper node for TargetJumpTable
 
       CALL,         // Function call.
@@ -53,7 +57,6 @@ namespace llvm {
       CMPFPw0,      // ARM VFP compare against zero instruction, sets FPSCR.
       FMSTAT,       // ARM fmstat instruction.
       CMOV,         // ARM conditional move instructions.
-      CNEG,         // ARM conditional negate instructions.
 
       BCC_i64,
 
@@ -172,7 +175,33 @@ namespace llvm {
       // Vector OR with immediate
       VORRIMM,
       // Vector AND with NOT of immediate
-      VBICIMM
+      VBICIMM,
+
+      // Vector load N-element structure to all lanes:
+      VLD2DUP = ISD::FIRST_TARGET_MEMORY_OPCODE,
+      VLD3DUP,
+      VLD4DUP,
+
+      // NEON loads with post-increment base updates:
+      VLD1_UPD,
+      VLD2_UPD,
+      VLD3_UPD,
+      VLD4_UPD,
+      VLD2LN_UPD,
+      VLD3LN_UPD,
+      VLD4LN_UPD,
+      VLD2DUP_UPD,
+      VLD3DUP_UPD,
+      VLD4DUP_UPD,
+
+      // NEON stores with post-increment base updates:
+      VST1_UPD,
+      VST2_UPD,
+      VST3_UPD,
+      VST4_UPD,
+      VST2LN_UPD,
+      VST3LN_UPD,
+      VST4LN_UPD
     };
   }
 
@@ -204,13 +233,15 @@ namespace llvm {
     virtual void ReplaceNodeResults(SDNode *N, SmallVectorImpl<SDValue>&Results,
                                     SelectionDAG &DAG) const;
 
-    virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
-
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
     virtual MachineBasicBlock *
       EmitInstrWithCustomInserter(MachineInstr *MI,
                                   MachineBasicBlock *MBB) const;
+
+    virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
+
+    bool isDesirableToTransformToIntegerOp(unsigned Opc, EVT VT) const;
 
     /// allowsUnalignedMemoryAccesses - Returns true if the target allows
     /// unaligned memory accesses. of the specified type.
@@ -251,6 +282,8 @@ namespace llvm {
                                                 const SelectionDAG &DAG,
                                                 unsigned Depth) const;
 
+
+    virtual bool ExpandInlineAsm(CallInst *CI) const;
 
     ConstraintType getConstraintType(const std::string &Constraint) const;
 
@@ -373,6 +406,10 @@ namespace llvm {
     SDValue LowerShiftRightParts(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerShiftLeftParts(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG, 
+                              const ARMSubtarget *ST) const;
+
+    SDValue ReconstructShuffle(SDValue Op, SelectionDAG &DAG) const;
 
     SDValue LowerCallResult(SDValue Chain, SDValue InFlag,
                             CallingConv::ID CallConv, bool isVarArg,
@@ -397,6 +434,9 @@ namespace llvm {
                 DebugLoc dl, SelectionDAG &DAG,
                 SmallVectorImpl<SDValue> &InVals) const;
 
+    /// HandleByVal - Target-specific cleanup for ByVal support.
+    virtual void HandleByVal(CCState *) const;
+
     /// IsEligibleForTailCallOptimization - Check whether the call is eligible
     /// for tail call optimization. Targets which want to do tail call
     /// optimization should implement this function.
@@ -415,6 +455,8 @@ namespace llvm {
                   const SmallVectorImpl<ISD::OutputArg> &Outs,
                   const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
+
+    virtual bool isUsedByReturnOnly(SDNode *N) const;
 
     SDValue getARMCmp(SDValue LHS, SDValue RHS, ISD::CondCode CC,
                       SDValue &ARMcc, SelectionDAG &DAG, DebugLoc dl) const;

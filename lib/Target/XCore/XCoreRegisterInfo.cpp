@@ -21,7 +21,7 @@
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/RegisterScavenging.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetInstrInfo.h"
@@ -84,11 +84,13 @@ const unsigned* XCoreRegisterInfo::getCalleeSavedRegs(const MachineFunction *MF)
 
 BitVector XCoreRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
+
   Reserved.set(XCore::CP);
   Reserved.set(XCore::DP);
   Reserved.set(XCore::SP);
   Reserved.set(XCore::LR);
-  if (hasFP(MF)) {
+  if (TFI->hasFP(MF)) {
     Reserved.set(XCore::R10);
   }
   return Reserved;
@@ -96,12 +98,10 @@ BitVector XCoreRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
 
 bool
 XCoreRegisterInfo::requiresRegisterScavenging(const MachineFunction &MF) const {
-  // TODO can we estimate stack size?
-  return hasFP(MF);
-}
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
 
-bool XCoreRegisterInfo::hasFP(const MachineFunction &MF) const {
-  return DisableFramePointerElim(MF) || MF.getFrameInfo()->hasVarSizedObjects();
+  // TODO can we estimate stack size?
+  return TFI->hasFP(MF);
 }
 
 // This function eliminates ADJCALLSTACKDOWN,
@@ -109,7 +109,9 @@ bool XCoreRegisterInfo::hasFP(const MachineFunction &MF) const {
 void XCoreRegisterInfo::
 eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator I) const {
-  if (!hasReservedCallFrame(MF)) {
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
+
+  if (!TFI->hasReservedCallFrame(MF)) {
     // Turn the adjcallstackdown instruction into 'extsp <amt>' and the
     // adjcallstackup instruction into 'ldaw sp, sp[<amt>]'
     MachineInstr *Old = I;
@@ -118,14 +120,13 @@ eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
       // We need to keep the stack aligned properly.  To do this, we round the
       // amount of space needed for the outgoing arguments up to the next
       // alignment boundary.
-      unsigned Align = MF.getTarget().getFrameInfo()->getStackAlignment();
+      unsigned Align = TFI->getStackAlignment();
       Amount = (Amount+Align-1)/Align*Align;
 
       assert(Amount%4 == 0);
       Amount /= 4;
-      
+
       bool isU6 = isImmU6(Amount);
-      
       if (!isU6 && !isImmU16(Amount)) {
         // FIX could emit multiple instructions in this case.
 #ifndef NDEBUG
@@ -172,6 +173,7 @@ XCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   int FrameIndex = FrameOp.getIndex();
 
   MachineFunction &MF = *MI.getParent()->getParent();
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
   int Offset = MF.getFrameInfo()->getObjectOffset(FrameIndex);
   int StackSize = MF.getFrameInfo()->getStackSize();
 
@@ -197,7 +199,7 @@ XCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   
   Offset/=4;
   
-  bool FP = hasFP(MF);
+  bool FP = TFI->hasFP(MF);
   
   unsigned Reg = MI.getOperand(0).getReg();
   bool isKill = MI.getOpcode() == XCore::STWFI && MI.getOperand(0).isKill();
@@ -292,48 +294,6 @@ XCoreRegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
   MBB.erase(II);
 }
 
-void
-XCoreRegisterInfo::processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
-                                                      RegScavenger *RS) const {
-  MachineFrameInfo *MFI = MF.getFrameInfo();
-  bool LRUsed = MF.getRegInfo().isPhysRegUsed(XCore::LR);
-  const TargetRegisterClass *RC = XCore::GRRegsRegisterClass;
-  XCoreFunctionInfo *XFI = MF.getInfo<XCoreFunctionInfo>();
-  if (LRUsed) {
-    MF.getRegInfo().setPhysRegUnused(XCore::LR);
-    
-    bool isVarArg = MF.getFunction()->isVarArg();
-    int FrameIdx;
-    if (! isVarArg) {
-      // A fixed offset of 0 allows us to save / restore LR using entsp / retsp.
-      FrameIdx = MFI->CreateFixedObject(RC->getSize(), 0, true);
-    } else {
-      FrameIdx = MFI->CreateStackObject(RC->getSize(), RC->getAlignment(),
-                                        false);
-    }
-    XFI->setUsesLR(FrameIdx);
-    XFI->setLRSpillSlot(FrameIdx);
-  }
-  if (requiresRegisterScavenging(MF)) {
-    // Reserve a slot close to SP or frame pointer.
-    RS->setScavengingFrameIndex(MFI->CreateStackObject(RC->getSize(),
-                                                       RC->getAlignment(),
-                                                       false));
-  }
-  if (hasFP(MF)) {
-    // A callee save register is used to hold the FP.
-    // This needs saving / restoring in the epilogue / prologue.
-    XFI->setFPSpillSlot(MFI->CreateStackObject(RC->getSize(),
-                                               RC->getAlignment(),
-                                               false));
-  }
-}
-
-void XCoreRegisterInfo::
-processFunctionBeforeFrameFinalized(MachineFunction &MF) const {
-  
-}
-
 void XCoreRegisterInfo::
 loadConstant(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
             unsigned DstReg, int64_t Value, DebugLoc dl) const {
@@ -351,21 +311,13 @@ int XCoreRegisterInfo::getDwarfRegNum(unsigned RegNum, bool isEH) const {
 }
 
 unsigned XCoreRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  bool FP = hasFP(MF);
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
 
-  return FP ? XCore::R10 : XCore::SP;
+  return TFI->hasFP(MF) ? XCore::R10 : XCore::SP;
 }
 
 unsigned XCoreRegisterInfo::getRARegister() const {
   return XCore::LR;
-}
-
-void XCoreRegisterInfo::getInitialFrameState(std::vector<MachineMove> &Moves)
-                                                                         const {
-  // Initial state of the frame pointer is SP.
-  MachineLocation Dst(MachineLocation::VirtualFP);
-  MachineLocation Src(XCore::SP, 0);
-  Moves.push_back(MachineMove(0, Dst, Src));
 }
 
 #include "XCoreGenRegisterInfo.inc"

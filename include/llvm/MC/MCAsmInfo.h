@@ -25,7 +25,9 @@ namespace llvm {
 
   /// MCAsmInfo - This class is intended to be used as a base class for asm
   /// properties and features specific to the target.
-  namespace ExceptionHandling { enum ExceptionsType { None, Dwarf, SjLj }; }
+  namespace ExceptionHandling {
+    enum ExceptionsType { None, DwarfTable, DwarfCFI, SjLj, ARM };
+  }
 
   class MCAsmInfo {
   protected:
@@ -50,6 +52,11 @@ namespace llvm {
     /// directive after the a static ctor/dtor list.  This directive is only
     /// emitted in Static relocation model.
     bool HasStaticCtorDtorReferenceInStaticMode;  // Default is false.
+
+    /// LinkerRequiresNonEmptyDwarfLines - True if the linker has a bug and
+    /// requires that the debug_line section be of a minimum size. In practice
+    /// such a linker requires a non empty line sequence if a file is present.
+    bool LinkerRequiresNonEmptyDwarfLines; // Default to false.
 
     /// MaxInstLength - This is the maximum possible length of an instruction,
     /// which is needed to compute the size of an inline asm.
@@ -192,6 +199,13 @@ namespace llvm {
     /// HasSetDirective - True if the assembler supports the .set directive.
     bool HasSetDirective;                    // Defaults to true.
 
+    /// HasAggressiveSymbolFolding - False if the assembler requires that we use
+    /// Lc = a - b
+    /// .long Lc
+    /// instead of
+    /// .long a - b
+    bool HasAggressiveSymbolFolding;           // Defaults to true.
+
     /// HasLCOMMDirective - This is true if the target supports the .lcomm
     /// directive.
     bool HasLCOMMDirective;                  // Defaults to false.
@@ -212,6 +226,10 @@ namespace llvm {
     /// directive.
     bool HasNoDeadStrip;                     // Defaults to false.
 
+    /// HasSymbolResolver - True if this target supports the MachO
+    /// .symbol_resolver directive.
+    bool HasSymbolResolver;                     // Defaults to false.
+
     /// WeakRefDirective - This directive, if non-null, is used to declare a
     /// global as being a weak undefined symbol.
     const char *WeakRefDirective;            // Defaults to NULL.
@@ -228,6 +246,11 @@ namespace llvm {
     /// declare a symbol as having hidden visibility.
     MCSymbolAttr HiddenVisibilityAttr;       // Defaults to MCSA_Hidden.
 
+    /// HiddenDeclarationVisibilityAttr - This attribute, if not MCSA_Invalid,
+    /// is used to declare an undefined symbol as having hidden visibility.
+    MCSymbolAttr HiddenDeclarationVisibilityAttr;   // Defaults to MCSA_Hidden.
+
+
     /// ProtectedVisibilityAttr - This attribute, if not MCSA_Invalid, is used
     /// to declare a symbol as having protected visibility.
     MCSymbolAttr ProtectedVisibilityAttr;    // Defaults to MCSA_Protected
@@ -236,10 +259,6 @@ namespace llvm {
 
     /// HasLEB128 - True if target asm supports leb128 directives.
     bool HasLEB128;                          // Defaults to false.
-
-    /// hasDotLocAndDotFile - True if target asm supports .loc and .file
-    /// directives for emitting debugging information.
-    bool HasDotLocAndDotFile;                // Defaults to false.
 
     /// SupportsDebugInformation - True if target supports emission of debugging
     /// information.
@@ -322,6 +341,9 @@ namespace llvm {
     bool hasStaticCtorDtorReferenceInStaticMode() const {
       return HasStaticCtorDtorReferenceInStaticMode;
     }
+    bool getLinkerRequiresNonEmptyDwarfLines() const {
+      return LinkerRequiresNonEmptyDwarfLines;
+    }
     unsigned getMaxInstLength() const {
       return MaxInstLength;
     }
@@ -392,6 +414,9 @@ namespace llvm {
       return ExternDirective;
     }
     bool hasSetDirective() const { return HasSetDirective; }
+    bool hasAggressiveSymbolFolding() const {
+      return HasAggressiveSymbolFolding;
+    }
     bool hasLCOMMDirective() const { return HasLCOMMDirective; }
     bool hasDotTypeDotSizeDirective() const {return HasDotTypeDotSizeDirective;}
     bool getCOMMDirectiveAlignmentIsInBytes() const {
@@ -399,19 +424,20 @@ namespace llvm {
     }
     bool hasSingleParameterDotFile() const { return HasSingleParameterDotFile; }
     bool hasNoDeadStrip() const { return HasNoDeadStrip; }
+    bool hasSymbolResolver() const { return HasSymbolResolver; }
     const char *getWeakRefDirective() const { return WeakRefDirective; }
     const char *getWeakDefDirective() const { return WeakDefDirective; }
     const char *getLinkOnceDirective() const { return LinkOnceDirective; }
 
     MCSymbolAttr getHiddenVisibilityAttr() const { return HiddenVisibilityAttr;}
+    MCSymbolAttr getHiddenDeclarationVisibilityAttr() const {
+      return HiddenDeclarationVisibilityAttr;
+    }
     MCSymbolAttr getProtectedVisibilityAttr() const {
       return ProtectedVisibilityAttr;
     }
     bool hasLEB128() const {
       return HasLEB128;
-    }
-    bool hasDotLocAndDotFile() const {
-      return HasDotLocAndDotFile;
     }
     bool doesSupportDebugInformation() const {
       return SupportsDebugInformation;
@@ -422,6 +448,13 @@ namespace llvm {
     ExceptionHandling::ExceptionsType getExceptionHandlingType() const {
       return ExceptionsType;
     }
+    bool isExceptionHandlingDwarf() const {
+      return
+        (ExceptionsType == ExceptionHandling::DwarfTable ||
+         ExceptionsType == ExceptionHandling::DwarfCFI ||
+         ExceptionsType == ExceptionHandling::ARM);
+    }
+
     bool doesDwarfRequireFrameSection() const {
       return DwarfRequiresFrameSection;
     }

@@ -80,7 +80,7 @@ protected:
     assert(li->weight != HUGE_VALF &&
            "Attempting to spill already spilled value.");
 
-    assert(!li->isStackSlot() &&
+    assert(!TargetRegisterInfo::isStackSlot(li->reg) &&
            "Trying to spill a stack slot.");
 
     DEBUG(dbgs() << "Trivial spill everywhere of reg" << li->reg << "\n");
@@ -230,12 +230,6 @@ public:
 };
 
 } // end anonymous namespace
-
-namespace llvm {
-Spiller *createInlineSpiller(MachineFunctionPass &pass,
-                             MachineFunction &mf,
-                             VirtRegMap &vrm);
-}
 
 llvm::Spiller* llvm::createSpiller(MachineFunctionPass &pass,
                                    MachineFunction &mf,

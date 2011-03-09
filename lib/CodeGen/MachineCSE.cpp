@@ -24,8 +24,8 @@
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/RecyclingAllocator.h"
 
 using namespace llvm;
 
@@ -33,6 +33,7 @@ STATISTIC(NumCoalesces, "Number of copies coalesced");
 STATISTIC(NumCSEs,      "Number of common subexpression eliminated");
 STATISTIC(NumPhysCSEs,
           "Number of physreg referencing common subexpr eliminated");
+STATISTIC(NumCommutes,  "Number of copies coalesced after commuting");
 
 namespace {
   class MachineCSE : public MachineFunctionPass {
@@ -65,10 +66,13 @@ namespace {
 
   private:
     const unsigned LookAheadLimit;
-    typedef ScopedHashTableScope<MachineInstr*, unsigned,
-                                 MachineInstrExpressionTrait> ScopeType;
+    typedef RecyclingAllocator<BumpPtrAllocator,
+        ScopedHashTableVal<MachineInstr*, unsigned> > AllocatorTy;
+    typedef ScopedHashTable<MachineInstr*, unsigned,
+        MachineInstrExpressionTrait, AllocatorTy> ScopedHTType;
+    typedef ScopedHTType::ScopeTy ScopeType;
     DenseMap<MachineBasicBlock*, ScopeType*> ScopeMap;
-    ScopedHashTable<MachineInstr*, unsigned, MachineInstrExpressionTrait> VNT;
+    ScopedHTType VNT;
     SmallVector<MachineInstr*, 64> Exps;
     unsigned CurrVN;
 
@@ -112,7 +116,7 @@ bool MachineCSE::PerformTrivialCoalescing(MachineInstr *MI,
     if (!MO.isReg() || !MO.isUse())
       continue;
     unsigned Reg = MO.getReg();
-    if (!Reg || TargetRegisterInfo::isPhysicalRegister(Reg))
+    if (!TargetRegisterInfo::isVirtualRegister(Reg))
       continue;
     if (!MRI->hasOneNonDBGUse(Reg))
       // Only coalesce single use copies. This ensure the copy will be
@@ -258,7 +262,7 @@ bool MachineCSE::isCSECandidate(MachineInstr *MI) {
   // Ignore stuff that we obviously can't move.
   const TargetInstrDesc &TID = MI->getDesc();  
   if (TID.mayStore() || TID.isCall() || TID.isTerminator() ||
-      TID.hasUnmodeledSideEffects())
+      MI->hasUnmodeledSideEffects())
     return false;
 
   if (TID.mayLoad()) {
@@ -280,14 +284,13 @@ bool MachineCSE::isProfitableToCSE(unsigned CSReg, unsigned Reg,
                                    MachineInstr *CSMI, MachineInstr *MI) {
   // FIXME: Heuristics that works around the lack the live range splitting.
 
-  // Heuristics #1: Don't cse "cheap" computating if the def is not local or in an
-  // immediate predecessor. We don't want to increase register pressure and end up
-  // causing other computation to be spilled.
+  // Heuristics #1: Don't CSE "cheap" computation if the def is not local or in
+  // an immediate predecessor. We don't want to increase register pressure and
+  // end up causing other computation to be spilled.
   if (MI->getDesc().isAsCheapAsAMove()) {
     MachineBasicBlock *CSBB = CSMI->getParent();
     MachineBasicBlock *BB = MI->getParent();
-    if (CSBB != BB && 
-        std::find(CSBB->succ_begin(), CSBB->succ_end(), BB) == CSBB->succ_end())
+    if (CSBB != BB && !CSBB->isSuccessor(BB))
       return false;
   }
 
@@ -296,7 +299,7 @@ bool MachineCSE::isProfitableToCSE(unsigned CSReg, unsigned Reg,
   bool HasVRegUse = false;
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
-    if (MO.isReg() && MO.isUse() && MO.getReg() &&
+    if (MO.isReg() && MO.isUse() &&
         TargetRegisterInfo::isVirtualRegister(MO.getReg())) {
       HasVRegUse = true;
       break;
@@ -368,7 +371,22 @@ bool MachineCSE::ProcessBlock(MachineBasicBlock *MBB) {
         FoundCSE = VNT.count(MI);
       }
     }
-    // FIXME: commute commutable instructions?
+
+    // Commute commutable instructions.
+    bool Commuted = false;
+    if (!FoundCSE && MI->getDesc().isCommutable()) {
+      MachineInstr *NewMI = TII->commuteInstruction(MI);
+      if (NewMI) {
+        Commuted = true;
+        FoundCSE = VNT.count(NewMI);
+        if (NewMI != MI)
+          // New instruction. It doesn't need to be kept.
+          NewMI->eraseFromParent();
+        else if (!FoundCSE)
+          // MI was changed but it didn't help, commute it back!
+          (void)TII->commuteInstruction(MI);
+      }
+    }
 
     // If the instruction defines physical registers and the values *may* be
     // used, then it's not safe to replace it with a common subexpression.
@@ -430,6 +448,8 @@ bool MachineCSE::ProcessBlock(MachineBasicBlock *MBB) {
       ++NumCSEs;
       if (!PhysRefs.empty())
         ++NumPhysCSEs;
+      if (Commuted)
+        ++NumCommutes;
     } else {
       DEBUG(dbgs() << "*** Not profitable, avoid CSE!\n");
       VNT.insert(MI, CurrVN++);

@@ -16,7 +16,7 @@ add_llvm_target(AlphaCodeGen
   AlphaInstrInfo.cpp
   AlphaISelDAGToDAG.cpp
   AlphaISelLowering.cpp
-  AlphaFrameInfo.cpp
+  AlphaFrameLowering.cpp
   AlphaLLRP.cpp
   AlphaMCAsmInfo.cpp
   AlphaRegisterInfo.cpp
@@ -24,3 +24,5 @@ add_llvm_target(AlphaCodeGen
   AlphaTargetMachine.cpp
   AlphaSelectionDAGInfo.cpp
   )
+
+add_subdirectory(TargetInfo)

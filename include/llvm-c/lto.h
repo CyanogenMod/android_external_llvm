@@ -18,7 +18,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#include "llvm/System/DataTypes.h"
+#include <unistd.h>
 
 #define LTO_API_VERSION 4
 
@@ -122,6 +122,13 @@ lto_module_create(const char* path);
 extern lto_module_t
 lto_module_create_from_memory(const void* mem, size_t length);
 
+/**
+ * Loads an object file from disk. The seek point of fd is not preserved.
+ * Returns NULL on error (check lto_get_error_message() for details).
+ */
+extern lto_module_t
+lto_module_create_from_fd(int fd, const char *path, off_t size);
+
 
 /**
  * Frees all memory internally allocated by the module.
@@ -147,7 +154,7 @@ lto_module_set_target_triple(lto_module_t mod, const char *triple);
 /**
  * Returns the number of symbols in the object module.
  */
-extern uint32_t
+extern unsigned int
 lto_module_get_num_symbols(lto_module_t mod);
 
 
@@ -155,14 +162,14 @@ lto_module_get_num_symbols(lto_module_t mod);
  * Returns the name of the ith symbol in the object module.
  */
 extern const char*
-lto_module_get_symbol_name(lto_module_t mod, uint32_t index);
+lto_module_get_symbol_name(lto_module_t mod, unsigned int index);
 
 
 /**
  * Returns the attributes of the ith symbol in the object module.
  */
 extern lto_symbol_attributes
-lto_module_get_symbol_attribute(lto_module_t mod, uint32_t index);
+lto_module_get_symbol_attribute(lto_module_t mod, unsigned int index);
 
 
 /**

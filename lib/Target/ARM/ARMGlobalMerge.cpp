@@ -53,6 +53,7 @@
 
 #define DEBUG_TYPE "arm-global-merge"
 #include "ARM.h"
+#include "ARMTargetMachine.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/Attributes.h"
 #include "llvm/Constants.h"
@@ -65,6 +66,7 @@
 #include "llvm/Pass.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetLoweringObjectFile.h"
 using namespace llvm;
 
 namespace {
@@ -74,7 +76,7 @@ namespace {
     const TargetLowering *TLI;
 
     bool doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
-                 Module &M, bool) const;
+                 Module &M, bool isConst) const;
 
   public:
     static char ID;             // Pass identification, replacement for typeid.
@@ -129,18 +131,21 @@ bool ARMGlobalMerge::doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
     uint64_t MergedSize = 0;
     std::vector<const Type*> Tys;
     std::vector<Constant*> Inits;
-    for (j = i; MergedSize < MaxOffset && j != e; ++j) {
+    for (j = i; j != e; ++j) {
       const Type *Ty = Globals[j]->getType()->getElementType();
+      MergedSize += TD->getTypeAllocSize(Ty);
+      if (MergedSize > MaxOffset) {
+        break;
+      }
       Tys.push_back(Ty);
       Inits.push_back(Globals[j]->getInitializer());
-      MergedSize += TD->getTypeAllocSize(Ty);
     }
 
     StructType *MergedTy = StructType::get(M.getContext(), Tys);
     Constant *MergedInit = ConstantStruct::get(MergedTy, Inits);
     GlobalVariable *MergedGV = new GlobalVariable(M, MergedTy, isConst,
                                                   GlobalValue::InternalLinkage,
-                                                  MergedInit, "merged");
+                                                  MergedInit, "_MergedGlobals");
     for (size_t k = i; k < j; ++k) {
       Constant *Idx[2] = {
         ConstantInt::get(Int32Ty, 0),
@@ -158,10 +163,15 @@ bool ARMGlobalMerge::doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
 
 
 bool ARMGlobalMerge::doInitialization(Module &M) {
-  SmallVector<GlobalVariable*, 16> Globals, ConstGlobals;
+  SmallVector<GlobalVariable*, 16> Globals, ConstGlobals, BSSGlobals;
   const TargetData *TD = TLI->getTargetData();
   unsigned MaxOffset = TLI->getMaximalGlobalOffset();
   bool Changed = false;
+
+  // Disable this pass on darwin. The debugger is not yet ready to extract
+  // variable's  info from a merged global.
+  if (TLI->getTargetMachine().getSubtarget<ARMSubtarget>().isTargetDarwin())
+    return false;
 
   // Grab all non-const globals.
   for (Module::global_iterator I = M.global_begin(),
@@ -179,8 +189,11 @@ bool ARMGlobalMerge::doInitialization(Module &M) {
         I->getName().startswith(".llvm."))
       continue;
 
-    if (TD->getTypeAllocSize(I->getType()) < MaxOffset) {
-      if (I->isConstant())
+    if (TD->getTypeAllocSize(I->getType()->getElementType()) < MaxOffset) {
+      const TargetLoweringObjectFile &TLOF = TLI->getObjFileLowering();
+      if (TLOF.getKindForGlobal(I, TLI->getTargetMachine()).isBSSLocal())
+        BSSGlobals.push_back(I);
+      else if (I->isConstant())
         ConstGlobals.push_back(I);
       else
         Globals.push_back(I);
@@ -189,10 +202,12 @@ bool ARMGlobalMerge::doInitialization(Module &M) {
 
   if (Globals.size() > 1)
     Changed |= doMerge(Globals, M, false);
+  if (BSSGlobals.size() > 1)
+    Changed |= doMerge(BSSGlobals, M, false);
+
   // FIXME: This currently breaks the EH processing due to way how the 
   // typeinfo detection works. We might want to detect the TIs and ignore 
   // them in the future.
-  
   // if (ConstGlobals.size() > 1)
   //  Changed |= doMerge(ConstGlobals, M, true);
 

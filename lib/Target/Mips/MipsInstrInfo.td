@@ -26,10 +26,17 @@ def SDT_MipsCMov         : SDTypeProfile<1, 4, [SDTCisSameAs<0, 1>,
                                          SDTCisInt<4>]>;
 def SDT_MipsCallSeqStart : SDCallSeqStart<[SDTCisVT<0, i32>]>;
 def SDT_MipsCallSeqEnd   : SDCallSeqEnd<[SDTCisVT<0, i32>, SDTCisVT<1, i32>]>;
+def SDT_MipsMAddMSub     : SDTypeProfile<0, 4,
+                                         [SDTCisVT<0, i32>, SDTCisSameAs<0, 1>,
+                                          SDTCisSameAs<1, 2>,
+                                          SDTCisSameAs<2, 3>]>;
+def SDT_MipsDivRem       : SDTypeProfile<0, 2,
+                                         [SDTCisVT<0, i32>,
+                                          SDTCisSameAs<0, 1>]>;
 
 // Call
 def MipsJmpLink : SDNode<"MipsISD::JmpLink",SDT_MipsJmpLink,
-                         [SDNPHasChain, SDNPOutFlag, SDNPOptInFlag,
+                         [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue,
                           SDNPVariadic]>;
 
 // Hi and Lo nodes are used to handle global addresses. Used on
@@ -41,19 +48,32 @@ def MipsGPRel : SDNode<"MipsISD::GPRel", SDTIntUnaryOp>;
 
 // Return
 def MipsRet : SDNode<"MipsISD::Ret", SDT_MipsRet, [SDNPHasChain,
-                     SDNPOptInFlag]>;
+                     SDNPOptInGlue]>;
 
 // These are target-independent nodes, but have target-specific formats.
 def callseq_start : SDNode<"ISD::CALLSEQ_START", SDT_MipsCallSeqStart,
-                           [SDNPHasChain, SDNPOutFlag]>;
+                           [SDNPHasChain, SDNPOutGlue]>;
 def callseq_end   : SDNode<"ISD::CALLSEQ_END", SDT_MipsCallSeqEnd,
-                           [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag]>;
+                           [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 
 // Select Condition Code
 def MipsSelectCC  : SDNode<"MipsISD::SelectCC", SDT_MipsSelectCC>;
 
-// Conditional Move
-def MipsCMov      : SDNode<"MipsISD::CMov", SDT_MipsCMov>;
+// MAdd*/MSub* nodes
+def MipsMAdd      : SDNode<"MipsISD::MAdd", SDT_MipsMAddMSub,
+                           [SDNPOptInGlue, SDNPOutGlue]>;
+def MipsMAddu     : SDNode<"MipsISD::MAddu", SDT_MipsMAddMSub,
+                           [SDNPOptInGlue, SDNPOutGlue]>;
+def MipsMSub      : SDNode<"MipsISD::MSub", SDT_MipsMAddMSub,
+                           [SDNPOptInGlue, SDNPOutGlue]>;
+def MipsMSubu     : SDNode<"MipsISD::MSubu", SDT_MipsMAddMSub,
+                           [SDNPOptInGlue, SDNPOutGlue]>;
+
+// DivRem(u) nodes
+def MipsDivRem    : SDNode<"MipsISD::DivRem", SDT_MipsDivRem,
+                           [SDNPOutGlue]>;
+def MipsDivRemU   : SDNode<"MipsISD::DivRemU", SDT_MipsDivRem,
+                           [SDNPOutGlue]>;
 
 //===----------------------------------------------------------------------===//
 // Mips Instruction Predicate Definitions.
@@ -63,6 +83,7 @@ def HasBitCount : Predicate<"Subtarget.hasBitCount()">;
 def HasSwap     : Predicate<"Subtarget.hasSwap()">;
 def HasCondMov  : Predicate<"Subtarget.hasCondMov()">;
 def IsMips32    : Predicate<"Subtarget.isMips32()">;
+def IsMips32r2  : Predicate<"Subtarget.isMips32r2()">;
 
 //===----------------------------------------------------------------------===//
 // Mips Operand, Complex Patterns and Transformations Definitions.
@@ -149,10 +170,11 @@ class ArithOverflowI<bits<6> op, string instr_asm, SDNode OpNode,
      !strconcat(instr_asm, "\t$dst, $b, $c"), [], IIAlu>;
 
 // Arithmetic Multiply ADD/SUB
-let rd=0 in
-class MArithR<bits<6> func, string instr_asm> :
-  FR<0x1c, func, (outs CPURegs:$rs), (ins CPURegs:$rt),
-     !strconcat(instr_asm, "\t$rs, $rt"), [], IIImul>;
+let rd = 0, shamt = 0, Defs = [HI, LO], Uses = [HI, LO] in
+class MArithR<bits<6> func, string instr_asm, SDNode op> :
+  FR<0x1c, func, (outs), (ins CPURegs:$rs, CPURegs:$rt),
+     !strconcat(instr_asm, "\t$rs, $rt"),
+     [(op CPURegs:$rs, CPURegs:$rt, LO, HI)], IIImul>;
 
 //  Logical
 class LogicR<bits<6> func, string instr_asm, SDNode OpNode>:
@@ -171,16 +193,21 @@ class LogicNOR<bits<6> op, bits<6> func, string instr_asm>:
      [(set CPURegs:$dst, (not (or CPURegs:$b, CPURegs:$c)))], IIAlu>;
 
 // Shifts
-let rt = 0 in
-class LogicR_shift_imm<bits<6> func, string instr_asm, SDNode OpNode>:
+class LogicR_shift_rotate_imm<bits<6> func, bits<5> _rs, string instr_asm,
+                              SDNode OpNode>:
   FR<0x00, func, (outs CPURegs:$dst), (ins CPURegs:$b, shamt:$c),
      !strconcat(instr_asm, "\t$dst, $b, $c"),
-     [(set CPURegs:$dst, (OpNode CPURegs:$b, immZExt5:$c))], IIAlu>;
+     [(set CPURegs:$dst, (OpNode CPURegs:$b, immZExt5:$c))], IIAlu> {
+  let rs = _rs;
+}
 
-class LogicR_shift_reg<bits<6> func, string instr_asm, SDNode OpNode>:
-  FR<0x00, func, (outs CPURegs:$dst), (ins CPURegs:$b, CPURegs:$c),
+class LogicR_shift_rotate_reg<bits<6> func, bits<5> _shamt, string instr_asm,
+                              SDNode OpNode>:
+  FR<0x00, func, (outs CPURegs:$dst), (ins CPURegs:$c, CPURegs:$b),
      !strconcat(instr_asm, "\t$dst, $b, $c"),
-     [(set CPURegs:$dst, (OpNode CPURegs:$b, CPURegs:$c))], IIAlu>;
+     [(set CPURegs:$dst, (OpNode CPURegs:$b, CPURegs:$c))], IIAlu> {
+  let shamt = _shamt;
+}
 
 // Load Upper Imediate
 class LoadUpper<bits<6> op, string instr_asm>:
@@ -264,9 +291,16 @@ let isCall=1, hasDelaySlot=1,
 }
 
 // Mul, Div
-class MulDiv<bits<6> func, string instr_asm, InstrItinClass itin>:
-  FR<0x00, func, (outs), (ins CPURegs:$a, CPURegs:$b),
-     !strconcat(instr_asm, "\t$a, $b"), [], itin>;
+let Defs = [HI, LO] in {
+  class Mul<bits<6> func, string instr_asm, InstrItinClass itin>:
+    FR<0x00, func, (outs), (ins CPURegs:$a, CPURegs:$b),
+       !strconcat(instr_asm, "\t$a, $b"), [], itin>;
+
+  class Div<SDNode op, bits<6> func, string instr_asm, InstrItinClass itin>:
+            FR<0x00, func, (outs), (ins CPURegs:$a, CPURegs:$b),
+            !strconcat(instr_asm, "\t$$zero, $a, $b"),
+            [(op CPURegs:$a, CPURegs:$b)], itin>;
+}
 
 // Move from Hi/Lo
 class MoveFromLOHI<bits<6> func, string instr_asm>:
@@ -306,8 +340,7 @@ class ByteSwap<bits<6> func, string instr_asm>:
 class CondMov<bits<6> func, string instr_asm, PatLeaf MovCode>:
   FR<0x00, func, (outs CPURegs:$dst), (ins CPURegs:$F, CPURegs:$T,
      CPURegs:$cond), !strconcat(instr_asm, "\t$dst, $T, $cond"),
-     [(set CPURegs:$dst, (MipsCMov CPURegs:$F, CPURegs:$T,
-                          CPURegs:$cond, MovCode))], NoItinerary>;
+     [], NoItinerary>;
 
 //===----------------------------------------------------------------------===//
 // Pseudo instructions
@@ -329,6 +362,11 @@ def MACRO     : MipsPseudo<(outs), (ins), ".set\tmacro",     []>;
 def REORDER   : MipsPseudo<(outs), (ins), ".set\treorder",   []>;
 def NOMACRO   : MipsPseudo<(outs), (ins), ".set\tnomacro",   []>;
 def NOREORDER : MipsPseudo<(outs), (ins), ".set\tnoreorder", []>;
+
+// These macros are inserted to prevent GAS from complaining 
+// when using the AT register.
+def NOAT      : MipsPseudo<(outs), (ins), ".set\tnoat", []>;
+def ATMACRO   : MipsPseudo<(outs), (ins), ".set\tat", []>;
 
 // When handling PIC code the assembler needs .cpload and .cprestore
 // directives. If the real instructions corresponding these directives
@@ -380,12 +418,18 @@ def XOR     : LogicR<0x26, "xor", xor>;
 def NOR     : LogicNOR<0x00, 0x27, "nor">;
 
 /// Shift Instructions
-def SLL     : LogicR_shift_imm<0x00, "sll", shl>;
-def SRL     : LogicR_shift_imm<0x02, "srl", srl>;
-def SRA     : LogicR_shift_imm<0x03, "sra", sra>;
-def SLLV    : LogicR_shift_reg<0x04, "sllv", shl>;
-def SRLV    : LogicR_shift_reg<0x06, "srlv", srl>;
-def SRAV    : LogicR_shift_reg<0x07, "srav", sra>;
+def SLL     : LogicR_shift_rotate_imm<0x00, 0x00, "sll", shl>;
+def SRL     : LogicR_shift_rotate_imm<0x02, 0x00, "srl", srl>;
+def SRA     : LogicR_shift_rotate_imm<0x03, 0x00, "sra", sra>;
+def SLLV    : LogicR_shift_rotate_reg<0x04, 0x00, "sllv", shl>;
+def SRLV    : LogicR_shift_rotate_reg<0x06, 0x00, "srlv", srl>;
+def SRAV    : LogicR_shift_rotate_reg<0x07, 0x00, "srav", sra>;
+
+// Rotate Instructions
+let Predicates = [IsMips32r2] in {
+    def ROTR    : LogicR_shift_rotate_imm<0x02, 0x01, "rotr", rotr>;
+    def ROTRV   : LogicR_shift_rotate_reg<0x06, 0x01, "rotrv", rotr>;
+}
 
 /// Load and Store Instructions
 def LB      : LoadM<0x20, "lb",  sextloadi8>;
@@ -423,12 +467,10 @@ let isReturn=1, isTerminator=1, hasDelaySlot=1,
                 "jr\t$target", [(MipsRet CPURegs:$target)], IIBranch>;
 
 /// Multiply and Divide Instructions.
-let Defs = [HI, LO] in {
-  def MULT    : MulDiv<0x18, "mult", IIImul>;
-  def MULTu   : MulDiv<0x19, "multu", IIImul>;
-  def DIV     : MulDiv<0x1a, "div", IIIdiv>;
-  def DIVu    : MulDiv<0x1b, "divu", IIIdiv>;
-}
+def MULT    : Mul<0x18, "mult", IIImul>;
+def MULTu   : Mul<0x19, "multu", IIImul>;
+def SDIV    : Div<MipsDivRem, 0x1a, "div", IIIdiv>;
+def UDIV    : Div<MipsDivRemU, 0x1b, "divu", IIIdiv>;
 
 let Defs = [HI] in
   def MTHI  : MoveToLOHI<0x11, "mthi">;
@@ -480,11 +522,11 @@ let addr=0 in
 // can be matched. It's similar to Sparc LEA_ADDRi
 def LEA_ADDiu : EffectiveAddress<"addiu\t$dst, ${addr:stackloc}">;
 
-// MADD*/MSUB* are not part of MipsI either.
-//def MADD    : MArithR<0x00, "madd">;
-//def MADDU   : MArithR<0x01, "maddu">;
-//def MSUB    : MArithR<0x04, "msub">;
-//def MSUBU   : MArithR<0x05, "msubu">;
+// MADD*/MSUB*
+def MADD  : MArithR<0, "madd", MipsMAdd>;
+def MADDU : MArithR<1, "maddu", MipsMAddu>;
+def MSUB  : MArithR<4, "msub", MipsMSub>;
+def MSUBU : MArithR<5, "msubu", MipsMSubu>;
 
 // MUL is a assembly macro in the current used ISAs. In recent ISA's
 // it is a real instruction.
@@ -509,7 +551,7 @@ def : Pat<(subc CPURegs:$lhs, CPURegs:$rhs),
           (SUBu CPURegs:$lhs, CPURegs:$rhs)>;
 def : Pat<(addc CPURegs:$lhs, CPURegs:$rhs),
           (ADDu CPURegs:$lhs, CPURegs:$rhs)>;
-def : Pat<(addc  CPURegs:$src, imm:$imm),
+def : Pat<(addc  CPURegs:$src, immSExt16:$imm),
           (ADDiu CPURegs:$src, imm:$imm)>;
 
 // Call
@@ -524,6 +566,8 @@ def : Pat<(MipsJmpLink (i32 texternalsym:$dst)),
 def : Pat<(MipsHi tglobaladdr:$in), (LUi tglobaladdr:$in)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tglobaladdr:$lo)),
           (ADDiu CPURegs:$hi, tglobaladdr:$lo)>;
+def : Pat<(add CPURegs:$hi, (MipsLo tblockaddress:$lo)),
+          (ADDiu CPURegs:$hi, tblockaddress:$lo)>;
 
 def : Pat<(MipsHi tjumptable:$in), (LUi tjumptable:$in)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tjumptable:$lo)),
@@ -596,6 +640,12 @@ def : Pat<(select (setne CPURegs:$lhs, CPURegs:$rhs), CPURegs:$T, CPURegs:$F),
 
 def : Pat<(select CPURegs:$cond, CPURegs:$T, CPURegs:$F),
           (MOVN CPURegs:$F, CPURegs:$T, CPURegs:$cond)>;
+
+// select patterns with got access
+def : Pat<(select (setne CPURegs:$lhs, CPURegs:$rhs),
+                  (i32 tglobaladdr:$T), CPURegs:$F),
+          (MOVN CPURegs:$F, (ADDiu GP, tglobaladdr:$T),
+                (XOR CPURegs:$lhs, CPURegs:$rhs))>;
 
 // setcc patterns
 def : Pat<(seteq CPURegs:$lhs, CPURegs:$rhs),

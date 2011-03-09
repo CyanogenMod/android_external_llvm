@@ -259,7 +259,7 @@ def int_siglongjmp : Intrinsic<[], [llvm_ptr_ty, llvm_i32_ty]>;
 
 // Internal interface for object size checking
 def int_objectsize : Intrinsic<[llvm_anyint_ty], [llvm_ptr_ty, llvm_i1_ty],
-                               [IntrReadArgMem]>,
+                               [IntrNoMem]>,
                                GCCBuiltin<"__builtin_object_size">;
 
 //===-------------------- Bit Manipulation Intrinsics ---------------------===//
@@ -436,7 +436,7 @@ def int_lifetime_end    : Intrinsic<[],
                                     [IntrReadWriteArgMem, NoCapture<1>]>;
 def int_invariant_start : Intrinsic<[llvm_descriptor_ty],
                                     [llvm_i64_ty, llvm_ptr_ty],
-                                    [IntrReadArgMem, NoCapture<1>]>;
+                                    [IntrReadWriteArgMem, NoCapture<1>]>;
 def int_invariant_end   : Intrinsic<[],
                                     [llvm_descriptor_ty, llvm_i64_ty,
                                      llvm_ptr_ty],
@@ -490,3 +490,4 @@ include "llvm/IntrinsicsARM.td"
 include "llvm/IntrinsicsCellSPU.td"
 include "llvm/IntrinsicsAlpha.td"
 include "llvm/IntrinsicsXCore.td"
+include "llvm/IntrinsicsPTX.td"

@@ -1,5 +1,5 @@
 //===- MBlazeRegisterInfo.cpp - MBlaze Register Information -== -*- C++ -*-===//
-//DJ
+//
 //                     The LLVM Compiler Infrastructure
 //
 // This file is distributed under the University of Illinois Open Source
@@ -12,7 +12,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#define DEBUG_TYPE "mblaze-reg-info"
+#define DEBUG_TYPE "mblaze-frame-info"
 
 #include "MBlaze.h"
 #include "MBlazeSubtarget.h"
@@ -26,7 +26,7 @@
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineLocation.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetInstrInfo.h"
@@ -48,38 +48,62 @@ MBlazeRegisterInfo(const MBlazeSubtarget &ST, const TargetInstrInfo &tii)
 /// MBlaze::R0, return the number that it corresponds to (e.g. 0).
 unsigned MBlazeRegisterInfo::getRegisterNumbering(unsigned RegEnum) {
   switch (RegEnum) {
-    case MBlaze::R0  : return 0;
-    case MBlaze::R1  : return 1;
-    case MBlaze::R2  : return 2;
-    case MBlaze::R3  : return 3;
-    case MBlaze::R4  : return 4;
-    case MBlaze::R5  : return 5;
-    case MBlaze::R6  : return 6;
-    case MBlaze::R7  : return 7;
-    case MBlaze::R8  : return 8;
-    case MBlaze::R9  : return 9;
-    case MBlaze::R10 : return 10;
-    case MBlaze::R11 : return 11;
-    case MBlaze::R12 : return 12;
-    case MBlaze::R13 : return 13;
-    case MBlaze::R14 : return 14;
-    case MBlaze::R15 : return 15;
-    case MBlaze::R16 : return 16;
-    case MBlaze::R17 : return 17;
-    case MBlaze::R18 : return 18;
-    case MBlaze::R19 : return 19;
-    case MBlaze::R20 : return 20;
-    case MBlaze::R21 : return 21;
-    case MBlaze::R22 : return 22;
-    case MBlaze::R23 : return 23;
-    case MBlaze::R24 : return 24;
-    case MBlaze::R25 : return 25;
-    case MBlaze::R26 : return 26;
-    case MBlaze::R27 : return 27;
-    case MBlaze::R28 : return 28;
-    case MBlaze::R29 : return 29;
-    case MBlaze::R30 : return 30;
-    case MBlaze::R31 : return 31;
+    case MBlaze::R0     : return 0;
+    case MBlaze::R1     : return 1;
+    case MBlaze::R2     : return 2;
+    case MBlaze::R3     : return 3;
+    case MBlaze::R4     : return 4;
+    case MBlaze::R5     : return 5;
+    case MBlaze::R6     : return 6;
+    case MBlaze::R7     : return 7;
+    case MBlaze::R8     : return 8;
+    case MBlaze::R9     : return 9;
+    case MBlaze::R10    : return 10;
+    case MBlaze::R11    : return 11;
+    case MBlaze::R12    : return 12;
+    case MBlaze::R13    : return 13;
+    case MBlaze::R14    : return 14;
+    case MBlaze::R15    : return 15;
+    case MBlaze::R16    : return 16;
+    case MBlaze::R17    : return 17;
+    case MBlaze::R18    : return 18;
+    case MBlaze::R19    : return 19;
+    case MBlaze::R20    : return 20;
+    case MBlaze::R21    : return 21;
+    case MBlaze::R22    : return 22;
+    case MBlaze::R23    : return 23;
+    case MBlaze::R24    : return 24;
+    case MBlaze::R25    : return 25;
+    case MBlaze::R26    : return 26;
+    case MBlaze::R27    : return 27;
+    case MBlaze::R28    : return 28;
+    case MBlaze::R29    : return 29;
+    case MBlaze::R30    : return 30;
+    case MBlaze::R31    : return 31;
+    case MBlaze::RPC    : return 0x0000;
+    case MBlaze::RMSR   : return 0x0001;
+    case MBlaze::REAR   : return 0x0003;
+    case MBlaze::RESR   : return 0x0005;
+    case MBlaze::RFSR   : return 0x0007;
+    case MBlaze::RBTR   : return 0x000B;
+    case MBlaze::REDR   : return 0x000D;
+    case MBlaze::RPID   : return 0x1000;
+    case MBlaze::RZPR   : return 0x1001;
+    case MBlaze::RTLBX  : return 0x1002;
+    case MBlaze::RTLBLO : return 0x1003;
+    case MBlaze::RTLBHI : return 0x1004;
+    case MBlaze::RPVR0  : return 0x2000;
+    case MBlaze::RPVR1  : return 0x2001;
+    case MBlaze::RPVR2  : return 0x2002;
+    case MBlaze::RPVR3  : return 0x2003;
+    case MBlaze::RPVR4  : return 0x2004;
+    case MBlaze::RPVR5  : return 0x2005;
+    case MBlaze::RPVR6  : return 0x2006;
+    case MBlaze::RPVR7  : return 0x2007;
+    case MBlaze::RPVR8  : return 0x2008;
+    case MBlaze::RPVR9  : return 0x2009;
+    case MBlaze::RPVR10 : return 0x200A;
+    case MBlaze::RPVR11 : return 0x200B;
     default: llvm_unreachable("Unknown register number!");
   }
   return 0; // Not reached
@@ -126,6 +150,37 @@ unsigned MBlazeRegisterInfo::getRegisterFromNumbering(unsigned Reg) {
   return 0; // Not reached
 }
 
+unsigned MBlazeRegisterInfo::getSpecialRegisterFromNumbering(unsigned Reg) {
+  switch (Reg) {
+    case 0x0000 : return MBlaze::RPC;
+    case 0x0001 : return MBlaze::RMSR;
+    case 0x0003 : return MBlaze::REAR;
+    case 0x0005 : return MBlaze::RESR;
+    case 0x0007 : return MBlaze::RFSR;
+    case 0x000B : return MBlaze::RBTR;
+    case 0x000D : return MBlaze::REDR;
+    case 0x1000 : return MBlaze::RPID;
+    case 0x1001 : return MBlaze::RZPR;
+    case 0x1002 : return MBlaze::RTLBX;
+    case 0x1003 : return MBlaze::RTLBLO;
+    case 0x1004 : return MBlaze::RTLBHI;
+    case 0x2000 : return MBlaze::RPVR0;
+    case 0x2001 : return MBlaze::RPVR1;
+    case 0x2002 : return MBlaze::RPVR2;
+    case 0x2003 : return MBlaze::RPVR3;
+    case 0x2004 : return MBlaze::RPVR4;
+    case 0x2005 : return MBlaze::RPVR5;
+    case 0x2006 : return MBlaze::RPVR6;
+    case 0x2007 : return MBlaze::RPVR7;
+    case 0x2008 : return MBlaze::RPVR8;
+    case 0x2009 : return MBlaze::RPVR9;
+    case 0x200A : return MBlaze::RPVR10;
+    case 0x200B : return MBlaze::RPVR11;
+    default: llvm_unreachable("Unknown register number!");
+  }
+  return 0; // Not reached
+}
+
 unsigned MBlazeRegisterInfo::getPICCallReg() {
   return MBlaze::R20;
 }
@@ -164,19 +219,40 @@ getReservedRegs(const MachineFunction &MF) const {
   return Reserved;
 }
 
-// hasFP - Return true if the specified function should have a dedicated frame
-// pointer register.  This is true if the function has variable sized allocas or
-// if frame pointer elimination is disabled.
-bool MBlazeRegisterInfo::hasFP(const MachineFunction &MF) const {
-  const MachineFrameInfo *MFI = MF.getFrameInfo();
-  return DisableFramePointerElim(MF) || MFI->hasVarSizedObjects();
-}
-
-// This function eliminate ADJCALLSTACKDOWN,
-// ADJCALLSTACKUP pseudo instructions
+// This function eliminate ADJCALLSTACKDOWN/ADJCALLSTACKUP pseudo instructions
 void MBlazeRegisterInfo::
 eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
                               MachineBasicBlock::iterator I) const {
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
+
+  if (!TFI->hasReservedCallFrame(MF)) {
+    // If we have a frame pointer, turn the adjcallstackup instruction into a
+    // 'addi r1, r1, -<amt>' and the adjcallstackdown instruction into
+    // 'addi r1, r1, <amt>'
+    MachineInstr *Old = I;
+    int Amount = Old->getOperand(0).getImm() + 4;
+    if (Amount != 0) {
+      // We need to keep the stack aligned properly.  To do this, we round the
+      // amount of space needed for the outgoing arguments up to the next
+      // alignment boundary.
+      unsigned Align = TFI->getStackAlignment();
+      Amount = (Amount+Align-1)/Align*Align;
+
+      MachineInstr *New;
+      if (Old->getOpcode() == MBlaze::ADJCALLSTACKDOWN) {
+        New = BuildMI(MF,Old->getDebugLoc(),TII.get(MBlaze::ADDIK),MBlaze::R1)
+                .addReg(MBlaze::R1).addImm(-Amount);
+      } else {
+        assert(Old->getOpcode() == MBlaze::ADJCALLSTACKUP);
+        New = BuildMI(MF,Old->getDebugLoc(),TII.get(MBlaze::ADDIK),MBlaze::R1)
+                .addReg(MBlaze::R1).addImm(Amount);
+      }
+
+      // Replace the pseudo instruction with a new instruction...
+      MBB.insert(I, New);
+    }
+  }
+
   // Simply discard ADJCALLSTACKDOWN, ADJCALLSTACKUP instructions.
   MBB.erase(I);
 }
@@ -189,6 +265,7 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                     RegScavenger *RS) const {
   MachineInstr &MI = *II;
   MachineFunction &MF = *MI.getParent()->getParent();
+  MachineFrameInfo *MFI = MF.getFrameInfo();
 
   unsigned i = 0;
   while (!MI.getOperand(i).isFI()) {
@@ -199,23 +276,28 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
 
   unsigned oi = i == 2 ? 1 : 2;
 
-  DEBUG(errs() << "\nFunction : " << MF.getFunction()->getName() << "\n";
-        errs() << "<--------->\n" << MI);
+  DEBUG(dbgs() << "\nFunction : " << MF.getFunction()->getName() << "\n";
+        dbgs() << "<--------->\n" << MI);
 
   int FrameIndex = MI.getOperand(i).getIndex();
-  int stackSize  = MF.getFrameInfo()->getStackSize();
-  int spOffset   = MF.getFrameInfo()->getObjectOffset(FrameIndex);
+  int stackSize  = MFI->getStackSize();
+  int spOffset   = MFI->getObjectOffset(FrameIndex);
 
-  DEBUG(errs() << "FrameIndex : " << FrameIndex << "\n"
+  DEBUG(MBlazeFunctionInfo *MBlazeFI = MF.getInfo<MBlazeFunctionInfo>();
+        dbgs() << "FrameIndex : " << FrameIndex << "\n"
                << "spOffset   : " << spOffset << "\n"
-               << "stackSize  : " << stackSize << "\n");
+               << "stackSize  : " << stackSize << "\n"
+               << "isFixed    : " << MFI->isFixedObjectIndex(FrameIndex) << "\n"
+               << "isLiveIn   : " << MBlazeFI->isLiveIn(FrameIndex) << "\n"
+               << "isSpill    : " << MFI->isSpillSlotObjectIndex(FrameIndex)
+               << "\n" );
 
   // as explained on LowerFormalArguments, detect negative offsets
   // and adjust SPOffsets considering the final stack size.
-  int Offset = (spOffset < 0) ? (stackSize - spOffset) : (spOffset + 4);
-  Offset    += MI.getOperand(oi).getImm();
+  int Offset = (spOffset < 0) ? (stackSize - spOffset) : spOffset;
+  Offset += MI.getOperand(oi).getImm();
 
-  DEBUG(errs() << "Offset     : " << Offset << "\n" << "<--------->\n");
+  DEBUG(dbgs() << "Offset     : " << Offset << "\n" << "<--------->\n");
 
   MI.getOperand(oi).ChangeToImmediate(Offset);
   MI.getOperand(i).ChangeToRegister(getFrameRegister(MF), false);
@@ -235,7 +317,9 @@ unsigned MBlazeRegisterInfo::getRARegister() const {
 }
 
 unsigned MBlazeRegisterInfo::getFrameRegister(const MachineFunction &MF) const {
-  return hasFP(MF) ? MBlaze::R19 : MBlaze::R1;
+  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
+
+  return TFI->hasFP(MF) ? MBlaze::R19 : MBlaze::R1;
 }
 
 unsigned MBlazeRegisterInfo::getEHExceptionRegister() const {
@@ -248,9 +332,8 @@ unsigned MBlazeRegisterInfo::getEHHandlerRegister() const {
   return 0;
 }
 
-int MBlazeRegisterInfo::getDwarfRegNum(unsigned RegNum, bool isEH) const {
-  llvm_unreachable("What is the dwarf register number");
-  return -1;
+int MBlazeRegisterInfo::getDwarfRegNum(unsigned RegNo, bool isEH) const {
+  return MBlazeGenRegisterInfo::getDwarfRegNumFull(RegNo,0);
 }
 
 #include "MBlazeGenRegisterInfo.inc"

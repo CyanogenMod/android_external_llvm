@@ -290,7 +290,7 @@ static int readPrefixes(struct InternalInstruction* insn) {
   BOOL isPrefix = TRUE;
   BOOL prefixGroups[4] = { FALSE };
   uint64_t prefixLocation;
-  uint8_t byte;
+  uint8_t byte = 0;
   
   BOOL hasAdSize = FALSE;
   BOOL hasOpSize = FALSE;
@@ -388,6 +388,7 @@ static int readPrefixes(struct InternalInstruction* insn) {
     }
   } else {
     unconsumeByte(insn);
+    insn->necessaryPrefixLocation = insn->readerCursor - 1;
   }
   
   if (insn->mode == MODE_16BIT) {
@@ -511,7 +512,8 @@ static int getIDWithAttrMask(uint16_t* instructionID,
                                     insn->opcode);
   
   if (hasModRMExtension) {
-    readModRM(insn);
+    if (readModRM(insn))
+      return -1;
     
     *instructionID = decode(insn->opcodeType,
                             instructionClass,
@@ -747,7 +749,7 @@ static int readSIB(struct InternalInstruction* insn) {
     insn->sibIndex = SIB_INDEX_NONE;
     break;
   default:
-    insn->sibIndex = (EABase)(sibIndexBase + index);
+    insn->sibIndex = (SIBIndex)(sibIndexBase + index);
     if (insn->sibIndex == SIB_INDEX_sib ||
         insn->sibIndex == SIB_INDEX_sib64)
       insn->sibIndex = SIB_INDEX_NONE;
@@ -794,7 +796,7 @@ static int readSIB(struct InternalInstruction* insn) {
     }
     break;
   default:
-    insn->sibBase = (EABase)(sibBaseBase + base);
+    insn->sibBase = (SIBBase)(sibBaseBase + base);
     break;
   }
   
@@ -860,7 +862,8 @@ static int readModRM(struct InternalInstruction* insn) {
   if (insn->consumedModRM)
     return 0;
   
-  consumeByte(insn, &insn->modRM);
+  if (consumeByte(insn, &insn->modRM))
+    return -1;
   insn->consumedModRM = TRUE;
   
   mod     = modFromModRM(insn->modRM);

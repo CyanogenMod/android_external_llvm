@@ -35,11 +35,10 @@ public:
                         DebugLoc dl,
                         unsigned DestReg, unsigned SubIdx, int Val,
                         ARMCC::CondCodes Pred = ARMCC::AL,
-                        unsigned PredReg = 0) const;
+                        unsigned PredReg = 0,
+                        unsigned MIFlags = MachineInstr::NoFlags) const;
 
   /// Code Generation virtual methods...
-  bool hasReservedCallFrame(const MachineFunction &MF) const;
-
   void eliminateCallFramePseudoInstr(MachineFunction &MF,
                                      MachineBasicBlock &MBB,
                                      MachineBasicBlock::iterator I) const;

@@ -160,7 +160,7 @@ Instruction *InstCombiner::visitExtractElementInst(ExtractElementInst &EI) {
     if (EI.getOperand(0)->hasOneUse() && VectorWidth != 1) {
       APInt UndefElts(VectorWidth, 0);
       APInt DemandedMask(VectorWidth, 0);
-      DemandedMask.set(IndexVal);
+      DemandedMask.setBit(IndexVal);
       if (Value *V = SimplifyDemandedVectorElts(EI.getOperand(0),
                                                 DemandedMask, UndefElts)) {
         EI.setOperand(0, V);
@@ -426,8 +426,11 @@ Instruction *InstCombiner::visitInsertElementInst(InsertElementInst &IE) {
   unsigned VWidth = cast<VectorType>(VecOp->getType())->getNumElements();
   APInt UndefElts(VWidth, 0);
   APInt AllOnesEltMask(APInt::getAllOnesValue(VWidth));
-  if (SimplifyDemandedVectorElts(&IE, AllOnesEltMask, UndefElts))
+  if (Value *V = SimplifyDemandedVectorElts(&IE, AllOnesEltMask, UndefElts)) {
+    if (V != &IE)
+      return ReplaceInstUsesWith(IE, V);
     return &IE;
+  }
 
   return 0;
 }
@@ -451,7 +454,9 @@ Instruction *InstCombiner::visitShuffleVectorInst(ShuffleVectorInst &SVI) {
 
   APInt UndefElts(VWidth, 0);
   APInt AllOnesEltMask(APInt::getAllOnesValue(VWidth));
-  if (SimplifyDemandedVectorElts(&SVI, AllOnesEltMask, UndefElts)) {
+  if (Value *V = SimplifyDemandedVectorElts(&SVI, AllOnesEltMask, UndefElts)) {
+    if (V != &SVI)
+      return ReplaceInstUsesWith(SVI, V);
     LHS = SVI.getOperand(0);
     RHS = SVI.getOperand(1);
     MadeChange = true;

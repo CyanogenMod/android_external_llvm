@@ -16,20 +16,20 @@
 
 #include "PTXISelLowering.h"
 #include "PTXInstrInfo.h"
-#include "PTXFrameInfo.h"
+#include "PTXFrameLowering.h"
 #include "PTXSubtarget.h"
 #include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetFrameInfo.h"
+#include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
 
 namespace llvm {
 class PTXTargetMachine : public LLVMTargetMachine {
   private:
-    const TargetData DataLayout;
-    PTXFrameInfo FrameInfo;
-    PTXInstrInfo InstrInfo;
+    const TargetData  DataLayout;
+    PTXSubtarget      Subtarget; // has to be initialized before FrameLowering
+    PTXFrameLowering  FrameLowering;
+    PTXInstrInfo      InstrInfo;
     PTXTargetLowering TLInfo;
-    PTXSubtarget Subtarget;
 
   public:
     PTXTargetMachine(const Target &T, const std::string &TT,
@@ -37,7 +37,9 @@ class PTXTargetMachine : public LLVMTargetMachine {
 
     virtual const TargetData *getTargetData() const { return &DataLayout; }
 
-    virtual const TargetFrameInfo *getFrameInfo() const { return &FrameInfo; }
+    virtual const TargetFrameLowering *getFrameLowering() const {
+      return &FrameLowering;
+    }
 
     virtual const PTXInstrInfo *getInstrInfo() const { return &InstrInfo; }
     virtual const TargetRegisterInfo *getRegisterInfo() const {
@@ -49,6 +51,8 @@ class PTXTargetMachine : public LLVMTargetMachine {
     virtual const PTXSubtarget *getSubtargetImpl() const { return &Subtarget; }
 
     virtual bool addInstSelector(PassManagerBase &PM,
+                                 CodeGenOpt::Level OptLevel);
+    virtual bool addPostRegAlloc(PassManagerBase &PM,
                                  CodeGenOpt::Level OptLevel);
 }; // class PTXTargetMachine
 } // namespace llvm

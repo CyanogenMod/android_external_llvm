@@ -319,7 +319,7 @@ AC_SUBST(LINKALL,$llvm_cv_link_all_option)
 AC_SUBST(NOLINKALL,$llvm_cv_no_link_all_option)
 
 dnl Set the "LLVM_ON_*" variables based on llvm_cv_platform_type
-dnl This is used by lib/System to determine the basic kind of implementation
+dnl This is used by lib/Support to determine the basic kind of implementation
 dnl to use.
 case $llvm_cv_platform_type in
   Unix)
@@ -530,6 +530,18 @@ case "$enableval" in
 esac
 AC_DEFINE_UNQUOTED([ENABLE_THREADS],$ENABLE_THREADS,[Define if threads enabled])
 
+dnl Allow disablement of pthread.h
+AC_ARG_ENABLE(pthreads,
+              AS_HELP_STRING([--enable-pthreads],
+                             [Use pthreads if available (default is YES)]),,
+                             enableval=default)
+case "$enableval" in
+  yes) AC_SUBST(ENABLE_PTHREADS,[1]) ;;
+  no)  AC_SUBST(ENABLE_PTHREADS,[0]) ;;
+  default) AC_SUBST(ENABLE_PTHREADS,[1]) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-pthreads. Use "yes" or "no"]) ;;
+esac
+
 dnl Allow building without position independent code
 AC_ARG_ENABLE(pic,
   AS_HELP_STRING([--enable-pic],
@@ -554,6 +566,18 @@ case "$enableval" in
   no)  AC_SUBST(ENABLE_SHARED,[0]) ;;
   default) AC_SUBST(ENABLE_SHARED,[0]) ;;
   *) AC_MSG_ERROR([Invalid setting for --enable-shared. Use "yes" or "no"]) ;;
+esac
+
+dnl Allow libstdc++ is embedded in LLVM.dll.
+AC_ARG_ENABLE(embed-stdcxx,
+  AS_HELP_STRING([--enable-embed-stdcxx],
+                 [Build a shared library with embedded libstdc++ for Win32 DLL (default is YES)]),,
+                 enableval=default)
+case "$enableval" in
+  yes) AC_SUBST(ENABLE_EMBED_STDCXX,[1]) ;;
+  no)  AC_SUBST(ENABLE_EMBED_STDCXX,[0]) ;;
+  default) AC_SUBST(ENABLE_EMBED_STDCXX,[1]) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-embed-stdcxx. Use "yes" or "no"]) ;;
 esac
 
 dnl Enable embedding timestamp information into build.
@@ -1053,7 +1077,7 @@ AC_PATH_PROG(BZIP2, [bzip2])
 AC_PATH_PROG(CAT, [cat])
 AC_PATH_PROG(DOXYGEN, [doxygen])
 AC_PATH_PROG(GROFF, [groff])
-AC_PATH_PROG(GZIP, [gzip])
+AC_PATH_PROG(GZIPBIN, [gzip])
 AC_PATH_PROG(POD2HTML, [pod2html])
 AC_PATH_PROG(POD2MAN, [pod2man])
 AC_PATH_PROG(PDFROFF, [pdfroff])
@@ -1156,10 +1180,10 @@ then
   AC_MSG_ERROR([gcc|icc required but not found])
 fi
 
-dnl Ensure that compilation tools are GCC; we use GCC specific extensions
+dnl Ensure that compilation tools are compatible with GCC extensions
 if test "$GXX" != "yes" && test "$IXX" != "yes"
 then
-  AC_MSG_ERROR([g++|icc required but not found])
+  AC_MSG_ERROR([g++|clang++|icc required but not found])
 fi
 
 dnl Verify that GCC is version 3.0 or higher
@@ -1216,7 +1240,7 @@ AC_SEARCH_LIBS(mallinfo,malloc,AC_DEFINE([HAVE_MALLINFO],[1],
 
 dnl pthread locking functions are optional - but llvm will not be thread-safe
 dnl without locks.
-if test "$ENABLE_THREADS" -eq 1 ; then
+if test "$ENABLE_THREADS" -eq 1 && test "$ENABLE_PTHREADS" -eq 1 ; then
   AC_CHECK_LIB(pthread, pthread_mutex_init)
   AC_SEARCH_LIBS(pthread_mutex_lock,pthread,
                  AC_DEFINE([HAVE_PTHREAD_MUTEX_LOCK],[1],
@@ -1304,11 +1328,11 @@ AC_HEADER_TIME
 AC_CHECK_HEADERS([dlfcn.h execinfo.h fcntl.h inttypes.h limits.h link.h])
 AC_CHECK_HEADERS([malloc.h setjmp.h signal.h stdint.h termios.h unistd.h])
 AC_CHECK_HEADERS([utime.h windows.h])
-AC_CHECK_HEADERS([sys/mman.h sys/param.h sys/resource.h sys/time.h])
+AC_CHECK_HEADERS([sys/mman.h sys/param.h sys/resource.h sys/time.h sys/uio.h])
 AC_CHECK_HEADERS([sys/types.h sys/ioctl.h malloc/malloc.h mach/mach.h])
 AC_CHECK_HEADERS([valgrind/valgrind.h])
 AC_CHECK_HEADERS([fenv.h])
-if test "$ENABLE_THREADS" -eq 1 ; then
+if test "$ENABLE_THREADS" -eq 1 && test "$ENABLE_PTHREADS" -eq 1 ; then
   AC_CHECK_HEADERS(pthread.h,
                    AC_SUBST(HAVE_PTHREAD, 1),
                    AC_SUBST(HAVE_PTHREAD, 0))
@@ -1321,8 +1345,24 @@ if test "$llvm_cv_enable_libffi" = "yes" ; then
   AC_CHECK_HEADERS([ffi.h ffi/ffi.h])
 fi
 
-dnl Try to find Darwin specific crash reporting library.
+dnl Try to find Darwin specific crash reporting libraries.
 AC_CHECK_HEADERS([CrashReporterClient.h])
+
+dnl Try to find Darwin specific crash reporting global.
+AC_MSG_CHECKING([__crashreporter_info__])
+AC_LINK_IFELSE(
+  AC_LANG_SOURCE(
+    [[extern const char *__crashreporter_info__;
+      int main() {
+        __crashreporter_info__ = "test";
+        return 0;
+      }
+    ]]),
+  AC_MSG_RESULT(yes)
+  AC_DEFINE(HAVE_CRASHREPORTER_INFO, 1, Can use __crashreporter_info__),
+  AC_MSG_RESULT(no)
+  AC_DEFINE(HAVE_CRASHREPORTER_INFO, 0,
+            Define if __crashreporter_info__ exists.))
 
 dnl===-----------------------------------------------------------------------===
 dnl===
@@ -1351,11 +1391,36 @@ AC_CHECK_FUNCS([powf fmodf strtof round ])
 AC_CHECK_FUNCS([getpagesize getrusage getrlimit setrlimit gettimeofday ])
 AC_CHECK_FUNCS([isatty mkdtemp mkstemp ])
 AC_CHECK_FUNCS([mktemp posix_spawn realpath sbrk setrlimit strdup ])
-AC_CHECK_FUNCS([strerror strerror_r strerror_s setenv ])
+AC_CHECK_FUNCS([strerror strerror_r setenv ])
 AC_CHECK_FUNCS([strtoll strtoq sysconf malloc_zone_statistics ])
-AC_CHECK_FUNCS([setjmp longjmp sigsetjmp siglongjmp])
+AC_CHECK_FUNCS([setjmp longjmp sigsetjmp siglongjmp writev])
 AC_C_PRINTF_A
 AC_FUNC_RAND48
+
+dnl Check the declaration "Secure API" on Windows environments.
+AC_CHECK_DECLS([strerror_s])
+
+dnl Check symbols in libgcc.a for JIT on Mingw.
+if test "$llvm_cv_os_type" = "MingW" ; then
+  AC_CHECK_LIB(gcc,_alloca,AC_DEFINE([HAVE__ALLOCA],[1],[Have host's _alloca]))
+  AC_CHECK_LIB(gcc,__alloca,AC_DEFINE([HAVE___ALLOCA],[1],[Have host's __alloca]))
+  AC_CHECK_LIB(gcc,__chkstk,AC_DEFINE([HAVE___CHKSTK],[1],[Have host's __chkstk]))
+  AC_CHECK_LIB(gcc,___chkstk,AC_DEFINE([HAVE____CHKSTK],[1],[Have host's ___chkstk]))
+
+  AC_CHECK_LIB(gcc,__ashldi3,AC_DEFINE([HAVE___ASHLDI3],[1],[Have host's __ashldi3]))
+  AC_CHECK_LIB(gcc,__ashrdi3,AC_DEFINE([HAVE___ASHRDI3],[1],[Have host's __ashrdi3]))
+  AC_CHECK_LIB(gcc,__divdi3,AC_DEFINE([HAVE___DIVDI3],[1],[Have host's __divdi3]))
+  AC_CHECK_LIB(gcc,__fixdfdi,AC_DEFINE([HAVE___FIXDFDI],[1],[Have host's __fixdfdi]))
+  AC_CHECK_LIB(gcc,__fixsfdi,AC_DEFINE([HAVE___FIXSFDI],[1],[Have host's __fixsfdi]))
+  AC_CHECK_LIB(gcc,__floatdidf,AC_DEFINE([HAVE___FLOATDIDF],[1],[Have host's __floatdidf]))
+  AC_CHECK_LIB(gcc,__lshrdi3,AC_DEFINE([HAVE___LSHRDI3],[1],[Have host's __lshrdi3]))
+  AC_CHECK_LIB(gcc,__moddi3,AC_DEFINE([HAVE___MODDI3],[1],[Have host's __moddi3]))
+  AC_CHECK_LIB(gcc,__udivdi3,AC_DEFINE([HAVE___UDIVDI3],[1],[Have host's __udivdi3]))
+  AC_CHECK_LIB(gcc,__umoddi3,AC_DEFINE([HAVE___UMODDI3],[1],[Have host's __umoddi3]))
+
+  AC_CHECK_LIB(gcc,__main,AC_DEFINE([HAVE___MAIN],[1],[Have host's __main]))
+  AC_CHECK_LIB(gcc,__cmpdi2,AC_DEFINE([HAVE___CMPDI2],[1],[Have host's __cmpdi2]))
+fi
 
 dnl Check for variations in the Standard C++ library and STL. These macros are
 dnl provided by LLVM in the autoconf/m4 directory.
@@ -1425,10 +1490,9 @@ AC_CHECK_FUNCS([__dso_handle])
 dnl Check wether llvm-gcc is based on dragonegg
 AC_CACHE_CHECK([whether llvm-gcc is dragonegg],[llvm_cv_llvmgcc_dragonegg],
 [llvm_cv_llvmgcc_dragonegg="no"
-if test -x "$LLVMGCC" ; then
+if test -n "$LLVMGCC" ; then
   cp /dev/null conftest.c
-  "$LLVMGCC" -fplugin-arg-dragonegg-emit-ir -S -o - conftest.c | \
-  grep 'target datalayout =' > /dev/null 2>&1
+  $LLVMGCC -fplugin-arg-dragonegg-emit-ir -S -o - conftest.c > /dev/null 2>&1
   if test $? -eq 0 ; then
     llvm_cv_llvmgcc_dragonegg="yes"
   fi
@@ -1439,10 +1503,10 @@ dnl Set the flags needed to emit LLVM IR and to disable optimizations
 dnl in llvmgcc
 if test "$llvm_cv_llvmgcc_dragonegg" = "yes" ; then
   LLVMCC_EMITIR_FLAG="-fplugin-arg-dragonegg-emit-ir"
-  LLVMGCC_DISABLEOPT_FLAGS="-fplugin-arg-dragonegg-disable-llvm-optzns"
+  LLVMCC_DISABLEOPT_FLAGS="-fplugin-arg-dragonegg-disable-llvm-optzns"
 else
   LLVMCC_EMITIR_FLAG="-emit-llvm"
-  LLVMGCC_DISABLEOPT_FLAGS="-mllvm -disable-llvm-optzns"
+  LLVMCC_DISABLEOPT_FLAGS="-mllvm -disable-llvm-optzns"
 fi
 
 AC_SUBST(LLVMCC_EMITIR_FLAG)
@@ -1450,9 +1514,9 @@ AC_SUBST(LLVMCC_EMITIR_FLAG)
 dnl See if the llvm-gcc executable can compile to LLVM assembly
 AC_CACHE_CHECK([whether llvm-gcc is sane],[llvm_cv_llvmgcc_sanity],
 [llvm_cv_llvmgcc_sanity="no"
-if test -x "$LLVMGCC" ; then
+if test -n "$LLVMGCC" ; then
   cp /dev/null conftest.c
-  "$LLVMGCC" "$LLVMCC_EMITIR_FLAG" -S -o - conftest.c | \
+  $LLVMGCC "$LLVMCC_EMITIR_FLAG" -S -o - conftest.c | \
       grep 'target datalayout =' > /dev/null 2>&1
   if test $? -eq 0 ; then
     llvm_cv_llvmgcc_sanity="yes"
@@ -1464,16 +1528,16 @@ dnl Since we have a sane llvm-gcc, identify it and its sub-tools
 dnl Furthermore, add some information about the tools
 if test "$llvm_cv_llvmgcc_sanity" = "yes" ; then
   AC_MSG_CHECKING([llvm-gcc component support])
-  llvmcc1path=`"$LLVMGCC" --print-prog-name=cc1`
+  llvmcc1path=`$LLVMGCC --print-prog-name=cc1`
   AC_SUBST(LLVMCC1,$llvmcc1path)
-  llvmcc1pluspath=`"$LLVMGCC" --print-prog-name=cc1plus`
+  llvmcc1pluspath=`$LLVMGCC --print-prog-name=cc1plus`
   AC_SUBST(LLVMCC1PLUS,$llvmcc1pluspath)
   llvmgccdir=`echo "$llvmcc1path" | sed 's,/libexec/.*,,'`
   AC_SUBST(LLVMGCCDIR,$llvmgccdir)
-  llvmgcclangs=[`"$LLVMGCC" -v --help 2>&1 | grep '^Configured with:' | sed 's/^.*--enable-languages=\([^ ]*\).*/\1/'`]
+  llvmgcclangs=[`$LLVMGCC -v --help 2>&1 | grep '^Configured with:' | sed 's/^.*--enable-languages=\([^ ]*\).*/\1/'`]
   AC_SUBST(LLVMGCC_LANGS,$llvmgcclangs)
   AC_SUBST(LLVMGCC_DRAGONEGG,$llvm_cv_llvmgcc_dragonegg)
-  AC_SUBST(LLVMGCC_DISABLEOPT_FLAGS)
+  AC_SUBST(LLVMCC_DISABLEOPT_FLAGS)
   AC_MSG_RESULT([ok])
 fi
 
@@ -1626,7 +1690,7 @@ AC_CONFIG_FILES([include/llvm/Config/Targets.def])
 AC_CONFIG_FILES([include/llvm/Config/AsmPrinters.def])
 AC_CONFIG_FILES([include/llvm/Config/AsmParsers.def])
 AC_CONFIG_FILES([include/llvm/Config/Disassemblers.def])
-AC_CONFIG_HEADERS([include/llvm/System/DataTypes.h])
+AC_CONFIG_HEADERS([include/llvm/Support/DataTypes.h])
 
 dnl Configure the makefile's configuration data
 AC_CONFIG_FILES([Makefile.config])

@@ -35,6 +35,20 @@ def SDTBinaryArithWithFlags : SDTypeProfile<2, 2,
                                             [SDTCisSameAs<0, 2>,
                                              SDTCisSameAs<0, 3>,
                                              SDTCisInt<0>, SDTCisVT<1, i32>]>;
+
+// SDTBinaryArithWithFlagsInOut - RES1, EFLAGS = op LHS, RHS, EFLAGS
+def SDTBinaryArithWithFlagsInOut : SDTypeProfile<2, 3,
+                                            [SDTCisSameAs<0, 2>,
+                                             SDTCisSameAs<0, 3>,
+                                             SDTCisInt<0>,
+                                             SDTCisVT<1, i32>,
+                                             SDTCisVT<4, i32>]>;
+// RES1, RES2, FLAGS = op LHS, RHS
+def SDT2ResultBinaryArithWithFlags : SDTypeProfile<3, 2,
+                                            [SDTCisSameAs<0, 1>,
+                                             SDTCisSameAs<0, 2>,
+                                             SDTCisSameAs<0, 3>,
+                                             SDTCisInt<0>, SDTCisVT<1, i32>]>;
 def SDTX86BrCond  : SDTypeProfile<0, 3,
                                   [SDTCisVT<0, OtherVT>,
                                    SDTCisVT<1, i8>, SDTCisVT<2, i32>]>;
@@ -78,7 +92,7 @@ def SDTX86Wrapper : SDTypeProfile<1, 1, [SDTCisSameAs<0, 1>, SDTCisPtrTy<0>]>;
 
 def SDT_X86TLSADDR : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
 
-def SDT_X86TLSCALL : SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>;
+def SDT_X86TLSCALL : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
 
 def SDT_X86EHRET : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
 
@@ -114,10 +128,10 @@ def X86setcc   : SDNode<"X86ISD::SETCC",    SDTX86SetCC>;
 def X86setcc_c : SDNode<"X86ISD::SETCC_CARRY", SDTX86SetCC_C>;
 
 def X86cas : SDNode<"X86ISD::LCMPXCHG_DAG", SDTX86cas,
-                        [SDNPHasChain, SDNPInFlag, SDNPOutFlag, SDNPMayStore,
+                        [SDNPHasChain, SDNPInGlue, SDNPOutGlue, SDNPMayStore,
                          SDNPMayLoad, SDNPMemOperand]>;
 def X86cas8 : SDNode<"X86ISD::LCMPXCHG8_DAG", SDTX86cas8,
-                        [SDNPHasChain, SDNPInFlag, SDNPOutFlag, SDNPMayStore,
+                        [SDNPHasChain, SDNPInGlue, SDNPOutGlue, SDNPMayStore,
                          SDNPMayLoad, SDNPMemOperand]>;
 def X86AtomAdd64 : SDNode<"X86ISD::ATOMADD64_DAG", SDTX86atomicBinary,
                         [SDNPHasChain, SDNPMayStore,
@@ -141,7 +155,7 @@ def X86AtomSwap64 : SDNode<"X86ISD::ATOMSWAP64_DAG", SDTX86atomicBinary,
                         [SDNPHasChain, SDNPMayStore,
                          SDNPMayLoad, SDNPMemOperand]>;
 def X86retflag : SDNode<"X86ISD::RET_FLAG", SDTX86Ret,
-                        [SDNPHasChain, SDNPOptInFlag, SDNPVariadic]>;
+                        [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;
 
 def X86vastart_save_xmm_regs :
                  SDNode<"X86ISD::VASTART_SAVE_XMM_REGS",
@@ -153,43 +167,45 @@ def X86vaarg64 :
                          SDNPMemOperand]>;
 def X86callseq_start :
                  SDNode<"ISD::CALLSEQ_START", SDT_X86CallSeqStart,
-                        [SDNPHasChain, SDNPOutFlag]>;
+                        [SDNPHasChain, SDNPOutGlue]>;
 def X86callseq_end :
                  SDNode<"ISD::CALLSEQ_END",   SDT_X86CallSeqEnd,
-                        [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag]>;
+                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 
 def X86call    : SDNode<"X86ISD::CALL",     SDT_X86Call,
-                        [SDNPHasChain, SDNPOutFlag, SDNPOptInFlag,
+                        [SDNPHasChain, SDNPOutGlue, SDNPOptInGlue,
                          SDNPVariadic]>;
 
 def X86rep_stos: SDNode<"X86ISD::REP_STOS", SDTX86RepStr,
-                        [SDNPHasChain, SDNPInFlag, SDNPOutFlag, SDNPMayStore]>;
+                        [SDNPHasChain, SDNPInGlue, SDNPOutGlue, SDNPMayStore]>;
 def X86rep_movs: SDNode<"X86ISD::REP_MOVS", SDTX86RepStr,
-                        [SDNPHasChain, SDNPInFlag, SDNPOutFlag, SDNPMayStore,
+                        [SDNPHasChain, SDNPInGlue, SDNPOutGlue, SDNPMayStore,
                          SDNPMayLoad]>;
 
 def X86rdtsc   : SDNode<"X86ISD::RDTSC_DAG", SDTX86Void,
-                        [SDNPHasChain, SDNPOutFlag, SDNPSideEffect]>;
+                        [SDNPHasChain, SDNPOutGlue, SDNPSideEffect]>;
 
 def X86Wrapper    : SDNode<"X86ISD::Wrapper",     SDTX86Wrapper>;
 def X86WrapperRIP : SDNode<"X86ISD::WrapperRIP",  SDTX86Wrapper>;
 
 def X86tlsaddr : SDNode<"X86ISD::TLSADDR", SDT_X86TLSADDR,
-                        [SDNPHasChain, SDNPOptInFlag, SDNPOutFlag]>;
+                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 
 def X86ehret : SDNode<"X86ISD::EH_RETURN", SDT_X86EHRET,
                         [SDNPHasChain]>;
 
 def X86tcret : SDNode<"X86ISD::TC_RETURN", SDT_X86TCRET,
-                        [SDNPHasChain,  SDNPOptInFlag, SDNPVariadic]>;
+                        [SDNPHasChain,  SDNPOptInGlue, SDNPVariadic]>;
 
 def X86add_flag  : SDNode<"X86ISD::ADD",  SDTBinaryArithWithFlags,
                           [SDNPCommutative]>;
 def X86sub_flag  : SDNode<"X86ISD::SUB",  SDTBinaryArithWithFlags>;
 def X86smul_flag : SDNode<"X86ISD::SMUL", SDTBinaryArithWithFlags,
                           [SDNPCommutative]>;
-def X86umul_flag : SDNode<"X86ISD::UMUL", SDTUnaryArithWithFlags,
+def X86umul_flag : SDNode<"X86ISD::UMUL", SDT2ResultBinaryArithWithFlags,
                           [SDNPCommutative]>;
+def X86adc_flag  : SDNode<"X86ISD::ADC",  SDTBinaryArithWithFlagsInOut>;
+def X86sbb_flag  : SDNode<"X86ISD::SBB",  SDTBinaryArithWithFlagsInOut>;
 
 def X86inc_flag  : SDNode<"X86ISD::INC",  SDTUnaryArithWithFlags>;
 def X86dec_flag  : SDNode<"X86ISD::DEC",  SDTUnaryArithWithFlags>;
@@ -203,10 +219,10 @@ def X86and_flag  : SDNode<"X86ISD::AND",  SDTBinaryArithWithFlags,
 def X86mul_imm : SDNode<"X86ISD::MUL_IMM", SDTIntBinOp>;
 
 def X86WinAlloca : SDNode<"X86ISD::WIN_ALLOCA", SDTX86Void,
-                          [SDNPHasChain, SDNPInFlag, SDNPOutFlag]>;
+                          [SDNPHasChain, SDNPInGlue, SDNPOutGlue]>;
 
 def X86TLSCall : SDNode<"X86ISD::TLSCALL", SDT_X86TLSCALL,
-                        []>;
+                        [SDNPHasChain, SDNPOptInGlue, SDNPOutGlue]>;
 
 //===----------------------------------------------------------------------===//
 // X86 Operand Definitions.
@@ -257,6 +273,10 @@ def i8mem_NOREX : Operand<i64> {
   let ParserMatchClass = X86MemAsmOperand;
 }
 
+// GPRs available for tailcall.
+// It represents GR64_TC or GR64_TCW64.
+def ptr_rc_tailcall : PointerLikeRegClass<2>;
+
 // Special i32mem for addresses of load folding tail calls. These are not
 // allowed to use callee-saved registers since they must be scheduled
 // after callee-saved register are popped.
@@ -271,7 +291,8 @@ def i32mem_TC : Operand<i32> {
 // after callee-saved register are popped.
 def i64mem_TC : Operand<i64> {
   let PrintMethod = "printi64mem";
-  let MIOperandInfo = (ops GR64_TC, i8imm, GR64_TC, i32imm, i8imm);
+  let MIOperandInfo = (ops ptr_rc_tailcall, i8imm,
+                       ptr_rc_tailcall, i32imm, i8imm);
   let ParserMatchClass = X86MemAsmOperand;
 }
 
@@ -394,26 +415,26 @@ def tls64addr : ComplexPattern<i64, 5, "SelectTLSADDRAddr",
 def HasCMov      : Predicate<"Subtarget->hasCMov()">;
 def NoCMov       : Predicate<"!Subtarget->hasCMov()">;
 
-// FIXME: temporary hack to let codegen assert or generate poor code in case
-// no AVX version of the desired intructions is present, this is better for
-// incremental dev (without fallbacks it's easier to spot what's missing)
-def HasMMX       : Predicate<"Subtarget->hasMMX() && !Subtarget->hasAVX()">;
+def HasMMX       : Predicate<"Subtarget->hasMMX()">;
 def Has3DNow     : Predicate<"Subtarget->has3DNow()">;
 def Has3DNowA    : Predicate<"Subtarget->has3DNowA()">;
-def HasSSE1      : Predicate<"Subtarget->hasSSE1() && !Subtarget->hasAVX()">;
-def HasSSE2      : Predicate<"Subtarget->hasSSE2() && !Subtarget->hasAVX()">;
-def HasSSE3      : Predicate<"Subtarget->hasSSE3() && !Subtarget->hasAVX()">;
-def HasSSSE3     : Predicate<"Subtarget->hasSSSE3() && !Subtarget->hasAVX()">;
-def HasSSE41     : Predicate<"Subtarget->hasSSE41() && !Subtarget->hasAVX()">;
-def HasSSE42     : Predicate<"Subtarget->hasSSE42() && !Subtarget->hasAVX()">;
-def HasSSE4A     : Predicate<"Subtarget->hasSSE4A() && !Subtarget->hasAVX()">;
+def HasSSE1      : Predicate<"Subtarget->hasSSE1()">;
+def HasSSE2      : Predicate<"Subtarget->hasSSE2()">;
+def HasSSE3      : Predicate<"Subtarget->hasSSE3()">;
+def HasSSSE3     : Predicate<"Subtarget->hasSSSE3()">;
+def HasSSE41     : Predicate<"Subtarget->hasSSE41()">;
+def HasSSE42     : Predicate<"Subtarget->hasSSE42()">;
+def HasSSE4A     : Predicate<"Subtarget->hasSSE4A()">;
 
 def HasAVX       : Predicate<"Subtarget->hasAVX()">;
+def HasXMMInt    : Predicate<"Subtarget->hasXMMInt()">;
+
+def HasAES       : Predicate<"Subtarget->hasAES()">;
 def HasCLMUL     : Predicate<"Subtarget->hasCLMUL()">;
 def HasFMA3      : Predicate<"Subtarget->hasFMA3()">;
 def HasFMA4      : Predicate<"Subtarget->hasFMA4()">;
-def FPStackf32   : Predicate<"!Subtarget->hasSSE1()">;
-def FPStackf64   : Predicate<"!Subtarget->hasSSE2()">;
+def FPStackf32   : Predicate<"!Subtarget->hasXMM()">;
+def FPStackf64   : Predicate<"!Subtarget->hasXMMInt()">;
 def In32BitMode  : Predicate<"!Subtarget->is64Bit()">, AssemblerPredicate;
 def In64BitMode  : Predicate<"Subtarget->is64Bit()">, AssemblerPredicate;
 def IsWin64      : Predicate<"Subtarget->isTargetWin64()">;
@@ -430,7 +451,6 @@ def OptForSize   : Predicate<"OptForSize">;
 def OptForSpeed  : Predicate<"!OptForSize">;
 def FastBTMem    : Predicate<"!Subtarget->isBTMemSlow()">;
 def CallImmAddr  : Predicate<"Subtarget->IsLegalToCallImmediateAddr(TM)">;
-def HasAES       : Predicate<"Subtarget->hasAES()">;
 
 //===----------------------------------------------------------------------===//
 // X86 Instruction Format Definitions.
@@ -1144,6 +1164,12 @@ def CMPXCHG16B : RI<0xC7, MRM1m, (outs), (ins i128mem:$dst),
 // Lock instruction prefix
 def LOCK_PREFIX : I<0xF0, RawFrm, (outs),  (ins), "lock", []>;
 
+// Rex64 instruction prefix
+def REX64_PREFIX : I<0x48, RawFrm, (outs),  (ins), "rex64", []>;
+
+// Data16 instruction prefix
+def DATA16_PREFIX : I<0x66, RawFrm, (outs),  (ins), "data16", []>;
+
 // Repeat string operation instruction prefixes
 // These uses the DF flag in the EFLAGS register to inc or dec ECX
 let Defs = [ECX], Uses = [ECX,EFLAGS] in {
@@ -1267,6 +1293,12 @@ def : MnemonicAlias<"cdqe", "cltq">;
 // lret maps to lretl, it is not ambiguous with lretq.
 def : MnemonicAlias<"lret", "lretl">;
 
+def : MnemonicAlias<"leavel", "leave">, Requires<[In32BitMode]>;
+def : MnemonicAlias<"leaveq", "leave">, Requires<[In64BitMode]>;
+
+def : MnemonicAlias<"loopz", "loope">;
+def : MnemonicAlias<"loopnz", "loopne">;
+
 def : MnemonicAlias<"pop", "popl">, Requires<[In32BitMode]>;
 def : MnemonicAlias<"pop", "popq">, Requires<[In64BitMode]>;
 def : MnemonicAlias<"popf", "popfl">, Requires<[In32BitMode]>;
@@ -1374,6 +1406,9 @@ defm : IntegerCondCodeMnemonicAlias<"cmov", "q">;
 def : InstAlias<"aad", (AAD8i8 10)>;
 def : InstAlias<"aam", (AAM8i8 10)>;
 
+// Disambiguate the mem/imm form of bt-without-a-suffix as btl.
+def : InstAlias<"bt $imm, $mem", (BT32mi8 i32mem:$mem, i32i8imm:$imm)>;
+
 // clr aliases.
 def : InstAlias<"clrb $reg", (XOR8rr  GR8 :$reg, GR8 :$reg)>;
 def : InstAlias<"clrw $reg", (XOR16rr GR16:$reg, GR16:$reg)>;
@@ -1444,14 +1479,15 @@ defm : FpUnaryAlias<"fucompi",  UCOM_FIPr>;
 
 
 // Handle "f{mulp,addp} st(0), $op" the same as "f{mulp,addp} $op", since they
-// commute.  We also allow fdivrp/fsubrp even though they don't commute, solely
-// because gas supports it.
+// commute.  We also allow fdiv[r]p/fsubrp even though they don't commute,
+// solely because gas supports it.
 def : InstAlias<"faddp %st(0), $op", (ADD_FPrST0 RST:$op)>;
 def : InstAlias<"fmulp %st(0), $op", (MUL_FPrST0 RST:$op)>;
 def : InstAlias<"fsubrp %st(0), $op", (SUB_FPrST0 RST:$op)>;
+def : InstAlias<"fdivp %st(0), $op", (DIVR_FPrST0 RST:$op)>;
 def : InstAlias<"fdivrp %st(0), $op", (DIV_FPrST0 RST:$op)>;
 
-// We accepts "fnstsw %eax" even though it only writes %ax.
+// We accept "fnstsw %eax" even though it only writes %ax.
 def : InstAlias<"fnstsw %eax", (FNSTSW8r)>;
 def : InstAlias<"fnstsw %al" , (FNSTSW8r)>;
 def : InstAlias<"fnstsw"     , (FNSTSW8r)>;
@@ -1496,6 +1532,10 @@ def : InstAlias<"mov $seg, $mem", (MOV32ms i32mem:$mem, SEGMENT_REG:$seg)>;
 
 // Match 'movq <largeimm>, <reg>' as an alias for movabsq.
 def : InstAlias<"movq $imm, $reg", (MOV64ri GR64:$reg, i64imm:$imm)>;
+
+// Match 'movq GR64, MMX' as an alias for movd.
+def : InstAlias<"movq $src, $dst", (MMX_MOVD64to64rr VR64:$dst, GR64:$src)>;
+def : InstAlias<"movq $src, $dst", (MMX_MOVD64from64rr GR64:$dst, VR64:$src)>;
 
 // movsd with no operands (as opposed to the SSE scalar move of a double) is an
 // alias for movsl. (as in rep; movsd)
@@ -1586,4 +1626,3 @@ def : InstAlias<"xchgb $mem, $val", (XCHG8rm  GR8 :$val, i8mem :$mem)>;
 def : InstAlias<"xchgw $mem, $val", (XCHG16rm GR16:$val, i16mem:$mem)>;
 def : InstAlias<"xchgl $mem, $val", (XCHG32rm GR32:$val, i32mem:$mem)>;
 def : InstAlias<"xchgq $mem, $val", (XCHG64rm GR64:$val, i64mem:$mem)>;
-

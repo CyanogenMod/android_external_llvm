@@ -34,12 +34,12 @@ def SDTX86CwdStore  : SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>;
 def X86fld          : SDNode<"X86ISD::FLD", SDTX86Fld,
                              [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
 def X86fst          : SDNode<"X86ISD::FST", SDTX86Fst,
-                             [SDNPHasChain, SDNPInFlag, SDNPMayStore,
+                             [SDNPHasChain, SDNPInGlue, SDNPMayStore,
                               SDNPMemOperand]>;
 def X86fild         : SDNode<"X86ISD::FILD", SDTX86Fild,
                              [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
 def X86fildflag     : SDNode<"X86ISD::FILD_FLAG", SDTX86Fild,
-                             [SDNPHasChain, SDNPOutFlag, SDNPMayLoad,
+                             [SDNPHasChain, SDNPOutGlue, SDNPMayLoad,
                               SDNPMemOperand]>;
 def X86fp_to_i16mem : SDNode<"X86ISD::FP_TO_INT16_IN_MEM", SDTX86FpToIMem,
                              [SDNPHasChain, SDNPMayStore, SDNPMemOperand]>;
@@ -73,41 +73,23 @@ def fpimmneg1 : PatLeaf<(fpimm), [{
 
 // Some 'special' instructions
 let usesCustomInserter = 1 in {  // Expanded after instruction selection.
-  def FP32_TO_INT16_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i16mem:$dst, RFP32:$src),
-                              "##FP32_TO_INT16_IN_MEM PSEUDO!",
+  def FP32_TO_INT16_IN_MEM : PseudoI<(outs), (ins i16mem:$dst, RFP32:$src),
                               [(X86fp_to_i16mem RFP32:$src, addr:$dst)]>;
-  def FP32_TO_INT32_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i32mem:$dst, RFP32:$src),
-                              "##FP32_TO_INT32_IN_MEM PSEUDO!",
+  def FP32_TO_INT32_IN_MEM : PseudoI<(outs), (ins i32mem:$dst, RFP32:$src),
                               [(X86fp_to_i32mem RFP32:$src, addr:$dst)]>;
-  def FP32_TO_INT64_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i64mem:$dst, RFP32:$src),
-                              "##FP32_TO_INT64_IN_MEM PSEUDO!",
+  def FP32_TO_INT64_IN_MEM : PseudoI<(outs), (ins i64mem:$dst, RFP32:$src),
                               [(X86fp_to_i64mem RFP32:$src, addr:$dst)]>;
-  def FP64_TO_INT16_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i16mem:$dst, RFP64:$src),
-                              "##FP64_TO_INT16_IN_MEM PSEUDO!",
+  def FP64_TO_INT16_IN_MEM : PseudoI<(outs), (ins i16mem:$dst, RFP64:$src),
                               [(X86fp_to_i16mem RFP64:$src, addr:$dst)]>;
-  def FP64_TO_INT32_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i32mem:$dst, RFP64:$src),
-                              "##FP64_TO_INT32_IN_MEM PSEUDO!",
+  def FP64_TO_INT32_IN_MEM : PseudoI<(outs), (ins i32mem:$dst, RFP64:$src),
                               [(X86fp_to_i32mem RFP64:$src, addr:$dst)]>;
-  def FP64_TO_INT64_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i64mem:$dst, RFP64:$src),
-                              "##FP64_TO_INT64_IN_MEM PSEUDO!",
+  def FP64_TO_INT64_IN_MEM : PseudoI<(outs), (ins i64mem:$dst, RFP64:$src),
                               [(X86fp_to_i64mem RFP64:$src, addr:$dst)]>;
-  def FP80_TO_INT16_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i16mem:$dst, RFP80:$src),
-                              "##FP80_TO_INT16_IN_MEM PSEUDO!",
+  def FP80_TO_INT16_IN_MEM : PseudoI<(outs), (ins i16mem:$dst, RFP80:$src),
                               [(X86fp_to_i16mem RFP80:$src, addr:$dst)]>;
-  def FP80_TO_INT32_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i32mem:$dst, RFP80:$src),
-                              "##FP80_TO_INT32_IN_MEM PSEUDO!",
+  def FP80_TO_INT32_IN_MEM : PseudoI<(outs), (ins i32mem:$dst, RFP80:$src),
                               [(X86fp_to_i32mem RFP80:$src, addr:$dst)]>;
-  def FP80_TO_INT64_IN_MEM : I<0, Pseudo,
-                              (outs), (ins i64mem:$dst, RFP80:$src),
-                              "##FP80_TO_INT64_IN_MEM PSEUDO!",
+  def FP80_TO_INT64_IN_MEM : PseudoI<(outs), (ins i64mem:$dst, RFP80:$src),
                               [(X86fp_to_i64mem RFP80:$src, addr:$dst)]>;
 }
 
@@ -643,8 +625,12 @@ def FCOMPP : I<0xD9, RawFrm, (outs), (ins), "fcompp", []>, DE;
 
 def FXSAVE : I<0xAE, MRM0m, (outs opaque512mem:$dst), (ins),
                "fxsave\t$dst", []>, TB;
+def FXSAVE64 : I<0xAE, MRM0m, (outs opaque512mem:$dst), (ins),
+                 "fxsaveq\t$dst", []>, TB, REX_W, Requires<[In64BitMode]>;
 def FXRSTOR : I<0xAE, MRM1m, (outs), (ins opaque512mem:$src),
                 "fxrstor\t$src", []>, TB;
+def FXRSTOR64 : I<0xAE, MRM1m, (outs), (ins opaque512mem:$src),
+                  "fxrstorq\t$src", []>, TB, REX_W, Requires<[In64BitMode]>;
 
 //===----------------------------------------------------------------------===//
 // Non-Instruction Patterns

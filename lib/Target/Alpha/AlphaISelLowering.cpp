@@ -48,7 +48,6 @@ AlphaTargetLowering::AlphaTargetLowering(TargetMachine &TM)
   : TargetLowering(TM, new TargetLoweringObjectFileELF()) {
   // Set up the TargetLowering object.
   //I am having problems with shr n i8 1
-  setShiftAmountType(MVT::i64);
   setBooleanContents(ZeroOrOneBooleanContent);
 
   addRegisterClass(MVT::i64, Alpha::GPRCRegisterClass);
@@ -125,7 +124,7 @@ AlphaTargetLowering::AlphaTargetLowering(TargetMachine &TM)
 
   setOperationAction(ISD::SETCC, MVT::f32, Promote);
 
-  setOperationAction(ISD::BIT_CONVERT, MVT::f32, Promote);
+  setOperationAction(ISD::BITCAST, MVT::f32, Promote);
 
   setOperationAction(ISD::EH_LABEL, MVT::Other, Expand);
 
@@ -306,7 +305,7 @@ AlphaTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
   }
 
   // Returns a chain & a flag for retval copy to use.
-  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Flag);
+  SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
   SmallVector<SDValue, 8> Ops;
   Ops.push_back(Chain);
   Ops.push_back(Callee);
@@ -542,7 +541,7 @@ void AlphaTargetLowering::LowerVAARG(SDNode *N, SDValue &Chain,
                              false, false, 0);
   SDValue Tmp = DAG.getNode(ISD::ADD, dl, MVT::i64, VAListP,
                               DAG.getConstant(8, MVT::i64));
-  SDValue Offset = DAG.getExtLoad(ISD::SEXTLOAD, MVT::i64, dl, Base.getValue(1),
+  SDValue Offset = DAG.getExtLoad(ISD::SEXTLOAD, dl, MVT::i64, Base.getValue(1),
                                   Tmp, MachinePointerInfo(),
                                   MVT::i32, false, false, 0);
   DataPtr = DAG.getNode(ISD::ADD, dl, MVT::i64, Base, Offset);
@@ -616,7 +615,7 @@ SDValue AlphaTargetLowering::LowerOperation(SDValue Op,
            "Unhandled SINT_TO_FP type in custom expander!");
     SDValue LD;
     bool isDouble = Op.getValueType() == MVT::f64;
-    LD = DAG.getNode(ISD::BIT_CONVERT, dl, MVT::f64, Op.getOperand(0));
+    LD = DAG.getNode(ISD::BITCAST, dl, MVT::f64, Op.getOperand(0));
     SDValue FP = DAG.getNode(isDouble?AlphaISD::CVTQT_:AlphaISD::CVTQS_, dl,
                                isDouble?MVT::f64:MVT::f32, LD);
     return FP;
@@ -630,7 +629,7 @@ SDValue AlphaTargetLowering::LowerOperation(SDValue Op,
 
     src = DAG.getNode(AlphaISD::CVTTQ_, dl, MVT::f64, src);
 
-    return DAG.getNode(ISD::BIT_CONVERT, dl, MVT::i64, src);
+    return DAG.getNode(ISD::BITCAST, dl, MVT::i64, src);
   }
   case ISD::ConstantPool: {
     ConstantPoolSDNode *CP = cast<ConstantPoolSDNode>(Op);
@@ -648,11 +647,11 @@ SDValue AlphaTargetLowering::LowerOperation(SDValue Op,
   case ISD::GlobalAddress: {
     GlobalAddressSDNode *GSDN = cast<GlobalAddressSDNode>(Op);
     const GlobalValue *GV = GSDN->getGlobal();
-    SDValue GA = DAG.getTargetGlobalAddress(GV, dl, MVT::i64, 
+    SDValue GA = DAG.getTargetGlobalAddress(GV, dl, MVT::i64,
                                             GSDN->getOffset());
     // FIXME there isn't really any debug info here
 
-    //    if (!GV->hasWeakLinkage() && !GV->isDeclaration() 
+    //    if (!GV->hasWeakLinkage() && !GV->isDeclaration()
     //        && !GV->hasLinkOnceLinkage()) {
     if (GV->hasLocalLinkage()) {
       SDValue Hi = DAG.getNode(AlphaISD::GPRelHi,  dl, MVT::i64, GA,
@@ -709,7 +708,7 @@ SDValue AlphaTargetLowering::LowerOperation(SDValue Op,
 
     SDValue Result;
     if (Op.getValueType() == MVT::i32)
-      Result = DAG.getExtLoad(ISD::SEXTLOAD, MVT::i64, dl, Chain, DataPtr,
+      Result = DAG.getExtLoad(ISD::SEXTLOAD, dl, MVT::i64, Chain, DataPtr,
                               MachinePointerInfo(), MVT::i32, false, false, 0);
     else
       Result = DAG.getLoad(Op.getValueType(), dl, Chain, DataPtr,
@@ -727,12 +726,12 @@ SDValue AlphaTargetLowering::LowerOperation(SDValue Op,
     SDValue Val = DAG.getLoad(getPointerTy(), dl, Chain, SrcP,
                               MachinePointerInfo(SrcS),
                               false, false, 0);
-    SDValue Result = DAG.getStore(Val.getValue(1), dl, Val, DestP, 
+    SDValue Result = DAG.getStore(Val.getValue(1), dl, Val, DestP,
                                   MachinePointerInfo(DestS),
                                   false, false, 0);
     SDValue NP = DAG.getNode(ISD::ADD, dl, MVT::i64, SrcP,
                                DAG.getConstant(8, MVT::i64));
-    Val = DAG.getExtLoad(ISD::SEXTLOAD, MVT::i64, dl, Result,
+    Val = DAG.getExtLoad(ISD::SEXTLOAD, dl, MVT::i64, Result,
                          NP, MachinePointerInfo(), MVT::i32, false, false, 0);
     SDValue NPD = DAG.getNode(ISD::ADD, dl, MVT::i64, DestP,
                                 DAG.getConstant(8, MVT::i64));
@@ -779,7 +778,7 @@ void AlphaTargetLowering::ReplaceNodeResults(SDNode *N,
 
   SDValue Chain, DataPtr;
   LowerVAARG(N, Chain, DataPtr, DAG);
-  SDValue Res = DAG.getLoad(N->getValueType(0), dl, Chain, DataPtr, 
+  SDValue Res = DAG.getLoad(N->getValueType(0), dl, Chain, DataPtr,
                             MachinePointerInfo(),
                             false, false, 0);
   Results.push_back(Res);
