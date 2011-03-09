@@ -43,6 +43,8 @@
 #include <stdio.h>
 #endif
 
+extern "C" int truncate (const char*, off_t);
+
 using namespace llvm;
 
 namespace {
