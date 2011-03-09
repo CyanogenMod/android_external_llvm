@@ -265,8 +265,20 @@ namespace {
       return Binary;
     }
 
-    unsigned getHiLo16ImmOpValue(const MachineInstr &MI, unsigned Op) const {
-      return 0;
+    unsigned getHiLo16ImmOpValue(const MachineInstr &MI, unsigned Op) 
+      const {
+      const TargetInstrDesc &TID = MI.getDesc();
+      const MachineOperand &MO = MI.getOperand(Op);
+
+      unsigned Reloc = (TID.Opcode == ARM::MOVi16 ?
+                       ARM::reloc_arm_movw : ARM::reloc_arm_movt);
+
+      if (!MO.isImm()) {
+        emitGlobalAddress(MO.getGlobal(), Reloc, true, false);
+        return 0;
+      }
+      unsigned Imm16 = static_cast<unsigned>(MO.getImm());
+      return Imm16;      
     }
 
     uint32_t getAddrMode2OpValue(const MachineInstr &MI, unsigned OpIdx)
@@ -1056,6 +1068,11 @@ void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
 
+  if (TID.Opcode == ARM::MOVi16 || TID.Opcode == ARM::MOVTi16) {
+      emitWordLE(Binary);
+      return;
+  }
+
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
 
@@ -1071,23 +1088,7 @@ void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
     // Special handling for implicit use (e.g. PC).
     Binary |= (getARMRegisterNumbering(ImplicitRd) << ARMII::RegRdShift);
 
-  if (TID.Opcode == ARM::MOVi16) {
-      // Get immediate from MI.
-      unsigned Lo16 = getMovi32Value(MI, MI.getOperand(OpIdx),
-                      ARM::reloc_arm_movw);
-      // Encode imm which is the same as in emitMOVi32immInstruction().
-      Binary |= Lo16 & 0xFFF;
-      Binary |= ((Lo16 >> 12) & 0xF) << 16;
-      emitWordLE(Binary);
-      return;
-  } else if(TID.Opcode == ARM::MOVTi16) {
-      unsigned Hi16 = (getMovi32Value(MI, MI.getOperand(OpIdx),
-                       ARM::reloc_arm_movt) >> 16);
-      Binary |= Hi16 & 0xFFF;
-      Binary |= ((Hi16 >> 12) & 0xF) << 16;
-      emitWordLE(Binary);
-      return;
-  } else if ((TID.Opcode == ARM::BFC) || (TID.Opcode == ARM::BFI)) {
+  if ((TID.Opcode == ARM::BFC) || (TID.Opcode == ARM::BFI)) {
       uint32_t v = ~MI.getOperand(2).getImm();
       int32_t lsb = CountTrailingZeros_32(v);
       int32_t msb = (32 - CountLeadingZeros_32(v)) - 1;
