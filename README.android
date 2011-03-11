@@ -12,6 +12,8 @@
  * conflicts. 
  */ 
 
+* Synced to r127116.
+
 * We add 40+ Android's *.mk files that are specific to Android's build system.
 
 * All the configuration files because we don't have configure/make/make-install
