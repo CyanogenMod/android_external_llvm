@@ -1,15 +1,28 @@
 LOCAL_PATH := $(call my-dir)
 
-# For the device only
+x86_utils_SRC_FILES := \
+  X86ShuffleDecode.cpp
+
+# For the device
 # =====================================================
 include $(CLEAR_VARS)
-include $(CLEAR_TBLGEN_VARS)
 
-TBLGEN_TABLES :=
+LOCAL_SRC_FILES := $(x86_utils_SRC_FILES)
 
-TBLGEN_TD_DIR := $(LOCAL_PATH)/..
+LOCAL_C_INCLUDES += $(LOCAL_PATH)/..
 
-LOCAL_SRC_FILES := X86ShuffleDecode.cpp
+LOCAL_MODULE:= libLLVMX86Utils
+
+LOCAL_MODULE_TAGS := optional
+
+include $(LLVM_DEVICE_BUILD_MK)
+include $(BUILD_STATIC_LIBRARY)
+
+# For the host
+# =====================================================
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := $(x86_utils_SRC_FILES)
 
 LOCAL_C_INCLUDES += $(LOCAL_PATH)/..
 
@@ -18,5 +31,4 @@ LOCAL_MODULE:= libLLVMX86Utils
 LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_HOST_BUILD_MK)
-include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
