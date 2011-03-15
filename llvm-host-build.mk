@@ -63,5 +63,7 @@ $(hide) $(TBLGEN) \
 	-I $(LLVM_ROOT_PATH)/lib/Target	\
 	$(if $(strip $(CLANG_ROOT_PATH)),-I $(CLANG_ROOT_PATH)/include,)	\
 	-gen-$(strip $(1))	\
-	-o $@ $<
+	-o $@.tmp $<
+$(hide) $(LLVM_ROOT_PATH)/copy-diff.py $@.tmp $@
+$(hide) $(RM) $@.tmp
 endef
