@@ -45,7 +45,7 @@ def copyfile(src, dest):
     if not os.path.exists(destdir):
         try:
             os.makedirs(destdir)
-        except os.error as e:
+        except os.error, e:
             raise ValueError('Unable to create directory ' + destdir)
     elif not os.path.isdir(destdir):
         raise ValueError(destdir + ' is not a directory')
@@ -68,7 +68,7 @@ def main():
     else:
         try:
             copyfile(srcfile, destfile)
-        except ValueError as e:
+        except ValueError, e:
             print >> sys.stderr, 'ERROR: ', e
             sys.exit(1)
 
