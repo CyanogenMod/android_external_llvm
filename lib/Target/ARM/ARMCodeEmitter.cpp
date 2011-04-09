@@ -936,6 +936,9 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
   case ARM::CONSTPOOL_ENTRY:
     emitConstPoolInstruction(MI);
     break;
+  case ARM::LDMIA_RET:
+    emitLoadStoreMultipleInstruction(MI);
+    break;
   case ARM::PICADD: {
     // Remember of the address of the PC label for relocation later.
     addPCLabel(MI.getOperand(2).getImm());
@@ -1331,6 +1334,11 @@ void ARMCodeEmitter::emitLoadStoreMultipleInstruction(const MachineInstr &MI) {
 
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
+
+  if (TID.getOpcode() == ARM::LDMIA_RET) {
+    IsUpdating = true;
+    Binary |= 0x8B00000;
+  }
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
