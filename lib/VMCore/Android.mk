@@ -9,6 +9,7 @@ vmcore_SRC_FILES :=	\
 	Constants.cpp	\
 	Core.cpp	\
 	DebugLoc.cpp	\
+	DebugInfoProbe.cpp \
 	Dominators.cpp	\
 	Function.cpp	\
 	GVMaterializer.cpp	\
