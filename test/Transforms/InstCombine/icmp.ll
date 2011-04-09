@@ -380,7 +380,7 @@ define i1 @test38(i32 %x, i32 %y, i32 %z) {
 
 ; PR9343 #1
 ; CHECK: @test39
-; CHECK %B = icmp eq i32 %X, 0
+; CHECK: %B = icmp eq i32 %X, 0
 define i1 @test39(i32 %X, i32 %Y) {
   %A = ashr exact i32 %X, %Y
   %B = icmp eq i32 %A, 0
@@ -474,4 +474,23 @@ entry:
   %tmp11 = and <2 x i32> %tmp3, <i32 3, i32 3>
   %cmp = icmp ult <2 x i32> %tmp11, <i32 4, i32 4>
   ret <2 x i1> %cmp  
+}
+
+; PR9343 #7
+; CHECK: @test50
+; CHECK: ret i1 true
+define i1 @test50(i16 %X, i32 %Y) {
+  %A = zext i16 %X to i32
+  %B = srem i32 %A, %Y
+  %C = icmp sgt i32 %B, -1
+  ret i1 %C
+}
+
+; CHECK: @test51
+; CHECK: ret i1 %C
+define i1 @test51(i32 %X, i32 %Y) {
+  %A = and i32 %X, 2147483648
+  %B = srem i32 %A, %Y
+  %C = icmp sgt i32 %B, -1
+  ret i1 %C
 }

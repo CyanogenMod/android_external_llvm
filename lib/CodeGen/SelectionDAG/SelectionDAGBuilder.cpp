@@ -50,7 +50,6 @@
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Support/Compiler.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -84,9 +83,7 @@ LimitFPPrecision("limit-float-precision",
 // %buffer = alloca [4096 x i8]
 // %data = load [4096 x i8]* %argPtr
 // store [4096 x i8] %data, [4096 x i8]* %buffer
-static cl::opt<unsigned>
-MaxParallelChains("dag-chain-limit", cl::desc("Max parallel isel dag chains"),
-                  cl::init(64), cl::Hidden);
+static const unsigned MaxParallelChains = 64;
 
 static SDValue getCopyFromPartsVector(SelectionDAG &DAG, DebugLoc DL,
                                       const SDValue *Parts, unsigned NumParts,
@@ -1130,15 +1127,8 @@ void SelectionDAGBuilder::visitRet(const ReturnInst &I) {
         else if (F->paramHasAttr(0, Attribute::ZExt))
           ExtendKind = ISD::ZERO_EXTEND;
 
-        // FIXME: C calling convention requires the return type to be promoted
-        // to at least 32-bit. But this is not necessary for non-C calling
-        // conventions. The frontend should mark functions whose return values
-        // require promoting with signext or zeroext attributes.
-        if (ExtendKind != ISD::ANY_EXTEND && VT.isInteger()) {
-          EVT MinVT = TLI.getRegisterType(*DAG.getContext(), MVT::i32);
-          if (VT.bitsLT(MinVT))
-            VT = MinVT;
-        }
+        if (ExtendKind != ISD::ANY_EXTEND && VT.isInteger())
+          VT = TLI.getTypeForExtArgOrReturn(*DAG.getContext(), VT, ExtendKind);
 
         unsigned NumParts = TLI.getNumRegisters(*DAG.getContext(), VT);
         EVT PartVT = TLI.getRegisterType(*DAG.getContext(), VT);
@@ -1153,9 +1143,9 @@ void SelectionDAGBuilder::visitRet(const ReturnInst &I) {
           Flags.setInReg();
 
         // Propagate extension type if any
-        if (F->paramHasAttr(0, Attribute::SExt))
+        if (ExtendKind == ISD::SIGN_EXTEND)
           Flags.setSExt();
-        else if (F->paramHasAttr(0, Attribute::ZExt))
+        else if (ExtendKind == ISD::ZERO_EXTEND)
           Flags.setZExt();
 
         for (unsigned i = 0; i < NumParts; ++i) {
@@ -4413,7 +4403,7 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   }
   case Intrinsic::eh_sjlj_dispatch_setup: {
     DAG.setRoot(DAG.getNode(ISD::EH_SJLJ_DISPATCHSETUP, dl, MVT::Other,
-                            getRoot(), getValue(I.getArgOperand(0))));
+                            getRoot()));
     return 0;
   }
 
@@ -4937,15 +4927,21 @@ void SelectionDAGBuilder::LowerCallTo(ImmutableCallSite CS, SDValue Callee,
              DAG.getNode(ISD::MERGE_VALUES, getCurDebugLoc(),
                          DAG.getVTList(&RetTys[0], RetTys.size()),
                          &ReturnValues[0], ReturnValues.size()));
-
   }
 
-  // As a special case, a null chain means that a tail call has been emitted and
-  // the DAG root is already updated.
-  if (Result.second.getNode())
-    DAG.setRoot(Result.second);
-  else
+  // Assign order to nodes here. If the call does not produce a result, it won't
+  // be mapped to a SDNode and visit() will not assign it an order number.
+  if (!Result.second.getNode()) {
+    // As a special case, a null chain means that a tail call has been emitted and
+    // the DAG root is already updated.
     HasTailCall = true;
+    ++SDNodeOrder;
+    AssignOrderingToNode(DAG.getRoot().getNode());
+  } else {
+    DAG.setRoot(Result.second);
+    ++SDNodeOrder;
+    AssignOrderingToNode(Result.second.getNode());
+  }
 
   if (LandingPad) {
     // Insert a label at the end of the invoke call to mark the try range.  This
@@ -5211,12 +5207,11 @@ void SelectionDAGBuilder::visitCall(const CallInst &I) {
   LowerCallTo(&I, Callee, I.isTailCall());
 }
 
-namespace llvm {
+namespace {
 
 /// AsmOperandInfo - This contains information for each constraint that we are
 /// lowering.
-class LLVM_LIBRARY_VISIBILITY SDISelAsmOperandInfo :
-    public TargetLowering::AsmOperandInfo {
+class SDISelAsmOperandInfo : public TargetLowering::AsmOperandInfo {
 public:
   /// CallOperand - If this is the result output operand or a clobber
   /// this is null, otherwise it is the incoming operand to the CallInst.
@@ -5304,7 +5299,7 @@ private:
 
 typedef SmallVector<SDISelAsmOperandInfo,16> SDISelAsmOperandInfoVector;
 
-} // end llvm namespace.
+} // end anonymous namespace
 
 /// isAllocatableRegister - If the specified register is safe to allocate,
 /// i.e. it isn't a stack pointer or some other special register, return the
@@ -5363,11 +5358,13 @@ isAllocatableRegister(unsigned Reg, MachineFunction &MF,
 ///   OpInfo describes the operand.
 ///   Input and OutputRegs are the set of already allocated physical registers.
 ///
-void SelectionDAGBuilder::
-GetRegistersForValue(SDISelAsmOperandInfo &OpInfo,
-                     std::set<unsigned> &OutputRegs,
-                     std::set<unsigned> &InputRegs) {
-  LLVMContext &Context = FuncInfo.Fn->getContext();
+static void GetRegistersForValue(SelectionDAG &DAG,
+                                 const TargetLowering &TLI,
+                                 DebugLoc DL,
+                                 SDISelAsmOperandInfo &OpInfo,
+                                 std::set<unsigned> &OutputRegs,
+                                 std::set<unsigned> &InputRegs) {
+  LLVMContext &Context = *DAG.getContext();
 
   // Compute whether this value requires an input register, an output register,
   // or both.
@@ -5413,7 +5410,7 @@ GetRegistersForValue(SDISelAsmOperandInfo &OpInfo,
       // vector types).
       EVT RegVT = *PhysReg.second->vt_begin();
       if (RegVT.getSizeInBits() == OpInfo.ConstraintVT.getSizeInBits()) {
-        OpInfo.CallOperand = DAG.getNode(ISD::BITCAST, getCurDebugLoc(),
+        OpInfo.CallOperand = DAG.getNode(ISD::BITCAST, DL,
                                          RegVT, OpInfo.CallOperand);
         OpInfo.ConstraintVT = RegVT;
       } else if (RegVT.isInteger() && OpInfo.ConstraintVT.isFloatingPoint()) {
@@ -5423,7 +5420,7 @@ GetRegistersForValue(SDISelAsmOperandInfo &OpInfo,
         // machine.
         RegVT = EVT::getIntegerVT(Context,
                                   OpInfo.ConstraintVT.getSizeInBits());
-        OpInfo.CallOperand = DAG.getNode(ISD::BITCAST, getCurDebugLoc(),
+        OpInfo.CallOperand = DAG.getNode(ISD::BITCAST, DL,
                                          RegVT, OpInfo.CallOperand);
         OpInfo.ConstraintVT = RegVT;
       }
@@ -5694,7 +5691,8 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
     // If this constraint is for a specific register, allocate it before
     // anything else.
     if (OpInfo.ConstraintType == TargetLowering::C_Register)
-      GetRegistersForValue(OpInfo, OutputRegs, InputRegs);
+      GetRegistersForValue(DAG, TLI, getCurDebugLoc(), OpInfo, OutputRegs,
+                           InputRegs);
   }
 
   // Second pass - Loop over all of the operands, assigning virtual or physregs
@@ -5705,7 +5703,8 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
     // C_Register operands have already been allocated, Other/Memory don't need
     // to be.
     if (OpInfo.ConstraintType == TargetLowering::C_RegisterClass)
-      GetRegistersForValue(OpInfo, OutputRegs, InputRegs);
+      GetRegistersForValue(DAG, TLI, getCurDebugLoc(), OpInfo, OutputRegs,
+                           InputRegs);
   }
 
   // AsmNodeOperands - The operands for the ISD::INLINEASM node.

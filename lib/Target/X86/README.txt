@@ -1656,25 +1656,58 @@ information to add the "lock" prefix.
 
 //===---------------------------------------------------------------------===//
 
-_Bool bar(int *x) { return *x & 1; }
+struct B {
+  unsigned char y0 : 1;
+};
 
-define zeroext i1 @bar(i32* nocapture %x) nounwind readonly {
-entry:
-  %tmp1 = load i32* %x                            ; <i32> [#uses=1]
-  %and = and i32 %tmp1, 1                         ; <i32> [#uses=1]
-  %tobool = icmp ne i32 %and, 0                   ; <i1> [#uses=1]
-  ret i1 %tobool
+int bar(struct B* a) { return a->y0; }
+
+define i32 @bar(%struct.B* nocapture %a) nounwind readonly optsize {
+  %1 = getelementptr inbounds %struct.B* %a, i64 0, i32 0
+  %2 = load i8* %1, align 1
+  %3 = and i8 %2, 1
+  %4 = zext i8 %3 to i32
+  ret i32 %4
 }
 
-bar:                                                        # @bar
-# BB#0:                                                     # %entry
-	movl	4(%esp), %eax
-	movb	(%eax), %al
-	andb	$1, %al
-	movzbl	%al, %eax
-	ret
+bar:                                    # @bar
+# BB#0:
+        movb    (%rdi), %al
+        andb    $1, %al
+        movzbl  %al, %eax
+        ret
 
 Missed optimization: should be movl+andl.
+
+//===---------------------------------------------------------------------===//
+
+The x86_64 abi says:
+
+Booleans, when stored in a memory object, are stored as single byte objects the
+value of which is always 0 (false) or 1 (true).
+
+We are not using this fact:
+
+int bar(_Bool *a) { return *a; }
+
+define i32 @bar(i8* nocapture %a) nounwind readonly optsize {
+  %1 = load i8* %a, align 1, !tbaa !0
+  %tmp = and i8 %1, 1
+  %2 = zext i8 %tmp to i32
+  ret i32 %2
+}
+
+bar:
+        movb    (%rdi), %al
+        andb    $1, %al
+        movzbl  %al, %eax
+        ret
+
+GCC produces
+
+bar:
+        movzbl  (%rdi), %eax
+        ret
 
 //===---------------------------------------------------------------------===//
 
@@ -1947,3 +1980,39 @@ which is "perfect".
 
 //===---------------------------------------------------------------------===//
 
+For the branch in the following code:
+int a();
+int b(int x, int y) {
+  if (x & (1<<(y&7)))
+    return a();
+  return y;
+}
+
+We currently generate:
+	movb	%sil, %al
+	andb	$7, %al
+	movzbl	%al, %eax
+	btl	%eax, %edi
+	jae	.LBB0_2
+
+movl+andl would be shorter than the movb+andb+movzbl sequence.
+
+//===---------------------------------------------------------------------===//
+
+For the following:
+struct u1 {
+    float x, y;
+};
+float foo(struct u1 u) {
+    return u.x + u.y;
+}
+
+We currently generate:
+	movdqa	%xmm0, %xmm1
+	pshufd	$1, %xmm0, %xmm0        # xmm0 = xmm0[1,0,0,0]
+	addss	%xmm1, %xmm0
+	ret
+
+We could save an instruction here by commuting the addss.
+
+//===---------------------------------------------------------------------===//

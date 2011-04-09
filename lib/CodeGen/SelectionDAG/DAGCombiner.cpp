@@ -319,6 +319,10 @@ void TargetLowering::DAGCombinerInfo::AddToWorklist(SDNode *N) {
   ((DAGCombiner*)DC)->AddToWorkList(N);
 }
 
+void TargetLowering::DAGCombinerInfo::RemoveFromWorklist(SDNode *N) {
+  ((DAGCombiner*)DC)->removeFromWorkList(N);
+}
+
 SDValue TargetLowering::DAGCombinerInfo::
 CombineTo(SDNode *N, const std::vector<SDValue> &To, bool AddTo) {
   return ((DAGCombiner*)DC)->CombineTo(N, &To[0], To.size(), AddTo);
@@ -5862,8 +5866,7 @@ SDValue DAGCombiner::visitLOAD(SDNode *N) {
   // value.
   // TODO: Handle store large -> read small portion.
   // TODO: Handle TRUNCSTORE/LOADEXT
-  if (LD->getExtensionType() == ISD::NON_EXTLOAD &&
-      !LD->isVolatile()) {
+  if (ISD::isNormalLoad(N) && !LD->isVolatile()) {
     if (ISD::isNON_TRUNCStore(Chain.getNode())) {
       StoreSDNode *PrevST = cast<StoreSDNode>(Chain);
       if (PrevST->getBasePtr() == Ptr &&

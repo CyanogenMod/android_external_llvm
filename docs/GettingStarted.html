@@ -268,7 +268,8 @@ software you will need.</p>
 <tr>
   <td>MinGW/Win32</td>
   <td>x86<sup><a href="#pf_1">1</a>,<a href="#pf_6">6</a>,
-     <a href="#pf_8">8</a>, <a href="#pf_10">10</a></sup></td>
+     <a href="#pf_8">8</a>, <a href="#pf_10">10</a>,
+     <a href="#pf_11">11</a></sup></td>
   <td>GCC 3.4.X, binutils 2.20</td>
 </tr>
 </table>
@@ -311,6 +312,11 @@ software you will need.</p>
   <td>Itanium (IA-64)</td>
   <td>HP aCC</td>
 </tr>
+<tr>
+  <td>Windows x64</td>
+  <td>x86-64</td>
+  <td>mingw-w64's GCC-4.5.x<sup><a href="#pf_12">12</a></sup></td>
+</tr>
 </table>
 
 <p><b>Notes:</b></p>
@@ -337,9 +343,10 @@ up</a></li>
     before any Windows-based versions such as Strawberry Perl and
     ActivePerl, as these have Windows-specifics that will cause the
     build to fail.</a></li>
-<li><a name="pf_11">In general, LLVM modules requiring dynamic linking can
-    not be built on Windows. However, you can build LLVM tools using
-    <i>"make tools-only"</i>.</li>
+<li><a name="pf_11">To use LLVM modules on Win32-based system,
+    you may configure LLVM with <i>&quot;--enable-shared&quot;</i>.</li>
+<li><a name="pf_12">To compile SPU backend, you need to add
+    <tt>&quot;LDFLAGS=-Wl,--stack,16777216&quot;</tt> to configure.</li>
 </ol>
 </div>
 
@@ -396,6 +403,11 @@ href="GCCFEBuildInstrs.html">try to compile it</a> on your platform.</p>
       <td>&ge;1.3</td>
       <td>Subversion access to LLVM<sup><a href="#sf2">2</a></sup></td>
     </tr>
+
+    <!-- FIXME:
+    Do we support dg?
+    Are DejaGnu and expect obsolete?
+    Shall we mention Python? -->
 
     <tr>
       <td><a href="http://savannah.gnu.org/projects/dejagnu">DejaGnu</a></td>
@@ -736,6 +748,7 @@ revision), you can checkout it from the '<tt>tags</tt>' directory (instead of
 subdirectories of the '<tt>tags</tt>' directory:</p>
 
 <ul>
+<li>Release 2.9: <b>RELEASE_29/final</b></li>
 <li>Release 2.8: <b>RELEASE_28</b></li>
 <li>Release 2.7: <b>RELEASE_27</b></li>
 <li>Release 2.6: <b>RELEASE_26</b></li>
@@ -1327,6 +1340,10 @@ different <a href="#tools">tools</a>.</p>
   <dd> This directory contains the major parts of the code generator: Instruction 
   Selector, Instruction Scheduling, and Register Allocation.</dd>
 
+  <dt><tt><b>llvm/lib/MC/</b></tt></dt>
+  <dd>(FIXME: T.B.D.)</dd>
+
+  <!--FIXME: obsoleted -->
   <dt><tt><b>llvm/lib/Debugger/</b></tt></dt>
   <dd> This directory contains the source level debugger library that makes 
   it possible to instrument LLVM programs so that a debugger could identify 
@@ -1340,6 +1357,7 @@ different <a href="#tools">tools</a>.</p>
   <dd> This directory contains the source code that corresponds to the header 
   files located in <tt>llvm/include/Support/</tt>.</dd>
 
+  <!--FIXME: obsoleted -->
   <dt><tt><b>llvm/lib/System/</b></tt></dt>
   <dd>This directory contains the operating system abstraction layer that
   shields LLVM from platform-specific coding.</dd>

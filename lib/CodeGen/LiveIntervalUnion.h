@@ -163,10 +163,10 @@ public:
     bool CheckedFirstInterference;
     bool SeenAllInterferences;
     bool SeenUnspillableVReg;
-    unsigned Tag;
+    unsigned Tag, UserTag;
 
   public:
-    Query(): LiveUnion(), VirtReg() {}
+    Query(): LiveUnion(), VirtReg(), Tag(0), UserTag(0) {}
 
     Query(LiveInterval *VReg, LiveIntervalUnion *LIU):
       LiveUnion(LIU), VirtReg(VReg), CheckedFirstInterference(false),
@@ -181,11 +181,13 @@ public:
       SeenAllInterferences = false;
       SeenUnspillableVReg = false;
       Tag = 0;
+      UserTag = 0;
     }
 
-    void init(LiveInterval *VReg, LiveIntervalUnion *LIU) {
+    void init(unsigned UTag, LiveInterval *VReg, LiveIntervalUnion *LIU) {
       assert(VReg && LIU && "Invalid arguments");
-      if (VirtReg == VReg && LiveUnion == LIU && !LIU->changedSince(Tag)) {
+      if (UserTag == UTag && VirtReg == VReg &&
+          LiveUnion == LIU && !LIU->changedSince(Tag)) {
         // Retain cached results, e.g. firstInterference.
         return;
       }
@@ -193,6 +195,7 @@ public:
       LiveUnion = LIU;
       VirtReg = VReg;
       Tag = LIU->getTag();
+      UserTag = UTag;
     }
 
     LiveInterval &virtReg() const {

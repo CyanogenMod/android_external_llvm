@@ -193,7 +193,8 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   
   InstString.reset(new std::string);
   InstStream.reset(new raw_string_ostream(*InstString));
-  InstPrinter.reset(Tgt->createMCInstPrinter(LLVMSyntaxVariant, *AsmInfo));
+  InstPrinter.reset(Tgt->createMCInstPrinter(*TargetMachine, LLVMSyntaxVariant,
+                                             *AsmInfo));
   
   if (!InstPrinter)
     return;
@@ -253,9 +254,11 @@ EDInst *EDDisassembler::createInst(EDByteReaderCallback byteReader,
     delete inst;
     return NULL;
   } else {
-    const llvm::EDInstInfo *thisInstInfo;
+    const llvm::EDInstInfo *thisInstInfo = NULL;
 
-    thisInstInfo = &InstInfos[inst->getOpcode()];
+    if (InstInfos) {
+      thisInstInfo = &InstInfos[inst->getOpcode()];
+    }
     
     EDInst* sdInst = new EDInst(inst, byteSize, *this, thisInstInfo);
     return sdInst;

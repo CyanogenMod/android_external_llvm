@@ -93,6 +93,19 @@ static void InitLibcallNames(const char **Names) {
   Names[RTLIB::UREM_I32] = "__umodsi3";
   Names[RTLIB::UREM_I64] = "__umoddi3";
   Names[RTLIB::UREM_I128] = "__umodti3";
+
+  // These are generally not available.
+  Names[RTLIB::SDIVREM_I8] = 0;
+  Names[RTLIB::SDIVREM_I16] = 0;
+  Names[RTLIB::SDIVREM_I32] = 0;
+  Names[RTLIB::SDIVREM_I64] = 0;
+  Names[RTLIB::SDIVREM_I128] = 0;
+  Names[RTLIB::UDIVREM_I8] = 0;
+  Names[RTLIB::UDIVREM_I16] = 0;
+  Names[RTLIB::UDIVREM_I32] = 0;
+  Names[RTLIB::UDIVREM_I64] = 0;
+  Names[RTLIB::UDIVREM_I128] = 0;
+
   Names[RTLIB::NEG_I32] = "__negsi2";
   Names[RTLIB::NEG_I64] = "__negdi2";
   Names[RTLIB::ADD_F32] = "__addsf3";
@@ -3174,26 +3187,39 @@ SDValue TargetLowering::BuildUDIV(SDNode *N, SelectionDAG &DAG,
 
   // FIXME: We should use a narrower constant when the upper
   // bits are known to be zero.
-  ConstantSDNode *N1C = cast<ConstantSDNode>(N->getOperand(1));
-  APInt::mu magics = N1C->getAPIntValue().magicu();
+  const APInt &N1C = cast<ConstantSDNode>(N->getOperand(1))->getAPIntValue();
+  APInt::mu magics = N1C.magicu();
+
+  SDValue Q = N->getOperand(0);
+
+  // If the divisor is even, we can avoid using the expensive fixup by shifting
+  // the divided value upfront.
+  if (magics.a != 0 && !N1C[0]) {
+    unsigned Shift = N1C.countTrailingZeros();
+    Q = DAG.getNode(ISD::SRL, dl, VT, Q,
+                    DAG.getConstant(Shift, getShiftAmountTy(Q.getValueType())));
+    if (Created)
+      Created->push_back(Q.getNode());
+
+    // Get magic number for the shifted divisor.
+    magics = N1C.lshr(Shift).magicu(Shift);
+    assert(magics.a == 0 && "Should use cheap fixup now");
+  }
 
   // Multiply the numerator (operand 0) by the magic value
   // FIXME: We should support doing a MUL in a wider type
-  SDValue Q;
   if (isOperationLegalOrCustom(ISD::MULHU, VT))
-    Q = DAG.getNode(ISD::MULHU, dl, VT, N->getOperand(0),
-                    DAG.getConstant(magics.m, VT));
+    Q = DAG.getNode(ISD::MULHU, dl, VT, Q, DAG.getConstant(magics.m, VT));
   else if (isOperationLegalOrCustom(ISD::UMUL_LOHI, VT))
-    Q = SDValue(DAG.getNode(ISD::UMUL_LOHI, dl, DAG.getVTList(VT, VT),
-                              N->getOperand(0),
-                              DAG.getConstant(magics.m, VT)).getNode(), 1);
+    Q = SDValue(DAG.getNode(ISD::UMUL_LOHI, dl, DAG.getVTList(VT, VT), Q,
+                            DAG.getConstant(magics.m, VT)).getNode(), 1);
   else
     return SDValue();       // No mulhu or equvialent
   if (Created)
     Created->push_back(Q.getNode());
 
   if (magics.a == 0) {
-    assert(magics.s < N1C->getAPIntValue().getBitWidth() &&
+    assert(magics.s < N1C.getBitWidth() &&
            "We shouldn't generate an undefined shift!");
     return DAG.getNode(ISD::SRL, dl, VT, Q,
                  DAG.getConstant(magics.s, getShiftAmountTy(Q.getValueType())));

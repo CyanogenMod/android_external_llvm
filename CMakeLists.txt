@@ -10,7 +10,7 @@ set(CMAKE_MODULE_PATH
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules"
   )
 
-set(PACKAGE_VERSION "2.9")
+set(PACKAGE_VERSION "3.0")
 
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
@@ -80,6 +80,9 @@ set(LLVM_ALL_TARGETS
   X86
   XCore
   )
+
+# List of targets with JIT support:
+set(LLVM_TARGETS_WITH_JIT X86 PowerPC ARM)
 
 if( MSVC )
   set(LLVM_TARGETS_TO_BUILD X86
@@ -183,15 +186,6 @@ endif( ${CMAKE_SYSTEM_NAME} MATCHES SunOS )
 
 include(AddLLVM)
 include(TableGen)
-
-if( MINGW )
-  get_system_libs(LLVM_SYSTEM_LIBS_LIST)
-  foreach(l ${LLVM_SYSTEM_LIBS_LIST})
-    set(LLVM_SYSTEM_LIBS "${LLVM_SYSTEM_LIBS} -l${l}")
-  endforeach()
-  set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_CXX_STANDARD_LIBRARIES}${LLVM_SYSTEM_LIBS}")
-  set(CMAKE_C_STANDARD_LIBRARIES "${CMAKE_C_STANDARD_LIBRARIES}${LLVM_SYSTEM_LIBS}")
-endif()
 
 if( MINGW )
   # People report that -O3 is unreliable on MinGW. The traditional

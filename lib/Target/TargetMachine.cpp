@@ -48,6 +48,7 @@ namespace llvm {
   bool RealignStack;
   bool DisableJumpTables;
   bool StrongPHIElim;
+  bool HasDivModLibcall;
   bool AsmVerbosityDefault(false);
 }
 
@@ -205,6 +206,11 @@ EnableStrongPHIElim(cl::Hidden, "strong-phi-elim",
   cl::desc("Use strong PHI elimination."),
   cl::location(StrongPHIElim),
   cl::init(false));
+static cl::opt<bool, true>
+UseDivMod("use-divmod-libcall",
+  cl::desc("Use __{u}divmod libcalls for div / rem pairs"),
+  cl::location(HasDivModLibcall),
+  cl::init(false));
 static cl::opt<bool>
 DataSections("fdata-sections",
   cl::desc("Emit data into separate sections"),
@@ -221,6 +227,7 @@ TargetMachine::TargetMachine(const Target &T)
   : TheTarget(T), AsmInfo(0),
     MCRelaxAll(false),
     MCNoExecStack(false),
+    MCSaveTempLabels(false),
     MCUseLoc(true) {
   // Typically it will be subtargets that will adjust FloatABIType from Default
   // to Soft or Hard.

@@ -84,7 +84,7 @@ if( LLVM_ENABLE_PIC )
     if( SUPPORTS_FPIC_FLAG )
       message(STATUS "Building with -fPIC")
       set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-      set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
     else( SUPPORTS_FPIC_FLAG )
       message(WARNING "-fPIC not supported.")
     endif()
@@ -102,8 +102,6 @@ if( CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT WIN32 )
   endif( LLVM_BUILD_32_BITS )
 endif( CMAKE_SIZEOF_VOID_P EQUAL 8 AND NOT WIN32 )
 
-message(STATUS "uno"
-"dos")
 if( MSVC_IDE AND ( MSVC90 OR MSVC10 ) )
   # Only Visual Studio 2008 and 2010 officially supports /MP.
   # Visual Studio 2005 do support it but it's experimental there.

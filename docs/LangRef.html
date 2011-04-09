@@ -1017,13 +1017,15 @@ declare signext i8 @returns_signed_char()
 <dl>
   <dt><tt><b>zeroext</b></tt></dt>
   <dd>This indicates to the code generator that the parameter or return value
-      should be zero-extended to a 32-bit value by the caller (for a parameter)
-      or the callee (for a return value).</dd>
+      should be zero-extended to the extent required by the target's ABI (which
+      is usually 32-bits, but is 8-bits for a i1 on x86-64) by the caller (for a
+      parameter) or the callee (for a return value).</dd>
 
   <dt><tt><b>signext</b></tt></dt>
   <dd>This indicates to the code generator that the parameter or return value
-      should be sign-extended to a 32-bit value by the caller (for a parameter)
-      or the callee (for a return value).</dd>
+      should be sign-extended to the extent required by the target's ABI (which
+      is usually 32-bits) by the caller (for a parameter) or the callee (for a
+      return value).</dd>
 
   <dt><tt><b>inreg</b></tt></dt>
   <dd>This indicates that this parameter or return value should be treated in a
@@ -3611,9 +3613,10 @@ Instruction</a> </div>
 
 <h5>Semantics:</h5>
 <p>This instruction returns the <i>remainder</i> of a division (where the result
-   has the same sign as the dividend, <tt>op1</tt>), not the <i>modulo</i>
-   operator (where the result has the same sign as the divisor, <tt>op2</tt>) of
-   a value.  For more information about the difference,
+   is either zero or has the same sign as the dividend, <tt>op1</tt>), not the
+   <i>modulo</i> operator (where the result is either zero or has the same sign
+   as the divisor, <tt>op2</tt>) of a value.
+   For more information about the difference,
    see <a href="http://mathforum.org/dr.math/problems/anne.4.28.99.html">The
    Math Forum</a>. For a table of how this is implemented in various languages,
    please see <a href="http://en.wikipedia.org/wiki/Modulo_operation">
@@ -4748,8 +4751,8 @@ entry:
 
 <h5>Example:</h5>
 <pre>
-  %X = fpext float 3.1415 to double        <i>; yields double:3.1415</i>
-  %Y = fpext float 1.0 to float            <i>; yields float:1.0 (no-op)</i>
+  %X = fpext float 3.125 to double         <i>; yields double:3.125000e+00</i>
+  %Y = fpext double %X to fp128            <i>; yields fp128:0xL00000000000000004000900000000000</i>
 </pre>
 
 </div>

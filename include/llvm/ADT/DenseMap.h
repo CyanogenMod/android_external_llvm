@@ -72,7 +72,8 @@ public:
       P->first.~KeyT();
     }
 #ifndef NDEBUG
-    memset(Buckets, 0x5a, sizeof(BucketT)*NumBuckets);
+    if (NumBuckets)
+      memset(Buckets, 0x5a, sizeof(BucketT)*NumBuckets);
 #endif
     operator delete(Buckets);
   }
@@ -288,9 +289,12 @@ private:
     // table completely filled with tombstones, no lookup would ever succeed,
     // causing infinite loops in lookup.
     ++NumEntries;
-    if (NumEntries*4 >= NumBuckets*3 ||
-        NumBuckets-(NumEntries+NumTombstones) < NumBuckets/8) {
+    if (NumEntries*4 >= NumBuckets*3) {
       this->grow(NumBuckets * 2);
+      LookupBucketFor(Key, TheBucket);
+    }
+    if (NumBuckets-(NumEntries+NumTombstones) < NumBuckets/8) {
+      this->grow(NumBuckets);
       LookupBucketFor(Key, TheBucket);
     }
 
@@ -421,7 +425,8 @@ private:
     }
 
 #ifndef NDEBUG
-    memset(OldBuckets, 0x5a, sizeof(BucketT)*OldNumBuckets);
+    if (OldNumBuckets)
+      memset(OldBuckets, 0x5a, sizeof(BucketT)*OldNumBuckets);
 #endif
     // Free the old table.
     operator delete(OldBuckets);

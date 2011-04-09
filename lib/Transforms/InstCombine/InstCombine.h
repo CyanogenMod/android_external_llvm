@@ -217,8 +217,8 @@ private:
   Instruction *transformCallThroughTrampoline(CallSite CS);
   Instruction *transformZExtICmp(ICmpInst *ICI, Instruction &CI,
                                  bool DoXform = true);
+  Instruction *transformSExtICmp(ICmpInst *ICI, Instruction &CI);
   bool WillNotOverflowSignedAdd(Value *LHS, Value *RHS);
-  DbgDeclareInst *hasOneUsePlusDeclare(Value *V);
   Value *EmitGEPOffset(User *GEP);
 
 public:
@@ -247,7 +247,10 @@ public:
     // segment of unreachable code, so just clobber the instruction.
     if (&I == V) 
       V = UndefValue::get(I.getType());
-      
+
+    DEBUG(errs() << "IC: Replacing " << I << "\n"
+                    "    with " << *V << '\n');
+
     I.replaceAllUsesWith(V);
     return &I;
   }

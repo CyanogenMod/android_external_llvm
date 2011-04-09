@@ -1080,11 +1080,18 @@ bool ARMBaseInstrInfo::produceSameValue(const MachineInstr *MI0,
     int CPI1 = MO1.getIndex();
     const MachineConstantPoolEntry &MCPE0 = MCP->getConstants()[CPI0];
     const MachineConstantPoolEntry &MCPE1 = MCP->getConstants()[CPI1];
-    ARMConstantPoolValue *ACPV0 =
-      static_cast<ARMConstantPoolValue*>(MCPE0.Val.MachineCPVal);
-    ARMConstantPoolValue *ACPV1 =
-      static_cast<ARMConstantPoolValue*>(MCPE1.Val.MachineCPVal);
-    return ACPV0->hasSameValue(ACPV1);
+    bool isARMCP0 = MCPE0.isMachineConstantPoolEntry();
+    bool isARMCP1 = MCPE1.isMachineConstantPoolEntry();
+    if (isARMCP0 && isARMCP1) {
+      ARMConstantPoolValue *ACPV0 =
+        static_cast<ARMConstantPoolValue*>(MCPE0.Val.MachineCPVal);
+      ARMConstantPoolValue *ACPV1 =
+        static_cast<ARMConstantPoolValue*>(MCPE1.Val.MachineCPVal);
+      return ACPV0->hasSameValue(ACPV1);
+    } else if (!isARMCP0 && !isARMCP1) {
+      return MCPE0.Val.ConstVal == MCPE1.Val.ConstVal;
+    }
+    return false;
   } else if (Opcode == ARM::PICLDR) {
     if (MI1->getOpcode() != Opcode)
       return false;
@@ -1611,12 +1618,59 @@ OptimizeCompareInstr(MachineInstr *CmpInstr, unsigned SrcReg, int CmpMask,
   // Set the "zero" bit in CPSR.
   switch (MI->getOpcode()) {
   default: break;
+  case ARM::RSBri:
+  case ARM::RSCri:
   case ARM::ADDri:
+  case ARM::ADCri:
+  case ARM::SUBri:
+  case ARM::SBCri:
+  case ARM::t2RSBri:
+  case ARM::t2ADDri:
+  case ARM::t2ADCri:
+  case ARM::t2SUBri:
+  case ARM::t2SBCri: {
+    // Scan forward for the use of CPSR, if it's a conditional code requires
+    // checking of V bit, then this is not safe to do. If we can't find the
+    // CPSR use (i.e. used in another block), then it's not safe to perform
+    // the optimization.
+    bool isSafe = false;
+    I = CmpInstr;
+    E = MI->getParent()->end();
+    while (!isSafe && ++I != E) {
+      const MachineInstr &Instr = *I;
+      for (unsigned IO = 0, EO = Instr.getNumOperands();
+           !isSafe && IO != EO; ++IO) {
+        const MachineOperand &MO = Instr.getOperand(IO);
+        if (!MO.isReg() || MO.getReg() != ARM::CPSR)
+          continue;
+        if (MO.isDef()) {
+          isSafe = true;
+          break;
+        }
+        // Condition code is after the operand before CPSR.
+        ARMCC::CondCodes CC = (ARMCC::CondCodes)Instr.getOperand(IO-1).getImm();
+        switch (CC) {
+        default:
+          isSafe = true;
+          break;
+        case ARMCC::VS:
+        case ARMCC::VC:
+        case ARMCC::GE:
+        case ARMCC::LT:
+        case ARMCC::GT:
+        case ARMCC::LE:
+          return false;
+        }
+      }
+    }
+
+    if (!isSafe)
+      return false;
+
+    // fallthrough
+  }
   case ARM::ANDri:
   case ARM::t2ANDri:
-  case ARM::SUBri:
-  case ARM::t2ADDri:
-  case ARM::t2SUBri:
     // Toggle the optional operand to CPSR.
     MI->getOperand(5).setReg(ARM::CPSR);
     MI->getOperand(5).setIsDef(true);
@@ -1742,9 +1796,7 @@ ARMBaseInstrInfo::getNumMicroOps(const InstrItineraryData *ItinData,
     llvm_unreachable("Unexpected multi-uops instruction!");
     break;
   case ARM::VLDMQIA:
-  case ARM::VLDMQDB:
   case ARM::VSTMQIA:
-  case ARM::VSTMQDB:
     return 2;
 
   // The number of uOps for load / store multiple are determined by the number
@@ -1758,19 +1810,15 @@ ARMBaseInstrInfo::getNumMicroOps(const InstrItineraryData *ItinData,
   // is not 64-bit aligned, then AGU would take an extra cycle.  For VFP / NEON
   // load / store multiple, the formula is (#reg / 2) + (#reg % 2) + 1.
   case ARM::VLDMDIA:
-  case ARM::VLDMDDB:
   case ARM::VLDMDIA_UPD:
   case ARM::VLDMDDB_UPD:
   case ARM::VLDMSIA:
-  case ARM::VLDMSDB:
   case ARM::VLDMSIA_UPD:
   case ARM::VLDMSDB_UPD:
   case ARM::VSTMDIA:
-  case ARM::VSTMDDB:
   case ARM::VSTMDIA_UPD:
   case ARM::VSTMDDB_UPD:
   case ARM::VSTMSIA:
-  case ARM::VSTMSDB:
   case ARM::VSTMSIA_UPD:
   case ARM::VSTMSDB_UPD: {
     unsigned NumRegs = MI->getNumOperands() - Desc.getNumOperands();
@@ -1860,7 +1908,6 @@ ARMBaseInstrInfo::getVLDMDefCycle(const InstrItineraryData *ItinData,
     switch (DefTID.getOpcode()) {
     default: break;
     case ARM::VLDMSIA:
-    case ARM::VLDMSDB:
     case ARM::VLDMSIA_UPD:
     case ARM::VLDMSDB_UPD:
       isSLoad = true;
@@ -1936,7 +1983,6 @@ ARMBaseInstrInfo::getVSTMUseCycle(const InstrItineraryData *ItinData,
     switch (UseTID.getOpcode()) {
     default: break;
     case ARM::VSTMSIA:
-    case ARM::VSTMSDB:
     case ARM::VSTMSIA_UPD:
     case ARM::VSTMSDB_UPD:
       isSStore = true;
@@ -2007,11 +2053,9 @@ ARMBaseInstrInfo::getOperandLatency(const InstrItineraryData *ItinData,
     break;
 
   case ARM::VLDMDIA:
-  case ARM::VLDMDDB:
   case ARM::VLDMDIA_UPD:
   case ARM::VLDMDDB_UPD:
   case ARM::VLDMSIA:
-  case ARM::VLDMSDB:
   case ARM::VLDMSIA_UPD:
   case ARM::VLDMSDB_UPD:
     DefCycle = getVLDMDefCycle(ItinData, DefTID, DefClass, DefIdx, DefAlign);
@@ -2050,11 +2094,9 @@ ARMBaseInstrInfo::getOperandLatency(const InstrItineraryData *ItinData,
     break;
 
   case ARM::VSTMDIA:
-  case ARM::VSTMDDB:
   case ARM::VSTMDIA_UPD:
   case ARM::VSTMDDB_UPD:
   case ARM::VSTMSIA:
-  case ARM::VSTMSDB:
   case ARM::VSTMSIA_UPD:
   case ARM::VSTMSDB_UPD:
     UseCycle = getVSTMUseCycle(ItinData, UseTID, UseClass, UseIdx, UseAlign);
@@ -2265,9 +2307,7 @@ int ARMBaseInstrInfo::getInstrLatency(const InstrItineraryData *ItinData,
   default:
     return ItinData->getStageLatency(get(Opcode).getSchedClass());
   case ARM::VLDMQIA:
-  case ARM::VLDMQDB:
   case ARM::VSTMQIA:
-  case ARM::VSTMQDB:
     return 2;
   }
 }

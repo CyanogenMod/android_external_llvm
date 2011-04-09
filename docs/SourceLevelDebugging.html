@@ -407,7 +407,8 @@ height="369">
 </div>
 
 <p>These descriptors provide debug information about globals variables.  The
-provide details such as name, type and where the variable is defined.</p>
+provide details such as name, type and where the variable is defined. All
+global variables are collected by named metadata <tt>!llvm.dbg.gv</tt>.</p>
 
 </div>
 
@@ -440,13 +441,17 @@ provide details such as name, type and where the variable is defined.</p>
   i1        ;; isArtificial
   i1        ;; isOptimized
   Function *;; Pointer to LLVM function
+  metadata  ;; Lists function template parameters
 }
 </pre>
 </div>
 
 <p>These descriptors provide debug information about functions, methods and
    subprograms.  They provide details such as name, return types and the source
-   location where the subprogram is defined.</p>
+   location where the subprogram is defined.
+   All subprogram descriptors are collected by a named metadata 
+   <tt>!llvm.dbg.sp</tt>.
+</p>
 
 </div>
 
@@ -463,7 +468,9 @@ provide details such as name, type and where the variable is defined.</p>
   i32,     ;; Tag = 11 + <a href="#LLVMDebugVersion">LLVMDebugVersion</a> (DW_TAG_lexical_block)
   metadata,;; Reference to context descriptor
   i32,     ;; Line number
-  i32      ;; Column number
+  i32,     ;; Column number
+  metadata,;; Reference to source file
+  i32      ;; Unique ID to identify blocks from a template function
 }
 </pre>
 </div>
@@ -644,7 +651,8 @@ DW_TAG_inheritance      = 28
 
 <p>The members of enumeration types (tag = <tt>DW_TAG_enumeration_type</tt>) are
    <a href="#format_enumeration">enumerator descriptors</a>, each representing
-   the definition of enumeration value for the set.</p>
+   the definition of enumeration value for the set. All enumeration type
+   descriptors are collected by named metadata <tt>!llvm.dbg.enum</tt>.</p>
 
 <p>The members of structure (tag = <tt>DW_TAG_structure_type</tt>) or union (tag
    = <tt>DW_TAG_union_type</tt>) types are any one of
@@ -742,7 +750,8 @@ DW_TAG_inheritance      = 28
   metadata, ;; Context
   metadata, ;; Name
   metadata, ;; Reference to file where defined
-  i32,      ;; Line number where defined
+  i32,      ;; 24 bit - Line number where defined
+            ;; 8 bit - Argument number. 1 indicates 1st argument.
   metadata  ;; Type descriptor
 }
 </pre>
@@ -1192,7 +1201,14 @@ int main(int argc, char *argv[]) {
   i32 1,             ;; Line number
   metadata !4,       ;; Type
   i1 false,          ;; Is local 
-  i1 true            ;; Is definition
+  i1 true,           ;; Is definition
+  i32 0,             ;; Virtuality attribute, e.g. pure virtual function
+  i32 0,             ;; Index into virtual table for C++ methods
+  i32 0,             ;; Type that holds virtual table.
+  i32 0,             ;; Flags
+  i1 false,          ;; True if this function is optimized
+  Function *,        ;; Pointer to llvm::Function
+  null               ;; Function template parameters
 }
 ;;
 ;; Define the subprogram itself.

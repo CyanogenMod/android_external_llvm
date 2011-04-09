@@ -45,6 +45,7 @@
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/VectorExtras.h"
+#include "llvm/Support/CallSite.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -221,7 +222,13 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
 
   // X86 is weird, it always uses i8 for shift amounts and setcc results.
   setBooleanContents(ZeroOrOneBooleanContent);
-  setSchedulingPreference(Sched::RegPressure);
+    
+  // For 64-bit since we have so many registers use the ILP scheduler, for
+  // 32-bit code use the register pressure specific scheduling.
+  if (Subtarget->is64Bit())
+    setSchedulingPreference(Sched::ILP);
+  else
+    setSchedulingPreference(Sched::RegPressure);
   setStackPointerRegisterToSaveRestore(X86StackPtr);
 
   if (Subtarget->isTargetWindows() && !Subtarget->isTargetCygMing()) {
@@ -543,12 +550,11 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
 
   setOperationAction(ISD::STACKSAVE,          MVT::Other, Expand);
   setOperationAction(ISD::STACKRESTORE,       MVT::Other, Expand);
-  if (Subtarget->is64Bit())
-    setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i64, Expand);
-  if (Subtarget->isTargetCygMing() || Subtarget->isTargetWindows())
-    setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32, Custom);
-  else
-    setOperationAction(ISD::DYNAMIC_STACKALLOC, MVT::i32, Expand);
+  setOperationAction(ISD::DYNAMIC_STACKALLOC,
+                     (Subtarget->is64Bit() ? MVT::i64 : MVT::i32),
+                     (Subtarget->isTargetCOFF()
+                      && !Subtarget->isTargetEnvMacho()
+                      ? Custom : Expand));
 
   if (!UseSoftFloat && X86ScalarSSEf64) {
     // f32 and f64 use SSE.
@@ -921,6 +927,7 @@ X86TargetLowering::X86TargetLowering(X86TargetMachine &TM)
     // Can turn SHL into an integer multiply.
     setOperationAction(ISD::SHL,                MVT::v4i32, Custom);
     setOperationAction(ISD::SHL,                MVT::v16i8, Custom);
+    setOperationAction(ISD::SRL,                MVT::v4i32, Legal);
 
     // i8 and i16 vectors are custom , because the source register and source
     // source memory operand types are not the same width.  f32 vectors are
@@ -1271,27 +1278,6 @@ X86TargetLowering::findRepresentativeClass(EVT VT) const{
   return std::make_pair(RRC, Cost);
 }
 
-// FIXME: Why this routine is here? Move to RegInfo!
-unsigned
-X86TargetLowering::getRegPressureLimit(const TargetRegisterClass *RC,
-                                       MachineFunction &MF) const {
-  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
-
-  unsigned FPDiff = TFI->hasFP(MF) ? 1 : 0;
-  switch (RC->getID()) {
-  default:
-    return 0;
-  case X86::GR32RegClassID:
-    return 4 - FPDiff;
-  case X86::GR64RegClassID:
-    return 12 - FPDiff;
-  case X86::VR128RegClassID:
-    return Subtarget->is64Bit() ? 10 : 4;
-  case X86::VR64RegClassID:
-    return 4;
-  }
-}
-
 bool X86TargetLowering::getStackCookieLocation(unsigned &AddressSpace,
                                                unsigned &Offset) const {
   if (!Subtarget->isTargetLinux())
@@ -1463,6 +1449,20 @@ bool X86TargetLowering::isUsedByReturnOnly(SDNode *N) const {
   return HasRet;
 }
 
+EVT
+X86TargetLowering::getTypeForExtArgOrReturn(LLVMContext &Context, EVT VT,
+                                            ISD::NodeType ExtendKind) const {
+  MVT ReturnMVT;
+  // TODO: Is this also valid on 32-bit?
+  if (Subtarget->is64Bit() && VT == MVT::i1 && ExtendKind == ISD::ZERO_EXTEND)
+    ReturnMVT = MVT::i8;
+  else
+    ReturnMVT = MVT::i32;
+
+  EVT MinVT = getRegisterType(Context, ReturnMVT);
+  return VT.bitsLT(MinVT) ? MinVT : VT;
+}
+
 /// LowerCallResult - Lower the result values of a call into the
 /// appropriate copies out of appropriate physical registers.
 ///
@@ -1595,6 +1595,18 @@ static bool IsTailCallConvention(CallingConv::ID CC) {
   return (CC == CallingConv::Fast || CC == CallingConv::GHC);
 }
 
+bool X86TargetLowering::mayBeEmittedAsTailCall(CallInst *CI) const {
+  if (!CI->isTailCall())
+    return false;
+
+  CallSite CS(CI);
+  CallingConv::ID CalleeCC = CS.getCallingConv();
+  if (!IsTailCallConvention(CalleeCC) && CalleeCC != CallingConv::C)
+    return false;
+
+  return true;
+}
+
 /// FuncIsMadeTailCallSafe - Return true if the function is being made into
 /// a tailcall target by changing its ABI.
 static bool FuncIsMadeTailCallSafe(CallingConv::ID CC) {
@@ -1627,8 +1639,9 @@ X86TargetLowering::LowerMemArgument(SDValue Chain,
   // In case of tail call optimization mark all arguments mutable. Since they
   // could be overwritten by lowering of arguments in case of a tail call.
   if (Flags.isByVal()) {
-    int FI = MFI->CreateFixedObject(Flags.getByValSize(),
-                                    VA.getLocMemOffset(), isImmutable);
+    unsigned Bytes = Flags.getByValSize();
+    if (Bytes == 0) Bytes = 1; // Don't create zero-sized stack objects.
+    int FI = MFI->CreateFixedObject(Bytes, VA.getLocMemOffset(), isImmutable);
     return DAG.getFrameIndex(FI, getPointerTy());
   } else {
     int FI = MFI->CreateFixedObject(ValVT.getSizeInBits()/8,
@@ -1765,8 +1778,8 @@ X86TargetLowering::LowerFormalArguments(SDValue Chain,
   // If the function takes variable number of arguments, make a frame index for
   // the start of the first vararg value... for expansion of llvm.va_start.
   if (isVarArg) {
-    if (!IsWin64 && (Is64Bit || (CallConv != CallingConv::X86_FastCall &&
-                    CallConv != CallingConv::X86_ThisCall))) {
+    if (Is64Bit || (CallConv != CallingConv::X86_FastCall &&
+                    CallConv != CallingConv::X86_ThisCall)) {
       FuncInfo->setVarArgsFrameIndex(MFI->CreateFixedObject(1, StackSize,true));
     }
     if (Is64Bit) {
@@ -1818,7 +1831,9 @@ X86TargetLowering::LowerFormalArguments(SDValue Chain,
         int HomeOffset = TFI.getOffsetOfLocalArea() + 8;
         FuncInfo->setRegSaveFrameIndex(
           MFI->CreateFixedObject(1, NumIntRegs * 8 + HomeOffset, false));
-        FuncInfo->setVarArgsFrameIndex(FuncInfo->getRegSaveFrameIndex());
+        // Fixup to set vararg frame on shadow area (4 x i64).
+        if (NumIntRegs < 4)
+          FuncInfo->setVarArgsFrameIndex(FuncInfo->getRegSaveFrameIndex());
       } else {
         // For X86-64, if there are vararg parameters that are passed via
         // registers, then we must store them to their spots on the stack so they
@@ -3877,8 +3892,8 @@ static SDValue getShuffleVectorZeroOrUndef(SDValue V2, unsigned Idx,
 
 /// getShuffleScalarElt - Returns the scalar element that will make up the ith
 /// element of the result of the vector shuffle.
-SDValue getShuffleScalarElt(SDNode *N, int Index, SelectionDAG &DAG,
-                            unsigned Depth) {
+static SDValue getShuffleScalarElt(SDNode *N, int Index, SelectionDAG &DAG,
+                                   unsigned Depth) {
   if (Depth == 6)
     return SDValue();  // Limit search depth.
 
@@ -7914,6 +7929,7 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
                                            SelectionDAG &DAG) const {
   assert((Subtarget->isTargetCygMing() || Subtarget->isTargetWindows()) &&
          "This should be used only on Windows targets");
+  assert(!Subtarget->isTargetEnvMacho());
   DebugLoc dl = Op.getDebugLoc();
 
   // Get the inputs.
@@ -7924,8 +7940,9 @@ X86TargetLowering::LowerDYNAMIC_STACKALLOC(SDValue Op,
   SDValue Flag;
 
   EVT SPTy = Subtarget->is64Bit() ? MVT::i64 : MVT::i32;
+  unsigned Reg = (Subtarget->is64Bit() ? X86::RAX : X86::EAX);
 
-  Chain = DAG.getCopyToReg(Chain, dl, X86::EAX, Size, Flag);
+  Chain = DAG.getCopyToReg(Chain, dl, Reg, Size, Flag);
   Flag = Chain.getValue(1);
 
   SDVTList NodeTys = DAG.getVTList(MVT::Other, MVT::Glue);
@@ -8855,8 +8872,8 @@ SDValue X86TargetLowering::LowerXALUO(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SADDO:
     // A subtract of one will be selected as a INC. Note that INC doesn't
     // set CF, so we can't do this for UADDO.
-    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op))
-      if (C->getAPIntValue() == 1) {
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS))
+      if (C->isOne()) {
         BaseOp = X86ISD::INC;
         Cond = X86::COND_O;
         break;
@@ -8871,8 +8888,8 @@ SDValue X86TargetLowering::LowerXALUO(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SSUBO:
     // A subtract of one will be selected as a DEC. Note that DEC doesn't
     // set CF, so we can't do this for USUBO.
-    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(Op))
-      if (C->getAPIntValue() == 1) {
+    if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(RHS))
+      if (C->isOne()) {
         BaseOp = X86ISD::DEC;
         Cond = X86::COND_O;
         break;
@@ -10397,21 +10414,48 @@ X86TargetLowering::EmitLoweredWinAlloca(MachineInstr *MI,
   const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
   DebugLoc DL = MI->getDebugLoc();
 
+  assert(!Subtarget->isTargetEnvMacho());
+
   // The lowering is pretty easy: we're just emitting the call to _alloca.  The
   // non-trivial part is impdef of ESP.
-  // FIXME: The code should be tweaked as soon as we'll try to do codegen for
-  // mingw-w64.
 
-  const char *StackProbeSymbol =
+  if (Subtarget->isTargetWin64()) {
+    if (Subtarget->isTargetCygMing()) {
+      // ___chkstk(Mingw64):
+      // Clobbers R10, R11, RAX and EFLAGS.
+      // Updates RSP.
+      BuildMI(*BB, MI, DL, TII->get(X86::W64ALLOCA))
+        .addExternalSymbol("___chkstk")
+        .addReg(X86::RAX, RegState::Implicit)
+        .addReg(X86::RSP, RegState::Implicit)
+        .addReg(X86::RAX, RegState::Define | RegState::Implicit)
+        .addReg(X86::RSP, RegState::Define | RegState::Implicit)
+        .addReg(X86::EFLAGS, RegState::Define | RegState::Implicit);
+    } else {
+      // __chkstk(MSVCRT): does not update stack pointer.
+      // Clobbers R10, R11 and EFLAGS.
+      // FIXME: RAX(allocated size) might be reused and not killed.
+      BuildMI(*BB, MI, DL, TII->get(X86::W64ALLOCA))
+        .addExternalSymbol("__chkstk")
+        .addReg(X86::RAX, RegState::Implicit)
+        .addReg(X86::EFLAGS, RegState::Define | RegState::Implicit);
+      // RAX has the offset to subtracted from RSP.
+      BuildMI(*BB, MI, DL, TII->get(X86::SUB64rr), X86::RSP)
+        .addReg(X86::RSP)
+        .addReg(X86::RAX);
+    }
+  } else {
+    const char *StackProbeSymbol =
       Subtarget->isTargetWindows() ? "_chkstk" : "_alloca";
 
-  BuildMI(*BB, MI, DL, TII->get(X86::CALLpcrel32))
-    .addExternalSymbol(StackProbeSymbol)
-    .addReg(X86::EAX, RegState::Implicit)
-    .addReg(X86::ESP, RegState::Implicit)
-    .addReg(X86::EAX, RegState::Define | RegState::Implicit)
-    .addReg(X86::ESP, RegState::Define | RegState::Implicit)
-    .addReg(X86::EFLAGS, RegState::Define | RegState::Implicit);
+    BuildMI(*BB, MI, DL, TII->get(X86::CALLpcrel32))
+      .addExternalSymbol(StackProbeSymbol)
+      .addReg(X86::EAX, RegState::Implicit)
+      .addReg(X86::ESP, RegState::Implicit)
+      .addReg(X86::EAX, RegState::Define | RegState::Implicit)
+      .addReg(X86::ESP, RegState::Define | RegState::Implicit)
+      .addReg(X86::EFLAGS, RegState::Define | RegState::Implicit);
+  }
 
   MI->eraseFromParent();   // The pseudo instruction is gone now.
   return BB;

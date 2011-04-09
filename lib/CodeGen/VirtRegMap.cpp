@@ -259,7 +259,7 @@ void VirtRegMap::rewrite(SlotIndexes *Indexes) {
   DEBUG(dbgs() << "********** REWRITE VIRTUAL REGISTERS **********\n"
                << "********** Function: "
                << MF->getFunction()->getName() << '\n');
-
+  DEBUG(dump());
   SmallVector<unsigned, 8> SuperKills;
 
   for (MachineFunction::iterator MBBI = MF->begin(), MBBE = MF->end();
@@ -309,12 +309,18 @@ void VirtRegMap::rewrite(SlotIndexes *Indexes) {
 
       // Finally, remove any identity copies.
       if (MI->isIdentityCopy()) {
-        DEBUG(dbgs() << "Deleting identity copy.\n");
-        RemoveMachineInstrFromMaps(MI);
-        if (Indexes)
-          Indexes->removeMachineInstrFromMaps(MI);
-        // It's safe to erase MI because MII has already been incremented.
-        MI->eraseFromParent();
+        if (MI->getNumOperands() == 2) {
+          DEBUG(dbgs() << "Deleting identity copy.\n");
+          RemoveMachineInstrFromMaps(MI);
+          if (Indexes)
+            Indexes->removeMachineInstrFromMaps(MI);
+          // It's safe to erase MI because MII has already been incremented.
+          MI->eraseFromParent();
+        } else {
+          // Transform identity copy to a KILL to deal with subregisters.
+          MI->setDesc(TII->get(TargetOpcode::KILL));
+          DEBUG(dbgs() << "Identity copy: " << *MI);
+        }
       }
     }
   }

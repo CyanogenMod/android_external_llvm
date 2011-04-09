@@ -153,6 +153,8 @@ namespace llvm {
       VZIP,         // zip (interleave)
       VUZP,         // unzip (deinterleave)
       VTRN,         // transpose
+      VTBL1,        // 1-register shuffle with mask
+      VTBL2,        // 2-register shuffle with mask
 
       // Vector multiply long:
       VMULLs,       // ...signed
@@ -176,6 +178,9 @@ namespace llvm {
       VORRIMM,
       // Vector AND with NOT of immediate
       VBICIMM,
+
+      // Vector bitwise select
+      VBSL,
 
       // Vector load N-element structure to all lanes:
       VLD2DUP = ISD::FIRST_TARGET_MEMORY_OPCODE,
@@ -329,9 +334,6 @@ namespace llvm {
 
     Sched::Preference getSchedulingPreference(SDNode *N) const;
 
-    unsigned getRegPressureLimit(const TargetRegisterClass *RC,
-                                 MachineFunction &MF) const;
-
     bool isShuffleMaskLegal(const SmallVectorImpl<int> &M, EVT VT) const;
     bool isOffsetFoldingLegal(const GlobalAddressSDNode *GA) const;
 
@@ -458,10 +460,13 @@ namespace llvm {
 
     virtual bool isUsedByReturnOnly(SDNode *N) const;
 
+    virtual bool mayBeEmittedAsTailCall(CallInst *CI) const;
+
     SDValue getARMCmp(SDValue LHS, SDValue RHS, ISD::CondCode CC,
                       SDValue &ARMcc, SelectionDAG &DAG, DebugLoc dl) const;
     SDValue getVFPCmp(SDValue LHS, SDValue RHS,
                       SelectionDAG &DAG, DebugLoc dl) const;
+    SDValue duplicateCmp(SDValue Cmp, SelectionDAG &DAG) const;
 
     SDValue OptimizeVFPBrcond(SDValue Op, SelectionDAG &DAG) const;
 

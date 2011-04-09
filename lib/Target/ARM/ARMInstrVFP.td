@@ -101,14 +101,6 @@ multiclass vfp_ldst_mult<string asm, bit L_bit,
     let Inst{21}    = 1;          // Writeback
     let Inst{20}    = L_bit;
   }
-  def DDB :
-    AXDI4<(outs), (ins GPR:$Rn, pred:$p, dpr_reglist:$regs, variable_ops),
-          IndexModeNone, itin,
-          !strconcat(asm, "db${p}\t$Rn, $regs"), "", []> {
-    let Inst{24-23} = 0b10;       // Decrement Before
-    let Inst{21}    = 0;          // No writeback
-    let Inst{20}    = L_bit;
-  }
   def DDB_UPD :
     AXDI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, dpr_reglist:$regs, variable_ops),
           IndexModeUpd, itin_upd,
@@ -137,18 +129,6 @@ multiclass vfp_ldst_mult<string asm, bit L_bit,
           !strconcat(asm, "ia${p}\t$Rn!, $regs"), "$Rn = $wb", []> {
     let Inst{24-23} = 0b01;       // Increment After
     let Inst{21}    = 1;          // Writeback
-    let Inst{20}    = L_bit;
-
-    // Some single precision VFP instructions may be executed on both NEON and
-    // VFP pipelines.
-    let D = VFPNeonDomain;
-  }
-  def SDB :
-    AXSI4<(outs), (ins GPR:$Rn, pred:$p, spr_reglist:$regs, variable_ops),
-          IndexModeNone, itin,
-          !strconcat(asm, "db${p}\t$Rn, $regs"), "", []> {
-    let Inst{24-23} = 0b10;       // Decrement Before
-    let Inst{21}    = 0;          // No writeback
     let Inst{20}    = L_bit;
 
     // Some single precision VFP instructions may be executed on both NEON and
@@ -972,15 +952,13 @@ def : Pat<(fsub_mlx (fmul_su SPR:$a, SPR:$b), SPR:$dstin),
 //
 
 let neverHasSideEffects = 1 in {
-def VMOVDcc  : ADuI<0b11101, 0b11, 0b0000, 0b01, 0,
-                    (outs DPR:$Dd), (ins DPR:$Dn, DPR:$Dm),
-                    IIC_fpUNA64, "vmov", ".f64\t$Dd, $Dm",
+def VMOVDcc  : ARMPseudoInst<(outs DPR:$Dd), (ins DPR:$Dn, DPR:$Dm, pred:$p),
+                    Size4Bytes, IIC_fpUNA64,
                     [/*(set DPR:$Dd, (ARMcmov DPR:$Dn, DPR:$Dm, imm:$cc))*/]>,
                  RegConstraint<"$Dn = $Dd">;
 
-def VMOVScc  : ASuI<0b11101, 0b11, 0b0000, 0b01, 0,
-                    (outs SPR:$Sd), (ins SPR:$Sn, SPR:$Sm),
-                    IIC_fpUNA32, "vmov", ".f32\t$Sd, $Sm",
+def VMOVScc  : ARMPseudoInst<(outs SPR:$Sd), (ins SPR:$Sn, SPR:$Sm, pred:$p),
+                    Size4Bytes, IIC_fpUNA32,
                     [/*(set SPR:$Sd, (ARMcmov SPR:$Sn, SPR:$Sm, imm:$cc))*/]>,
                  RegConstraint<"$Sn = $Sd">;
 } // neverHasSideEffects

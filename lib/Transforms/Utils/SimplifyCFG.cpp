@@ -807,12 +807,16 @@ static bool HoistThenElseCodeToIf(BranchInst *BI) {
   BasicBlock::iterator BB2_Itr = BB2->begin();
 
   Instruction *I1 = BB1_Itr++, *I2 = BB2_Itr++;
-  while (isa<DbgInfoIntrinsic>(I1))
-    I1 = BB1_Itr++;
-  while (isa<DbgInfoIntrinsic>(I2))
-    I2 = BB2_Itr++;
-  if (I1->getOpcode() != I2->getOpcode() || isa<PHINode>(I1) ||
-      !I1->isIdenticalToWhenDefined(I2) ||
+  // Skip debug info if it is not identical.
+  DbgInfoIntrinsic *DBI1 = dyn_cast<DbgInfoIntrinsic>(I1);
+  DbgInfoIntrinsic *DBI2 = dyn_cast<DbgInfoIntrinsic>(I2);
+  if (!DBI1 || !DBI2 || !DBI1->isIdenticalToWhenDefined(DBI2)) {
+    while (isa<DbgInfoIntrinsic>(I1))
+      I1 = BB1_Itr++;
+    while (isa<DbgInfoIntrinsic>(I2))
+      I2 = BB2_Itr++;
+  }
+  if (isa<PHINode>(I1) || !I1->isIdenticalToWhenDefined(I2) ||
       (isa<InvokeInst>(I1) && !isSafeToHoistInvoke(BB1, BB2, I1, I2)))
     return false;
 
@@ -835,13 +839,17 @@ static bool HoistThenElseCodeToIf(BranchInst *BI) {
     I2->eraseFromParent();
 
     I1 = BB1_Itr++;
-    while (isa<DbgInfoIntrinsic>(I1))
-      I1 = BB1_Itr++;
     I2 = BB2_Itr++;
-    while (isa<DbgInfoIntrinsic>(I2))
-      I2 = BB2_Itr++;
-  } while (I1->getOpcode() == I2->getOpcode() &&
-           I1->isIdenticalToWhenDefined(I2));
+    // Skip debug info if it is not identical.
+    DbgInfoIntrinsic *DBI1 = dyn_cast<DbgInfoIntrinsic>(I1);
+    DbgInfoIntrinsic *DBI2 = dyn_cast<DbgInfoIntrinsic>(I2);
+    if (!DBI1 || !DBI2 || !DBI1->isIdenticalToWhenDefined(DBI2)) {
+      while (isa<DbgInfoIntrinsic>(I1))
+        I1 = BB1_Itr++;
+      while (isa<DbgInfoIntrinsic>(I2))
+        I2 = BB2_Itr++;
+    }
+  } while (I1->isIdenticalToWhenDefined(I2));
 
   return true;
 
@@ -1403,14 +1411,17 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI) {
   if (Cond == 0 || (!isa<CmpInst>(Cond) && !isa<BinaryOperator>(Cond)) ||
     Cond->getParent() != BB || !Cond->hasOneUse())
   return false;
-  
+
+  SmallVector<DbgInfoIntrinsic *, 8> DbgValues;
   // Only allow this if the condition is a simple instruction that can be
   // executed unconditionally.  It must be in the same block as the branch, and
   // must be at the front of the block.
   BasicBlock::iterator FrontIt = BB->front();
   // Ignore dbg intrinsics.
-  while (isa<DbgInfoIntrinsic>(FrontIt))
+  while (DbgInfoIntrinsic *DBI = dyn_cast<DbgInfoIntrinsic>(FrontIt)) {
+    DbgValues.push_back(DBI);
     ++FrontIt;
+  }
     
   // Allow a single instruction to be hoisted in addition to the compare
   // that feeds the branch.  We later ensure that any values that _it_ uses
@@ -1424,6 +1435,12 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI) {
     ++FrontIt;
   }
   
+  // Ignore dbg intrinsics.
+  while (DbgInfoIntrinsic *DBI = dyn_cast<DbgInfoIntrinsic>(FrontIt)) {
+    DbgValues.push_back(DBI);
+    ++FrontIt;
+  }
+
   // Only a single bonus inst is allowed.
   if (&*FrontIt != Cond)
     return false;
@@ -1431,8 +1448,10 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI) {
   // Make sure the instruction after the condition is the cond branch.
   BasicBlock::iterator CondIt = Cond; ++CondIt;
   // Ingore dbg intrinsics.
-  while(isa<DbgInfoIntrinsic>(CondIt))
+  while(DbgInfoIntrinsic *DBI = dyn_cast<DbgInfoIntrinsic>(CondIt)) {
+    DbgValues.push_back(DBI);
     ++CondIt;
+  }
   if (&*CondIt != BI) {
     assert (!isa<DbgInfoIntrinsic>(CondIt) && "Hey do not forget debug info!");
     return false;
@@ -1453,7 +1472,7 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI) {
   BasicBlock *FalseDest = BI->getSuccessor(1);
   if (TrueDest == BB || FalseDest == BB)
     return false;
-  
+
   for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
     BasicBlock *PredBlock = *PI;
     BranchInst *PBI = dyn_cast<BranchInst>(PredBlock->getTerminator());
@@ -1566,6 +1585,14 @@ bool llvm::FoldBranchToCommonDest(BranchInst *BI) {
       AddPredecessorToBlock(FalseDest, PredBlock, BB);
       PBI->setSuccessor(1, FalseDest);
     }
+
+    // Move dbg value intrinsics in PredBlock.
+    for (SmallVector<DbgInfoIntrinsic *, 8>::iterator DBI = DbgValues.begin(),
+           DBE = DbgValues.end(); DBI != DBE; ++DBI) {
+      DbgInfoIntrinsic *DB = *DBI;
+      DB->removeFromParent();
+      DB->insertBefore(PBI);
+    }
     return true;
   }
   return false;
@@ -1598,13 +1625,15 @@ static bool SimplifyCondBranchToCondBranch(BranchInst *PBI, BranchInst *BI) {
     // in the constant and simplify the block result.  Subsequent passes of
     // simplifycfg will thread the block.
     if (BlockIsSimpleEnoughToThreadThrough(BB)) {
+      pred_iterator PB = pred_begin(BB), PE = pred_end(BB);
       PHINode *NewPN = PHINode::Create(Type::getInt1Ty(BB->getContext()),
+                                       std::distance(PB, PE),
                                        BI->getCondition()->getName() + ".pr",
                                        BB->begin());
       // Okay, we're going to insert the PHI node.  Since PBI is not the only
       // predecessor, compute the PHI'd conditional value for all of the preds.
       // Any predecessor where the condition is not computable we keep symbolic.
-      for (pred_iterator PI = pred_begin(BB), E = pred_end(BB); PI != E; ++PI) {
+      for (pred_iterator PI = PB; PI != PE; ++PI) {
         BasicBlock *P = *PI;
         if ((PBI = dyn_cast<BranchInst>(P->getTerminator())) &&
             PBI != BI && PBI->isConditional() &&
@@ -2168,7 +2197,9 @@ bool SimplifyCFGOpt::SimplifyUnreachable(UnreachableInst *UI) {
       if (LI->isVolatile())
         break;
     
-    // Delete this instruction
+    // Delete this instruction (any uses are guaranteed to be dead)
+    if (!BBI->use_empty())
+      BBI->replaceAllUsesWith(UndefValue::get(BBI->getType()));
     BBI->eraseFromParent();
     Changed = true;
   }
@@ -2209,17 +2240,28 @@ bool SimplifyCFGOpt::SimplifyUnreachable(UnreachableInst *UI) {
       // If the default value is unreachable, figure out the most popular
       // destination and make it the default.
       if (SI->getSuccessor(0) == BB) {
-        std::map<BasicBlock*, unsigned> Popularity;
-        for (unsigned i = 1, e = SI->getNumCases(); i != e; ++i)
-          Popularity[SI->getSuccessor(i)]++;
-        
+        std::map<BasicBlock*, std::pair<unsigned, unsigned> > Popularity;
+        for (unsigned i = 1, e = SI->getNumCases(); i != e; ++i) {
+          std::pair<unsigned, unsigned>& entry =
+              Popularity[SI->getSuccessor(i)];
+          if (entry.first == 0) {
+            entry.first = 1;
+            entry.second = i;
+          } else {
+            entry.first++;
+          }
+        }
+
         // Find the most popular block.
         unsigned MaxPop = 0;
+        unsigned MaxIndex = 0;
         BasicBlock *MaxBlock = 0;
-        for (std::map<BasicBlock*, unsigned>::iterator
+        for (std::map<BasicBlock*, std::pair<unsigned, unsigned> >::iterator
              I = Popularity.begin(), E = Popularity.end(); I != E; ++I) {
-          if (I->second > MaxPop) {
-            MaxPop = I->second;
+          if (I->second.first > MaxPop || 
+              (I->second.first == MaxPop && MaxIndex > I->second.second)) {
+            MaxPop = I->second.first;
+            MaxIndex = I->second.second;
             MaxBlock = I->first;
           }
         }
