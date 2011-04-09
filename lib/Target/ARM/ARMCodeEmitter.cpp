@@ -899,6 +899,9 @@ void ARMCodeEmitter::emitPseudoInstruction(const MachineInstr &MI) {
   switch (Opcode) {
   default:
     llvm_unreachable("ARMCodeEmitter::emitPseudoInstruction");
+  case ARM::B:
+    emitBranchInstruction(MI);
+    break;
   case ARM::BR_JTr:
   case ARM::BR_JTm:
   case ARM::BR_JTadd:
@@ -1540,6 +1543,10 @@ void ARMCodeEmitter::emitBranchInstruction(const MachineInstr &MI) {
 
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
+
+  if (TID.Opcode == ARM::B) {
+    Binary = 0xEA000000;
+  }
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
