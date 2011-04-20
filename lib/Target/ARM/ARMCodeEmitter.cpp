@@ -165,14 +165,14 @@ namespace {
     //  are already handled elsewhere. They are placeholders to allow this
     //  encoder to continue to function until the MC encoder is sufficiently
     //  far along that this one can be eliminated entirely.
-    unsigned NEONThumb2DataIPostEncoder(const MachineInstr &MI, unsigned Val) 
+    unsigned NEONThumb2DataIPostEncoder(const MachineInstr &MI, unsigned Val)
       const { return 0; }
-    unsigned NEONThumb2LoadStorePostEncoder(const MachineInstr &MI,unsigned Val) 
+    unsigned NEONThumb2LoadStorePostEncoder(const MachineInstr &MI,unsigned Val)
       const { return 0; }
-    unsigned NEONThumb2DupPostEncoder(const MachineInstr &MI,unsigned Val) 
+    unsigned NEONThumb2DupPostEncoder(const MachineInstr &MI,unsigned Val)
       const { return 0; }
     unsigned VFPThumb2PostEncoder(const MachineInstr&MI, unsigned Val)
-      const { 
+      const {
       if (IsThumb) {
         Val &= 0x0FFFFFFF;
         Val |= 0xE0000000;
@@ -265,7 +265,7 @@ namespace {
       return Binary;
     }
 
-    unsigned getHiLo16ImmOpValue(const MachineInstr &MI, unsigned Op) 
+    unsigned getHiLo16ImmOpValue(const MachineInstr &MI, unsigned Op)
       const {
       const TargetInstrDesc &TID = MI.getDesc();
       const MachineOperand &MO = MI.getOperand(Op);
@@ -278,7 +278,7 @@ namespace {
         return 0;
       }
       unsigned Imm16 = static_cast<unsigned>(MO.getImm());
-      return Imm16;      
+      return Imm16;
     }
 
     uint32_t getAddrMode2OpValue(const MachineInstr &MI, unsigned OpIdx)
@@ -1455,6 +1455,11 @@ void ARMCodeEmitter::emitMiscArithInstruction(const MachineInstr &MI) {
 
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
+
+  if (TID.Opcode == ARM::PKHBT || TID.Opcode == ARM::PKHTB) {
+    emitWordLE(Binary);
+    return;
+  }
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
