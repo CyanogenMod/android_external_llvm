@@ -165,11 +165,11 @@ namespace {
     //  are already handled elsewhere. They are placeholders to allow this
     //  encoder to continue to function until the MC encoder is sufficiently
     //  far along that this one can be eliminated entirely.
-    unsigned NEONThumb2DataIPostEncoder(const MachineInstr &MI, unsigned Val)
+    unsigned NEONThumb2DataIPostEncoder(const MachineInstr &MI, unsigned Val) 
       const { return 0; }
-    unsigned NEONThumb2LoadStorePostEncoder(const MachineInstr &MI,unsigned Val)
+    unsigned NEONThumb2LoadStorePostEncoder(const MachineInstr &MI,unsigned Val) 
       const { return 0; }
-    unsigned NEONThumb2DupPostEncoder(const MachineInstr &MI,unsigned Val)
+    unsigned NEONThumb2DupPostEncoder(const MachineInstr &MI,unsigned Val) 
       const { return 0; }
     unsigned VFPThumb2PostEncoder(const MachineInstr&MI, unsigned Val)
       const {
