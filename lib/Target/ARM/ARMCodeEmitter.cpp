@@ -1456,13 +1456,13 @@ void ARMCodeEmitter::emitMiscArithInstruction(const MachineInstr &MI) {
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
 
+  // Set the conditional execution predicate
+  Binary |= II->getPredicate(&MI) << ARMII::CondShift;
+
   if (TID.Opcode == ARM::PKHBT || TID.Opcode == ARM::PKHTB) {
     emitWordLE(Binary);
     return;
   }
-
-  // Set the conditional execution predicate
-  Binary |= II->getPredicate(&MI) << ARMII::CondShift;
 
   unsigned OpIdx = 0;
 
