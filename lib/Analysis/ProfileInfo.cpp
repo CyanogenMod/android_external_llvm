@@ -249,7 +249,7 @@ const BasicBlock *ProfileInfoT<Function,BasicBlock>::
 
     succ_const_iterator Succ = succ_begin(BB), End = succ_end(BB);
     if (Succ == End) {
-      P[ reinterpret_cast<const llvm::BasicBlock*>(0) ] = BB;
+      P[0] = BB;
       if (Mode & GetPathToExit) {
         hasFoundPath = true;
         BB = 0;
