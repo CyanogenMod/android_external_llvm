@@ -165,22 +165,7 @@ struct NamedRegionTimer : public TimeRegion {
 class TimerGroup {
   std::string Name;
   Timer *FirstTimer;   // First timer in the group.
-
-  class TimersToPrintEntry {
-  public:
-    TimeRecord Time;
-    std::string Name;
-
-    TimersToPrintEntry(const TimeRecord& Time, const std::string& Name)
-      : Time(Time), Name(Name) { }
-
-    // operator< - Allow sorting.
-    bool operator<(const TimersToPrintEntry &E) const {
-      // Sort by Wall Time elapsed, as it is the only thing really accurate
-      return Time < E.Time;
-    }
-  };
-  std::vector<TimersToPrintEntry> TimersToPrint;
+  std::vector<std::pair<TimeRecord, std::string> > TimersToPrint;
   
   TimerGroup **Prev, *Next; // Doubly linked list of TimerGroup's.
   TimerGroup(const TimerGroup &TG);      // DO NOT IMPLEMENT
