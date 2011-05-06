@@ -204,7 +204,7 @@ public:
     return member_iterator(I->getLeader());
   }
   member_iterator findLeader(const ElemTy &V) const {
-    return findLeader(TheMapping.find(ECValue(V)));
+    return findLeader(TheMapping.find(V));
   }
 
 
