@@ -283,7 +283,7 @@ void TimerGroup::removeTimer(Timer &T) {
   
   // If the timer was started, move its data to TimersToPrint.
   if (T.Started)
-    TimersToPrint.push_back(TimersToPrintEntry(T.Time, T.Name));
+    TimersToPrint.push_back(std::make_pair(T.Time, T.Name));
 
   T.TG = 0;
   
@@ -319,7 +319,7 @@ void TimerGroup::PrintQueuedTimers(raw_ostream &OS) {
   
   TimeRecord Total;
   for (unsigned i = 0, e = TimersToPrint.size(); i != e; ++i)
-    Total += TimersToPrint[i].Time;
+    Total += TimersToPrint[i].first;
   
   // Print out timing header.
   OS << "===" << std::string(73, '-') << "===\n";
@@ -352,9 +352,9 @@ void TimerGroup::PrintQueuedTimers(raw_ostream &OS) {
   
   // Loop through all of the timing data, printing it out.
   for (unsigned i = 0, e = TimersToPrint.size(); i != e; ++i) {
-    const TimersToPrintEntry &Entry = TimersToPrint[e-i-1];
-    Entry.Time.print(Total, OS);
-    OS << Entry.Name << '\n';
+    const std::pair<TimeRecord, std::string> &Entry = TimersToPrint[e-i-1];
+    Entry.first.print(Total, OS);
+    OS << Entry.second << '\n';
   }
   
   Total.print(Total, OS);
@@ -372,7 +372,7 @@ void TimerGroup::print(raw_ostream &OS) {
   // reset them.
   for (Timer *T = FirstTimer; T; T = T->Next) {
     if (!T->Started) continue;
-    TimersToPrint.push_back(TimersToPrintEntry(T->Time, T->Name));
+    TimersToPrint.push_back(std::make_pair(T->Time, T->Name));
     
     // Clear out the time.
     T->Started = 0;
