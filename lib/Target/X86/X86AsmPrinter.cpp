@@ -53,7 +53,7 @@ using namespace llvm;
 bool X86AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
   SetupMachineFunction(MF);
 
-  if (Subtarget->isTargetCOFF()) {
+  if (Subtarget->isTargetCOFF() && !Subtarget->isTargetEnvMacho()) {
     bool Intrn = MF.getFunction()->hasInternalLinkage();
     OutStreamer.BeginCOFFSymbolDef(CurrentFnSym);
     OutStreamer.EmitCOFFSymbolStorageClass(Intrn ? COFF::IMAGE_SYM_CLASS_STATIC
