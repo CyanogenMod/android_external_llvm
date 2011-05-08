@@ -752,10 +752,10 @@ void ProfileInfoT<Function,BasicBlock>::repair(const Function *F) {
            Succ != End; ++Succ) {
         Path P;
         GetPath(*Succ, 0, P, GetPathToExit);
-        if (Dest && Dest != P[ reinterpret_cast<const llvm::BasicBlock*>(0) ]) {
+        if (Dest && Dest != P[0]) {
           AllEdgesHaveSameReturn = false;
         }
-        Dest = P[ reinterpret_cast<const llvm::BasicBlock*>(0) ];
+        Dest = P[0];
       }
       if (AllEdgesHaveSameReturn) {
         if(EstimateMissingEdges(BB)) {
