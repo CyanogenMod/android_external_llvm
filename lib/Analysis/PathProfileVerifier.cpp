@@ -126,7 +126,7 @@ bool PathProfileVerifier::runOnModule (Module &M) {
             << currentPath->getCount() << "\n");
       // setup the entry edge (normally path profiling doens't care about this)
       if (currentPath->getFirstBlockInPath() == &F->getEntryBlock())
-        edgeArray[arrayMap[(BasicBlock *)0][currentPath->getFirstBlockInPath()][0]]
+        edgeArray[arrayMap[0][currentPath->getFirstBlockInPath()][0]]
           += currentPath->getCount();
 
       for( ProfilePathEdgeIterator nextEdge = pev->begin(),
