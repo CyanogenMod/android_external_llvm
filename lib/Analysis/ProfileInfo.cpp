@@ -927,7 +927,7 @@ void ProfileInfoT<Function,BasicBlock>::repair(const Function *F) {
 
       Path P;
       const BasicBlock *Dest = GetPath(BB, 0, P, GetPathToExit | GetPathWithNewEdges);
-      Dest = P[ reinterpret_cast<const llvm::BasicBlock*>(0) ];
+      Dest = P[0];
       if (!Dest) continue;
 
       if (getEdgeWeight(getEdge(Dest,0)) == MissingValue) {
