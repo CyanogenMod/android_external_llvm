@@ -73,7 +73,5 @@ $(hide) $(TBLGEN) \
 	-I $(LLVM_ROOT_PATH)/device/include	\
 	-I $(LLVM_ROOT_PATH)/lib/Target	\
     -gen-$(strip $(1)) \
-    -o $@.tmp $<
-$(hide) $(LLVM_ROOT_PATH)/copy-diff.py $@.tmp $@
-$(hide) $(RM) $@.tmp
+    -o $@ $<
 endef
