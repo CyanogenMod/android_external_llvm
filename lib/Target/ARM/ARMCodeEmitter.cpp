@@ -165,11 +165,11 @@ namespace {
     //  are already handled elsewhere. They are placeholders to allow this
     //  encoder to continue to function until the MC encoder is sufficiently
     //  far along that this one can be eliminated entirely.
-    unsigned NEONThumb2DataIPostEncoder(const MachineInstr &MI, unsigned Val) 
+    unsigned NEONThumb2DataIPostEncoder(const MachineInstr &MI, unsigned Val)
       const { return 0; }
-    unsigned NEONThumb2LoadStorePostEncoder(const MachineInstr &MI,unsigned Val) 
+    unsigned NEONThumb2LoadStorePostEncoder(const MachineInstr &MI,unsigned Val)
       const { return 0; }
-    unsigned NEONThumb2DupPostEncoder(const MachineInstr &MI,unsigned Val) 
+    unsigned NEONThumb2DupPostEncoder(const MachineInstr &MI,unsigned Val)
       const { return 0; }
     unsigned VFPThumb2PostEncoder(const MachineInstr&MI, unsigned Val)
       const {
@@ -1850,6 +1850,17 @@ void ARMCodeEmitter::emitMiscInstruction(const MachineInstr &MI) {
   unsigned Opcode = MI.getDesc().Opcode;
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
+
+  if (Opcode == ARM::FCONSTS) {
+    unsigned Imm = getMachineOpValue(MI, 1);
+    Binary &= ~(0x780000 >> 19);
+    Binary |= (Imm & 0x780000) >> 19;
+    Binary &= ~(0x3800000 >> 7);
+    Binary |= (Imm & 0x3800000) >> 7;
+    Binary &= ~(0x80000000 >> 12);
+    Binary |= (Imm & 0x80000000) >> 12;
+    Binary = VFPThumb2PostEncoder(MI, Binary);
+  }
 
   // Set the conditional execution predicate
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
