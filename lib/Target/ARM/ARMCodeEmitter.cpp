@@ -1857,8 +1857,6 @@ void ARMCodeEmitter::emitMiscInstruction(const MachineInstr &MI) {
     Binary |= (Imm & 0x780000) >> 19;
     Binary &= ~(0x3800000 >> 7);
     Binary |= (Imm & 0x3800000) >> 7;
-    Binary &= ~(0x80000000 >> 12);
-    Binary |= (Imm & 0x80000000) >> 12;
     Binary = VFPThumb2PostEncoder(MI, Binary);
   }
 
