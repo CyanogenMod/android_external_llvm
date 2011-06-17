@@ -607,7 +607,7 @@ void ARMFilter::recurse() {
     for (bitIndex = 0; bitIndex < NumBits; bitIndex++)
       BitValueArray[StartBit + bitIndex] = BIT_UNSET;
 
-    // Delegates to an inferior filter chooser for futher processing on this
+    // Delegates to an inferior filter chooser for further processing on this
     // group of instructions whose segment values are variable.
     FilterChooserMap.insert(std::pair<unsigned, ARMFilterChooser*>(
                               (unsigned)-1,
@@ -639,7 +639,7 @@ void ARMFilter::recurse() {
         BitValueArray[StartBit + bitIndex] = BIT_FALSE;
     }
 
-    // Delegates to an inferior filter chooser for futher processing on this
+    // Delegates to an inferior filter chooser for further processing on this
     // category of instructions.
     FilterChooserMap.insert(std::pair<unsigned, ARMFilterChooser*>(
                               mapIterator->first,
@@ -1624,6 +1624,10 @@ ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
     if (Name == "tBL" || Name == "tBLXi" || Name == "tBLXr")
       return false;
 
+    // A8.6.25 BX.  Use the generic tBX_Rm, ignore tBX_RET and tBX_RET_vararg.
+    if (Name == "tBX_RET" || Name == "tBX_RET_vararg")
+      return false;
+
     // Ignore the TPsoft (TLS) instructions, which conflict with tBLr9.
     if (Name == "tTPsoft" || Name == "t2TPsoft")
       return false;
@@ -1646,6 +1650,11 @@ ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
         Name == "t2SUBrSPs" || Name == "t2ADDrSPs" ||
         Name == "t2ADDrSPi" || Name == "t2SUBrSPi" ||
         Name == "t2ADDrSPi12" || Name == "t2SUBrSPi12")
+      return false;
+
+    // FIXME: Use ldr.n to work around a Darwin assembler bug.
+    // Introduce a workaround with tLDRpciDIS opcode.
+    if (Name == "tLDRpci")
       return false;
 
     // Ignore t2LDRDpci, prefer the generic t2LDRDi8, t2LDRD_PRE, t2LDRD_POST.

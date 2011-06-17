@@ -39,18 +39,27 @@ namespace llvm {
   class MCContext {
     MCContext(const MCContext&); // DO NOT IMPLEMENT
     MCContext &operator=(const MCContext&); // DO NOT IMPLEMENT
+  public:
+    typedef StringMap<MCSymbol*, BumpPtrAllocator&> SymbolTable;
+  private:
 
     /// The MCAsmInfo for this target.
     const MCAsmInfo &MAI;
 
     const TargetAsmInfo *TAI;
 
+    /// Allocator - Allocator object used for creating machine code objects.
+    ///
+    /// We use a bump pointer allocator to avoid the need to track all allocated
+    /// objects.
+    BumpPtrAllocator Allocator;
+
     /// Symbols - Bindings of names to symbols.
-    StringMap<MCSymbol*> Symbols;
+    SymbolTable Symbols;
 
     /// UsedNames - Keeps tracks of names that were used both for used declared
     /// and artificial symbols.
-    StringMap<bool> UsedNames;
+    StringMap<bool, BumpPtrAllocator&> UsedNames;
 
     /// NextUniqueID - The next ID to dole out to an unnamed assembler temporary
     /// symbol.
@@ -96,12 +105,6 @@ namespace llvm {
     /// the elements were added.
     std::vector<const MCSection *> MCLineSectionOrder;
 
-    /// Allocator - Allocator object used for creating machine code objects.
-    ///
-    /// We use a bump pointer allocator to avoid the need to track all allocated
-    /// objects.
-    BumpPtrAllocator Allocator;
-
     void *MachOUniquingMap, *ELFUniquingMap, *COFFUniquingMap;
 
     MCSymbol *CreateSymbol(StringRef Name);
@@ -141,6 +144,14 @@ namespace llvm {
 
     /// LookupSymbol - Get the symbol for \p Name, or null.
     MCSymbol *LookupSymbol(StringRef Name) const;
+
+    /// getSymbols - Get a reference for the symbol table for clients that
+    /// want to, for example, iterate over all symbols. 'const' because we
+    /// still want any modifications to the table itself to use the MCContext
+    /// APIs.
+    const SymbolTable &getSymbols() const {
+      return Symbols;
+    }
 
     /// @}
 

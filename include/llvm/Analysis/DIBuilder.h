@@ -16,6 +16,7 @@
 #define LLVM_ANALYSIS_DIBUILDER_H
 
 #include "llvm/Support/DataTypes.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
 namespace llvm {
@@ -116,8 +117,9 @@ namespace llvm {
     /// @param Name        Typedef name.
     /// @param File        File where this type is defined.
     /// @param LineNo      Line number.
+    /// @param Context     The surrounding context for the typedef.
     DIType createTypedef(DIType Ty, StringRef Name, DIFile File, 
-                         unsigned LineNo);
+                         unsigned LineNo, DIDescriptor Context);
 
     /// createFriend - Create debugging information entry for a 'friend'.
     DIType createFriend(DIType Ty, DIType FriendTy);
@@ -145,6 +147,30 @@ namespace llvm {
                             unsigned LineNo, uint64_t SizeInBits, 
                             uint64_t AlignInBits, uint64_t OffsetInBits, 
                             unsigned Flags, DIType Ty);
+
+    /// createObjCIVar - Create debugging information entry for Objective-C
+    /// instance variable.
+    /// @param Name         Member name.
+    /// @param File         File where this member is defined.
+    /// @param LineNo       Line number.
+    /// @param SizeInBits   Member size.
+    /// @param AlignInBits  Member alignment.
+    /// @param OffsetInBits Member offset.
+    /// @param Flags        Flags to encode member attribute, e.g. private
+    /// @param Ty           Parent type.
+    /// @param PropertyName Name of the Objective C property assoicated with
+    ///                     this ivar.
+    /// @param GetterName   Name of the Objective C property getter selector.
+    /// @param SetterName   Name of the Objective C property setter selector.
+    /// @param PropertyAttributes Objective C property attributes.
+    DIType createObjCIVar(StringRef Name, DIFile File,
+                          unsigned LineNo, uint64_t SizeInBits, 
+                          uint64_t AlignInBits, uint64_t OffsetInBits, 
+                          unsigned Flags, DIType Ty,
+                          StringRef PropertyName = StringRef(),
+                          StringRef PropertyGetterName = StringRef(),
+                          StringRef PropertySetterName = StringRef(),
+                          unsigned PropertyAttributes = 0);
 
     /// createClassType - Create debugging information entry for a class.
     /// @param Scope        Scope in which this class is defined.
@@ -278,7 +304,7 @@ namespace llvm {
     DIDescriptor createUnspecifiedParameter();
 
     /// getOrCreateArray - Get a DIArray, create one if required.
-    DIArray getOrCreateArray(Value *const *Elements, unsigned NumElements);
+    DIArray getOrCreateArray(ArrayRef<Value *> Elements);
 
     /// getOrCreateSubrange - Create a descriptor for a value range.  This
     /// implicitly uniques the values returned.
@@ -345,14 +371,13 @@ namespace llvm {
     /// @param File        File where this variable is defined.
     /// @param LineNo      Line number.
     /// @param Ty          Variable Type
-    /// @param Addr        A pointer to a vector of complex address operations.
-    /// @param NumAddr     Num of address operations in the vector.
+    /// @param Addr        An array of complex address operations.
     /// @param ArgNo       If this variable is an arugment then this argument's
     ///                    number. 1 indicates 1st argument.
     DIVariable createComplexVariable(unsigned Tag, DIDescriptor Scope,
                                      StringRef Name, DIFile F, unsigned LineNo,
-                                     DIType Ty, Value *const *Addr,
-                                     unsigned NumAddr, unsigned ArgNo = 0);
+                                     DIType Ty, ArrayRef<Value *> Addr,
+                                     unsigned ArgNo = 0);
 
     /// createFunction - Create a new descriptor for the specified subprogram.
     /// See comments in DISubprogram for descriptions of these fields.
@@ -377,7 +402,8 @@ namespace llvm {
                                 unsigned Flags = 0,
                                 bool isOptimized = false,
                                 Function *Fn = 0,
-                                MDNode *TParam = 0);
+                                MDNode *TParam = 0,
+                                MDNode *Decl = 0);
 
     /// createMethod - Create a new descriptor for the specified C++ method.
     /// See comments in DISubprogram for descriptions of these fields.

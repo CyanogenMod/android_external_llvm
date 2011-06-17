@@ -31,8 +31,6 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/Target/TargetFrameLowering.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/ADT/BitVector.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
@@ -46,6 +44,14 @@ using namespace llvm;
 Thumb1RegisterInfo::Thumb1RegisterInfo(const ARMBaseInstrInfo &tii,
                                        const ARMSubtarget &sti)
   : ARMBaseRegisterInfo(tii, sti) {
+}
+
+const TargetRegisterClass*
+Thumb1RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC)
+                                                                         const {
+  if (ARM::tGPRRegClass.hasSubClassEq(RC))
+    return ARM::tGPRRegisterClass;
+  return ARMBaseRegisterInfo::getLargestLegalSuperClass(RC);
 }
 
 const TargetRegisterClass *

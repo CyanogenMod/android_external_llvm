@@ -1,7 +1,7 @@
 ; RUN: llc -O2 < %s | FileCheck %s
 ; RUN: llc -O2 -regalloc=basic < %s | FileCheck %s
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64"
-target triple = "x86_64-apple-darwin"
+target triple = "x86_64-apple-darwin10"
 
 %struct.a = type { i32, %struct.a* }
 
@@ -68,9 +68,15 @@ declare void @llvm.dbg.value(metadata, i64, metadata) nounwind readnone
 ; CHECK: Ldebug_loc0:
 ; CHECK-NEXT: .quad   Lfunc_begin0
 ; CHECK-NEXT: .quad   [[LABEL]]
-; CHECK-NEXT: .short  1
+; CHECK-NEXT: Lset{{.*}} = Ltmp{{.*}}-Ltmp{{.*}}               ## Loc expr size
+; CHECK-NEXT: .short  Lset{{.*}}
+; CHECK-NEXT: Ltmp{{.*}}:
 ; CHECK-NEXT: .byte   85
+; CHECK-NEXT: Ltmp{{.*}}:
 ; CHECK-NEXT: .quad   [[LABEL]]
 ; CHECK-NEXT: .quad   [[CLOBBER]]
-; CHECK-NEXT: .short  1
+; CHECK-NEXT: Lset{{.*}} = Ltmp{{.*}}-Ltmp{{.*}}               ## Loc expr size
+; CHECK-NEXT: .short  Lset{{.*}}
+; CHECK-NEXT: Ltmp{{.*}}:
 ; CHECK-NEXT: .byte   83
+; CHECK-NEXT: Ltmp{{.*}}:

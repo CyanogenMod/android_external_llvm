@@ -7,14 +7,6 @@ copy (3-addr bswap + memory support?)  This is available on Atom processors.
 
 //===---------------------------------------------------------------------===//
 
-CodeGen/X86/lea-3.ll:test3 should be a single LEA, not a shift/move.  The X86
-backend knows how to three-addressify this shift, but it appears the register
-allocator isn't even asking it to do so in this case.  We should investigate
-why this isn't happening, it could have significant impact on other important
-cases for X86 as well.
-
-//===---------------------------------------------------------------------===//
-
 This should be one DIV/IDIV instruction, not a libcall:
 
 unsigned test(unsigned long long X, unsigned Y) {
@@ -1572,7 +1564,7 @@ Implement processor-specific optimizations for parity with GCC on these
 processors.  GCC does two optimizations:
 
 1. ix86_pad_returns inserts a noop before ret instructions if immediately
-   preceeded by a conditional branch or is the target of a jump.
+   preceded by a conditional branch or is the target of a jump.
 2. ix86_avoid_jump_misspredicts inserts noops in cases where a 16-byte block of
    code contains more than 3 branches.
    
@@ -1732,26 +1724,6 @@ bar:
 
 The second function generates more code even though the two functions are
 are functionally identical.
-
-//===---------------------------------------------------------------------===//
-
-Take the following C code:
-int x(int y) { return (y & 63) << 14; }
-
-Code produced by gcc:
-	andl	$63, %edi
-	sall	$14, %edi
-	movl	%edi, %eax
-	ret
-
-Code produced by clang:
-	shll	$14, %edi
-	movl	%edi, %eax
-	andl	$1032192, %eax
-	ret
-
-The code produced by gcc is 3 bytes shorter.  This sort of construct often
-shows up with bitfields.
 
 //===---------------------------------------------------------------------===//
 
@@ -2016,3 +1988,81 @@ We currently generate:
 We could save an instruction here by commuting the addss.
 
 //===---------------------------------------------------------------------===//
+
+This (from PR9661):
+
+float clamp_float(float a) {
+        if (a > 1.0f)
+                return 1.0f;
+        else if (a < 0.0f)
+                return 0.0f;
+        else
+                return a;
+}
+
+Could compile to:
+
+clamp_float:                            # @clamp_float
+        movss   .LCPI0_0(%rip), %xmm1
+        minss   %xmm1, %xmm0
+        pxor    %xmm1, %xmm1
+        maxss   %xmm1, %xmm0
+        ret
+
+with -ffast-math.
+
+//===---------------------------------------------------------------------===//
+
+This function (from PR9803):
+
+int clamp2(int a) {
+        if (a > 5)
+                a = 5;
+        if (a < 0) 
+                return 0;
+        return a;
+}
+
+Compiles to:
+
+_clamp2:                                ## @clamp2
+        pushq   %rbp
+        movq    %rsp, %rbp
+        cmpl    $5, %edi
+        movl    $5, %ecx
+        cmovlel %edi, %ecx
+        testl   %ecx, %ecx
+        movl    $0, %eax
+        cmovnsl %ecx, %eax
+        popq    %rbp
+        ret
+
+The move of 0 could be scheduled above the test to make it is xor reg,reg.
+
+//===---------------------------------------------------------------------===//
+
+GCC PR48986.  We currently compile this:
+
+void bar(void);
+void yyy(int* p) {
+    if (__sync_fetch_and_add(p, -1) == 1)
+      bar();
+}
+
+into:
+	movl	$-1, %eax
+	lock
+	xaddl	%eax, (%rdi)
+	cmpl	$1, %eax
+	je	LBB0_2
+
+Instead we could generate:
+
+	lock
+	dec %rdi
+	je LBB0_2
+
+The trick is to match "fetch_and_add(X, -C) == C".
+
+//===---------------------------------------------------------------------===//
+

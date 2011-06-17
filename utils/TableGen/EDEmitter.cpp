@@ -24,7 +24,6 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include <map>
 #include <string>
 #include <vector>
 
@@ -597,6 +596,7 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   IMM("t_adrlabel");
   IMM("t2adrlabel");
   IMM("shift_imm");
+  IMM("ssat_imm");
   IMM("neon_vcvt_imm32");
   IMM("shr_imm8");
   IMM("shr_imm16");
@@ -636,6 +636,7 @@ static int ARMFlagFromOpName(LiteralConstantEmitter *type,
   MISC("addrmode6", "kOperandTypeARMAddrMode6");                  // R, R, I, I
   MISC("am6offset", "kOperandTypeARMAddrMode6Offset");            // R, I, I
   MISC("addrmode6dup", "kOperandTypeARMAddrMode6");               // R, R, I, I
+  MISC("addrmode6oneL32", "kOperandTypeARMAddrMode6");            // R, R, I, I
   MISC("addrmodepc", "kOperandTypeARMAddrModePC");                // R, I
   MISC("addrmode7", "kOperandTypeARMAddrMode7");                  // R
   MISC("reglist", "kOperandTypeARMRegisterList");                 // I, R, ...

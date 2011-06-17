@@ -870,11 +870,6 @@ rshift_gt (unsigned int a)
    bar ();
 }
 
-void neg_eq_cst(unsigned int a) {
-if (-a == 123)
-bar();
-}
-
 All should simplify to a single comparison.  All of these are
 currently not optimized with "clang -emit-llvm-bc | opt
 -std-compile-opts".
@@ -2256,5 +2251,105 @@ Can be folded to (x & 2) != 0.
 
 SimplifyDemandedBits shrinks the "and" constant to 2 but instcombine misses the
 icmp transform.
+
+//===---------------------------------------------------------------------===//
+
+This code:
+
+typedef struct {
+int f1:1;
+int f2:1;
+int f3:1;
+int f4:29;
+} t1;
+
+typedef struct {
+int f1:1;
+int f2:1;
+int f3:30;
+} t2;
+
+t1 s1;
+t2 s2;
+
+void func1(void)
+{
+s1.f1 = s2.f1;
+s1.f2 = s2.f2;
+}
+
+Compiles into this IR (on x86-64 at least):
+
+%struct.t1 = type { i8, [3 x i8] }
+@s2 = global %struct.t1 zeroinitializer, align 4
+@s1 = global %struct.t1 zeroinitializer, align 4
+define void @func1() nounwind ssp noredzone {
+entry:
+  %0 = load i32* bitcast (%struct.t1* @s2 to i32*), align 4
+  %bf.val.sext5 = and i32 %0, 1
+  %1 = load i32* bitcast (%struct.t1* @s1 to i32*), align 4
+  %2 = and i32 %1, -4
+  %3 = or i32 %2, %bf.val.sext5
+  %bf.val.sext26 = and i32 %0, 2
+  %4 = or i32 %3, %bf.val.sext26
+  store i32 %4, i32* bitcast (%struct.t1* @s1 to i32*), align 4
+  ret void
+}
+
+The two or/and's should be merged into one each.
+
+//===---------------------------------------------------------------------===//
+
+Machine level code hoisting can be useful in some cases.  For example, PR9408
+is about:
+
+typedef union {
+ void (*f1)(int);
+ void (*f2)(long);
+} funcs;
+
+void foo(funcs f, int which) {
+ int a = 5;
+ if (which) {
+   f.f1(a);
+ } else {
+   f.f2(a);
+ }
+}
+
+which we compile to:
+
+foo:                                    # @foo
+# BB#0:                                 # %entry
+       pushq   %rbp
+       movq    %rsp, %rbp
+       testl   %esi, %esi
+       movq    %rdi, %rax
+       je      .LBB0_2
+# BB#1:                                 # %if.then
+       movl    $5, %edi
+       callq   *%rax
+       popq    %rbp
+       ret
+.LBB0_2:                                # %if.else
+       movl    $5, %edi
+       callq   *%rax
+       popq    %rbp
+       ret
+
+Note that bb1 and bb2 are the same.  This doesn't happen at the IR level
+because one call is passing an i32 and the other is passing an i64.
+
+//===---------------------------------------------------------------------===//
+
+I see this sort of pattern in 176.gcc in a few places (e.g. the start of
+store_bit_field).  The rem should be replaced with a multiply and subtract:
+
+  %3 = sdiv i32 %A, %B
+  %4 = srem i32 %A, %B
+
+Similarly for udiv/urem.  Note that this shouldn't be done on X86 or ARM,
+which can do this in a single operation (instruction or libcall).  It is
+probably best to do this in the code generator.
 
 //===---------------------------------------------------------------------===//

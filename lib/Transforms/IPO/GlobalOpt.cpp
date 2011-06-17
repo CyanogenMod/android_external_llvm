@@ -21,6 +21,7 @@
 #include "llvm/Instructions.h"
 #include "llvm/IntrinsicInst.h"
 #include "llvm/Module.h"
+#include "llvm/Operator.h"
 #include "llvm/Pass.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
@@ -240,15 +241,15 @@ static bool AnalyzeGlobal(const Value *V, GlobalStatus &GS,
         GS.HasPHIUser = true;
       } else if (isa<CmpInst>(I)) {
         GS.isCompared = true;
-      } else if (isa<MemTransferInst>(I)) {
-        const MemTransferInst *MTI = cast<MemTransferInst>(I);
+      } else if (const MemTransferInst *MTI = dyn_cast<MemTransferInst>(I)) {
+        if (MTI->isVolatile()) return true;
         if (MTI->getArgOperand(0) == V)
           GS.StoredType = GlobalStatus::isStored;
         if (MTI->getArgOperand(1) == V)
           GS.isLoaded = true;
-      } else if (isa<MemSetInst>(I)) {
-        assert(cast<MemSetInst>(I)->getArgOperand(0) == V &&
-               "Memset only takes one pointer!");
+      } else if (const MemSetInst *MSI = dyn_cast<MemSetInst>(I)) {
+        assert(MSI->getArgOperand(0) == V && "Memset only takes one pointer!");
+        if (MSI->isVolatile()) return true;
         GS.StoredType = GlobalStatus::isStored;
       } else {
         return true;  // Any other non-load instruction might take address!
@@ -798,7 +799,8 @@ static bool OptimizeAwayTrappingUsesOfLoads(GlobalVariable *GV, Constant *LV) {
       // If we get here we could have other crazy uses that are transitively
       // loaded.
       assert((isa<PHINode>(GlobalUser) || isa<SelectInst>(GlobalUser) ||
-              isa<ConstantExpr>(GlobalUser)) && "Only expect load and stores!");
+              isa<ConstantExpr>(GlobalUser) || isa<CmpInst>(GlobalUser)) &&
+             "Only expect load and stores!");
     }
   }
 
@@ -1588,8 +1590,7 @@ static bool OptimizeOnceStoredGlobal(GlobalVariable *GV, Value *StoredOnceVal,
       GV->getInitializer()->isNullValue()) {
     if (Constant *SOVC = dyn_cast<Constant>(StoredOnceVal)) {
       if (GV->getInitializer()->getType() != SOVC->getType())
-        SOVC =
-         ConstantExpr::getBitCast(SOVC, GV->getInitializer()->getType());
+        SOVC = ConstantExpr::getBitCast(SOVC, GV->getInitializer()->getType());
 
       // Optimize away any trapping uses of the loaded value.
       if (OptimizeAwayTrappingUsesOfLoads(GV, SOVC))
@@ -1953,12 +1954,15 @@ GlobalVariable *GlobalOpt::FindGlobalCtors(Module &M) {
   // Verify that the initializer is simple enough for us to handle. We are
   // only allowed to optimize the initializer if it is unique.
   if (!GV->hasUniqueInitializer()) return 0;
-  
+
+  if (isa<ConstantAggregateZero>(GV->getInitializer()))
+    return GV;
   ConstantArray *CA = cast<ConstantArray>(GV->getInitializer());
-  
+
   for (User::op_iterator i = CA->op_begin(), e = CA->op_end(); i != e; ++i) {
+    if (isa<ConstantAggregateZero>(*i))
+      continue;
     ConstantStruct *CS = cast<ConstantStruct>(*i);
-    
     if (isa<ConstantPointerNull>(CS->getOperand(1)))
       continue;
 
@@ -1978,6 +1982,8 @@ GlobalVariable *GlobalOpt::FindGlobalCtors(Module &M) {
 /// ParseGlobalCtors - Given a llvm.global_ctors list that we can understand,
 /// return a list of the functions and null terminator as a vector.
 static std::vector<Function*> ParseGlobalCtors(GlobalVariable *GV) {
+  if (GV->getInitializer()->isNullValue())
+    return std::vector<Function*>();
   ConstantArray *CA = cast<ConstantArray>(GV->getInitializer());
   std::vector<Function*> Result;
   Result.reserve(CA->getNumOperands());
@@ -2008,7 +2014,7 @@ static GlobalVariable *InstallGlobalCtors(GlobalVariable *GCL,
       const PointerType *PFTy = PointerType::getUnqual(FTy);
       CSVals[1] = Constant::getNullValue(PFTy);
       CSVals[0] = ConstantInt::get(Type::getInt32Ty(GCL->getContext()),
-                                   2147483647);
+                                   0x7fffffff);
     }
     CAList.push_back(ConstantStruct::get(GCL->getContext(), CSVals, false));
   }
@@ -2431,6 +2437,20 @@ static bool EvaluateFunction(Function *F, Constant *&RetVal,
 
       // Cannot handle inline asm.
       if (isa<InlineAsm>(CI->getCalledValue())) return false;
+
+      if (MemSetInst *MSI = dyn_cast<MemSetInst>(CI)) {
+        if (MSI->isVolatile()) return false;
+        Constant *Ptr = getVal(Values, MSI->getDest());
+        Constant *Val = getVal(Values, MSI->getValue());
+        Constant *DestVal = ComputeLoadResult(getVal(Values, Ptr),
+                                              MutatedMemory);
+        if (Val->isNullValue() && DestVal && DestVal->isNullValue()) {
+          // This memset is a no-op.
+          ++CurInst;
+          continue;
+        }
+        return false;
+      }
 
       // Resolve function pointers.
       Function *Callee = dyn_cast<Function>(getVal(Values,

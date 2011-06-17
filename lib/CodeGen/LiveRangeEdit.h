@@ -18,8 +18,9 @@
 #ifndef LLVM_CODEGEN_LIVERANGEEDIT_H
 #define LLVM_CODEGEN_LIVERANGEEDIT_H
 
-#include "llvm/CodeGen/LiveInterval.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/CodeGen/LiveInterval.h"
 
 namespace llvm {
 
@@ -113,6 +114,10 @@ public:
   bool empty() const { return size() == 0; }
   LiveInterval *get(unsigned idx) const { return newRegs_[idx+firstNew_]; }
 
+  ArrayRef<LiveInterval*> regs() const {
+    return ArrayRef<LiveInterval*>(newRegs_).slice(firstNew_);
+  }
+
   /// FIXME: Temporary accessors until we can get rid of
   /// LiveIntervals::AddIntervalsForSpills
   SmallVectorImpl<LiveInterval*> *getNewVRegs() { return &newRegs_; }
@@ -137,7 +142,7 @@ public:
 
   /// checkRematerializable - Manually add VNI to the list of rematerializable
   /// values if DefMI may be rematerializable.
-  void checkRematerializable(VNInfo *VNI, const MachineInstr *DefMI,
+  bool checkRematerializable(VNInfo *VNI, const MachineInstr *DefMI,
                              const TargetInstrInfo&, AliasAnalysis*);
 
   /// Remat - Information needed to rematerialize at a specific location.
@@ -165,7 +170,8 @@ public:
                             const Remat &RM,
                             LiveIntervals&,
                             const TargetInstrInfo&,
-                            const TargetRegisterInfo&);
+                            const TargetRegisterInfo&,
+                            bool Late = false);
 
   /// markRematerialized - explicitly mark a value as rematerialized after doing
   /// it manually.

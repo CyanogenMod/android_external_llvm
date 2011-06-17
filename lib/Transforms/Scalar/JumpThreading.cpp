@@ -16,6 +16,7 @@
 #include "llvm/IntrinsicInst.h"
 #include "llvm/LLVMContext.h"
 #include "llvm/Pass.h"
+#include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/LazyValueInfo.h"
 #include "llvm/Analysis/Loads.h"
@@ -170,9 +171,9 @@ bool JumpThreading::runOnFunction(Function &F) {
         Changed = true;
         continue;
       }
-      
+
       BranchInst *BI = dyn_cast<BranchInst>(BB->getTerminator());
-      
+
       // Can't thread an unconditional jump, but if the block is "almost
       // empty", we can replace uses of it with uses of the successor and make
       // this dead.
@@ -608,7 +609,7 @@ static unsigned GetBestDestForJumpOnUndef(BasicBlock *BB) {
 
 static bool hasAddressTakenAndUsed(BasicBlock *BB) {
   if (!BB->hasAddressTaken()) return false;
-  
+
   // If the block has its address taken, it may be a tree of dead constants
   // hanging off of it.  These shouldn't keep the block alive.
   BlockAddress *BA = BlockAddress::get(BB);
@@ -668,6 +669,17 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
     return false; // Must be an invoke.
   }
 
+  // Run constant folding to see if we can reduce the condition to a simple
+  // constant.
+  if (Instruction *I = dyn_cast<Instruction>(Condition)) {
+    Value *SimpleVal = ConstantFoldInstruction(I, TD);
+    if (SimpleVal) {
+      I->replaceAllUsesWith(SimpleVal);
+      I->eraseFromParent();
+      Condition = SimpleVal;
+    }
+  }
+
   // If the terminator is branching on an undef, we can pick any of the
   // successors to branch to.  Let GetBestDestForJumpOnUndef decide.
   if (isa<UndefValue>(Condition)) {
@@ -694,7 +706,7 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
     DEBUG(dbgs() << "  In block '" << BB->getName()
           << "' folding terminator: " << *BB->getTerminator() << '\n');
     ++NumFolds;
-    ConstantFoldTerminator(BB);
+    ConstantFoldTerminator(BB, true);
     return true;
   }
 
@@ -917,9 +929,10 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
   if (UnavailablePred) {
     assert(UnavailablePred->getTerminator()->getNumSuccessors() == 1 &&
            "Can't handle critical edge here!");
-    Value *NewVal = new LoadInst(LoadedPtr, LI->getName()+".pr", false,
+    LoadInst *NewVal = new LoadInst(LoadedPtr, LI->getName()+".pr", false,
                                  LI->getAlignment(),
                                  UnavailablePred->getTerminator());
+    NewVal->setDebugLoc(LI->getDebugLoc());
     AvailablePreds.push_back(std::make_pair(UnavailablePred, NewVal));
   }
 
@@ -932,6 +945,7 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
   PHINode *PN = PHINode::Create(LI->getType(), std::distance(PB, PE), "",
                                 LoadBB->begin());
   PN->takeName(LI);
+  PN->setDebugLoc(LI->getDebugLoc());
 
   // Insert new entries into the PHI for each predecessor.  A single block may
   // have multiple entries here.
@@ -1363,7 +1377,8 @@ bool JumpThreading::ThreadEdge(BasicBlock *BB,
 
   // We didn't copy the terminator from BB over to NewBB, because there is now
   // an unconditional jump to SuccBB.  Insert the unconditional jump.
-  BranchInst::Create(SuccBB, NewBB);
+  BranchInst *NewBI =BranchInst::Create(SuccBB, NewBB);
+  NewBI->setDebugLoc(BB->getTerminator()->getDebugLoc());
 
   // Check to see if SuccBB has PHI nodes. If so, we need to add entries to the
   // PHI nodes for NewBB now.

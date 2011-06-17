@@ -301,8 +301,7 @@ void BitcodeReaderValueList::ResolveConstantForwardRefs() {
         NewC = ConstantVector::get(NewOps);
       } else {
         assert(isa<ConstantExpr>(UserC) && "Must be a ConstantExpr.");
-        NewC = cast<ConstantExpr>(UserC)->getWithOperands(&NewOps[0],
-                                                          NewOps.size());
+        NewC = cast<ConstantExpr>(UserC)->getWithOperands(NewOps);
       }
 
       UserC->replaceAllUsesWith(NewC);
@@ -350,7 +349,7 @@ Value *BitcodeReaderMDValueList::getValueFwdRef(unsigned Idx) {
   }
 
   // Create and return a placeholder, which will later be RAUW'd.
-  Value *V = MDNode::getTemporary(Context, 0, 0);
+  Value *V = MDNode::getTemporary(Context, ArrayRef<Value*>());
   MDValuePtrs[Idx] = V;
   return V;
 }
@@ -844,9 +843,7 @@ bool BitcodeReader::ParseMetadata() {
         else
           Elts.push_back(NULL);
       }
-      Value *V = MDNode::getWhenValsUnresolved(Context,
-                                               Elts.data(), Elts.size(),
-                                               IsFunctionLocal);
+      Value *V = MDNode::getWhenValsUnresolved(Context, Elts, IsFunctionLocal);
       IsFunctionLocal = false;
       MDValueList.AssignValue(V, NextMDValueNo++);
       break;
@@ -1591,8 +1588,18 @@ bool BitcodeReader::ParseBitcodeInto(Module *M) {
   while (!Stream.AtEndOfStream()) {
     unsigned Code = Stream.ReadCode();
 
-    if (Code != bitc::ENTER_SUBBLOCK)
+    if (Code != bitc::ENTER_SUBBLOCK) {
+
+      // The ranlib in xcode 4 will align archive members by appending newlines to the
+      // end of them. If this file size is a multiple of 4 but not 8, we have to read and
+      // ignore these final 4 bytes :-(
+      if (Stream.GetAbbrevIDWidth() == 2 && Code == 2 &&
+          Stream.Read(6) == 2 && Stream.Read(24) == 0xa0a0a &&
+	  Stream.AtEndOfStream())
+        return false;
+
       return Error("Invalid record at top-level");
+    }
 
     unsigned BlockID = Stream.ReadSubBlockID();
 
@@ -1845,7 +1852,6 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
         FunctionBBs[i] = BasicBlock::Create(Context, "", F);
       CurBB = FunctionBBs[0];
       continue;
-
         
     case bitc::FUNC_CODE_DEBUG_LOC_AGAIN:  // DEBUG_LOC_AGAIN
       // This record indicates that the last instruction is at the same

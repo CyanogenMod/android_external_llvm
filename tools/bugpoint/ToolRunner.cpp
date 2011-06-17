@@ -758,8 +758,7 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
       // For ARM architectures we don't want this flag. bugpoint isn't
       // explicitly told what architecture it is working on, so we get
       // it from gcc flags
-      if ((TargetTriple.getOS() == Triple::Darwin) &&
-          !IsARMArchitecture(GCCArgs))
+      if (TargetTriple.isOSDarwin() && !IsARMArchitecture(GCCArgs))
         GCCArgs.push_back("-force_cpusubtype_ALL");
     }
   }
@@ -855,9 +854,18 @@ int GCC::ExecuteProgram(const std::string &ProgramFile,
 
   if (RemoteClientPath.isEmpty()) {
     DEBUG(errs() << "<run locally>");
-    return RunProgramWithTimeout(OutputBinary, &ProgramArgs[0],
+    int ExitCode = RunProgramWithTimeout(OutputBinary, &ProgramArgs[0],
         sys::Path(InputFile), sys::Path(OutputFile), sys::Path(OutputFile),
         Timeout, MemoryLimit, Error);
+    // Treat a signal (usually SIGSEGV) or timeout as part of the program output
+    // so that crash-causing miscompilation is handled seamlessly.
+    if (ExitCode < -1) {
+      std::ofstream outFile(OutputFile.c_str(), std::ios_base::app);
+      outFile << *Error << '\n';
+      outFile.close();
+      Error->clear();
+    }
+    return ExitCode;
   } else {
     outs() << "<run remotely>"; outs().flush();
     return RunProgramRemotelyWithTimeout(sys::Path(RemoteClientPath),
@@ -900,7 +908,7 @@ int GCC::MakeSharedObject(const std::string &InputFile, FileType fileType,
   GCCArgs.push_back("none");
   if (TargetTriple.getArch() == Triple::sparc)
     GCCArgs.push_back("-G");       // Compile a shared library, `-G' for Sparc
-  else if (TargetTriple.getOS() == Triple::Darwin) {
+  else if (TargetTriple.isOSDarwin()) {
     // link all source files into a single module in data segment, rather than
     // generating blocks. dynamic_lookup requires that you set
     // MACOSX_DEPLOYMENT_TARGET=10.3 in your env.  FIXME: it would be better for

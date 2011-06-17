@@ -252,6 +252,7 @@ namespace llvm {
     unsigned short Latency;             // Node latency.
     bool isVRegCycle      : 1;          // May use and def the same vreg.
     bool isCall           : 1;          // Is a function call.
+    bool isCallOp         : 1;          // Is a function call operand.
     bool isTwoAddress     : 1;          // Is a two-address instruction.
     bool isCommutable     : 1;          // Is a commutable instruction.
     bool hasPhysRegDefs   : 1;          // Has physreg defs that are being used.
@@ -260,10 +261,10 @@ namespace llvm {
     bool isAvailable      : 1;          // True once available.
     bool isScheduled      : 1;          // True once scheduled.
     bool isScheduleHigh   : 1;          // True if preferable to schedule high.
+    bool isScheduleLow    : 1;          // True if preferable to schedule low.
     bool isCloned         : 1;          // True if this node has been cloned.
     Sched::Preference SchedulingPref;   // Scheduling preference.
 
-    SmallVector<MachineInstr*, 4> DbgInstrList; // dbg_values referencing this.
   private:
     bool isDepthCurrent   : 1;          // True if Depth is current.
     bool isHeightCurrent  : 1;          // True if Height is current.
@@ -279,10 +280,10 @@ namespace llvm {
       : Node(node), Instr(0), OrigNode(0), NodeNum(nodenum),
         NodeQueueId(0), NumPreds(0), NumSuccs(0), NumPredsLeft(0),
         NumSuccsLeft(0), NumRegDefsLeft(0), Latency(0),
-        isVRegCycle(false), isCall(false), isTwoAddress(false),
+        isVRegCycle(false), isCall(false), isCallOp(false), isTwoAddress(false),
         isCommutable(false), hasPhysRegDefs(false), hasPhysRegClobbers(false),
         isPending(false), isAvailable(false), isScheduled(false),
-        isScheduleHigh(false), isCloned(false),
+        isScheduleHigh(false), isScheduleLow(false), isCloned(false),
         SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
         CopyDstRC(NULL), CopySrcRC(NULL) {}
@@ -293,10 +294,10 @@ namespace llvm {
       : Node(0), Instr(instr), OrigNode(0), NodeNum(nodenum),
         NodeQueueId(0), NumPreds(0), NumSuccs(0), NumPredsLeft(0),
         NumSuccsLeft(0), NumRegDefsLeft(0), Latency(0),
-        isVRegCycle(false), isCall(false), isTwoAddress(false),
+        isVRegCycle(false), isCall(false), isCallOp(false), isTwoAddress(false),
         isCommutable(false), hasPhysRegDefs(false), hasPhysRegClobbers(false),
         isPending(false), isAvailable(false), isScheduled(false),
-        isScheduleHigh(false), isCloned(false),
+        isScheduleHigh(false), isScheduleLow(false), isCloned(false),
         SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
         CopyDstRC(NULL), CopySrcRC(NULL) {}
@@ -306,10 +307,10 @@ namespace llvm {
       : Node(0), Instr(0), OrigNode(0), NodeNum(~0u),
         NodeQueueId(0), NumPreds(0), NumSuccs(0), NumPredsLeft(0),
         NumSuccsLeft(0), NumRegDefsLeft(0), Latency(0),
-        isVRegCycle(false), isCall(false), isTwoAddress(false),
+        isVRegCycle(false), isCall(false), isCallOp(false), isTwoAddress(false),
         isCommutable(false), hasPhysRegDefs(false), hasPhysRegClobbers(false),
         isPending(false), isAvailable(false), isScheduled(false),
-        isScheduleHigh(false), isCloned(false),
+        isScheduleHigh(false), isScheduleLow(false), isCloned(false),
         SchedulingPref(Sched::None),
         isDepthCurrent(false), isHeightCurrent(false), Depth(0), Height(0),
         CopyDstRC(NULL), CopySrcRC(NULL) {}
@@ -495,6 +496,12 @@ namespace llvm {
     std::vector<SUnit> SUnits;            // The scheduling units.
     SUnit EntrySU;                        // Special node for the region entry.
     SUnit ExitSU;                         // Special node for the region exit.
+
+#ifdef NDEBUG
+    static const bool StressSched = false;
+#else
+    bool StressSched;
+#endif
 
     explicit ScheduleDAG(MachineFunction &mf);
 
@@ -691,11 +698,11 @@ namespace llvm {
     /// will create a cycle.
     bool WillCreateCycle(SUnit *SU, SUnit *TargetSU);
 
-    /// AddPred - Updates the topological ordering to accomodate an edge
+    /// AddPred - Updates the topological ordering to accommodate an edge
     /// to be added from SUnit X to SUnit Y.
     void AddPred(SUnit *Y, SUnit *X);
 
-    /// RemovePred - Updates the topological ordering to accomodate an
+    /// RemovePred - Updates the topological ordering to accommodate an
     /// an edge to be removed from the specified node N from the predecessors
     /// of the current node M.
     void RemovePred(SUnit *M, SUnit *N);

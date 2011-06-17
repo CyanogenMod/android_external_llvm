@@ -6,11 +6,10 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
+
 #include "Disassembler.h"
-#include <stdio.h>
 #include "llvm-c/Disassembler.h"
 
-#include <string>
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCDisassembler.h"
 #include "llvm/MC/MCInst.h"
@@ -27,17 +26,12 @@ class Target;
 } // namespace llvm
 using namespace llvm;
 
-#ifdef __cplusplus
-extern "C" {
-#endif // __cplusplus
-
-//
 // LLVMCreateDisasm() creates a disassembler for the TripleName.  Symbolic
 // disassembly is supported by passing a block of information in the DisInfo
-// parameter and specifing the TagType and call back functions as described in
+// parameter and specifying the TagType and callback functions as described in
 // the header llvm-c/Disassembler.h .  The pointer to the block and the 
-// functions can all be passed as NULL.  If successfull this returns a
-// disassembler context if not it returns NULL.
+// functions can all be passed as NULL.  If successful, this returns a
+// disassembler context.  If not, it returns NULL.
 //
 LLVMDisasmContextRef LLVMCreateDisasm(const char *TripleName, void *DisInfo,
                                       int TagType, LLVMOpInfoCallback GetOpInfo,
@@ -77,8 +71,9 @@ LLVMDisasmContextRef LLVMCreateDisasm(const char *TripleName, void *DisInfo,
   assert(Ctx && "Unable to create MCContext!");
 
   // Set up disassembler.
-  const MCDisassembler *DisAsm = TheTarget->createMCDisassembler();
+  MCDisassembler *DisAsm = TheTarget->createMCDisassembler();
   assert(DisAsm && "Unable to create disassembler!");
+  DisAsm->setupForSymbolicDisassembly(GetOpInfo, DisInfo, Ctx);
 
   // Set up the instruction printer.
   int AsmPrinterVariant = MAI->getAssemblerDialect();
@@ -107,7 +102,6 @@ namespace {
 // The memory object created by LLVMDisasmInstruction().
 //
 class DisasmMemoryObject : public MemoryObject {
-private:
   uint8_t *Bytes;
   uint64_t Size;
   uint64_t BasePC;
@@ -125,12 +119,12 @@ public:
     return 0;
   }
 };
-} // namespace
+} // end anonymous namespace
 
 //
-// LLVMDisasmInstruction() disassmbles a single instruction using the
+// LLVMDisasmInstruction() disassembles a single instruction using the
 // disassembler context specified in the parameter DC.  The bytes of the
-// instuction are specified in the parameter Bytes, and contains at least
+// instruction are specified in the parameter Bytes, and contains at least
 // BytesSize number of bytes.  The instruction is at the address specified by
 // the PC parameter.  If a valid instruction can be disassembled its string is
 // returned indirectly in OutString which whos size is specified in the
@@ -153,21 +147,15 @@ size_t LLVMDisasmInstruction(LLVMDisasmContextRef DCR, uint8_t *Bytes,
   if (!DisAsm->getInstruction(Inst, Size, MemoryObject, PC, /*REMOVE*/ nulls()))
     return 0;
 
-  std::string InsnStr;
-  raw_string_ostream OS(InsnStr);
-  raw_ostream &Out = OS;
-  IP->printInst(&Inst, Out);
+  SmallVector<char, 64> InsnStr;
+  raw_svector_ostream OS(InsnStr);
+  IP->printInst(&Inst, OS);
+  OS.flush();
 
-  std::string p;
-  p = OS.str();
-#ifdef LLVM_ON_WIN32
-  sprintf(OutString, "%s", p.c_str());
-#else
-  snprintf(OutString, OutStringSize, "%s", p.c_str());
-#endif
+  assert(OutStringSize != 0 && "Output buffer cannot be zero size");
+  size_t OutputSize = std::min(OutStringSize-1, InsnStr.size());
+  std::memcpy(OutString, InsnStr.data(), OutputSize);
+  OutString[OutputSize] = '\0'; // Terminate string.
+
   return Size;
 }
-
-#ifdef __cplusplus
-}
-#endif // __cplusplus

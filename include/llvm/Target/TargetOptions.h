@@ -125,10 +125,6 @@ namespace llvm {
   /// flag is hidden and is only for debugging the debug info.
   extern bool JITEmitDebugInfoToDisk;
 
-  /// UnwindTablesMandatory - This flag indicates that unwind tables should
-  /// be emitted for all functions.
-  extern bool UnwindTablesMandatory;
-
   /// GuaranteedTailCallOpt - This flag is enabled when -tailcallopt is
   /// specified on the commandline. When the flag is on, participating targets
   /// will perform tail call optimization on all calls which use the fastcc
@@ -157,9 +153,10 @@ namespace llvm {
   /// wth earlier copy coalescing.
   extern bool StrongPHIElim;
 
-  /// HasDivModLibcall - This flag indicates whether the target compiler
-  /// runtime library has integer divmod libcalls.
-  extern bool HasDivModLibcall;
+  /// getTrapFunctionName - If this returns a non-empty string, this means isel
+  /// should lower Intrinsic::trap to a call to the specified function name
+  /// instead of an ISD::TRAP node.
+  extern StringRef getTrapFunctionName();
 
 } // End llvm namespace
 

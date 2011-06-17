@@ -135,20 +135,14 @@ protected:
     JITMemoryManager *JMM,
     CodeGenOpt::Level OptLevel,
     bool GVsWithCode,
-    CodeModel::Model CMM,
-    StringRef MArch,
-    StringRef MCPU,
-    const SmallVectorImpl<std::string>& MAttrs);
+    TargetMachine *TM);
   static ExecutionEngine *(*MCJITCtor)(
     Module *M,
     std::string *ErrorStr,
     JITMemoryManager *JMM,
     CodeGenOpt::Level OptLevel,
     bool GVsWithCode,
-    CodeModel::Model CMM,
-    StringRef MArch,
-    StringRef MCPU,
-    const SmallVectorImpl<std::string>& MAttrs);
+    TargetMachine *TM);
   static ExecutionEngine *(*InterpCtor)(Module *M,
                                         std::string *ErrorStr);
 
@@ -185,7 +179,7 @@ public:
   /// \param GVsWithCode - Allocating globals with code breaks
   /// freeMachineCodeForFunction and is probably unsafe and bad for performance.
   /// However, we have clients who depend on this behavior, so we must support
-  /// it.  Eventually, when we're willing to break some backwards compatability,
+  /// it.  Eventually, when we're willing to break some backwards compatibility,
   /// this flag should be flipped to false, so that by default
   /// freeMachineCodeForFunction works.
   static ExecutionEngine *create(Module *M,
@@ -568,6 +562,14 @@ public:
     MAttrs.append(mattrs.begin(), mattrs.end());
     return *this;
   }
+
+  /// selectTarget - Pick a target either via -march or by guessing the native
+  /// arch.  Add any CPU features specified via -mcpu or -mattr.
+  static TargetMachine *selectTarget(Module *M,
+                                     StringRef MArch,
+                                     StringRef MCPU,
+                                     const SmallVectorImpl<std::string>& MAttrs,
+                                     std::string *Err);
 
   ExecutionEngine *create();
 };

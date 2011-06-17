@@ -23,6 +23,7 @@
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSectionELF.h"
 #include "llvm/MC/MCSectionCOFF.h"
+#include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/Mangler.h"
 #include "llvm/Target/TargetData.h"
@@ -176,12 +177,59 @@ const MCSection *TargetLoweringObjectFileELF::getEHFrameSection() const {
                                     SectionKind::getDataRel());
 }
 
+MCSymbol *
+TargetLoweringObjectFileELF::getCFIPersonalitySymbol(const GlobalValue *GV,
+                                                     Mangler *Mang,
+                                                MachineModuleInfo *MMI) const {
+  unsigned Encoding = getPersonalityEncoding();
+  switch (Encoding & 0x70) {
+  default:
+    report_fatal_error("We do not support this DWARF encoding yet!");
+  case dwarf::DW_EH_PE_absptr:
+    return  Mang->getSymbol(GV);
+    break;
+  case dwarf::DW_EH_PE_pcrel: {
+    return getContext().GetOrCreateSymbol(StringRef("DW.ref.") +
+                                          Mang->getSymbol(GV)->getName());
+    break;
+  }
+  }
+}
+
+void TargetLoweringObjectFileELF::emitPersonalityValue(MCStreamer &Streamer,
+                                                       const TargetMachine &TM,
+                                                       const MCSymbol *Sym) const {
+  SmallString<64> NameData("DW.ref.");
+  NameData += Sym->getName();
+  MCSymbol *Label = getContext().GetOrCreateSymbol(NameData);
+  Streamer.EmitSymbolAttribute(Label, MCSA_Hidden);
+  Streamer.EmitSymbolAttribute(Label, MCSA_Weak);
+  StringRef Prefix = ".data.";
+  NameData.insert(NameData.begin(), Prefix.begin(), Prefix.end());
+  unsigned Flags = ELF::SHF_ALLOC | ELF::SHF_WRITE | ELF::SHF_GROUP;
+  const MCSection *Sec = getContext().getELFSection(NameData,
+                                                    ELF::SHT_PROGBITS,
+                                                    Flags,
+                                                    SectionKind::getDataRel(),
+                                                    0, Label->getName());
+  Streamer.SwitchSection(Sec);
+  Streamer.EmitValueToAlignment(8);
+  Streamer.EmitSymbolAttribute(Label, MCSA_ELF_TypeObject);
+  const MCExpr *E = MCConstantExpr::Create(8, getContext());
+  Streamer.EmitELFSize(Label, E);
+  Streamer.EmitLabel(Label);
+
+  unsigned Size = TM.getTargetData()->getPointerSize();
+  Streamer.EmitSymbolValue(Sym, Size);
+}
+
 static SectionKind
 getELFKindForNamedSection(StringRef Name, SectionKind K) {
-  // FIXME: Why is this here? Codegen is should not be in the business
-  // of figuring section flags. If the user wrote section(".eh_frame"),
-  // we should just pass that to MC which will defer to the assembly
-  // or use its default if producing an object file.
+  // N.B.: The defaults used in here are no the same ones used in MC.
+  // We follow gcc, MC follows gas. For example, given ".section .eh_frame",
+  // both gas and MC will produce a section with no flags. Given
+  // section(".eh_frame") gcc will produce
+  // .section	.eh_frame,"a",@progbits
   if (Name.empty() || Name[0] != '.') return K;
 
   // Some lame default implementation based on some magic section names.
@@ -206,9 +254,6 @@ getELFKindForNamedSection(StringRef Name, SectionKind K) {
       Name.startswith(".gnu.linkonce.tb.") ||
       Name.startswith(".llvm.linkonce.tb."))
     return SectionKind::getThreadBSS();
-
-  if (Name == ".eh_frame")
-    return SectionKind::getDataRel();
 
   return K;
 }
@@ -424,8 +469,7 @@ getExprForDwarfGlobalReference(const GlobalValue *GV, Mangler *Mang,
     }
 
     return TargetLoweringObjectFile::
-      getExprForDwarfReference(SSym, Mang, MMI,
-                               Encoding & ~dwarf::DW_EH_PE_indirect, Streamer);
+      getExprForDwarfReference(SSym, Encoding & ~dwarf::DW_EH_PE_indirect, Streamer);
   }
 
   return TargetLoweringObjectFile::
@@ -438,26 +482,13 @@ getExprForDwarfGlobalReference(const GlobalValue *GV, Mangler *Mang,
 
 void TargetLoweringObjectFileMachO::Initialize(MCContext &Ctx,
                                                const TargetMachine &TM) {
-  // _foo.eh symbols are currently always exported so that the linker knows
-  // about them.  This is not necessary on 10.6 and later, but it
-  // doesn't hurt anything.
-  // FIXME: I need to get this from Triple.
-  IsFunctionEHSymbolGlobal = true;
   IsFunctionEHFrameSymbolPrivate = false;
   SupportsWeakOmittedEHFrame = false;
 
+  // .comm doesn't support alignment before Leopard.
   Triple T(((LLVMTargetMachine&)TM).getTargetTriple());
-  if (T.getOS() == Triple::Darwin) {
-    switch (T.getDarwinMajorNumber()) {
-    case 7:  // 10.3 Panther.
-    case 8:  // 10.4 Tiger.
-      CommDirectiveSupportsAlignment = false;
-      break;
-    case 9:   // 10.5 Leopard.
-    case 10:  // 10.6 SnowLeopard.
-      break;
-    }
-  }
+  if (T.isMacOSX() && T.isMacOSXVersionLT(10, 5))
+    CommDirectiveSupportsAlignment = false;
 
   TargetLoweringObjectFile::Initialize(Ctx, TM);
 
@@ -803,12 +834,34 @@ getExprForDwarfGlobalReference(const GlobalValue *GV, Mangler *Mang,
     }
 
     return TargetLoweringObjectFile::
-      getExprForDwarfReference(SSym, Mang, MMI,
-                               Encoding & ~dwarf::DW_EH_PE_indirect, Streamer);
+      getExprForDwarfReference(SSym, Encoding & ~dwarf::DW_EH_PE_indirect, Streamer);
   }
 
   return TargetLoweringObjectFile::
     getExprForDwarfGlobalReference(GV, Mang, MMI, Encoding, Streamer);
+}
+
+MCSymbol *TargetLoweringObjectFileMachO::
+getCFIPersonalitySymbol(const GlobalValue *GV, Mangler *Mang,
+                        MachineModuleInfo *MMI) const {
+  // The mach-o version of this method defaults to returning a stub reference.
+  MachineModuleInfoMachO &MachOMMI =
+    MMI->getObjFileInfo<MachineModuleInfoMachO>();
+
+  SmallString<128> Name;
+  Mang->getNameWithPrefix(Name, GV, true);
+  Name += "$non_lazy_ptr";
+
+  // Add information about the stub reference to MachOMMI so that the stub
+  // gets emitted by the asmprinter.
+  MCSymbol *SSym = getContext().GetOrCreateSymbol(Name.str());
+  MachineModuleInfoImpl::StubValueTy &StubSym = MachOMMI.getGVStubEntry(SSym);
+  if (StubSym.getPointer() == 0) {
+    MCSymbol *Sym = Mang->getSymbol(GV);
+    StubSym = MachineModuleInfoImpl::StubValueTy(Sym, !GV->hasLocalLinkage());
+  }
+
+  return SSym;
 }
 
 unsigned TargetLoweringObjectFileMachO::getPersonalityEncoding() const {
@@ -819,7 +872,7 @@ unsigned TargetLoweringObjectFileMachO::getLSDAEncoding() const {
   return DW_EH_PE_pcrel;
 }
 
-unsigned TargetLoweringObjectFileMachO::getFDEEncoding() const {
+unsigned TargetLoweringObjectFileMachO::getFDEEncoding(bool CFI) const {
   return DW_EH_PE_pcrel;
 }
 
@@ -934,10 +987,46 @@ void TargetLoweringObjectFileCOFF::Initialize(MCContext &Ctx,
     getContext().getCOFFSection(".drectve",
                                 COFF::IMAGE_SCN_LNK_INFO,
                                 SectionKind::getMetadata());
+
+  PDataSection =
+    getContext().getCOFFSection(".pdata",
+                                COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                COFF::IMAGE_SCN_MEM_READ |
+                                COFF::IMAGE_SCN_MEM_WRITE,
+                                SectionKind::getDataRel());
+
+  XDataSection =
+    getContext().getCOFFSection(".xdata",
+                                COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                COFF::IMAGE_SCN_MEM_READ |
+                                COFF::IMAGE_SCN_MEM_WRITE,
+                                SectionKind::getDataRel());
 }
 
 const MCSection *TargetLoweringObjectFileCOFF::getEHFrameSection() const {
   return getContext().getCOFFSection(".eh_frame",
+                                     COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                     COFF::IMAGE_SCN_MEM_READ |
+                                     COFF::IMAGE_SCN_MEM_WRITE,
+                                     SectionKind::getDataRel());
+}
+
+const MCSection *TargetLoweringObjectFileCOFF::getWin64EHFuncTableSection(
+                                                       StringRef suffix) const {
+  if (suffix == "")
+    return PDataSection;
+  return getContext().getCOFFSection((".pdata"+suffix).str(),
+                                     COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
+                                     COFF::IMAGE_SCN_MEM_READ |
+                                     COFF::IMAGE_SCN_MEM_WRITE,
+                                     SectionKind::getDataRel());
+}
+
+const MCSection *TargetLoweringObjectFileCOFF::getWin64EHTableSection(
+                                                       StringRef suffix) const {
+  if (suffix == "")
+    return XDataSection;
+  return getContext().getCOFFSection((".xdata"+suffix).str(),
                                      COFF::IMAGE_SCN_CNT_INITIALIZED_DATA |
                                      COFF::IMAGE_SCN_MEM_READ |
                                      COFF::IMAGE_SCN_MEM_WRITE,

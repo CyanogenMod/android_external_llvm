@@ -81,7 +81,7 @@ public:
                                 bool RequiresNullTerminator = true);
 
   /// getMemBuffer - Open the specified memory range as a MemoryBuffer.  Note
-  /// that InputData must be null terminated.
+  /// that InputData must be null terminated if RequiresNullTerminator is true.
   static MemoryBuffer *getMemBuffer(StringRef InputData,
                                     StringRef BufferName = "",
                                     bool RequiresNullTerminator = true);
@@ -119,6 +119,21 @@ public:
   static error_code getFileOrSTDIN(const char *Filename,
                                    OwningPtr<MemoryBuffer> &result,
                                    int64_t FileSize = -1);
+  
+  
+  //===--------------------------------------------------------------------===//
+  // Provided for performance analysis.
+  //===--------------------------------------------------------------------===//
+
+  /// The kind of memory backing used to support the MemoryBuffer.
+  enum BufferKind {
+    MemoryBuffer_Malloc,
+    MemoryBuffer_MMap
+  };
+
+  /// Return information on the memory mechanism used to support the
+  /// MemoryBuffer.
+  virtual BufferKind getBufferKind() const = 0;  
 };
 
 } // end namespace llvm

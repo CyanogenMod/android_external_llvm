@@ -88,7 +88,7 @@
 //   2. The operand matcher will try every possible entry with the same
 //      mnemonic and will check if the target feature for this mnemonic also
 //      matches. After that, if the operand to be matched has its index
-//      present in the mask, a successfull match occurs. Otherwise, fallback
+//      present in the mask, a successful match occurs. Otherwise, fallback
 //      to the regular operand parsing.
 //
 //   3. For a match success, each operand class that has a 'ParserMethod'
@@ -258,7 +258,7 @@ public:
       return ValueName < RHS.ValueName;
 
     default:
-      // This class preceeds the RHS if it is a proper subset of the RHS.
+      // This class precedes the RHS if it is a proper subset of the RHS.
       if (isSubsetOf(RHS))
         return true;
       if (RHS.isSubsetOf(*this))
@@ -896,8 +896,8 @@ BuildRegisterClasses(SmallPtrSet<Record*, 16> &SingletonRegisters) {
   // Gather the defined sets.
   for (std::vector<CodeGenRegisterClass>::const_iterator it =
        RegClassList.begin(), ie = RegClassList.end(); it != ie; ++it)
-    RegisterSets.insert(std::set<Record*>(it->Elements.begin(),
-                                          it->Elements.end()));
+    RegisterSets.insert(std::set<Record*>(it->getOrder().begin(),
+                                          it->getOrder().end()));
 
   // Add any required singleton sets.
   for (SmallPtrSet<Record*, 16>::iterator it = SingletonRegisters.begin(),
@@ -971,8 +971,8 @@ BuildRegisterClasses(SmallPtrSet<Record*, 16> &SingletonRegisters) {
   // Name the register classes which correspond to a user defined RegisterClass.
   for (std::vector<CodeGenRegisterClass>::const_iterator
        it = RegClassList.begin(), ie = RegClassList.end(); it != ie; ++it) {
-    ClassInfo *CI = RegisterSetClasses[std::set<Record*>(it->Elements.begin(),
-                                                         it->Elements.end())];
+    ClassInfo *CI = RegisterSetClasses[std::set<Record*>(it->getOrder().begin(),
+                                                         it->getOrder().end())];
     if (CI->ValueName.empty()) {
       CI->ClassName = it->getName();
       CI->Name = "MCK_" + it->getName();
@@ -1265,7 +1265,7 @@ void AsmMatcherInfo::BuildInfo() {
       II->BuildAliasResultOperands();
   }
 
-  // Reorder classes so that classes preceed super classes.
+  // Reorder classes so that classes precede super classes.
   std::sort(Classes.begin(), Classes.end(), less_ptr<ClassInfo>());
 }
 
@@ -1538,7 +1538,7 @@ static void EmitConvertToMCInst(CodeGenTarget &Target, StringRef ClassName,
         // operand from the earlier one.We can only tie single MCOperand values.
         //assert(OpInfo.MINumOperands == 1 && "Not a singular MCOperand");
         unsigned TiedOp = OpInfo.TiedOperandNum;
-        assert(i > TiedOp && "Tied operand preceeds its target!");
+        assert(i > TiedOp && "Tied operand precedes its target!");
         CaseOS << "    Inst.addOperand(Inst.getOperand(" << TiedOp << "));\n";
         Signature += "__Tie" + utostr(TiedOp);
         break;
@@ -2321,7 +2321,7 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "    for (unsigned i = 0; i != " << MaxNumOperands << "; ++i) {\n";
   OS << "      if (i + 1 >= Operands.size()) {\n";
   OS << "        OperandsValid = (it->Classes[i] == " <<"InvalidMatchClass);\n";
-  OS << "        break;";
+  OS << "        break;\n";
   OS << "      }\n";
   OS << "      if (ValidateOperandClass(Operands[i+1], it->Classes[i]))\n";
   OS << "        continue;\n";

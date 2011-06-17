@@ -18,6 +18,7 @@
 #include "llvm/Instructions.h"
 #include "llvm/BasicBlock.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ConstantFolder.h"
 
@@ -79,6 +80,7 @@ public:
   void SetInsertPoint(Instruction *I) {
     BB = I->getParent();
     InsertPt = I;
+    SetCurrentDebugLocation(I->getDebugLoc());
   }
   
   /// SetInsertPoint - This specifies that created instructions should be
@@ -105,6 +107,10 @@ public:
       I->setDebugLoc(CurDbgLocation);
   }
 
+  /// getCurrentFunctionReturnType - Get the return type of the current function
+  /// that we're emitting into.
+  const Type *getCurrentFunctionReturnType() const;
+  
   /// InsertPoint - A saved insertion point.
   class InsertPoint {
     BasicBlock *Block;
@@ -153,9 +159,10 @@ public:
 
   /// CreateGlobalString - Make a new global variable with an initializer that
   /// has array of i8 type filled in with the nul terminated string value
-  /// specified.  If Name is specified, it is the name of the global variable
-  /// created.
-  Value *CreateGlobalString(const char *Str = "", const Twine &Name = "");
+  /// specified.  The new global variable will be marked mergable with any
+  /// others of the same contents.  If Name is specified, it is the name of the
+  /// global variable created.
+  Value *CreateGlobalString(StringRef Str, const Twine &Name = "");
 
   /// getInt1 - Get a constant value representing either true or false.
   ConstantInt *getInt1(bool V) {
@@ -190,6 +197,11 @@ public:
   /// getInt64 - Get a constant 64-bit value.
   ConstantInt *getInt64(uint64_t C) {
     return ConstantInt::get(getInt64Ty(), C);
+  }
+  
+  /// getInt - Get a constant integer value.
+  ConstantInt *getInt(const APInt &AI) {
+    return ConstantInt::get(Context, AI);
   }
 
   //===--------------------------------------------------------------------===//
@@ -240,10 +252,10 @@ public:
     return Type::getInt8PtrTy(Context, AddrSpace);
   }
 
-  /// getCurrentFunctionReturnType - Get the return type of the current function
-  /// that we're emitting into.
-  const Type *getCurrentFunctionReturnType() const;
-  
+  //===--------------------------------------------------------------------===//
+  // Intrinsic creation methods
+  //===--------------------------------------------------------------------===//
+
   /// CreateMemSet - Create and insert a memset to the specified pointer and the
   /// specified value.  If the pointer isn't an i8*, it will be converted.  If a
   /// TBAA tag is specified, it will be added to the instruction.
@@ -276,6 +288,15 @@ public:
   
   CallInst *CreateMemMove(Value *Dst, Value *Src, Value *Size, unsigned Align,
                           bool isVolatile = false, MDNode *TBAATag = 0);  
+
+  /// CreateLifetimeStart - Create a lifetime.start intrinsic.  If the pointer
+  /// isn't i8* it will be converted.
+  CallInst *CreateLifetimeStart(Value *Ptr, ConstantInt *Size = 0);
+
+  /// CreateLifetimeEnd - Create a lifetime.end intrinsic.  If the pointer isn't
+  /// i8* it will be converted.
+  CallInst *CreateLifetimeEnd(Value *Ptr, ConstantInt *Size = 0);
+
 private:
   Value *getCastedInt8PtrValue(Value *Ptr);
 };
@@ -318,6 +339,7 @@ public:
   explicit IRBuilder(Instruction *IP)
     : IRBuilderBase(IP->getContext()), Folder() {
     SetInsertPoint(IP);
+    SetCurrentDebugLocation(IP->getDebugLoc());
   }
   
   IRBuilder(BasicBlock *TheBB, BasicBlock::iterator IP, const T& F)
@@ -862,7 +884,7 @@ public:
 
   /// CreateGlobalStringPtr - Same as CreateGlobalString, but return a pointer
   /// with "i8*" type instead of a pointer to array of i8.
-  Value *CreateGlobalStringPtr(const char *Str = "", const Twine &Name = "") {
+  Value *CreateGlobalStringPtr(StringRef Str, const Twine &Name = "") {
     Value *gv = CreateGlobalString(Str, Name);
     Value *zero = ConstantInt::get(Type::getInt32Ty(Context), 0);
     Value *Args[] = { zero, zero };

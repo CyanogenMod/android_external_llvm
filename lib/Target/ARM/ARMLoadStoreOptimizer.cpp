@@ -761,7 +761,7 @@ bool ARMLoadStoreOpt::MergeBaseUpdateLSMultiple(MachineBasicBlock &MBB,
     MIB.addOperand(MI->getOperand(OpNum));
 
   // Transfer memoperands.
-  (*MIB).setMemRefs(MI->memoperands_begin(), MI->memoperands_end());
+  MIB->setMemRefs(MI->memoperands_begin(), MI->memoperands_end());
 
   MBB.erase(MBBI);
   return true;
@@ -947,8 +947,8 @@ bool ARMLoadStoreOpt::MergeBaseUpdateLoadStore(MachineBasicBlock &MBB,
   return true;
 }
 
-/// isMemoryOp - Returns true if instruction is a memory operations (that this
-/// pass is capable of operating on).
+/// isMemoryOp - Returns true if instruction is a memory operation that this
+/// pass is capable of operating on.
 static bool isMemoryOp(const MachineInstr *MI) {
   // When no memory operands are present, conservatively assume unaligned,
   // volatile, unfoldable.
@@ -1287,14 +1287,14 @@ bool ARMLoadStoreOpt::LoadStoreMultipleOpti(MachineBasicBlock &MBB) {
         MergeLDR_STR(MBB, 0, CurrBase, CurrOpc, CurrSize,
                      CurrPred, CurrPredReg, Scratch, MemOps, Merges);
 
-        // Try folding preceeding/trailing base inc/dec into the generated
+        // Try folding preceding/trailing base inc/dec into the generated
         // LDM/STM ops.
         for (unsigned i = 0, e = Merges.size(); i < e; ++i)
           if (MergeBaseUpdateLSMultiple(MBB, Merges[i], Advance, MBBI))
             ++NumMerges;
         NumMerges += Merges.size();
 
-        // Try folding preceeding/trailing base inc/dec into those load/store
+        // Try folding preceding/trailing base inc/dec into those load/store
         // that were not merged to form LDM/STM ops.
         for (unsigned i = 0; i != NumMemOps; ++i)
           if (!MemOps[i].Merged)
@@ -1304,7 +1304,7 @@ bool ARMLoadStoreOpt::LoadStoreMultipleOpti(MachineBasicBlock &MBB) {
         // RS may be pointing to an instruction that's deleted.
         RS->skipTo(prior(MBBI));
       } else if (NumMemOps == 1) {
-        // Try folding preceeding/trailing base inc/dec into the single
+        // Try folding preceding/trailing base inc/dec into the single
         // load/store.
         if (MergeBaseUpdateLoadStore(MBB, MemOps[0].MBBI, TII, Advance, MBBI)) {
           ++NumMerges;
@@ -1334,7 +1334,7 @@ bool ARMLoadStoreOpt::LoadStoreMultipleOpti(MachineBasicBlock &MBB) {
 }
 
 /// MergeReturnIntoLDM - If this is a exit BB, try merging the return ops
-/// ("bx lr" and "mov pc, lr") into the preceeding stack restore so it
+/// ("bx lr" and "mov pc, lr") into the preceding stack restore so it
 /// directly restore the value of LR into pc.
 ///   ldmfd sp!, {..., lr}
 ///   bx lr
@@ -1672,10 +1672,14 @@ bool ARMPreAllocLoadStoreOpt::RescheduleOps(MachineBasicBlock *MBB,
           Ops.pop_back();
           Ops.pop_back();
 
+          const TargetInstrDesc &TID = TII->get(NewOpc);
+          const TargetRegisterClass *TRC = TID.OpInfo[0].getRegClass(TRI);
+          MRI->constrainRegClass(EvenReg, TRC);
+          MRI->constrainRegClass(OddReg, TRC);
+
           // Form the pair instruction.
           if (isLd) {
-            MachineInstrBuilder MIB = BuildMI(*MBB, InsertPos,
-                                              dl, TII->get(NewOpc))
+            MachineInstrBuilder MIB = BuildMI(*MBB, InsertPos, dl, TID)
               .addReg(EvenReg, RegState::Define)
               .addReg(OddReg, RegState::Define)
               .addReg(BaseReg);
@@ -1687,8 +1691,7 @@ bool ARMPreAllocLoadStoreOpt::RescheduleOps(MachineBasicBlock *MBB,
             MIB.addImm(Offset).addImm(Pred).addReg(PredReg);
             ++NumLDRDFormed;
           } else {
-            MachineInstrBuilder MIB = BuildMI(*MBB, InsertPos,
-                                              dl, TII->get(NewOpc))
+            MachineInstrBuilder MIB = BuildMI(*MBB, InsertPos, dl, TID)
               .addReg(EvenReg)
               .addReg(OddReg)
               .addReg(BaseReg);

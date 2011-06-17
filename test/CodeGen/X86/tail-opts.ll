@@ -109,15 +109,15 @@ altret:
 
 ; CHECK: dont_merge_oddly:
 ; CHECK-NOT:   ret
-; CHECK:        ucomiss %xmm1, %xmm2
+; CHECK:        ucomiss %xmm{{[0-2]}}, %xmm{{[0-2]}}
 ; CHECK-NEXT:   jbe .LBB2_3
-; CHECK-NEXT:   ucomiss %xmm0, %xmm1
+; CHECK-NEXT:   ucomiss %xmm{{[0-2]}}, %xmm{{[0-2]}}
 ; CHECK-NEXT:   ja .LBB2_4
 ; CHECK-NEXT: .LBB2_2:
 ; CHECK-NEXT:   movb $1, %al
 ; CHECK-NEXT:   ret
 ; CHECK-NEXT: .LBB2_3:
-; CHECK-NEXT:   ucomiss %xmm0, %xmm2
+; CHECK-NEXT:   ucomiss %xmm{{[0-2]}}, %xmm{{[0-2]}}
 ; CHECK-NEXT:   jbe .LBB2_2
 ; CHECK-NEXT: .LBB2_4:
 ; CHECK-NEXT:   xorb %al, %al
@@ -412,9 +412,9 @@ return:
 ; can fall-through into the ret and the other side has to branch anyway.
 
 ; CHECK: TESTE:
-; CHECK: imulq
-; CHECK-NEXT: LBB8_2:
-; CHECK-NEXT: ret
+; CHECK: ret
+; CHECK-NOT: ret
+; CHECK: size TESTE
 
 define i64 @TESTE(i64 %parami, i64 %paraml) nounwind readnone {
 entry:

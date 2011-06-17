@@ -131,8 +131,18 @@ void llvm::ComputeMaskedBits(Value *V, const APInt &Mask,
     }
     return;
   }
+  
+  if (Argument *A = dyn_cast<Argument>(V)) {
+    // Get alignment information off byval arguments if specified in the IR.
+    if (A->hasByValAttr())
+      if (unsigned Align = A->getParamAlignment())
+        KnownZero = Mask & APInt::getLowBitsSet(BitWidth,
+                                                CountTrailingZeros_32(Align));
+    return;
+  }
 
-  KnownZero.clearAllBits(); KnownOne.clearAllBits();   // Start out not knowing anything.
+  // Start out not knowing anything.
+  KnownZero.clearAllBits(); KnownOne.clearAllBits();
 
   if (Depth == MaxDepth || Mask == 0)
     return;  // Limit search depth.
@@ -670,6 +680,10 @@ void llvm::ComputeMaskedBits(Value *V, const APInt &Mask,
         KnownZero = APInt::getHighBitsSet(BitWidth, BitWidth - LowBits);
         break;
       }
+      case Intrinsic::x86_sse42_crc32_64_8:
+      case Intrinsic::x86_sse42_crc32_64_64:
+        KnownZero = APInt::getHighBitsSet(64, 32);
+        break;
       }
     }
     break;
@@ -1328,7 +1342,7 @@ static Value *BuildSubAggregate(Value *From, Value* To, const Type *IndexedType,
         break;
       }
     }
-    // If we succesfully found a value for each of our subaggregates 
+    // If we successfully found a value for each of our subaggregates
     if (To)
       return To;
   }
@@ -1757,7 +1771,7 @@ llvm::GetUnderlyingObject(Value *V, const TargetData *TD, unsigned MaxLookup) {
     } else {
       // See if InstructionSimplify knows any relevant tricks.
       if (Instruction *I = dyn_cast<Instruction>(V))
-        // TODO: Aquire a DominatorTree and use it.
+        // TODO: Acquire a DominatorTree and use it.
         if (Value *Simplified = SimplifyInstruction(I, TD, 0)) {
           V = Simplified;
           continue;

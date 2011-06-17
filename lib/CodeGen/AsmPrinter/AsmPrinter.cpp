@@ -35,10 +35,12 @@
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/Mangler.h"
+#include "llvm/Target/TargetAsmInfo.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetLoweringObjectFile.h"
+#include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Assembly/Writer.h"
 #include "llvm/ADT/SmallString.h"
@@ -191,22 +193,25 @@ bool AsmPrinter::doInitialization(Module &M) {
   if (MAI->doesSupportDebugInformation())
     DD = new DwarfDebug(this, &M);
 
-  if (MAI->doesSupportExceptionHandling())
-    switch (MAI->getExceptionHandlingType()) {
-    default:
-    case ExceptionHandling::DwarfTable:
-      DE = new DwarfTableException(this);
-      break;
-    case ExceptionHandling::DwarfCFI:
-      DE = new DwarfCFIException(this);
-      break;
-    case ExceptionHandling::ARM:
-      DE = new ARMException(this);
-      break;
-    }
+  switch (MAI->getExceptionHandlingType()) {
+  case ExceptionHandling::None:
+    return false;
+  case ExceptionHandling::SjLj:
+  case ExceptionHandling::DwarfCFI:
+    DE = new DwarfCFIException(this);
+    return false;
+  case ExceptionHandling::ARM:
+    DE = new ARMException(this);
+    return false;
+  case ExceptionHandling::Win64:
+    DE = new Win64Exception(this);
+    return false;
+  }
+#else
+  return false;
 #endif // ANDROID_TARGET_BUILD
 
-  return false;
+  llvm_unreachable("Unknown exception type.");
 }
 
 void AsmPrinter::EmitLinkage(unsigned Linkage, MCSymbol *GVSym) const {
@@ -271,7 +276,7 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
   }
 
   MCSymbol *GVSym = Mang->getSymbol(GV);
-  EmitVisibility(GVSym, GV->getVisibility());
+  EmitVisibility(GVSym, GV->getVisibility(), !GV->isDeclaration());
 
   if (!GV->hasInitializer())   // External globals require no extra code.
     return;
@@ -292,12 +297,6 @@ void AsmPrinter::EmitGlobalVariable(const GlobalVariable *GV) {
   // Handle common and BSS local symbols (.lcomm).
   if (GVKind.isCommon() || GVKind.isBSSLocal()) {
     if (Size == 0) Size = 1;   // .comm Foo, 0 is undefined, avoid it.
-
-    if (isVerbose()) {
-      WriteAsOperand(OutStreamer.GetCommentOS(), GV,
-                     /*PrintType=*/false, GV->getParent());
-      OutStreamer.GetCommentOS() << '\n';
-    }
 
     // Handle common symbols.
     if (GVKind.isCommon()) {
@@ -492,38 +491,10 @@ void AsmPrinter::EmitFunctionEntryLabel() {
 }
 
 
-static void EmitDebugLoc(DebugLoc DL, const MachineFunction *MF,
-                         raw_ostream &CommentOS) {
-  const LLVMContext &Ctx = MF->getFunction()->getContext();
-  if (!DL.isUnknown()) {          // Print source line info.
-    DIScope Scope(DL.getScope(Ctx));
-    // Omit the directory, because it's likely to be long and uninteresting.
-    if (Scope.Verify())
-      CommentOS << Scope.getFilename();
-    else
-      CommentOS << "<unknown>";
-    CommentOS << ':' << DL.getLine();
-    if (DL.getCol() != 0)
-      CommentOS << ':' << DL.getCol();
-    DebugLoc InlinedAtDL = DebugLoc::getFromDILocation(DL.getInlinedAt(Ctx));
-    if (!InlinedAtDL.isUnknown()) {
-      CommentOS << "[ ";
-      EmitDebugLoc(InlinedAtDL, MF, CommentOS);
-      CommentOS << " ]";
-    }
-  }
-}
-
 /// EmitComments - Pretty-print comments for instructions.
 static void EmitComments(const MachineInstr &MI, raw_ostream &CommentOS) {
   const MachineFunction *MF = MI.getParent()->getParent();
   const TargetMachine &TM = MF->getTarget();
-
-  DebugLoc DL = MI.getDebugLoc();
-  if (!DL.isUnknown()) {          // Print source line info.
-    EmitDebugLoc(DL, MF, CommentOS);
-    CommentOS << '\n';
-  }
 
   // Check for spills and reloads
   int FI;
@@ -631,6 +602,45 @@ static bool EmitDebugValueComment(const MachineInstr *MI, AsmPrinter &AP) {
   return true;
 }
 
+AsmPrinter::CFIMoveType AsmPrinter::needsCFIMoves() {
+  if (MAI->getExceptionHandlingType() == ExceptionHandling::DwarfCFI &&
+      MF->getFunction()->needsUnwindTableEntry())
+    return CFI_M_EH;
+
+  if (MMI->hasDebugInfo())
+    return CFI_M_Debug;
+
+  return CFI_M_None;
+}
+
+bool AsmPrinter::needsSEHMoves() {
+  return MAI->getExceptionHandlingType() == ExceptionHandling::Win64 &&
+    MF->getFunction()->needsUnwindTableEntry();
+}
+
+void AsmPrinter::emitPrologLabel(const MachineInstr &MI) {
+  MCSymbol *Label = MI.getOperand(0).getMCSymbol();
+
+  if (MAI->getExceptionHandlingType() != ExceptionHandling::DwarfCFI)
+    return;
+
+  if (needsCFIMoves() == CFI_M_None)
+    return;
+
+  MachineModuleInfo &MMI = MF->getMMI();
+  std::vector<MachineMove> &Moves = MMI.getFrameMoves();
+  bool FoundOne = false;
+  (void)FoundOne;
+  for (std::vector<MachineMove>::iterator I = Moves.begin(),
+         E = Moves.end(); I != E; ++I) {
+    if (I->getLabel() == Label) {
+      EmitCFIFrameMove(*I);
+      FoundOne = true;
+    }
+  }
+  assert(FoundOne);
+}
+
 /// EmitFunctionBody - This method emits the body and trailer for a
 /// function.
 void AsmPrinter::EmitFunctionBody() {
@@ -669,6 +679,9 @@ void AsmPrinter::EmitFunctionBody() {
 
       switch (II->getOpcode()) {
       case TargetOpcode::PROLOG_LABEL:
+        emitPrologLabel(*II);
+        break;
+
       case TargetOpcode::EH_LABEL:
       case TargetOpcode::GC_LABEL:
         OutStreamer.EmitLabel(II->getOperand(0).getMCSymbol());
@@ -689,6 +702,9 @@ void AsmPrinter::EmitFunctionBody() {
         if (isVerbose()) EmitKill(II, *this);
         break;
       default:
+        if (!TM.hasMCUseLoc())
+          MCLineEntry::Make(&OutStreamer, getCurrentSection());
+
         EmitInstruction(II);
         break;
       }
@@ -765,6 +781,53 @@ MachineLocation AsmPrinter::
 getDebugValueLocation(const MachineInstr *MI) const {
   // Target specific DBG_VALUE instructions are handled by each target.
   return MachineLocation();
+}
+
+/// EmitDwarfRegOp - Emit dwarf register operation.
+void AsmPrinter::EmitDwarfRegOp(const MachineLocation &MLoc) const {
+  const TargetRegisterInfo *TRI = TM.getRegisterInfo();
+  int Reg = TRI->getDwarfRegNum(MLoc.getReg(), false);
+
+  for (const unsigned *SR = TRI->getSuperRegisters(MLoc.getReg());
+       *SR && Reg < 0; ++SR) {
+    Reg = TRI->getDwarfRegNum(*SR, false);
+    // FIXME: Get the bit range this register uses of the superregister
+    // so that we can produce a DW_OP_bit_piece
+  }
+
+  // FIXME: Handle cases like a super register being encoded as
+  // DW_OP_reg 32 DW_OP_piece 4 DW_OP_reg 33
+
+  // FIXME: We have no reasonable way of handling errors in here. The
+  // caller might be in the middle of an dwarf expression. We should
+  // probably assert that Reg >= 0 once debug info generation is more mature.
+
+  if (int Offset =  MLoc.getOffset()) {
+    if (Reg < 32) {
+      OutStreamer.AddComment(
+        dwarf::OperationEncodingString(dwarf::DW_OP_breg0 + Reg));
+      EmitInt8(dwarf::DW_OP_breg0 + Reg);
+    } else {
+      OutStreamer.AddComment("DW_OP_bregx");
+      EmitInt8(dwarf::DW_OP_bregx);
+      OutStreamer.AddComment(Twine(Reg));
+      EmitULEB128(Reg);
+    }
+    EmitSLEB128(Offset);
+  } else {
+    if (Reg < 32) {
+      OutStreamer.AddComment(
+        dwarf::OperationEncodingString(dwarf::DW_OP_reg0 + Reg));
+      EmitInt8(dwarf::DW_OP_reg0 + Reg);
+    } else {
+      OutStreamer.AddComment("DW_OP_regx");
+      EmitInt8(dwarf::DW_OP_regx);
+      OutStreamer.AddComment(Twine(Reg));
+      EmitULEB128(Reg);
+    }
+  }
+
+  // FIXME: Produce a DW_OP_bit_piece if we used a superregister
 }
 
 bool AsmPrinter::doFinalization(Module &M) {
@@ -1879,7 +1942,7 @@ isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) const {
     return false;
 
   // The predecessor has to be immediately before this block.
-  const MachineBasicBlock *Pred = *PI;
+  MachineBasicBlock *Pred = *PI;
 
   if (!Pred->isLayoutSuccessor(MBB))
     return false;
@@ -1888,9 +1951,28 @@ isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) const {
   if (Pred->empty())
     return true;
 
-  // Otherwise, check the last instruction.
-  const MachineInstr &LastInst = Pred->back();
-  return !LastInst.getDesc().isBarrier();
+  // Check the terminators in the previous blocks
+  for (MachineBasicBlock::iterator II = Pred->getFirstTerminator(),
+         IE = Pred->end(); II != IE; ++II) {
+    MachineInstr &MI = *II;
+
+    // If it is not a simple branch, we are in a table somewhere.
+    if (!MI.getDesc().isBranch() || MI.getDesc().isIndirectBranch())
+      return false;
+
+    // If we are the operands of one of the branches, this is not
+    // a fall through.
+    for (MachineInstr::mop_iterator OI = MI.operands_begin(),
+           OE = MI.operands_end(); OI != OE; ++OI) {
+      const MachineOperand& OP = *OI;
+      if (OP.isJTI())
+        return false;
+      if (OP.isMBB() && OP.getMBB() == MBB)
+        return false;
+    }
+  }
+
+  return true;
 }
 
 

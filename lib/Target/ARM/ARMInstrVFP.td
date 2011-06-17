@@ -94,7 +94,8 @@ multiclass vfp_ldst_mult<string asm, bit L_bit,
     let Inst{20}    = L_bit;
   }
   def DIA_UPD :
-    AXDI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, dpr_reglist:$regs, variable_ops),
+    AXDI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, dpr_reglist:$regs,
+                               variable_ops),
           IndexModeUpd, itin_upd,
           !strconcat(asm, "ia${p}\t$Rn!, $regs"), "$Rn = $wb", []> {
     let Inst{24-23} = 0b01;       // Increment After
@@ -102,7 +103,8 @@ multiclass vfp_ldst_mult<string asm, bit L_bit,
     let Inst{20}    = L_bit;
   }
   def DDB_UPD :
-    AXDI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, dpr_reglist:$regs, variable_ops),
+    AXDI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, dpr_reglist:$regs,
+                               variable_ops),
           IndexModeUpd, itin_upd,
           !strconcat(asm, "db${p}\t$Rn!, $regs"), "$Rn = $wb", []> {
     let Inst{24-23} = 0b10;       // Decrement Before
@@ -124,7 +126,8 @@ multiclass vfp_ldst_mult<string asm, bit L_bit,
     let D = VFPNeonDomain;
   }
   def SIA_UPD :
-    AXSI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, spr_reglist:$regs, variable_ops),
+    AXSI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, spr_reglist:$regs,
+                               variable_ops),
           IndexModeUpd, itin_upd,
           !strconcat(asm, "ia${p}\t$Rn!, $regs"), "$Rn = $wb", []> {
     let Inst{24-23} = 0b01;       // Increment After
@@ -136,7 +139,8 @@ multiclass vfp_ldst_mult<string asm, bit L_bit,
     let D = VFPNeonDomain;
   }
   def SDB_UPD :
-    AXSI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, spr_reglist:$regs, variable_ops),
+    AXSI4<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, spr_reglist:$regs,
+                               variable_ops),
           IndexModeUpd, itin_upd,
           !strconcat(asm, "db${p}\t$Rn!, $regs"), "$Rn = $wb", []> {
     let Inst{24-23} = 0b10;       // Decrement Before
@@ -447,6 +451,10 @@ def VMOVRS : AVConv2I<0b11100001, 0b1010,
 
   let Inst{6-5}   = 0b00;
   let Inst{3-0}   = 0b0000;
+
+  // Some single precision VFP instructions may be executed on both NEON and VFP
+  // pipelines.
+  let D = VFPNeonDomain;
 }
 
 def VMOVSR : AVConv4I<0b11100000, 0b1010,
@@ -464,6 +472,10 @@ def VMOVSR : AVConv4I<0b11100000, 0b1010,
 
   let Inst{6-5}   = 0b00;
   let Inst{3-0}   = 0b0000;
+
+  // Some single precision VFP instructions may be executed on both NEON and VFP
+  // pipelines.
+  let D = VFPNeonDomain;
 }
 
 let neverHasSideEffects = 1 in {
@@ -483,6 +495,10 @@ def VMOVRRD  : AVConv3I<0b11000101, 0b1011,
   let Inst{19-16} = Rt2;
 
   let Inst{7-6} = 0b00;
+
+  // Some single precision VFP instructions may be executed on both NEON and VFP
+  // pipelines.
+  let D = VFPNeonDomain;
 }
 
 def VMOVRRS  : AVConv3I<0b11000101, 0b1010,
@@ -490,6 +506,10 @@ def VMOVRRS  : AVConv3I<0b11000101, 0b1010,
                  IIC_fpMOVDI, "vmov", "\t$wb, $dst2, $src1, $src2",
                  [/* For disassembly only; pattern left blank */]> {
   let Inst{7-6} = 0b00;
+
+  // Some single precision VFP instructions may be executed on both NEON and VFP
+  // pipelines.
+  let D = VFPNeonDomain;
 }
 } // neverHasSideEffects
 
@@ -512,6 +532,10 @@ def VMOVDRR : AVConv5I<0b11000100, 0b1011,
   let Inst{19-16} = Rt2;
 
   let Inst{7-6}   = 0b00;
+
+  // Some single precision VFP instructions may be executed on both NEON and VFP
+  // pipelines.
+  let D = VFPNeonDomain;
 }
 
 let neverHasSideEffects = 1 in
@@ -520,6 +544,10 @@ def VMOVSRR : AVConv5I<0b11000100, 0b1010,
                 IIC_fpMOVID, "vmov", "\t$dst1, $dst2, $src1, $src2",
                 [/* For disassembly only; pattern left blank */]> {
   let Inst{7-6} = 0b00;
+
+  // Some single precision VFP instructions may be executed on both NEON and VFP
+  // pipelines.
+  let D = VFPNeonDomain;
 }
 
 // FMRDH: SPR -> GPR

@@ -422,6 +422,10 @@ bool ARMDisassembler::getInstruction(MCInst &MI,
   if (!Builder)
     return false;
 
+  Builder->setupBuilderForSymbolicDisassembly(getLLVMOpInfoCallback(),
+                                              getDisInfoBlock(), getMCContext(),
+                                              Address);
+
   if (!Builder->Build(MI, insn))
     return false;
 
@@ -433,7 +437,7 @@ bool ThumbDisassembler::getInstruction(MCInst &MI,
                                        const MemoryObject &Region,
                                        uint64_t Address,
                                        raw_ostream &os) const {
-  // The Thumb instruction stream is a sequence of halhwords.
+  // The Thumb instruction stream is a sequence of halfwords.
 
   // This represents the first halfword as well as the machine instruction
   // passed to decodeThumbInstruction().  For 16-bit Thumb instruction, the top
@@ -503,6 +507,10 @@ bool ThumbDisassembler::getInstruction(MCInst &MI,
     return false;
 
   Builder->SetSession(const_cast<Session *>(&SO));
+
+  Builder->setupBuilderForSymbolicDisassembly(getLLVMOpInfoCallback(),
+                                              getDisInfoBlock(), getMCContext(),
+                                              Address);
 
   if (!Builder->Build(MI, insn))
     return false;

@@ -17,6 +17,7 @@
 #include "llvm-c/Initialization.h"
 #include "llvm/InitializePasses.h"
 #include "llvm/PassManager.h"
+#include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Transforms/Scalar.h"
@@ -48,6 +49,10 @@ void llvm::initializeScalarOpts(PassRegistry &Registry) {
   initializeLoopIdiomRecognizePass(Registry);
   initializeLowerAtomicPass(Registry);
   initializeMemCpyOptPass(Registry);
+  initializeObjCARCAliasAnalysisPass(Registry);
+  initializeObjCARCExpandPass(Registry);
+  initializeObjCARCContractPass(Registry);
+  initializeObjCARCOptPass(Registry);
   initializeReassociatePass(Registry);
   initializeRegToMemPass(Registry);
   initializeSCCPPass(Registry);
@@ -172,4 +177,12 @@ void LLVMAddCorrelatedValuePropagationPass(LLVMPassManagerRef PM) {
 
 void LLVMAddEarlyCSEPass(LLVMPassManagerRef PM) {
   unwrap(PM)->add(createEarlyCSEPass());
+}
+
+void LLVMAddTypeBasedAliasAnalysisPass(LLVMPassManagerRef PM) {
+  unwrap(PM)->add(createTypeBasedAliasAnalysisPass());
+}
+
+void LLVMAddBasicAliasAnalysisPass(LLVMPassManagerRef PM) {
+  unwrap(PM)->add(createBasicAliasAnalysisPass());
 }

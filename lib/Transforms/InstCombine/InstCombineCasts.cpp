@@ -71,6 +71,11 @@ Instruction *InstCombiner::PromoteCastOfAllocation(BitCastInst &CI,
   // This requires TargetData to get the alloca alignment and size information.
   if (!TD) return 0;
 
+  // Insist that the amount-to-allocate not overflow.
+  OverflowingBinaryOperator *OBI =
+    dyn_cast<OverflowingBinaryOperator>(AI.getOperand(0));
+  if (OBI && !(OBI->hasNoSignedWrap() || OBI->hasNoUnsignedWrap())) return 0;
+
   const PointerType *PTy = cast<PointerType>(CI.getType());
   
   BuilderTy AllocaBuilder(*Builder);
@@ -133,7 +138,7 @@ Instruction *InstCombiner::PromoteCastOfAllocation(BitCastInst &CI,
     // New is the allocation instruction, pointer typed. AI is the original
     // allocation instruction, also pointer typed. Thus, cast to use is BitCast.
     Value *NewCast = AllocaBuilder.CreateBitCast(New, AI.getType(), "tmpcast");
-    AI.replaceAllUsesWith(NewCast);
+    ReplaceInstUsesWith(AI, NewCast);
   }
   return ReplaceInstUsesWith(CI, New);
 }
@@ -211,7 +216,7 @@ Value *InstCombiner::EvaluateInDifferentType(Value *V, const Type *Ty,
   }
   
   Res->takeName(I);
-  return InsertNewInstBefore(Res, *I);
+  return InsertNewInstWith(Res, *I);
 }
 
 
@@ -1228,7 +1233,7 @@ Instruction *InstCombiner::visitFPTrunc(FPTruncInst &CI) {
       
       
       // Remove the old Call.  With -fmath-errno, it won't get marked readnone.
-      Call->replaceAllUsesWith(UndefValue::get(Call->getType()));
+      ReplaceInstUsesWith(*Call, UndefValue::get(Call->getType()));
       EraseInstFromFunction(*Call);
       return ret;
     }
@@ -1684,8 +1689,7 @@ Instruction *InstCombiner::visitBitCast(BitCastInst &CI) {
     // If we found a path from the src to dest, create the getelementptr now.
     if (SrcElTy == DstElTy) {
       SmallVector<Value*, 8> Idxs(NumZeros+1, ZeroUInt);
-      return GetElementPtrInst::CreateInBounds(Src, Idxs.begin(), Idxs.end(),"",
-                                               ((Instruction*)NULL));
+      return GetElementPtrInst::CreateInBounds(Src, Idxs.begin(), Idxs.end());
     }
   }
   

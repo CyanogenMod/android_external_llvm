@@ -147,7 +147,7 @@ bool CodeGenPrepare::runOnFunction(Function &F) {
   if (!DisableBranchOpts) {
     MadeChange = false;
     for (Function::iterator BB = F.begin(), E = F.end(); BB != E; ++BB)
-      MadeChange |= ConstantFoldTerminator(BB);
+      MadeChange |= ConstantFoldTerminator(BB, true);
 
     if (MadeChange)
       ModifiedDT = true;
@@ -371,9 +371,11 @@ static bool OptimizeNoopCopyExpression(CastInst *CI, const TargetLowering &TLI){
   // If these values will be promoted, find out what they will be promoted
   // to.  This helps us consider truncates on PPC as noop copies when they
   // are.
-  if (TLI.getTypeAction(SrcVT) == TargetLowering::Promote)
+  if (TLI.getTypeAction(CI->getContext(), SrcVT) ==
+      TargetLowering::TypePromoteInteger)
     SrcVT = TLI.getTypeToTransformTo(CI->getContext(), SrcVT);
-  if (TLI.getTypeAction(DstVT) == TargetLowering::Promote)
+  if (TLI.getTypeAction(CI->getContext(), DstVT) ==
+      TargetLowering::TypePromoteInteger)
     DstVT = TLI.getTypeToTransformTo(CI->getContext(), DstVT);
 
   // If, after promotion, these are the same types, this is a noop copy.
@@ -548,7 +550,23 @@ bool CodeGenPrepare::OptimizeCallInst(CallInst *CI) {
 
   // From here on out we're working with named functions.
   if (CI->getCalledFunction() == 0) return false;
-  
+
+  // llvm.dbg.value is far away from the value then iSel may not be able
+  // handle it properly. iSel will drop llvm.dbg.value if it can not 
+  // find a node corresponding to the value.
+  if (DbgValueInst *DVI = dyn_cast<DbgValueInst>(CI))
+    if (Instruction *VI = dyn_cast_or_null<Instruction>(DVI->getValue()))
+      if (!VI->isTerminator() &&
+          (DVI->getParent() != VI->getParent() || DT->dominates(DVI, VI))) {
+        DEBUG(dbgs() << "Moving Debug Value before :\n" << *DVI << ' ' << *VI);
+        DVI->removeFromParent();
+        if (isa<PHINode>(VI))
+          DVI->insertBefore(VI->getParent()->getFirstNonPHI());
+        else
+          DVI->insertAfter(VI);
+        return true;
+      }
+
   // We'll need TargetData from here on out.
   const TargetData *TD = TLI ? TLI->getTargetData() : 0;
   if (!TD) return false;
@@ -889,11 +907,26 @@ bool CodeGenPrepare::OptimizeMemoryInst(Instruction *MemoryInst, Value *Addr,
 
   MemoryInst->replaceUsesOfWith(Repl, SunkAddr);
 
+  // If we have no uses, recursively delete the value and all dead instructions
+  // using it.
   if (Repl->use_empty()) {
+    // This can cause recursive deletion, which can invalidate our iterator.
+    // Use a WeakVH to hold onto it in case this happens.
+    WeakVH IterHandle(CurInstIterator);
+    BasicBlock *BB = CurInstIterator->getParent();
+    
     RecursivelyDeleteTriviallyDeadInstructions(Repl);
-    // This address is now available for reassignment, so erase the table entry;
-    // we don't want to match some completely different instruction.
-    SunkAddrs[Addr] = 0;
+
+    if (IterHandle != CurInstIterator) {
+      // If the iterator instruction was recursively deleted, start over at the
+      // start of the block.
+      CurInstIterator = BB->begin();
+      SunkAddrs.clear();
+    } else {
+      // This address is now available for reassignment, so erase the table
+      // entry; we don't want to match some completely different instruction.
+      SunkAddrs[Addr] = 0;
+    }    
   }
   ++NumMemoryInsts;
   return true;

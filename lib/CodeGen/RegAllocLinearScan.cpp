@@ -16,6 +16,7 @@
 #include "LiveRangeEdit.h"
 #include "VirtRegMap.h"
 #include "VirtRegRewriter.h"
+#include "RegisterClassInfo.h"
 #include "Spiller.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Function.h"
@@ -40,7 +41,6 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
-#include <set>
 #include <queue>
 #include <memory>
 #include <cmath>
@@ -66,6 +66,11 @@ static cl::opt<bool>
 TrivCoalesceEnds("trivial-coalesce-ends",
                   cl::desc("Attempt trivial coalescing of interval ends"),
                   cl::init(false), cl::Hidden);
+
+static cl::opt<bool>
+AvoidWAWHazard("avoid-waw-hazard",
+               cl::desc("Avoid write-write hazards for some register classes"),
+               cl::init(false), cl::Hidden);
 
 static RegisterRegAlloc
 linearscanRegAlloc("linearscan", "linear scan register allocator",
@@ -110,6 +115,7 @@ namespace {
       if (NumRecentlyUsedRegs > 0)
         RecentRegs.resize(NumRecentlyUsedRegs, 0);
       RecentNext = RecentRegs.begin();
+      avoidWAW_ = 0;
     }
 
     typedef std::pair<LiveInterval*, LiveInterval::iterator> IntervalPtr;
@@ -143,6 +149,7 @@ namespace {
     BitVector reservedRegs_;
     LiveIntervals* li_;
     MachineLoopInfo *loopInfo;
+    RegisterClassInfo RegClassInfo;
 
     /// handled_ - Intervals are added to the handled_ set in the order of their
     /// start value.  This is uses for backtracking.
@@ -179,6 +186,9 @@ namespace {
     // The queue of recently-used registers.
     SmallVector<unsigned, 4> RecentRegs;
     SmallVector<unsigned, 4>::iterator RecentNext;
+
+    // Last write-after-write register written.
+    unsigned avoidWAW_;
 
     // Record that we just picked this register.
     void recordRecentlyUsed(unsigned reg) {
@@ -227,8 +237,8 @@ namespace {
 
     // Determine if we skip this register due to its being recently used.
     bool isRecentlyUsed(unsigned reg) const {
-      return std::find(RecentRegs.begin(), RecentRegs.end(), reg) !=
-             RecentRegs.end();
+      return reg == avoidWAW_ ||
+       std::find(RecentRegs.begin(), RecentRegs.end(), reg) != RecentRegs.end();
     }
 
   private:
@@ -358,13 +368,10 @@ namespace {
     /// getFirstNonReservedPhysReg - return the first non-reserved physical
     /// register in the register class.
     unsigned getFirstNonReservedPhysReg(const TargetRegisterClass *RC) {
-        TargetRegisterClass::iterator aoe = RC->allocation_order_end(*mf_);
-        TargetRegisterClass::iterator i = RC->allocation_order_begin(*mf_);
-        while (i != aoe && reservedRegs_.test(*i))
-          ++i;
-        assert(i != aoe && "All registers reserved?!");
-        return *i;
-      }
+      ArrayRef<unsigned> O = RegClassInfo.getOrder(RC);
+      assert(!O.empty() && "All registers reserved?!");
+      return O.front();
+    }
 
     void ComputeRelatedRegClasses();
 
@@ -516,6 +523,7 @@ bool RALinScan::runOnMachineFunction(MachineFunction &fn) {
   reservedRegs_ = tri_->getReservedRegs(fn);
   li_ = &getAnalysis<LiveIntervals>();
   loopInfo = &getAnalysis<MachineLoopInfo>();
+  RegClassInfo.runOnMachineFunction(fn);
 
   // We don't run the coalescer here because we have no reason to
   // interact with it.  If the coalescer requires interaction, it
@@ -792,7 +800,7 @@ void RALinScan::updateSpillWeights(std::vector<float> &Weights,
   // register class we are trying to allocate. Then add the weight to all
   // sub-registers of the super-register even if they are not aliases.
   // e.g. allocating for GR32, bh is not used, updating bl spill weight.
-  //      bl should get the same spill weight otherwise it will be choosen
+  //      bl should get the same spill weight otherwise it will be chosen
   //      as a spill candidate since spilling bh doesn't make ebx available.
   for (unsigned i = 0, e = Supers.size(); i != e; ++i) {
     for (const unsigned *sr = tri_->getSubRegisters(Supers[i]); *sr; ++sr)
@@ -1116,6 +1124,12 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
     active_.push_back(std::make_pair(cur, cur->begin()));
     handled_.push_back(cur);
 
+    // Remember physReg for avoiding a write-after-write hazard in the next
+    // instruction.
+    if (AvoidWAWHazard &&
+        tri_->avoidWriteAfterWrite(mri_->getRegClass(cur->reg)))
+      avoidWAW_ = physReg;
+
     // "Upgrade" the physical register since it has been allocated.
     UpgradeRegister(physReg);
     if (LiveInterval *NextReloadLI = hasNextReloadInterval(cur)) {
@@ -1152,14 +1166,11 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
 
   bool Found = false;
   std::vector<std::pair<unsigned,float> > RegsWeights;
+  ArrayRef<unsigned> Order = RegClassInfo.getOrder(RC);
   if (!minReg || SpillWeights[minReg] == HUGE_VALF)
-    for (TargetRegisterClass::iterator i = RC->allocation_order_begin(*mf_),
-           e = RC->allocation_order_end(*mf_); i != e; ++i) {
-      unsigned reg = *i;
+    for (unsigned i = 0; i != Order.size(); ++i) {
+      unsigned reg = Order[i];
       float regWeight = SpillWeights[reg];
-      // Don't even consider reserved regs.
-      if (reservedRegs_.test(reg))
-        continue;
       // Skip recently allocated registers and reserved registers.
       if (minWeight > regWeight && !isRecentlyUsed(reg))
         Found = true;
@@ -1168,11 +1179,8 @@ void RALinScan::assignRegOrStackSlotAtInterval(LiveInterval* cur) {
 
   // If we didn't find a register that is spillable, try aliases?
   if (!Found) {
-    for (TargetRegisterClass::iterator i = RC->allocation_order_begin(*mf_),
-           e = RC->allocation_order_end(*mf_); i != e; ++i) {
-      unsigned reg = *i;
-      if (reservedRegs_.test(reg))
-        continue;
+    for (unsigned i = 0; i != Order.size(); ++i) {
+      unsigned reg = Order[i];
       // No need to worry about if the alias register size < regsize of RC.
       // We are going to spill all registers that alias it anyway.
       for (const unsigned* as = tri_->getAliasSet(reg); *as; ++as)
@@ -1432,13 +1440,13 @@ unsigned RALinScan::getFreePhysReg(LiveInterval* cur,
   if (TargetRegisterInfo::isVirtualRegister(physReg) && vrm_->hasPhys(physReg))
     physReg = vrm_->getPhys(physReg);
 
-  TargetRegisterClass::iterator I, E;
-  tie(I, E) = tri_->getAllocationOrder(RC, Hint.first, physReg, *mf_);
-  assert(I != E && "No allocatable register in this register class!");
+  ArrayRef<unsigned> Order = tri_->getRawAllocationOrder(RC, Hint.first,
+                                                         physReg, *mf_);
+  assert(!Order.empty() && "No allocatable register in this register class!");
 
   // Scan for the first available register.
-  for (; I != E; ++I) {
-    unsigned Reg = *I;
+  for (unsigned i = 0; i != Order.size(); ++i) {
+    unsigned Reg = Order[i];
     // Ignore "downgraded" registers.
     if (SkipDGRegs && DowngradedRegs.count(Reg))
       continue;
@@ -1446,7 +1454,7 @@ unsigned RALinScan::getFreePhysReg(LiveInterval* cur,
     if (reservedRegs_.test(Reg))
       continue;
     // Skip recently allocated registers.
-    if (isRegAvail(Reg) && !isRecentlyUsed(Reg)) {
+    if (isRegAvail(Reg) && (!SkipDGRegs || !isRecentlyUsed(Reg))) {
       FreeReg = Reg;
       if (FreeReg < inactiveCounts.size())
         FreeRegInactiveCount = inactiveCounts[FreeReg];
@@ -1468,8 +1476,8 @@ unsigned RALinScan::getFreePhysReg(LiveInterval* cur,
   // inactive count.  Alkis found that this reduced register pressure very
   // slightly on X86 (in rev 1.94 of this file), though this should probably be
   // reevaluated now.
-  for (; I != E; ++I) {
-    unsigned Reg = *I;
+  for (unsigned i = 0; i != Order.size(); ++i) {
+    unsigned Reg = Order[i];
     // Ignore "downgraded" registers.
     if (SkipDGRegs && DowngradedRegs.count(Reg))
       continue;
@@ -1477,7 +1485,8 @@ unsigned RALinScan::getFreePhysReg(LiveInterval* cur,
     if (reservedRegs_.test(Reg))
       continue;
     if (isRegAvail(Reg) && Reg < inactiveCounts.size() &&
-        FreeRegInactiveCount < inactiveCounts[Reg] && !isRecentlyUsed(Reg)) {
+        FreeRegInactiveCount < inactiveCounts[Reg] &&
+        (!SkipDGRegs || !isRecentlyUsed(Reg))) {
       FreeReg = Reg;
       FreeRegInactiveCount = inactiveCounts[Reg];
       if (FreeRegInactiveCount == MaxInactiveCount)
@@ -1528,12 +1537,10 @@ unsigned RALinScan::getFreePhysReg(LiveInterval *cur) {
       return Preference;
   }
 
-  if (!DowngradedRegs.empty()) {
-    unsigned FreeReg = getFreePhysReg(cur, RC, MaxInactiveCount, inactiveCounts,
-                                      true);
-    if (FreeReg)
-      return FreeReg;
-  }
+  unsigned FreeReg = getFreePhysReg(cur, RC, MaxInactiveCount, inactiveCounts,
+                                    true);
+  if (FreeReg)
+    return FreeReg;
   return getFreePhysReg(cur, RC, MaxInactiveCount, inactiveCounts, false);
 }
 

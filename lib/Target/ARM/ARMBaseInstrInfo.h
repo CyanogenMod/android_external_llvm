@@ -291,8 +291,8 @@ public:
                                        int64_t &Offset1, int64_t &Offset2)const;
 
   /// shouldScheduleLoadsNear - This is a used by the pre-regalloc scheduler to
-  /// determine (in conjuction with areLoadsFromSameBasePtr) if two loads should
-  /// be scheduled togther. On some targets if two loads are loading from
+  /// determine (in conjunction with areLoadsFromSameBasePtr) if two loads
+  /// should be scheduled togther. On some targets if two loads are loading from
   /// addresses in the same cache line, it's better if they are scheduled
   /// together. This function takes two integers that represent the load offsets
   /// from the common base address. It returns true if it decides it's desirable
@@ -307,7 +307,7 @@ public:
                                     const MachineFunction &MF) const;
 
   virtual bool isProfitableToIfCvt(MachineBasicBlock &MBB,
-                                   unsigned NumCyles, unsigned ExtraPredCycles,
+                                   unsigned NumCycles, unsigned ExtraPredCycles,
                                    float Prob, float Confidence) const;
 
   virtual bool isProfitableToIfCvt(MachineBasicBlock &TMBB,
@@ -317,10 +317,10 @@ public:
                                    float Probability, float Confidence) const;
 
   virtual bool isProfitableToDupForIfCvt(MachineBasicBlock &MBB,
-                                         unsigned NumCyles,
+                                         unsigned NumCycles,
                                          float Probability,
                                          float Confidence) const {
-    return NumCyles == 1;
+    return NumCycles == 1;
   }
 
   /// AnalyzeCompare - For a comparison instruction, return the source register

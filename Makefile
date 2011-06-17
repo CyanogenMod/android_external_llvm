@@ -69,7 +69,7 @@ endif
 ifeq ($(MAKECMDGOALS),install-clang)
   DIRS := tools/clang/tools/driver tools/clang/lib/Headers \
           tools/clang/runtime tools/clang/docs \
-          tools/lto
+          tools/lto runtime
   OPTIONAL_DIRS :=
   NO_INSTALL = 1
 endif
@@ -83,7 +83,7 @@ ifeq ($(MAKECMDGOALS),install-clang-c)
 endif
 
 ifeq ($(MAKECMDGOALS),clang-only)
-  DIRS := $(filter-out tools runtime docs unittests, $(DIRS)) \
+  DIRS := $(filter-out tools docs unittests, $(DIRS)) \
           tools/clang tools/lto
   OPTIONAL_DIRS :=
 endif
@@ -168,6 +168,15 @@ install-clang: install
 install-clang-c: install
 install-libs: install
 
+# If SHOW_DIAGNOSTICS is enabled, clear the diagnostics file first.
+ifeq ($(SHOW_DIAGNOSTICS),1)
+clean-diagnostics:
+	$(Verb) rm -f $(LLVM_OBJ_ROOT)/$(BuildMode)/diags
+.PHONY: clean-diagnostics
+
+all-local:: clean-diagnostics
+endif
+
 #------------------------------------------------------------------------
 # Make sure the generated headers are up-to-date. This must be kept in
 # sync with the AC_CONFIG_HEADER invocations in autoconf/configure.ac
@@ -198,6 +207,12 @@ ifneq ($(ENABLE_OPTIMIZED),1)
 	$(Echo) '*****' optimized build. Use 'make ENABLE_OPTIMIZED=1' to
 	$(Echo) '*****' make an optimized build. Alternatively you can
 	$(Echo) '*****' configure with --enable-optimized.
+ifeq ($(SHOW_DIAGNOSTICS),1)
+	$(Verb) if test -s $(LLVM_OBJ_ROOT)/$(BuildMode)/diags; then \
+	  $(LLVM_SRC_ROOT)/utils/show-diagnostics \
+	    $(LLVM_OBJ_ROOT)/$(BuildMode)/diags; \
+	fi
+endif
 endif
 endif
 

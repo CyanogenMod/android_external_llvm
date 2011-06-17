@@ -1035,6 +1035,93 @@ const SCEV *ScalarEvolution::getZeroExtendExpr(const SCEV *Op,
   return S;
 }
 
+// Get the limit of a recurrence such that incrementing by Step cannot cause
+// signed overflow as long as the value of the recurrence within the loop does
+// not exceed this limit before incrementing.
+static const SCEV *getOverflowLimitForStep(const SCEV *Step,
+                                           ICmpInst::Predicate *Pred,
+                                           ScalarEvolution *SE) {
+  unsigned BitWidth = SE->getTypeSizeInBits(Step->getType());
+  if (SE->isKnownPositive(Step)) {
+    *Pred = ICmpInst::ICMP_SLT;
+    return SE->getConstant(APInt::getSignedMinValue(BitWidth) -
+                           SE->getSignedRange(Step).getSignedMax());
+  }
+  if (SE->isKnownNegative(Step)) {
+    *Pred = ICmpInst::ICMP_SGT;
+    return SE->getConstant(APInt::getSignedMaxValue(BitWidth) -
+                       SE->getSignedRange(Step).getSignedMin());
+  }
+  return 0;
+}
+
+// The recurrence AR has been shown to have no signed wrap. Typically, if we can
+// prove NSW for AR, then we can just as easily prove NSW for its preincrement
+// or postincrement sibling. This allows normalizing a sign extended AddRec as
+// such: {sext(Step + Start),+,Step} => {(Step + sext(Start),+,Step} As a
+// result, the expression "Step + sext(PreIncAR)" is congruent with
+// "sext(PostIncAR)"
+static const SCEV *getPreStartForSignExtend(const SCEVAddRecExpr *AR,
+                                            const Type *Ty,
+                                            ScalarEvolution *SE) {
+  const Loop *L = AR->getLoop();
+  const SCEV *Start = AR->getStart();
+  const SCEV *Step = AR->getStepRecurrence(*SE);
+
+  // Check for a simple looking step prior to loop entry.
+  const SCEVAddExpr *SA = dyn_cast<SCEVAddExpr>(Start);
+  if (!SA || SA->getNumOperands() != 2 || SA->getOperand(0) != Step)
+    return 0;
+
+  // This is a postinc AR. Check for overflow on the preinc recurrence using the
+  // same three conditions that getSignExtendedExpr checks.
+
+  // 1. NSW flags on the step increment.
+  const SCEV *PreStart = SA->getOperand(1);
+  const SCEVAddRecExpr *PreAR = dyn_cast<SCEVAddRecExpr>(
+    SE->getAddRecExpr(PreStart, Step, L, SCEV::FlagAnyWrap));
+
+  if (PreAR && PreAR->getNoWrapFlags(SCEV::FlagNSW))
+    return PreStart;
+
+  // 2. Direct overflow check on the step operation's expression.
+  unsigned BitWidth = SE->getTypeSizeInBits(AR->getType());
+  const Type *WideTy = IntegerType::get(SE->getContext(), BitWidth * 2);
+  const SCEV *OperandExtendedStart =
+    SE->getAddExpr(SE->getSignExtendExpr(PreStart, WideTy),
+                   SE->getSignExtendExpr(Step, WideTy));
+  if (SE->getSignExtendExpr(Start, WideTy) == OperandExtendedStart) {
+    // Cache knowledge of PreAR NSW.
+    if (PreAR)
+      const_cast<SCEVAddRecExpr *>(PreAR)->setNoWrapFlags(SCEV::FlagNSW);
+    // FIXME: this optimization needs a unit test
+    DEBUG(dbgs() << "SCEV: untested prestart overflow check\n");
+    return PreStart;
+  }
+
+  // 3. Loop precondition.
+  ICmpInst::Predicate Pred;
+  const SCEV *OverflowLimit = getOverflowLimitForStep(Step, &Pred, SE);
+
+  if (OverflowLimit &&
+      SE->isLoopEntryGuardedByCond(L, Pred, PreStart, OverflowLimit)) {
+    return PreStart;
+  }
+  return 0;
+}
+
+// Get the normalized sign-extended expression for this AddRec's Start.
+static const SCEV *getSignExtendAddRecStart(const SCEVAddRecExpr *AR,
+                                            const Type *Ty,
+                                            ScalarEvolution *SE) {
+  const SCEV *PreStart = getPreStartForSignExtend(AR, Ty, SE);
+  if (!PreStart)
+    return SE->getSignExtendExpr(AR->getStart(), Ty);
+
+  return SE->getAddExpr(SE->getSignExtendExpr(AR->getStepRecurrence(*SE), Ty),
+                        SE->getSignExtendExpr(PreStart, Ty));
+}
+
 const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
                                                const Type *Ty) {
   assert(getTypeSizeInBits(Op->getType()) < getTypeSizeInBits(Ty) &&
@@ -1097,7 +1184,7 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
       // If we have special knowledge that this addrec won't overflow,
       // we don't need to do any further analysis.
       if (AR->getNoWrapFlags(SCEV::FlagNSW))
-        return getAddRecExpr(getSignExtendExpr(Start, Ty),
+        return getAddRecExpr(getSignExtendAddRecStart(AR, Ty, this),
                              getSignExtendExpr(Step, Ty),
                              L, SCEV::FlagNSW);
 
@@ -1133,7 +1220,7 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
             // Cache knowledge of AR NSW, which is propagated to this AddRec.
             const_cast<SCEVAddRecExpr *>(AR)->setNoWrapFlags(SCEV::FlagNSW);
             // Return the expression with the addrec on the outside.
-            return getAddRecExpr(getSignExtendExpr(Start, Ty),
+            return getAddRecExpr(getSignExtendAddRecStart(AR, Ty, this),
                                  getSignExtendExpr(Step, Ty),
                                  L, AR->getNoWrapFlags());
           }
@@ -1149,7 +1236,7 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
             // Cache knowledge of AR NSW, which is propagated to this AddRec.
             const_cast<SCEVAddRecExpr *>(AR)->setNoWrapFlags(SCEV::FlagNSW);
             // Return the expression with the addrec on the outside.
-            return getAddRecExpr(getSignExtendExpr(Start, Ty),
+            return getAddRecExpr(getSignExtendAddRecStart(AR, Ty, this),
                                  getZeroExtendExpr(Step, Ty),
                                  L, AR->getNoWrapFlags());
           }
@@ -1159,34 +1246,18 @@ const SCEV *ScalarEvolution::getSignExtendExpr(const SCEV *Op,
         // the addrec is safe. Also, if the entry is guarded by a comparison
         // with the start value and the backedge is guarded by a comparison
         // with the post-inc value, the addrec is safe.
-        if (isKnownPositive(Step)) {
-          const SCEV *N = getConstant(APInt::getSignedMinValue(BitWidth) -
-                                      getSignedRange(Step).getSignedMax());
-          if (isLoopBackedgeGuardedByCond(L, ICmpInst::ICMP_SLT, AR, N) ||
-              (isLoopEntryGuardedByCond(L, ICmpInst::ICMP_SLT, Start, N) &&
-               isLoopBackedgeGuardedByCond(L, ICmpInst::ICMP_SLT,
-                                           AR->getPostIncExpr(*this), N))) {
-            // Cache knowledge of AR NSW, which is propagated to this AddRec.
-            const_cast<SCEVAddRecExpr *>(AR)->setNoWrapFlags(SCEV::FlagNSW);
-            // Return the expression with the addrec on the outside.
-            return getAddRecExpr(getSignExtendExpr(Start, Ty),
-                                 getSignExtendExpr(Step, Ty),
-                                 L, AR->getNoWrapFlags());
-          }
-        } else if (isKnownNegative(Step)) {
-          const SCEV *N = getConstant(APInt::getSignedMaxValue(BitWidth) -
-                                      getSignedRange(Step).getSignedMin());
-          if (isLoopBackedgeGuardedByCond(L, ICmpInst::ICMP_SGT, AR, N) ||
-              (isLoopEntryGuardedByCond(L, ICmpInst::ICMP_SGT, Start, N) &&
-               isLoopBackedgeGuardedByCond(L, ICmpInst::ICMP_SGT,
-                                           AR->getPostIncExpr(*this), N))) {
-            // Cache knowledge of AR NSW, which is propagated to this AddRec.
-            const_cast<SCEVAddRecExpr *>(AR)->setNoWrapFlags(SCEV::FlagNSW);
-            // Return the expression with the addrec on the outside.
-            return getAddRecExpr(getSignExtendExpr(Start, Ty),
-                                 getSignExtendExpr(Step, Ty),
-                                 L, AR->getNoWrapFlags());
-          }
+        ICmpInst::Predicate Pred;
+        const SCEV *OverflowLimit = getOverflowLimitForStep(Step, &Pred, this);
+        if (OverflowLimit &&
+            (isLoopBackedgeGuardedByCond(L, Pred, AR, OverflowLimit) ||
+             (isLoopEntryGuardedByCond(L, Pred, Start, OverflowLimit) &&
+              isLoopBackedgeGuardedByCond(L, Pred, AR->getPostIncExpr(*this),
+                                          OverflowLimit)))) {
+          // Cache knowledge of AR NSW, then propagate NSW to the wide AddRec.
+          const_cast<SCEVAddRecExpr *>(AR)->setNoWrapFlags(SCEV::FlagNSW);
+          return getAddRecExpr(getSignExtendAddRecStart(AR, Ty, this),
+                               getSignExtendExpr(Step, Ty),
+                               L, AR->getNoWrapFlags());
         }
       }
     }
@@ -1882,7 +1953,7 @@ const SCEV *ScalarEvolution::getMulExpr(SmallVectorImpl<const SCEV *> &Ops,
       // outer mul and the inner addrec are guaranteed to have no overflow.
       //
       // No self-wrap cannot be guaranteed after changing the step size, but
-      // will be infered if either NUW or NSW is true.
+      // will be inferred if either NUW or NSW is true.
       Flags = AddRec->getNoWrapFlags(clearFlags(Flags, SCEV::FlagNW));
       const SCEV *NewRec = getAddRecExpr(NewOps, AddRecLoop, Flags);
 
@@ -2015,7 +2086,7 @@ const SCEV *ScalarEvolution::getUDivExpr(const SCEV *LHS,
           }
       }
       // (A+B)/C --> (A/C + B/C) if safe and A/C and B/C can be folded.
-      if (const SCEVAddRecExpr *A = dyn_cast<SCEVAddRecExpr>(LHS)) {
+      if (const SCEVAddExpr *A = dyn_cast<SCEVAddExpr>(LHS)) {
         SmallVector<const SCEV *, 4> Operands;
         for (unsigned i = 0, e = A->getNumOperands(); i != e; ++i)
           Operands.push_back(getZeroExtendExpr(A->getOperand(i), ExtTy));
@@ -3783,24 +3854,25 @@ ScalarEvolution::getBackedgeTakenInfo(const Loop *L) {
   // update the value. The temporary CouldNotCompute value tells SCEV
   // code elsewhere that it shouldn't attempt to request a new
   // backedge-taken count, which could result in infinite recursion.
-  std::pair<std::map<const Loop *, BackedgeTakenInfo>::iterator, bool> Pair =
+  std::pair<DenseMap<const Loop *, BackedgeTakenInfo>::iterator, bool> Pair =
     BackedgeTakenCounts.insert(std::make_pair(L, getCouldNotCompute()));
   if (!Pair.second)
     return Pair.first->second;
 
-  BackedgeTakenInfo BECount = ComputeBackedgeTakenCount(L);
-  if (BECount.Exact != getCouldNotCompute()) {
-    assert(isLoopInvariant(BECount.Exact, L) &&
-           isLoopInvariant(BECount.Max, L) &&
+  BackedgeTakenInfo Result = getCouldNotCompute();
+  BackedgeTakenInfo Computed = ComputeBackedgeTakenCount(L);
+  if (Computed.Exact != getCouldNotCompute()) {
+    assert(isLoopInvariant(Computed.Exact, L) &&
+           isLoopInvariant(Computed.Max, L) &&
            "Computed backedge-taken count isn't loop invariant for loop!");
     ++NumTripCountsComputed;
 
     // Update the value in the map.
-    Pair.first->second = BECount;
+    Result = Computed;
   } else {
-    if (BECount.Max != getCouldNotCompute())
+    if (Computed.Max != getCouldNotCompute())
       // Update the value in the map.
-      Pair.first->second = BECount;
+      Result = Computed;
     if (isa<PHINode>(L->getHeader()->begin()))
       // Only count loops that have phi nodes as not being computable.
       ++NumTripCountsNotComputed;
@@ -3811,7 +3883,7 @@ ScalarEvolution::getBackedgeTakenInfo(const Loop *L) {
   // conservative estimates made without the benefit of trip count
   // information. This is similar to the code in forgetLoop, except that
   // it handles SCEVUnknown PHI nodes specially.
-  if (BECount.hasAnyInfo()) {
+  if (Computed.hasAnyInfo()) {
     SmallVector<Instruction *, 16> Worklist;
     PushLoopPHIs(L, Worklist);
 
@@ -3842,7 +3914,13 @@ ScalarEvolution::getBackedgeTakenInfo(const Loop *L) {
       PushDefUseChildren(I, Worklist);
     }
   }
-  return Pair.first->second;
+
+  // Re-lookup the insert position, since the call to
+  // ComputeBackedgeTakenCount above could result in a
+  // recusive call to getBackedgeTakenInfo (on a different
+  // loop), which would invalidate the iterator computed
+  // earlier.
+  return BackedgeTakenCounts.find(L)->second = Result;
 }
 
 /// forgetLoop - This method should be called by the client when it has
@@ -4426,7 +4504,7 @@ Constant *
 ScalarEvolution::getConstantEvolutionLoopExitValue(PHINode *PN,
                                                    const APInt &BEs,
                                                    const Loop *L) {
-  std::map<PHINode*, Constant*>::const_iterator I =
+  DenseMap<PHINode*, Constant*>::const_iterator I =
     ConstantEvolutionLoopExitValue.find(PN);
   if (I != ConstantEvolutionLoopExitValue.end())
     return I->second;
@@ -4694,9 +4772,15 @@ const SCEV *ScalarEvolution::computeSCEVAtScope(const SCEV *V, const Loop *L) {
       for (++i; i != e; ++i)
         NewOps.push_back(getSCEVAtScope(AddRec->getOperand(i), L));
 
-      AddRec = cast<SCEVAddRecExpr>(
+      const SCEV *FoldedRec =
         getAddRecExpr(NewOps, AddRec->getLoop(),
-                      AddRec->getNoWrapFlags(SCEV::FlagNW)));
+                      AddRec->getNoWrapFlags(SCEV::FlagNW));
+      AddRec = dyn_cast<SCEVAddRecExpr>(FoldedRec);
+      // The addrec may be folded to a nonrecurrence, for example, if the
+      // induction variable is multiplied by zero after constant folding. Go
+      // ahead and return the folded value.
+      if (!AddRec)
+        return FoldedRec;
       break;
     }
 

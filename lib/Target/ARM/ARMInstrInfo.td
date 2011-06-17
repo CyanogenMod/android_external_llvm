@@ -58,9 +58,12 @@ def SDT_ARMEH_SJLJ_Setjmp : SDTypeProfile<1, 2, [SDTCisInt<0>, SDTCisPtrTy<1>,
                                                  SDTCisInt<2>]>;
 def SDT_ARMEH_SJLJ_Longjmp: SDTypeProfile<0, 2, [SDTCisPtrTy<0>, SDTCisInt<1>]>;
 
-def SDT_ARMEH_SJLJ_DispatchSetup: SDTypeProfile<0, 0, []>;
+def SDT_ARMEH_SJLJ_DispatchSetup: SDTypeProfile<0, 1, [SDTCisInt<0>]>;
 
 def SDT_ARMMEMBARRIER     : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
+
+def SDT_ARMPREFETCH : SDTypeProfile<0, 3, [SDTCisPtrTy<0>, SDTCisSameAs<1, 2>,
+                                           SDTCisInt<1>]>;
 
 def SDT_ARMTCRET : SDTypeProfile<0, 1, [SDTCisPtrTy<0>]>;
 
@@ -130,7 +133,7 @@ def ARMMemBarrier     : SDNode<"ARMISD::MEMBARRIER", SDT_ARMMEMBARRIER,
                                [SDNPHasChain]>;
 def ARMMemBarrierMCR  : SDNode<"ARMISD::MEMBARRIER_MCR", SDT_ARMMEMBARRIER,
                                [SDNPHasChain]>;
-def ARMPreload        : SDNode<"ARMISD::PRELOAD", SDTPrefetch,
+def ARMPreload        : SDNode<"ARMISD::PRELOAD", SDT_ARMPREFETCH,
                                [SDNPHasChain, SDNPMayLoad, SDNPMayStore]>;
 
 def ARMrbit          : SDNode<"ARMISD::RBIT", SDTIntUnaryOp>;
@@ -203,13 +206,13 @@ def so_imm_not_XFORM : SDNodeXForm<imm, [{
 }]>;
 
 /// imm1_15 predicate - True if the 32-bit immediate is in the range [1,15].
-def imm1_15 : PatLeaf<(i32 imm), [{
-  return (int32_t)N->getZExtValue() >= 1 && (int32_t)N->getZExtValue() < 16;
+def imm1_15 : ImmLeaf<i32, [{
+  return (int32_t)Imm >= 1 && (int32_t)Imm < 16;
 }]>;
 
 /// imm16_31 predicate - True if the 32-bit immediate is in the range [16,31].
-def imm16_31 : PatLeaf<(i32 imm), [{
-  return (int32_t)N->getZExtValue() >= 16 && (int32_t)N->getZExtValue() < 32;
+def imm16_31 : ImmLeaf<i32, [{
+  return (int32_t)Imm >= 16 && (int32_t)Imm < 32;
 }]>;
 
 def so_imm_neg :
@@ -239,8 +242,8 @@ def lo16AllZero : PatLeaf<(i32 imm), [{
 
 /// imm0_65535 predicate - True if the 32-bit immediate is in the range
 /// [0.65535].
-def imm0_65535 : PatLeaf<(i32 imm), [{
-  return (uint32_t)N->getZExtValue() < 65536;
+def imm0_65535 : ImmLeaf<i32, [{
+  return Imm >= 0 && Imm < 65536;
 }]>;
 
 class BinOpFrag<dag res> : PatFrag<(ops node:$LHS, node:$RHS), res>;
@@ -375,8 +378,8 @@ def neon_vcvt_imm32 : Operand<i32> {
 }
 
 // rot_imm: An integer that encodes a rotate amount. Must be 8, 16, or 24.
-def rot_imm : Operand<i32>, PatLeaf<(i32 imm), [{
-    int32_t v = (int32_t)N->getZExtValue();
+def rot_imm : Operand<i32>, ImmLeaf<i32, [{
+    int32_t v = (int32_t)Imm;
     return v == 8 || v == 16 || v == 24; }]> {
   let EncoderMethod = "getRotImmOpValue";
 }
@@ -412,7 +415,9 @@ def shift_so_reg : Operand<i32>,    // reg reg imm
 
 // so_imm - Match a 32-bit shifter_operand immediate operand, which is an
 // 8-bit immediate rotated by an arbitrary number of bits.
-def so_imm : Operand<i32>, PatLeaf<(imm), [{ return Pred_so_imm(N); }]> {
+def so_imm : Operand<i32>, ImmLeaf<i32, [{
+    return ARM_AM::getSOImmVal(Imm) != -1;
+  }]> {
   let EncoderMethod = "getSOImmOpValue";
   let PrintMethod = "printSOImmOperand";
 }
@@ -433,13 +438,13 @@ def arm_i32imm : PatLeaf<(imm), [{
 }]>;
 
 /// imm0_31 predicate - True if the 32-bit immediate is in the range [0,31].
-def imm0_31 : Operand<i32>, PatLeaf<(imm), [{
-  return (int32_t)N->getZExtValue() < 32;
+def imm0_31 : Operand<i32>, ImmLeaf<i32, [{
+  return Imm >= 0 && Imm < 32;
 }]>;
 
 /// imm0_31_m1 - Matches and prints like imm0_31, but encodes as 'value - 1'.
-def imm0_31_m1 : Operand<i32>, PatLeaf<(imm), [{
-  return (int32_t)N->getZExtValue() < 32;
+def imm0_31_m1 : Operand<i32>, ImmLeaf<i32, [{
+  return Imm >= 0 && Imm < 32;
 }]> {
   let EncoderMethod = "getImmMinusOneOpValue";
 }
@@ -462,15 +467,21 @@ def bf_inv_mask_imm : Operand<i32>,
 }
 
 /// lsb_pos_imm - position of the lsb bit, used by BFI4p and t2BFI4p
-def lsb_pos_imm : Operand<i32>, PatLeaf<(imm), [{
-  return isInt<5>(N->getSExtValue());
+def lsb_pos_imm : Operand<i32>, ImmLeaf<i32, [{
+  return isInt<5>(Imm);
 }]>;
 
 /// width_imm - number of bits to be copied, used by BFI4p and t2BFI4p
-def width_imm : Operand<i32>, PatLeaf<(imm), [{
-  return N->getSExtValue() > 0 &&  N->getSExtValue() <= 32;
+def width_imm : Operand<i32>, ImmLeaf<i32, [{
+  return Imm > 0 &&  Imm <= 32;
 }] > {
   let EncoderMethod = "getMsbOpValue";
+}
+
+def ssat_imm : Operand<i32>, ImmLeaf<i32, [{
+  return Imm > 0 && Imm <= 32;
+}]> {
+  let EncoderMethod = "getSsatBitPosValue";
 }
 
 // Define ARM specific addressing modes.
@@ -584,6 +595,15 @@ def am6offset : Operand<i32>,
   let PrintMethod = "printAddrMode6OffsetOperand";
   let MIOperandInfo = (ops GPR);
   let EncoderMethod = "getAddrMode6OffsetOpValue";
+}
+
+// Special version of addrmode6 to handle alignment encoding for VST1/VLD1
+// (single element from one lane) for size 32.
+def addrmode6oneL32 : Operand<i32>,
+                ComplexPattern<i32, 2, "SelectAddrMode6", [], [SDNPWantParent]>{
+  let PrintMethod = "printAddrMode6Operand";
+  let MIOperandInfo = (ops GPR:$addr, i32imm);
+  let EncoderMethod = "getAddrMode6OneLane32AddressOpValue";
 }
 
 // Special version of addrmode6 to handle alignment encoding for VLD-dup
@@ -934,20 +954,23 @@ multiclass AI1_adde_sube_irs<bits<4> opcod, string opc, PatFrag opnode,
     let Inst{19-16} = Rn;
   }
 }
+}
+
 // Carry setting variants
 // NOTE: CPSR def omitted because it will be handled by the custom inserter.
 let usesCustomInserter = 1 in {
 multiclass AI1_adde_sube_s_irs<PatFrag opnode, bit Commutable = 0> {
-  def Sri : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$Rn, so_imm:$imm),
-                Size4Bytes, IIC_iALUi,
+  def ri : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$Rn, so_imm:$imm),
+               Size4Bytes, IIC_iALUi,
                [(set GPR:$Rd, (opnode GPR:$Rn, so_imm:$imm))]>;
-  def Srr : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm),
-                Size4Bytes, IIC_iALUr,
-               [(set GPR:$Rd, (opnode GPR:$Rn, GPR:$Rm))]>;
-  def Srs : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$Rn, so_reg:$shift),
-                Size4Bytes, IIC_iALUsr,
+  def rr : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm),
+               Size4Bytes, IIC_iALUr,
+               [(set GPR:$Rd, (opnode GPR:$Rn, GPR:$Rm))]> {
+    let isCommutable = Commutable;
+  }
+  def rs : ARMPseudoInst<(outs GPR:$Rd), (ins GPR:$Rn, so_reg:$shift),
+               Size4Bytes, IIC_iALUsr,
                [(set GPR:$Rd, (opnode GPR:$Rn, so_reg:$shift))]>;
-}
 }
 }
 
@@ -1299,6 +1322,15 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1, isIndirectBranch = 1 in {
     let Inst{3-0}  = dst;
   }
 
+  // For disassembly only.
+  def BX_pred : AXI<(outs), (ins GPR:$dst, pred:$p), BrMiscFrm, IIC_Br,
+                  "bx$p\t$dst", [/* pattern left blank */]>,
+              Requires<[IsARM, HasV4T]> {
+    bits<4> dst;
+    let Inst{27-4} = 0b000100101111111111110001;
+    let Inst{3-0}  = dst;
+  }
+
   // ARMV4 only
   // FIXME: We would really like to define this as a vanilla ARMPat like:
   // ARMPat<(brind GPR:$dst), (MOVr PC, GPR:$dst)>
@@ -1316,10 +1348,7 @@ let isCall = 1,
   // FIXME:  Do we really need a non-predicated version? If so, it should
   // at least be a pseudo instruction expanding to the predicated version
   // at MC lowering time.
-  Defs = [R0,  R1,  R2,  R3,  R12, LR,
-          D0,  D1,  D2,  D3,  D4,  D5,  D6,  D7,
-          D16, D17, D18, D19, D20, D21, D22, D23,
-          D24, D25, D26, D27, D28, D29, D30, D31, CPSR, FPSCR],
+  Defs = [R0,  R1,  R2,  R3,  R12, LR, QQQQ0, QQQQ2, QQQQ3, CPSR, FPSCR],
   Uses = [SP] in {
   def BL  : ABXI<0b1011, (outs), (ins bl_target:$func, variable_ops),
                 IIC_Br, "bl\t$func",
@@ -1373,10 +1402,7 @@ let isCall = 1,
   // On Darwin R9 is call-clobbered.
   // R7 is marked as a use to prevent frame-pointer assignments from being
   // moved above / below calls.
-  Defs = [R0,  R1,  R2,  R3,  R9,  R12, LR,
-          D0,  D1,  D2,  D3,  D4,  D5,  D6,  D7,
-          D16, D17, D18, D19, D20, D21, D22, D23,
-          D24, D25, D26, D27, D28, D29, D30, D31, CPSR, FPSCR],
+  Defs = [R0,  R1,  R2,  R3,  R9,  R12, LR, QQQQ0, QQQQ2, QQQQ3, CPSR, FPSCR],
   Uses = [R7, SP] in {
   def BLr9  : ARMPseudoInst<(outs), (ins bltarget:$func, variable_ops),
                 Size4Bytes, IIC_Br,
@@ -1415,10 +1441,7 @@ let isCall = 1,
 // FIXME: The Thumb versions of these should live in ARMInstrThumb.td
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   // Darwin versions.
-  let Defs = [R0, R1, R2, R3, R9, R12,
-              D0, D1, D2, D3, D4, D5, D6, D7,
-              D16, D17, D18, D19, D20, D21, D22, D23, D24, D25, D26,
-              D27, D28, D29, D30, D31, PC],
+  let Defs = [R0, R1, R2, R3, R9, R12, QQQQ0, QQQQ2, QQQQ3, PC],
       Uses = [SP] in {
     def TCRETURNdi : PseudoInst<(outs), (ins i32imm:$dst, variable_ops),
                        IIC_Br, []>, Requires<[IsDarwin]>;
@@ -1444,10 +1467,7 @@ let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   }
 
   // Non-Darwin versions (the difference is R9).
-  let Defs = [R0, R1, R2, R3, R12,
-              D0, D1, D2, D3, D4, D5, D6, D7,
-              D16, D17, D18, D19, D20, D21, D22, D23, D24, D25, D26,
-              D27, D28, D29, D30, D31, PC],
+  let Defs = [R0, R1, R2, R3, R12, QQQQ0, QQQQ2, QQQQ3, PC],
       Uses = [SP] in {
     def TCRETURNdiND : PseudoInst<(outs), (ins i32imm:$dst, variable_ops),
                        IIC_Br, []>, Requires<[IsNotDarwin]>;
@@ -1629,7 +1649,7 @@ def LDRSB : AI3ld<0b1101, 1, (outs GPR:$Rt), (ins addrmode3:$addr), LdMiscFrm,
                    IIC_iLoad_bh_r, "ldrsb", "\t$Rt, $addr",
                    [(set GPR:$Rt, (sextloadi8 addrmode3:$addr))]>;
 
-let mayLoad = 1, neverHasSideEffects = 1 in {
+let mayLoad = 1, neverHasSideEffects = 1, hasExtraDefRegAllocReq = 1 in {
 // Load doubleword
 def LDRD : AI3ld<0b1101, 0, (outs GPR:$Rd, GPR:$dst2),
                  (ins addrmode3:$addr), LdMiscFrm,
@@ -1704,6 +1724,7 @@ let mayLoad = 1, neverHasSideEffects = 1 in {
 defm LDRH  : AI3_ldridx<0b1011, 1, "ldrh", IIC_iLoad_bh_ru>;
 defm LDRSH : AI3_ldridx<0b1111, 1, "ldrsh", IIC_iLoad_bh_ru>;
 defm LDRSB : AI3_ldridx<0b1101, 1, "ldrsb", IIC_iLoad_bh_ru>;
+let hasExtraDefRegAllocReq = 1 in {
 def LDRD_PRE : AI3ldstidx<0b1101, 0, 1, 1, (outs GPR:$Rt, GPR:$Rt2, GPR:$Rn_wb),
                           (ins addrmode3:$addr), IndexModePre,
                           LdMiscFrm, IIC_iLoad_d_ru,
@@ -1729,6 +1750,7 @@ def LDRD_POST: AI3ldstidx<0b1101, 0, 1, 0, (outs GPR:$Rt, GPR:$Rt2, GPR:$Rn_wb),
   let Inst{11-8}  = offset{7-4};    // imm7_4/zero
   let Inst{3-0}   = offset{3-0};    // imm3_0/Rm
 }
+} // hasExtraDefRegAllocReq = 1
 } // mayLoad = 1, neverHasSideEffects = 1
 
 // LDRT, LDRBT, LDRSBT, LDRHT, LDRSHT are for disassembly only.
@@ -1797,45 +1819,52 @@ def STRD : AI3str<0b1111, (outs), (ins GPR:$Rt, GPR:$src2, addrmode3:$addr),
 def STR_PRE  : AI2stridx<0, 1, (outs GPR:$Rn_wb),
                      (ins GPR:$Rt, GPR:$Rn, am2offset:$offset),
                      IndexModePre, StFrm, IIC_iStore_ru,
-                     "str", "\t$Rt, [$Rn, $offset]!", "$Rn = $Rn_wb",
+                     "str", "\t$Rt, [$Rn, $offset]!",
+                     "$Rn = $Rn_wb,@earlyclobber $Rn_wb",
                      [(set GPR:$Rn_wb,
                       (pre_store GPR:$Rt, GPR:$Rn, am2offset:$offset))]>;
 
 def STR_POST : AI2stridx<0, 0, (outs GPR:$Rn_wb),
                      (ins GPR:$Rt, GPR:$Rn, am2offset:$offset),
                      IndexModePost, StFrm, IIC_iStore_ru,
-                     "str", "\t$Rt, [$Rn], $offset", "$Rn = $Rn_wb",
+                     "str", "\t$Rt, [$Rn], $offset",
+                     "$Rn = $Rn_wb,@earlyclobber $Rn_wb",
                      [(set GPR:$Rn_wb,
                       (post_store GPR:$Rt, GPR:$Rn, am2offset:$offset))]>;
 
 def STRB_PRE : AI2stridx<1, 1, (outs GPR:$Rn_wb),
                      (ins GPR:$Rt, GPR:$Rn, am2offset:$offset),
                      IndexModePre, StFrm, IIC_iStore_bh_ru,
-                     "strb", "\t$Rt, [$Rn, $offset]!", "$Rn = $Rn_wb",
+                     "strb", "\t$Rt, [$Rn, $offset]!",
+                     "$Rn = $Rn_wb,@earlyclobber $Rn_wb",
                      [(set GPR:$Rn_wb, (pre_truncsti8 GPR:$Rt,
                                         GPR:$Rn, am2offset:$offset))]>;
 def STRB_POST: AI2stridx<1, 0, (outs GPR:$Rn_wb),
                      (ins GPR:$Rt, GPR:$Rn, am2offset:$offset),
                      IndexModePost, StFrm, IIC_iStore_bh_ru,
-                     "strb", "\t$Rt, [$Rn], $offset", "$Rn = $Rn_wb",
+                     "strb", "\t$Rt, [$Rn], $offset",
+                     "$Rn = $Rn_wb,@earlyclobber $Rn_wb",
                      [(set GPR:$Rn_wb, (post_truncsti8 GPR:$Rt,
                                         GPR:$Rn, am2offset:$offset))]>;
 
 def STRH_PRE : AI3stridx<0b1011, 0, 1, (outs GPR:$Rn_wb),
                      (ins GPR:$Rt, GPR:$Rn, am3offset:$offset),
                      IndexModePre, StMiscFrm, IIC_iStore_ru,
-                     "strh", "\t$Rt, [$Rn, $offset]!", "$Rn = $Rn_wb",
+                     "strh", "\t$Rt, [$Rn, $offset]!",
+                     "$Rn = $Rn_wb,@earlyclobber $Rn_wb",
                      [(set GPR:$Rn_wb,
                       (pre_truncsti16 GPR:$Rt, GPR:$Rn, am3offset:$offset))]>;
 
 def STRH_POST: AI3stridx<0b1011, 0, 0, (outs GPR:$Rn_wb),
                      (ins GPR:$Rt, GPR:$Rn, am3offset:$offset),
                      IndexModePost, StMiscFrm, IIC_iStore_bh_ru,
-                     "strh", "\t$Rt, [$Rn], $offset", "$Rn = $Rn_wb",
+                     "strh", "\t$Rt, [$Rn], $offset",
+                     "$Rn = $Rn_wb,@earlyclobber $Rn_wb",
                      [(set GPR:$Rn_wb, (post_truncsti16 GPR:$Rt,
                                         GPR:$Rn, am3offset:$offset))]>;
 
 // For disassembly only
+let mayStore = 1, neverHasSideEffects = 1, hasExtraSrcRegAllocReq = 1 in {
 def STRD_PRE : AI3stdpr<(outs GPR:$base_wb),
                      (ins GPR:$src1, GPR:$src2, GPR:$base, am3offset:$offset),
                      StMiscFrm, IIC_iStore_d_ru,
@@ -1848,6 +1877,7 @@ def STRD_POST: AI3stdpo<(outs GPR:$base_wb),
                      StMiscFrm, IIC_iStore_d_ru,
                      "strd", "\t$src1, $src2, [$base], $offset",
                      "$base = $base_wb", []>;
+} // mayStore = 1, neverHasSideEffects = 1, hasExtraSrcRegAllocReq = 1
 
 // STRT, STRBT, and STRHT are for disassembly only.
 
@@ -2317,8 +2347,10 @@ def : ARMPat<(addc   GPR:$src, so_imm_neg:$imm),
 // The with-carry-in form matches bitwise not instead of the negation.
 // Effectively, the inverse interpretation of the carry flag already accounts
 // for part of the negation.
-def : ARMPat<(adde   GPR:$src, so_imm_not:$imm),
+def : ARMPat<(adde_dead_carry   GPR:$src, so_imm_not:$imm),
              (SBCri  GPR:$src, so_imm_not:$imm)>;
+def : ARMPat<(adde_live_carry   GPR:$src, so_imm_not:$imm),
+             (SBCSri GPR:$src, so_imm_not:$imm)>;
 
 // Note: These are implemented in C++ code, because they have to generate
 // ADD/SUBrs instructions, which use a complex pattern that a xform function
@@ -2432,7 +2464,7 @@ def USADA8 : AI<(outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm, GPR:$Ra),
 
 // Signed/Unsigned saturate -- for disassembly only
 
-def SSAT : AI<(outs GPR:$Rd), (ins i32imm:$sat_imm, GPR:$a, shift_imm:$sh),
+def SSAT : AI<(outs GPR:$Rd), (ins ssat_imm:$sat_imm, GPR:$a, shift_imm:$sh),
               SatFrm, NoItinerary, "ssat", "\t$Rd, $sat_imm, $a$sh",
               [/* For disassembly only; pattern left blank */]> {
   bits<4> Rd;
@@ -2448,7 +2480,7 @@ def SSAT : AI<(outs GPR:$Rd), (ins i32imm:$sat_imm, GPR:$a, shift_imm:$sh),
   let Inst{3-0} = Rn;
 }
 
-def SSAT16 : AI<(outs GPR:$Rd), (ins i32imm:$sat_imm, GPR:$Rn), SatFrm,
+def SSAT16 : AI<(outs GPR:$Rd), (ins ssat_imm:$sat_imm, GPR:$Rn), SatFrm,
                 NoItinerary, "ssat16", "\t$Rd, $sat_imm, $Rn",
                 [/* For disassembly only; pattern left blank */]> {
   bits<4> Rd;
@@ -2641,9 +2673,9 @@ def MUL  : AsMul1I32<0b0000000, (outs GPR:$Rd), (ins GPR:$Rn, GPR:$Rm),
 
 let Constraints = "@earlyclobber $Rd" in
 def MLAv5: ARMPseudoInst<(outs GPR:$Rd),
-                         (ins GPR:$Rn, GPR:$Rm, GPR:$Ra, pred:$p, cc_out:$s),
-                         Size4Bytes, IIC_iMAC32,
-                         [(set GPR:$Rd, (add (mul GPR:$Rn, GPR:$Rm), GPR:$Ra))]>,
+                        (ins GPR:$Rn, GPR:$Rm, GPR:$Ra, pred:$p, cc_out:$s),
+                        Size4Bytes, IIC_iMAC32,
+                        [(set GPR:$Rd, (add (mul GPR:$Rn, GPR:$Rm), GPR:$Ra))]>,
                         Requires<[IsARM, NoV6]> {
   bits<4> Ra;
   let Inst{15-12} = Ra;
@@ -2997,6 +3029,10 @@ def : ARMV6Pat<(sext_inreg (or (srl (and GPR:$Rm, 0xFF00), (i32 8)),
                                (shl GPR:$Rm, (i32 8))), i16),
                (REVSH GPR:$Rm)>;
 
+def : ARMV6Pat<(or (sra (shl GPR:$Rm, (i32 24)), (i32 16)),
+                   (and (srl GPR:$Rm, (i32 8)), 0xFF)),
+               (REVSH GPR:$Rm)>;
+
 // Need the AddedComplexity or else MOVs + REV would be chosen.
 let AddedComplexity = 5 in
 def : ARMV6Pat<(sra (bswap GPR:$Rm), (i32 16)), (REVSH GPR:$Rm)>;
@@ -3006,8 +3042,8 @@ def lsl_shift_imm : SDNodeXForm<imm, [{
   return CurDAG->getTargetConstant(Sh, MVT::i32);
 }]>;
 
-def lsl_amt : PatLeaf<(i32 imm), [{
-  return (N->getZExtValue() < 32);
+def lsl_amt : ImmLeaf<i32, [{
+  return Imm > 0 && Imm < 32;
 }], lsl_shift_imm>;
 
 def PKHBT : APKHI<0b01101000, 0, (outs GPR:$Rd),
@@ -3029,8 +3065,8 @@ def asr_shift_imm : SDNodeXForm<imm, [{
   return CurDAG->getTargetConstant(Sh, MVT::i32);
 }]>;
 
-def asr_amt : PatLeaf<(i32 imm), [{
-  return (N->getZExtValue() <= 32);
+def asr_amt : ImmLeaf<i32, [{
+  return Imm > 0 && Imm <= 32;
 }], asr_shift_imm>;
 
 // Note: Shifts of 1-15 bits will be transformed to srl instead of sra and
@@ -3241,6 +3277,18 @@ let usesCustomInserter = 1 in {
     def ATOMIC_LOAD_NAND_I8 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$incr), NoItinerary,
       [(set GPR:$dst, (atomic_load_nand_8 GPR:$ptr, GPR:$incr))]>;
+    def ATOMIC_LOAD_MIN_I8 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_min_8 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_MAX_I8 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_max_8 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_UMIN_I8 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_min_8 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_UMAX_I8 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_max_8 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_ADD_I16 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$incr), NoItinerary,
       [(set GPR:$dst, (atomic_load_add_16 GPR:$ptr, GPR:$incr))]>;
@@ -3259,6 +3307,18 @@ let usesCustomInserter = 1 in {
     def ATOMIC_LOAD_NAND_I16 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$incr), NoItinerary,
       [(set GPR:$dst, (atomic_load_nand_16 GPR:$ptr, GPR:$incr))]>;
+    def ATOMIC_LOAD_MIN_I16 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_min_16 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_MAX_I16 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_max_16 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_UMIN_I16 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_min_16 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_UMAX_I16 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_max_16 GPR:$ptr, GPR:$val))]>;
     def ATOMIC_LOAD_ADD_I32 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$incr), NoItinerary,
       [(set GPR:$dst, (atomic_load_add_32 GPR:$ptr, GPR:$incr))]>;
@@ -3277,6 +3337,18 @@ let usesCustomInserter = 1 in {
     def ATOMIC_LOAD_NAND_I32 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$incr), NoItinerary,
       [(set GPR:$dst, (atomic_load_nand_32 GPR:$ptr, GPR:$incr))]>;
+    def ATOMIC_LOAD_MIN_I32 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_min_32 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_MAX_I32 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_max_32 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_UMIN_I32 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_min_32 GPR:$ptr, GPR:$val))]>;
+    def ATOMIC_LOAD_UMAX_I32 : PseudoInst<
+      (outs GPR:$dst), (ins GPR:$ptr, GPR:$val), NoItinerary,
+      [(set GPR:$dst, (atomic_load_max_32 GPR:$ptr, GPR:$val))]>;
 
     def ATOMIC_SWAP_I8 : PseudoInst<
       (outs GPR:$dst), (ins GPR:$ptr, GPR:$new), NoItinerary,
@@ -3307,8 +3379,9 @@ def LDREXH : AIldrex<0b11, (outs GPR:$Rt), (ins addrmode7:$addr), NoItinerary,
                     "ldrexh", "\t$Rt, $addr", []>;
 def LDREX  : AIldrex<0b00, (outs GPR:$Rt), (ins addrmode7:$addr), NoItinerary,
                     "ldrex", "\t$Rt, $addr", []>;
-def LDREXD : AIldrex<0b01, (outs GPR:$Rt, GPR:$Rt2), (ins addrmode7:$addr),
-                    NoItinerary, "ldrexd", "\t$Rt, $Rt2, $addr", []>;
+let hasExtraDefRegAllocReq = 1 in
+  def LDREXD : AIldrex<0b01, (outs GPR:$Rt, GPR:$Rt2), (ins addrmode7:$addr),
+                      NoItinerary, "ldrexd", "\t$Rt, $Rt2, $addr", []>;
 }
 
 let mayStore = 1, Constraints = "@earlyclobber $Rd" in {
@@ -3318,10 +3391,12 @@ def STREXH : AIstrex<0b11, (outs GPR:$Rd), (ins GPR:$Rt, addrmode7:$addr),
                     NoItinerary, "strexh", "\t$Rd, $Rt, $addr", []>;
 def STREX  : AIstrex<0b00, (outs GPR:$Rd), (ins GPR:$Rt, addrmode7:$addr),
                     NoItinerary, "strex", "\t$Rd, $Rt, $addr", []>;
+}
+
+let hasExtraSrcRegAllocReq = 1, Constraints = "@earlyclobber $Rd" in
 def STREXD : AIstrex<0b01, (outs GPR:$Rd),
                     (ins GPR:$Rt, GPR:$Rt2, addrmode7:$addr),
                     NoItinerary, "strexd", "\t$Rd, $Rt, $Rt2, $addr", []>;
-}
 
 // Clear-Exclusive is for disassembly only.
 def CLREX : AXI<(outs), (ins), MiscFrm, NoItinerary, "clrex",
@@ -3345,7 +3420,8 @@ def SWPB : AIswp<1, (outs GPR:$Rt), (ins GPR:$Rt2, GPR:$Rn), "swpb",
 def CDP : ABI<0b1110, (outs), (ins p_imm:$cop, i32imm:$opc1,
             c_imm:$CRd, c_imm:$CRn, c_imm:$CRm, i32imm:$opc2),
             NoItinerary, "cdp", "\t$cop, $opc1, $CRd, $CRn, $CRm, $opc2",
-            [/* For disassembly only; pattern left blank */]> {
+            [(int_arm_cdp imm:$cop, imm:$opc1, imm:$CRd, imm:$CRn,
+                          imm:$CRm, imm:$opc2)]> {
   bits<4> opc1;
   bits<4> CRn;
   bits<4> CRd;
@@ -3365,7 +3441,8 @@ def CDP : ABI<0b1110, (outs), (ins p_imm:$cop, i32imm:$opc1,
 def CDP2 : ABXI<0b1110, (outs), (ins p_imm:$cop, i32imm:$opc1,
                c_imm:$CRd, c_imm:$CRn, c_imm:$CRm, i32imm:$opc2),
                NoItinerary, "cdp2\t$cop, $opc1, $CRd, $CRn, $CRm, $opc2",
-               [/* For disassembly only; pattern left blank */]> {
+               [(int_arm_cdp2 imm:$cop, imm:$opc1, imm:$CRd, imm:$CRn,
+                              imm:$CRm, imm:$opc2)]> {
   let Inst{31-28} = 0b1111;
   bits<4> opc1;
   bits<4> CRn;
@@ -3489,10 +3566,10 @@ defm STC2 : LdStCop<0b1111,    0, (ins),         "stc2", "">;
 // Move between coprocessor and ARM core register -- for disassembly only
 //
 
-class MovRCopro<string opc, bit direction, dag oops, dag iops>
+class MovRCopro<string opc, bit direction, dag oops, dag iops,
+                list<dag> pattern>
   : ABI<0b1110, oops, iops, NoItinerary, opc,
-        "\t$cop, $opc1, $Rt, $CRn, $CRm, $opc2",
-        [/* For disassembly only; pattern left blank */]> {
+        "\t$cop, $opc1, $Rt, $CRn, $CRm, $opc2", pattern> {
   let Inst{20} = direction;
   let Inst{4} = 1;
 
@@ -3512,17 +3589,23 @@ class MovRCopro<string opc, bit direction, dag oops, dag iops>
 }
 
 def MCR : MovRCopro<"mcr", 0 /* from ARM core register to coprocessor */,
-                    (outs), (ins p_imm:$cop, i32imm:$opc1,
-                                 GPR:$Rt, c_imm:$CRn, c_imm:$CRm,
-                                 i32imm:$opc2)>;
+                    (outs),
+                    (ins p_imm:$cop, i32imm:$opc1, GPR:$Rt, c_imm:$CRn,
+                         c_imm:$CRm, i32imm:$opc2),
+                    [(int_arm_mcr imm:$cop, imm:$opc1, GPR:$Rt, imm:$CRn,
+                                  imm:$CRm, imm:$opc2)]>;
 def MRC : MovRCopro<"mrc", 1 /* from coprocessor to ARM core register */,
-                    (outs GPR:$Rt), (ins p_imm:$cop, i32imm:$opc1,
-                                         c_imm:$CRn, c_imm:$CRm, i32imm:$opc2)>;
+                    (outs GPR:$Rt),
+                    (ins p_imm:$cop, i32imm:$opc1, c_imm:$CRn, c_imm:$CRm,
+                         i32imm:$opc2), []>;
 
-class MovRCopro2<string opc, bit direction, dag oops, dag iops>
+def : ARMPat<(int_arm_mrc imm:$cop, imm:$opc1, imm:$CRn, imm:$CRm, imm:$opc2),
+             (MRC imm:$cop, imm:$opc1, imm:$CRn, imm:$CRm, imm:$opc2)>;
+
+class MovRCopro2<string opc, bit direction, dag oops, dag iops,
+                 list<dag> pattern>
   : ABXI<0b1110, oops, iops, NoItinerary,
-         !strconcat(opc, "\t$cop, $opc1, $Rt, $CRn, $CRm, $opc2"),
-         [/* For disassembly only; pattern left blank */]> {
+         !strconcat(opc, "\t$cop, $opc1, $Rt, $CRn, $CRm, $opc2"), pattern> {
   let Inst{31-28} = 0b1111;
   let Inst{20} = direction;
   let Inst{4} = 1;
@@ -3543,19 +3626,25 @@ class MovRCopro2<string opc, bit direction, dag oops, dag iops>
 }
 
 def MCR2 : MovRCopro2<"mcr2", 0 /* from ARM core register to coprocessor */,
-                      (outs), (ins p_imm:$cop, i32imm:$opc1,
-                                   GPR:$Rt, c_imm:$CRn, c_imm:$CRm,
-                                   i32imm:$opc2)>;
+                      (outs),
+                      (ins p_imm:$cop, i32imm:$opc1, GPR:$Rt, c_imm:$CRn,
+                           c_imm:$CRm, i32imm:$opc2),
+                      [(int_arm_mcr2 imm:$cop, imm:$opc1, GPR:$Rt, imm:$CRn,
+                                     imm:$CRm, imm:$opc2)]>;
 def MRC2 : MovRCopro2<"mrc2", 1 /* from coprocessor to ARM core register */,
-                      (outs GPR:$Rt), (ins p_imm:$cop, i32imm:$opc1,
-                                           c_imm:$CRn, c_imm:$CRm,
-                                           i32imm:$opc2)>;
+                      (outs GPR:$Rt),
+                      (ins p_imm:$cop, i32imm:$opc1, c_imm:$CRn, c_imm:$CRm,
+                           i32imm:$opc2), []>;
 
-class MovRRCopro<string opc, bit direction>
+def : ARMV5TPat<(int_arm_mrc2 imm:$cop, imm:$opc1, imm:$CRn,
+                              imm:$CRm, imm:$opc2),
+                (MRC2 imm:$cop, imm:$opc1, imm:$CRn, imm:$CRm, imm:$opc2)>;
+
+class MovRRCopro<string opc, bit direction,
+                 list<dag> pattern = [/* For disassembly only */]>
   : ABI<0b1100, (outs), (ins p_imm:$cop, i32imm:$opc1,
         GPR:$Rt, GPR:$Rt2, c_imm:$CRm),
-        NoItinerary, opc, "\t$cop, $opc1, $Rt, $Rt2, $CRm",
-        [/* For disassembly only; pattern left blank */]> {
+        NoItinerary, opc, "\t$cop, $opc1, $Rt, $Rt2, $CRm", pattern> {
   let Inst{23-21} = 0b010;
   let Inst{20} = direction;
 
@@ -3572,14 +3661,16 @@ class MovRRCopro<string opc, bit direction>
   let Inst{3-0}   = CRm;
 }
 
-def MCRR : MovRRCopro<"mcrr", 0 /* from ARM core register to coprocessor */>;
+def MCRR : MovRRCopro<"mcrr", 0 /* from ARM core register to coprocessor */,
+                      [(int_arm_mcrr imm:$cop, imm:$opc1, GPR:$Rt, GPR:$Rt2,
+                                     imm:$CRm)]>;
 def MRRC : MovRRCopro<"mrrc", 1 /* from coprocessor to ARM core register */>;
 
-class MovRRCopro2<string opc, bit direction>
+class MovRRCopro2<string opc, bit direction,
+                  list<dag> pattern = [/* For disassembly only */]>
   : ABXI<0b1100, (outs), (ins p_imm:$cop, i32imm:$opc1,
-         GPR:$Rt, GPR:$Rt2, c_imm:$CRm),
-         NoItinerary, !strconcat(opc, "\t$cop, $opc1, $Rt, $Rt2, $CRm"),
-         [/* For disassembly only; pattern left blank */]> {
+         GPR:$Rt, GPR:$Rt2, c_imm:$CRm), NoItinerary,
+         !strconcat(opc, "\t$cop, $opc1, $Rt, $Rt2, $CRm"), pattern> {
   let Inst{31-28} = 0b1111;
   let Inst{23-21} = 0b010;
   let Inst{20} = direction;
@@ -3597,7 +3688,9 @@ class MovRRCopro2<string opc, bit direction>
   let Inst{3-0}   = CRm;
 }
 
-def MCRR2 : MovRRCopro2<"mcrr2", 0 /* from ARM core register to coprocessor */>;
+def MCRR2 : MovRRCopro2<"mcrr2", 0 /* from ARM core register to coprocessor */,
+                        [(int_arm_mcrr2 imm:$cop, imm:$opc1, GPR:$Rt, GPR:$Rt2,
+                                        imm:$CRm)]>;
 def MRRC2 : MovRRCopro2<"mrrc2", 1 /* from coprocessor to ARM core register */>;
 
 //===----------------------------------------------------------------------===//
@@ -3677,7 +3770,7 @@ let isCall = 1,
 //   here, and we're using the stack frame for the containing function to
 //   save/restore registers, we can't keep anything live in regs across
 //   the eh_sjlj_setjmp(), else it will almost certainly have been tromped upon
-//   when we get here from a longjmp(). We force everthing out of registers
+//   when we get here from a longjmp(). We force everything out of registers
 //   except for our own input by listing the relevant registers in Defs. By
 //   doing so, we also cause the prologue/epilogue code to actively preserve
 //   all of the callee-saved resgisters, which is exactly what we want.
@@ -3686,10 +3779,8 @@ let isCall = 1,
 // These are pseudo-instructions and are lowered to individual MC-insts, so
 // no encoding information is necessary.
 let Defs =
-  [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR,  D0,
-    D1,  D2,  D3,  D4,  D5,  D6,  D7,  D8,  D9,  D10, D11, D12, D13, D14, D15,
-    D16, D17, D18, D19, D20, D21, D22, D23, D24, D25, D26, D27, D28, D29, D30,
-    D31 ], hasSideEffects = 1, isBarrier = 1 in {
+  [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR, CPSR,
+    QQQQ0, QQQQ1, QQQQ2, QQQQ3 ], hasSideEffects = 1, isBarrier = 1 in {
   def Int_eh_sjlj_setjmp : PseudoInst<(outs), (ins GPR:$src, GPR:$val),
                                NoItinerary,
                          [(set R0, (ARMeh_sjlj_setjmp GPR:$src, GPR:$val))]>,
@@ -3697,7 +3788,7 @@ let Defs =
 }
 
 let Defs =
-  [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR ],
+  [ R0,  R1,  R2,  R3,  R4,  R5,  R6,  R7,  R8,  R9,  R10, R11, R12, LR, CPSR ],
   hasSideEffects = 1, isBarrier = 1 in {
   def Int_eh_sjlj_setjmp_nofp : PseudoInst<(outs), (ins GPR:$src, GPR:$val),
                                    NoItinerary,
@@ -3720,8 +3811,8 @@ def Int_eh_sjlj_longjmp : PseudoInst<(outs), (ins GPR:$src, GPR:$scratch),
 // that need the instruction size).
 let isBarrier = 1, hasSideEffects = 1 in
 def Int_eh_sjlj_dispatchsetup :
- PseudoInst<(outs), (ins), NoItinerary,
-            [(ARMeh_sjlj_dispatchsetup)]>,
+ PseudoInst<(outs), (ins GPR:$src), NoItinerary,
+            [(ARMeh_sjlj_dispatchsetup GPR:$src)]>,
               Requires<[IsDarwin]>;
 
 //===----------------------------------------------------------------------===//

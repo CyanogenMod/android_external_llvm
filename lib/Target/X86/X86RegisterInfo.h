@@ -80,6 +80,10 @@ public:
   /// getDwarfRegNum - allows modification of X86GenRegisterInfo::getDwarfRegNum
   /// (created by TableGen) for target dependencies.
   int getDwarfRegNum(unsigned RegNum, bool isEH) const;
+  int getLLVMRegNum(unsigned RegNum, bool isEH) const;
+
+  // FIXME: This should be tablegen'd like getDwarfRegNum is
+  int getSEHRegNum(unsigned i) const;
 
   /// Code Generation virtual methods...
   /// 
@@ -90,6 +94,9 @@ public:
   virtual const TargetRegisterClass *
   getMatchingSuperRegClass(const TargetRegisterClass *A,
                            const TargetRegisterClass *B, unsigned Idx) const;
+
+  const TargetRegisterClass*
+  getLargestLegalSuperClass(const TargetRegisterClass *RC) const;
 
   /// getPointerRegClass - Returns a TargetRegisterClass used for pointer
   /// values.

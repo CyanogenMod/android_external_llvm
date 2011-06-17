@@ -18,6 +18,7 @@
 
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/ValueTypes.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
 #include <cassert>
 #include <functional>
@@ -46,6 +47,8 @@ struct TargetRegisterDesc {
   const unsigned *Overlaps;     // Overlapping registers, described above
   const unsigned *SubRegs;      // Sub-register set, described above
   const unsigned *SuperRegs;    // Super-register set, described above
+  unsigned CostPerUse;          // Extra cost of instructions using register.
+  bool inAllocatableClass;      // Register belongs to an allocatable regclass.
 };
 
 class TargetRegisterClass {
@@ -65,6 +68,7 @@ private:
   const sc_iterator SuperRegClasses;
   const unsigned RegSize, Alignment;    // Size & Alignment of register in bytes
   const int CopyCost;
+  const bool Allocatable;
   const iterator RegsBegin, RegsEnd;
   DenseSet<unsigned> RegSet;
 public:
@@ -75,11 +79,12 @@ public:
                       const TargetRegisterClass * const *supcs,
                       const TargetRegisterClass * const *subregcs,
                       const TargetRegisterClass * const *superregcs,
-                      unsigned RS, unsigned Al, int CC,
+                      unsigned RS, unsigned Al, int CC, bool Allocable,
                       iterator RB, iterator RE)
     : ID(id), Name(name), VTs(vts), SubClasses(subcs), SuperClasses(supcs),
     SubRegClasses(subregcs), SuperRegClasses(superregcs),
-    RegSize(RS), Alignment(Al), CopyCost(CC), RegsBegin(RB), RegsEnd(RE) {
+    RegSize(RS), Alignment(Al), CopyCost(CC), Allocatable(Allocable),
+    RegsBegin(RB), RegsEnd(RE) {
       for (iterator I = RegsBegin, E = RegsEnd; I != E; ++I)
         RegSet.insert(*I);
     }
@@ -181,6 +186,12 @@ public:
     return false;
   }
 
+  /// hasSubClassEq - Returns true if RC is a subclass of or equal to this
+  /// class.
+  bool hasSubClassEq(const TargetRegisterClass *RC) const {
+    return RC == this || hasSubClass(RC);
+  }
+
   /// subclasses_begin / subclasses_end - Loop over all of the classes
   /// that are proper subsets of this register class.
   sc_iterator subclasses_begin() const {
@@ -200,6 +211,12 @@ public:
       if (SuperClasses[i] == cs)
         return true;
     return false;
+  }
+
+  /// hasSuperClassEq - Returns true if RC is a superclass of or equal to this
+  /// class.
+  bool hasSuperClassEq(const TargetRegisterClass *RC) const {
+    return RC == this || hasSuperClass(RC);
   }
 
   /// superclasses_begin / superclasses_end - Loop over all of the classes
@@ -243,6 +260,27 @@ public:
     return end();
   }
 
+  /// getRawAllocationOrder - Returns the preferred order for allocating
+  /// registers from this register class in MF. The raw order comes directly
+  /// from the .td file and may include reserved registers that are not
+  /// allocatable. Register allocators should also make sure to allocate
+  /// callee-saved registers only after all the volatiles are used. The
+  /// RegisterClassInfo class provides filtered allocation orders with
+  /// callee-saved registers moved to the end.
+  ///
+  /// The MachineFunction argument can be used to tune the allocatable
+  /// registers based on the characteristics of the function, subtarget, or
+  /// other criteria.
+  ///
+  /// By default, this method returns all registers in the class.
+  ///
+  virtual
+  ArrayRef<unsigned> getRawAllocationOrder(const MachineFunction &MF) const {
+    iterator B = allocation_order_begin(MF);
+    iterator E = allocation_order_end(MF);
+    return ArrayRef<unsigned>(B, E - B);
+  }
+
   /// getSize - Return the size of the register in bytes, which is also the size
   /// of a stack slot allocated to hold a spilled copy of this register.
   unsigned getSize() const { return RegSize; }
@@ -255,6 +293,10 @@ public:
   /// this class. A negative number means the register class is very expensive
   /// to copy e.g. status flag register classes.
   int getCopyCost() const { return CopyCost; }
+
+  /// isAllocatable - Return true if this register class may be used to create
+  /// virtual registers.
+  bool isAllocatable() const { return Allocatable; }
 };
 
 
@@ -265,11 +307,6 @@ public:
 /// descriptor.
 ///
 class TargetRegisterInfo {
-protected:
-  const unsigned* SubregHash;
-  const unsigned SubregHashSize;
-  const unsigned* AliasesHash;
-  const unsigned AliasesHashSize;
 public:
   typedef const TargetRegisterClass * const * regclass_iterator;
 private:
@@ -287,11 +324,7 @@ protected:
                      regclass_iterator RegClassEnd,
                      const char *const *subregindexnames,
                      int CallFrameSetupOpcode = -1,
-                     int CallFrameDestroyOpcode = -1,
-                     const unsigned* subregs = 0,
-                     const unsigned subregsize = 0,
-                     const unsigned* aliases = 0,
-                     const unsigned aliasessize = 0);
+                     int CallFrameDestroyOpcode = -1);
   virtual ~TargetRegisterInfo();
 public:
 
@@ -350,13 +383,13 @@ public:
   /// The first virtual register in a function will get the index 0.
   static unsigned virtReg2Index(unsigned Reg) {
     assert(isVirtualRegister(Reg) && "Not a virtual register");
-    return Reg - (1u << 31);
+    return Reg & ~(1u << 31);
   }
 
   /// index2VirtReg - Convert a 0-based index to a virtual register number.
   /// This is the inverse operation of VirtReg2IndexFunctor below.
   static unsigned index2VirtReg(unsigned Index) {
-    return Index + (1u << 31);
+    return Index | (1u << 31);
   }
 
   /// getMinimalPhysRegClass - Returns the Register Class of a physical
@@ -414,7 +447,7 @@ public:
   /// getSuperRegisters - Return the list of registers that are super-registers
   /// of the specified register, or a null list of there are none. The list
   /// returned is zero terminated and sorted according to super-sub register
-  /// relations. e.g. X86::AL's super-register list is RAX, EAX, AX.
+  /// relations. e.g. X86::AL's super-register list is AX, EAX, RAX.
   ///
   const unsigned *getSuperRegisters(unsigned RegNo) const {
     return get(RegNo).SuperRegs;
@@ -424,6 +457,12 @@ public:
   /// specified physical register.
   const char *getName(unsigned RegNo) const {
     return get(RegNo).Name;
+  }
+
+  /// getCostPerUse - Return the additional cost of using this register instead
+  /// of other registers in its class.
+  unsigned getCostPerUse(unsigned RegNo) const {
+    return get(RegNo).CostPerUse;
   }
 
   /// getNumRegs - Return the number of registers this target has (useful for
@@ -442,49 +481,28 @@ public:
   /// regsOverlap - Returns true if the two registers are equal or alias each
   /// other. The registers may be virtual register.
   bool regsOverlap(unsigned regA, unsigned regB) const {
-    if (regA == regB)
-      return true;
-
+    if (regA == regB) return true;
     if (isVirtualRegister(regA) || isVirtualRegister(regB))
       return false;
-
-    // regA and regB are distinct physical registers. Do they alias?
-    size_t index = (regA + regB * 37) & (AliasesHashSize-1);
-    unsigned ProbeAmt = 0;
-    while (AliasesHash[index*2] != 0 &&
-           AliasesHash[index*2+1] != 0) {
-      if (AliasesHash[index*2] == regA && AliasesHash[index*2+1] == regB)
-        return true;
-
-      index = (index + ProbeAmt) & (AliasesHashSize-1);
-      ProbeAmt += 2;
+    for (const unsigned *regList = getOverlaps(regA)+1; *regList; ++regList) {
+      if (*regList == regB) return true;
     }
-
     return false;
   }
 
   /// isSubRegister - Returns true if regB is a sub-register of regA.
   ///
   bool isSubRegister(unsigned regA, unsigned regB) const {
-    // SubregHash is a simple quadratically probed hash table.
-    size_t index = (regA + regB * 37) & (SubregHashSize-1);
-    unsigned ProbeAmt = 2;
-    while (SubregHash[index*2] != 0 &&
-           SubregHash[index*2+1] != 0) {
-      if (SubregHash[index*2] == regA && SubregHash[index*2+1] == regB)
-        return true;
-
-      index = (index + ProbeAmt) & (SubregHashSize-1);
-      ProbeAmt += 2;
-    }
-
-    return false;
+    return isSuperRegister(regB, regA);
   }
 
   /// isSuperRegister - Returns true if regB is a super-register of regA.
   ///
   bool isSuperRegister(unsigned regA, unsigned regB) const {
-    return isSubRegister(regB, regA);
+    for (const unsigned *regList = getSuperRegisters(regA); *regList;++regList){
+      if (*regList == regB) return true;
+    }
+    return false;
   }
 
   /// getCalleeSavedRegs - Return a null-terminated list of all of the
@@ -597,6 +615,17 @@ public:
     return RC;
   }
 
+  /// getLargestLegalSuperClass - Returns the largest super class of RC that is
+  /// legal to use in the current sub-target and has the same spill size.
+  /// The returned register class can be used to create virtual registers which
+  /// means that all its registers can be copied and spilled.
+  virtual const TargetRegisterClass*
+  getLargestLegalSuperClass(const TargetRegisterClass *RC) const {
+    /// The default implementation is very conservative and doesn't allow the
+    /// register allocator to inflate register classes.
+    return RC;
+  }
+
   /// getRegPressureLimit - Return the register pressure "high water mark" for
   /// the specific register class. The scheduler is in high register pressure
   /// mode (for the specific register class) if it goes over the limit.
@@ -605,14 +634,17 @@ public:
     return 0;
   }
 
-  /// getAllocationOrder - Returns the register allocation order for a specified
-  /// register class in the form of a pair of TargetRegisterClass iterators.
-  virtual std::pair<TargetRegisterClass::iterator,TargetRegisterClass::iterator>
-  getAllocationOrder(const TargetRegisterClass *RC,
-                     unsigned HintType, unsigned HintReg,
-                     const MachineFunction &MF) const {
-    return std::make_pair(RC->allocation_order_begin(MF),
-                          RC->allocation_order_end(MF));
+  /// getRawAllocationOrder - Returns the register allocation order for a
+  /// specified register class with a target-dependent hint. The returned list
+  /// may contain reserved registers that cannot be allocated.
+  ///
+  /// Register allocators need only call this function to resolve
+  /// target-dependent hints, but it should work without hinting as well.
+  virtual ArrayRef<unsigned>
+  getRawAllocationOrder(const TargetRegisterClass *RC,
+                        unsigned HintType, unsigned HintReg,
+                        const MachineFunction &MF) const {
+    return RC->getRawAllocationOrder(MF);
   }
 
   /// ResolveRegAllocHint - Resolves the specified register allocation hint
@@ -622,6 +654,14 @@ public:
     if (Type == 0 && Reg && isPhysicalRegister(Reg))
       return Reg;
     return 0;
+  }
+
+  /// avoidWriteAfterWrite - Return true if the register allocator should avoid
+  /// writing a register from RC in two consecutive instructions.
+  /// This can avoid pipeline stalls on certain architectures.
+  /// It does cause increased register pressure, though.
+  virtual bool avoidWriteAfterWrite(const TargetRegisterClass *RC) const {
+    return false;
   }
 
   /// UpdateRegAllocHint - A callback to allow target a chance to update
@@ -776,6 +816,8 @@ public:
   /// debugging info.
   virtual int getDwarfRegNum(unsigned RegNum, bool isEH) const = 0;
 
+  virtual int getLLVMRegNum(unsigned RegNum, bool isEH) const = 0;
+
   /// getFrameRegister - This method should return the register used as a base
   /// for values allocated in the current stack frame.
   virtual unsigned getFrameRegister(const MachineFunction &MF) const = 0;
@@ -783,6 +825,12 @@ public:
   /// getRARegister - This method should return the register where the return
   /// address can be found.
   virtual unsigned getRARegister() const = 0;
+
+  /// getSEHRegNum - Map a target register to an equivalent SEH register
+  /// number.  Returns -1 if there is no equivalent value.
+  virtual int getSEHRegNum(unsigned i) const {
+    return i;
+  }
 };
 
 

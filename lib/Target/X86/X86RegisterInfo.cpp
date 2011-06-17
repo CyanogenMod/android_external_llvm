@@ -73,27 +73,59 @@ X86RegisterInfo::X86RegisterInfo(X86TargetMachine &tm,
   }
 }
 
+static unsigned getFlavour(const X86Subtarget *Subtarget, bool isEH) {
+  if (!Subtarget->is64Bit()) {
+    if (Subtarget->isTargetDarwin()) {
+      if (isEH)
+        return DWARFFlavour::X86_32_DarwinEH;
+      else
+        return DWARFFlavour::X86_32_Generic;
+    } else if (Subtarget->isTargetCygMing()) {
+      // Unsupported by now, just quick fallback
+      return DWARFFlavour::X86_32_Generic;
+    } else {
+      return DWARFFlavour::X86_32_Generic;
+    }
+  }
+  return DWARFFlavour::X86_64;
+}
+
 /// getDwarfRegNum - This function maps LLVM register identifiers to the DWARF
 /// specific numbering, used in debug info and exception tables.
 int X86RegisterInfo::getDwarfRegNum(unsigned RegNo, bool isEH) const {
   const X86Subtarget *Subtarget = &TM.getSubtarget<X86Subtarget>();
-  unsigned Flavour = DWARFFlavour::X86_64;
-
-  if (!Subtarget->is64Bit()) {
-    if (Subtarget->isTargetDarwin()) {
-      if (isEH)
-        Flavour = DWARFFlavour::X86_32_DarwinEH;
-      else
-        Flavour = DWARFFlavour::X86_32_Generic;
-    } else if (Subtarget->isTargetCygMing()) {
-      // Unsupported by now, just quick fallback
-      Flavour = DWARFFlavour::X86_32_Generic;
-    } else {
-      Flavour = DWARFFlavour::X86_32_Generic;
-    }
-  }
+  unsigned Flavour = getFlavour(Subtarget, isEH);
 
   return X86GenRegisterInfo::getDwarfRegNumFull(RegNo, Flavour);
+}
+
+/// getLLVMRegNum - This function maps DWARF register numbers to LLVM register.
+int X86RegisterInfo::getLLVMRegNum(unsigned DwarfRegNo, bool isEH) const {
+  const X86Subtarget *Subtarget = &TM.getSubtarget<X86Subtarget>();
+  unsigned Flavour = getFlavour(Subtarget, isEH);
+
+  return X86GenRegisterInfo::getLLVMRegNumFull(DwarfRegNo, Flavour);
+}
+
+int
+X86RegisterInfo::getSEHRegNum(unsigned i) const {
+  int reg = getX86RegNum(i);
+  switch (i) {
+  case X86::R8:  case X86::R8D:  case X86::R8W:  case X86::R8B:
+  case X86::R9:  case X86::R9D:  case X86::R9W:  case X86::R9B:
+  case X86::R10: case X86::R10D: case X86::R10W: case X86::R10B:
+  case X86::R11: case X86::R11D: case X86::R11W: case X86::R11B:
+  case X86::R12: case X86::R12D: case X86::R12W: case X86::R12B:
+  case X86::R13: case X86::R13D: case X86::R13W: case X86::R13B:
+  case X86::R14: case X86::R14D: case X86::R14W: case X86::R14B:
+  case X86::R15: case X86::R15D: case X86::R15W: case X86::R15B:
+  case X86::XMM8: case X86::XMM9: case X86::XMM10: case X86::XMM11:
+  case X86::XMM12: case X86::XMM13: case X86::XMM14: case X86::XMM15:
+  case X86::YMM8: case X86::YMM9: case X86::YMM10: case X86::YMM11:
+  case X86::YMM12: case X86::YMM13: case X86::YMM14: case X86::YMM15:
+    reg += 8;
+  }
+  return reg;
 }
 
 /// getX86RegNum - This function maps LLVM register identifiers to their X86
@@ -229,19 +261,13 @@ X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
     }
     break;
   case X86::sub_8bit_hi:
-    if (B == &X86::GR8_ABCD_HRegClass) {
-      if (A == &X86::GR64RegClass || A == &X86::GR64_ABCDRegClass ||
-          A == &X86::GR64_NOREXRegClass ||
-          A == &X86::GR64_NOSPRegClass ||
-          A == &X86::GR64_NOREX_NOSPRegClass)
-        return &X86::GR64_ABCDRegClass;
-      else if (A == &X86::GR32RegClass || A == &X86::GR32_ABCDRegClass ||
-               A == &X86::GR32_NOREXRegClass || A == &X86::GR32_NOSPRegClass)
-        return &X86::GR32_ABCDRegClass;
-      else if (A == &X86::GR16RegClass || A == &X86::GR16_ABCDRegClass ||
-               A == &X86::GR16_NOREXRegClass)
-        return &X86::GR16_ABCDRegClass;
-    }
+    if (B->hasSubClassEq(&X86::GR8_ABCD_HRegClass))
+      switch (A->getSize()) {
+        case 2: return getCommonSubClass(A, &X86::GR16_ABCDRegClass);
+        case 4: return getCommonSubClass(A, &X86::GR32_ABCDRegClass);
+        case 8: return getCommonSubClass(A, &X86::GR64_ABCDRegClass);
+        default: return 0;
+      }
     break;
   case X86::sub_16bit:
     if (B == &X86::GR16RegClass) {
@@ -285,9 +311,16 @@ X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
           A == &X86::GR64_NOREX_NOSPRegClass)
         return &X86::GR64_ABCDRegClass;
     } else if (B == &X86::GR32_NOREXRegClass) {
+      if (A == &X86::GR64RegClass || A == &X86::GR64_NOREXRegClass)
+        return &X86::GR64_NOREXRegClass;
+      else if (A == &X86::GR64_NOSPRegClass || A == &X86::GR64_NOREX_NOSPRegClass)
+        return &X86::GR64_NOREX_NOSPRegClass;
+      else if (A == &X86::GR64_ABCDRegClass)
+        return &X86::GR64_ABCDRegClass;
+    } else if (B == &X86::GR32_NOREX_NOSPRegClass) {
       if (A == &X86::GR64RegClass || A == &X86::GR64_NOREXRegClass ||
           A == &X86::GR64_NOSPRegClass || A == &X86::GR64_NOREX_NOSPRegClass)
-        return &X86::GR64_NOREXRegClass;
+        return &X86::GR64_NOREX_NOSPRegClass;
       else if (A == &X86::GR64_ABCDRegClass)
         return &X86::GR64_ABCDRegClass;
     }
@@ -306,6 +339,33 @@ X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
     break;
   }
   return 0;
+}
+
+const TargetRegisterClass*
+X86RegisterInfo::getLargestLegalSuperClass(const TargetRegisterClass *RC) const{
+  const TargetRegisterClass *Super = RC;
+  TargetRegisterClass::sc_iterator I = RC->superclasses_begin();
+  do {
+    switch (Super->getID()) {
+    case X86::GR8RegClassID:
+    case X86::GR16RegClassID:
+    case X86::GR32RegClassID:
+    case X86::GR64RegClassID:
+    case X86::FR32RegClassID:
+    case X86::FR64RegClassID:
+    case X86::RFP32RegClassID:
+    case X86::RFP64RegClassID:
+    case X86::RFP80RegClassID:
+    case X86::VR128RegClassID:
+    case X86::VR256RegClassID:
+      // Don't return a super-class that would shrink the spill size.
+      // That can happen with the vector and float classes.
+      if (Super->getSize() == RC->getSize())
+        return Super;
+    }
+    Super = *I++;
+  } while (Super);
+  return RC;
 }
 
 const TargetRegisterClass *
@@ -446,6 +506,34 @@ BitVector X86RegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   Reserved.set(X86::ST5);
   Reserved.set(X86::ST6);
   Reserved.set(X86::ST7);
+
+  // Mark the segment registers as reserved.
+  Reserved.set(X86::CS);
+  Reserved.set(X86::SS);
+  Reserved.set(X86::DS);
+  Reserved.set(X86::ES);
+  Reserved.set(X86::FS);
+  Reserved.set(X86::GS);
+
+  // Reserve the registers that only exist in 64-bit mode.
+  if (!Is64Bit) {
+    for (unsigned n = 0; n != 8; ++n) {
+      const unsigned GPR64[] = {
+        X86::R8,  X86::R9,  X86::R10, X86::R11,
+        X86::R12, X86::R13, X86::R14, X86::R15
+      };
+      for (const unsigned *AI = getOverlaps(GPR64[n]); unsigned Reg = *AI;
+           ++AI)
+        Reserved.set(Reg);
+
+      // XMM8, XMM9, ...
+      assert(X86::XMM15 == X86::XMM8+7);
+      for (const unsigned *AI = getOverlaps(X86::XMM8 + n); unsigned Reg = *AI;
+           ++AI)
+        Reserved.set(Reg);
+    }
+  }
+
   return Reserved;
 }
 
@@ -470,7 +558,7 @@ bool X86RegisterInfo::needsStackRealignment(const MachineFunction &MF) const {
   // FIXME: It's more complicated than this...
   if (0 && requiresRealignment && MFI->hasVarSizedObjects())
     report_fatal_error(
-      "Stack realignment in presense of dynamic allocas is not supported");
+      "Stack realignment in presence of dynamic allocas is not supported");
 
   // If we've requested that we force align the stack do so now.
   if (ForceStackAlign)

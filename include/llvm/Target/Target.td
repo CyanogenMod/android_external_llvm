@@ -32,17 +32,6 @@ class Register<string n> {
   string Namespace = "";
   string AsmName = n;
 
-  // SpillSize - If this value is set to a non-zero value, it is the size in
-  // bits of the spill slot required to hold this register.  If this value is
-  // set to zero, the information is inferred from any register classes the
-  // register belongs to.
-  int SpillSize = 0;
-
-  // SpillAlignment - This value is used to specify the alignment required for
-  // spilling the register.  Like SpillSize, this should only be explicitly
-  // specified if the register is not in a register class.
-  int SpillAlignment = 0;
-
   // Aliases - A list of registers that this register overlaps with.  A read or
   // modification of this register can potentially read or modify the aliased
   // registers.
@@ -78,6 +67,13 @@ class Register<string n> {
   // -1 indicates that the gcc number is undefined and -2 that register number
   // is invalid for this mode/flavour.
   list<int> DwarfNumbers = [];
+
+  // CostPerUse - Additional cost of instructions using this register compared
+  // to other registers in its class. The register allocator will try to
+  // minimize the number of instructions using a register with a CostPerUse.
+  // This is used by the x86-64 and ARM Thumb targets where some registers 
+  // require larger instruction encodings.
+  int CostPerUse = 0;
 }
 
 // RegisterWithSubRegs - This can be used to define instances of Register which
@@ -96,7 +92,7 @@ class RegisterWithSubRegs<string n, list<Register> subregs> : Register<n> {
 // registers by register allocators.
 //
 class RegisterClass<string namespace, list<ValueType> regTypes, int alignment,
-                    list<Register> regList> {
+                    dag regList> {
   string Namespace = namespace;
 
   // RegType - Specify the list ValueType of the registers in this register
@@ -126,11 +122,16 @@ class RegisterClass<string namespace, list<ValueType> regTypes, int alignment,
   // allocation_order_* method are not specified, this also defines the order of
   // allocation used by the register allocator.
   //
-  list<Register> MemberList = regList;
+  dag MemberList = regList;
 
   // SubRegClasses - Specify the register class of subregisters as a list of
   // dags: (RegClass SubRegIndex, SubRegindex, ...)
   list<dag> SubRegClasses = [];
+
+  // isAllocatable - Specify that the register class can be used for virtual
+  // registers and register allocation.  Some register classes are only used to
+  // model instruction operand constraints, and should have isAllocatable = 0.
+  bit isAllocatable = 1;
 
   // MethodProtos/MethodBodies - These members can be used to insert arbitrary
   // code into a generated register class.   The normal usage of this is to
@@ -139,6 +140,39 @@ class RegisterClass<string namespace, list<ValueType> regTypes, int alignment,
   code MethodBodies = [{}];
 }
 
+// The memberList in a RegisterClass is a dag of set operations. TableGen
+// evaluates these set operations and expand them into register lists. These
+// are the most common operation, see test/TableGen/SetTheory.td for more
+// examples of what is possible:
+//
+// (add R0, R1, R2) - Set Union. Each argument can be an individual register, a
+// register class, or a sub-expression. This is also the way to simply list
+// registers.
+//
+// (sub GPR, SP) - Set difference. Subtract the last arguments from the first.
+//
+// (and GPR, CSR) - Set intersection. All registers from the first set that are
+// also in the second set.
+//
+// (sequence "R%u", 0, 15) -> [R0, R1, ..., R15]. Generate a sequence of
+// numbered registers.
+//
+// (shl GPR, 4) - Remove the first N elements.
+//
+// (trunc GPR, 4) - Truncate after the first N elements.
+//
+// (rotl GPR, 1) - Rotate N places to the left.
+//
+// (rotr GPR, 1) - Rotate N places to the right.
+//
+// (decimate GPR, 2) - Pick every N'th element, starting with the first.
+//
+// All of these operators work on ordered sets, not lists. That means
+// duplicates are removed from sub-expressions.
+
+// Set operators. The rest is defined in TargetSelectionDAG.td.
+def sequence;
+def decimate;
 
 //===----------------------------------------------------------------------===//
 // DwarfRegNum - This class provides a mapping of the llvm register enumeration
@@ -153,6 +187,14 @@ class DwarfRegNum<list<int> Numbers> {
   // -1 indicates that the gcc number is undefined and -2 that register number
   // is invalid for this mode/flavour.
   list<int> DwarfNumbers = Numbers;
+}
+
+// DwarfRegAlias - This class declares that a given register uses the same dwarf
+// numbers as another one. This is useful for making it clear that the two
+// registers do have the same number. It also lets us build a mapping
+// from dwarf register number to llvm register.
+class DwarfRegAlias<Register reg> {
+      Register DwarfAlias = reg;
 }
 
 //===----------------------------------------------------------------------===//
@@ -591,9 +633,10 @@ class MnemonicAlias<string From, string To> {
 /// InstAlias - This defines an alternate assembly syntax that is allowed to
 /// match an instruction that has a different (more canonical) assembly
 /// representation.
-class InstAlias<string Asm, dag Result> {
+class InstAlias<string Asm, dag Result, bit Emit = 0b1> {
   string AsmString = Asm;      // The .s format to match the instruction with.
   dag ResultInst = Result;     // The MCInst to generate.
+  bit EmitAlias = Emit;        // Emit the alias instead of what's aliased.
 
   // Predicates - Predicates that must be true for this to match.
   list<Predicate> Predicates = [];

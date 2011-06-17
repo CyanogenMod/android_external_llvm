@@ -45,6 +45,8 @@ struct MBlazeRegisterInfo : public MBlazeGenRegisterInfo {
   static unsigned getRegisterNumbering(unsigned RegEnum);
   static unsigned getRegisterFromNumbering(unsigned RegEnum);
   static unsigned getSpecialRegisterFromNumbering(unsigned RegEnum);
+  static bool isRegister(unsigned RegEnum);
+  static bool isSpecialRegister(unsigned RegEnum);
 
   /// Get PIC indirect call register
   static unsigned getPICCallReg();
@@ -73,6 +75,7 @@ struct MBlazeRegisterInfo : public MBlazeGenRegisterInfo {
   unsigned getEHHandlerRegister() const;
 
   int getDwarfRegNum(unsigned RegNum, bool isEH) const;
+  int getLLVMRegNum(unsigned RegNum, bool isEH) const;
 };
 
 } // end namespace llvm

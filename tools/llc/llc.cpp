@@ -99,14 +99,12 @@ cl::opt<bool> NoVerify("disable-verify", cl::Hidden,
 cl::opt<bool> DisableDotLoc("disable-dot-loc", cl::Hidden,
                             cl::desc("Do not use .loc entries"));
 
+cl::opt<bool> DisableCFI("disable-cfi", cl::Hidden,
+                         cl::desc("Do not use .cfi_* directives"));
+
 static cl::opt<bool>
 DisableRedZone("disable-red-zone",
   cl::desc("Do not emit code that uses the red zone."),
-  cl::init(false));
-
-static cl::opt<bool>
-NoImplicitFloats("no-implicit-float",
-  cl::desc("Don't generate implicit floating point instructions (x86-only)"),
   cl::init(false));
 
 // GetFileNameRoot - Helper function to get the basename of a filename.
@@ -278,18 +276,14 @@ int main(int argc, char **argv) {
 
   if (DisableDotLoc)
     Target.setMCUseLoc(false);
-  if (TheTriple.getOS() == Triple::Darwin) {
-    switch (TheTriple.getDarwinMajorNumber()) {
-    case 7:
-    case 8:
-    case 9:
-      // disable .loc support for older darwin OS.
-      Target.setMCUseLoc(false);
-      break;
-    default:
-      break;
-    }
-  }
+
+  if (DisableCFI)
+    Target.setMCUseCFI(false);
+
+  // Disable .loc support for older OS X versions.
+  if (TheTriple.isMacOSX() &&
+      TheTriple.isMacOSXVersionLT(10, 6))
+    Target.setMCUseLoc(false);
 
   // Figure out where we are going to send the output...
   OwningPtr<tool_output_file> Out

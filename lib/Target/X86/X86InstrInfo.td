@@ -23,6 +23,9 @@ def SDTIntShiftDOp: SDTypeProfile<1, 3,
 
 def SDTX86CmpTest : SDTypeProfile<1, 2, [SDTCisVT<0, i32>, SDTCisSameAs<1, 2>]>;
 
+def SDTX86Cmpsd : SDTypeProfile<1, 3, [SDTCisVT<0, f64>, SDTCisSameAs<1, 2>, SDTCisVT<3, i8>]>;
+def SDTX86Cmpss : SDTypeProfile<1, 3, [SDTCisVT<0, f32>, SDTCisSameAs<1, 2>, SDTCisVT<3, i8>]>;
+
 def SDTX86Cmov    : SDTypeProfile<1, 4,
                                   [SDTCisSameAs<0, 1>, SDTCisSameAs<1, 2>,
                                    SDTCisVT<3, i8>, SDTCisVT<4, i32>]>;
@@ -459,7 +462,7 @@ def CallImmAddr  : Predicate<"Subtarget->IsLegalToCallImmediateAddr(TM)">;
 include "X86InstrFormats.td"
 
 //===----------------------------------------------------------------------===//
-// Pattern fragments...
+// Pattern fragments.
 //
 
 // X86 specific condition code. These correspond to CondCode in
@@ -481,21 +484,21 @@ def X86_COND_O   : PatLeaf<(i8 13)>;
 def X86_COND_P   : PatLeaf<(i8 14)>; // alt. COND_PE
 def X86_COND_S   : PatLeaf<(i8 15)>;
 
-def immSext8 : PatLeaf<(imm), [{ return immSext8(N); }]>;
+let FastIselShouldIgnore = 1 in { // FastIsel should ignore all simm8 instrs.
+  def i16immSExt8  : ImmLeaf<i16, [{ return Imm == (int8_t)Imm; }]>;
+  def i32immSExt8  : ImmLeaf<i32, [{ return Imm == (int8_t)Imm; }]>;
+  def i64immSExt8  : ImmLeaf<i64, [{ return Imm == (int8_t)Imm; }]>;
+}
 
-def i16immSExt8  : PatLeaf<(i16 immSext8)>;
-def i32immSExt8  : PatLeaf<(i32 immSext8)>;
-def i64immSExt8  : PatLeaf<(i64 immSext8)>;
-def i64immSExt32  : PatLeaf<(i64 imm), [{ return i64immSExt32(N); }]>;
-def i64immZExt32  : PatLeaf<(i64 imm), [{
-  // i64immZExt32 predicate - True if the 64-bit immediate fits in a 32-bit
-  // unsignedsign extended field.
-  return (uint64_t)N->getZExtValue() == (uint32_t)N->getZExtValue();
-}]>;
+def i64immSExt32 : ImmLeaf<i64, [{ return Imm == (int32_t)Imm; }]>;
 
-def i64immZExt32SExt8 : PatLeaf<(i64 imm), [{
-    uint64_t v = N->getZExtValue();
-    return v == (uint32_t)v && (int32_t)v == (int8_t)v;
+
+// i64immZExt32 predicate - True if the 64-bit immediate fits in a 32-bit
+// unsigned field.
+def i64immZExt32 : ImmLeaf<i64, [{ return (uint64_t)Imm == (uint32_t)Imm; }]>;
+
+def i64immZExt32SExt8 : ImmLeaf<i64, [{
+  return (uint64_t)Imm == (uint32_t)Imm && (int32_t)Imm == (int8_t)Imm;
 }]>;
 
 // Helper fragments for loads.
@@ -1437,7 +1440,7 @@ def : InstAlias<"idivq $src, %rax", (IDIV64m i64mem:$src)>;
 
 // Various unary fpstack operations default to operating on on ST1.
 // For example, "fxch" -> "fxch %st(1)"
-def : InstAlias<"faddp",        (ADD_FPrST0  ST1)>;
+def : InstAlias<"faddp",        (ADD_FPrST0  ST1), 0>;
 def : InstAlias<"fsubp",        (SUBR_FPrST0 ST1)>;
 def : InstAlias<"fsubrp",       (SUB_FPrST0  ST1)>;
 def : InstAlias<"fmulp",        (MUL_FPrST0  ST1)>;
@@ -1455,13 +1458,15 @@ def : InstAlias<"fucompi",      (UCOM_FIPr   ST1)>;
 // For example, "fadd %st(4), %st(0)" -> "fadd %st(4)".  We also disambiguate
 // instructions like "fadd %st(0), %st(0)" as "fadd %st(0)" for consistency with
 // gas.
-multiclass FpUnaryAlias<string Mnemonic, Instruction Inst> {
- def : InstAlias<!strconcat(Mnemonic, " $op, %st(0)"),    (Inst RST:$op)>;
- def : InstAlias<!strconcat(Mnemonic, " %st(0), %st(0)"), (Inst ST0)>;
+multiclass FpUnaryAlias<string Mnemonic, Instruction Inst, bit EmitAlias = 1> {
+ def : InstAlias<!strconcat(Mnemonic, " $op, %st(0)"),
+                 (Inst RST:$op), EmitAlias>;
+ def : InstAlias<!strconcat(Mnemonic, " %st(0), %st(0)"),
+                 (Inst ST0), EmitAlias>;
 }
 
 defm : FpUnaryAlias<"fadd",   ADD_FST0r>;
-defm : FpUnaryAlias<"faddp",  ADD_FPrST0>;
+defm : FpUnaryAlias<"faddp",  ADD_FPrST0, 0>;
 defm : FpUnaryAlias<"fsub",   SUB_FST0r>;
 defm : FpUnaryAlias<"fsubp",  SUBR_FPrST0>;
 defm : FpUnaryAlias<"fsubr",  SUBR_FST0r>;
@@ -1472,8 +1477,8 @@ defm : FpUnaryAlias<"fdiv",   DIV_FST0r>;
 defm : FpUnaryAlias<"fdivp",  DIVR_FPrST0>;
 defm : FpUnaryAlias<"fdivr",  DIVR_FST0r>;
 defm : FpUnaryAlias<"fdivrp", DIV_FPrST0>;
-defm : FpUnaryAlias<"fcomi",   COM_FIr>;
-defm : FpUnaryAlias<"fucomi",  UCOM_FIr>;
+defm : FpUnaryAlias<"fcomi",   COM_FIr, 0>;
+defm : FpUnaryAlias<"fucomi",  UCOM_FIr, 0>;
 defm : FpUnaryAlias<"fcompi",   COM_FIPr>;
 defm : FpUnaryAlias<"fucompi",  UCOM_FIPr>;
 
@@ -1481,8 +1486,9 @@ defm : FpUnaryAlias<"fucompi",  UCOM_FIPr>;
 // Handle "f{mulp,addp} st(0), $op" the same as "f{mulp,addp} $op", since they
 // commute.  We also allow fdiv[r]p/fsubrp even though they don't commute,
 // solely because gas supports it.
-def : InstAlias<"faddp %st(0), $op", (ADD_FPrST0 RST:$op)>;
+def : InstAlias<"faddp %st(0), $op", (ADD_FPrST0 RST:$op), 0>;
 def : InstAlias<"fmulp %st(0), $op", (MUL_FPrST0 RST:$op)>;
+def : InstAlias<"fsubp %st(0), $op", (SUBR_FPrST0 RST:$op)>;
 def : InstAlias<"fsubrp %st(0), $op", (SUB_FPrST0 RST:$op)>;
 def : InstAlias<"fdivp %st(0), $op", (DIVR_FPrST0 RST:$op)>;
 def : InstAlias<"fdivrp %st(0), $op", (DIV_FPrST0 RST:$op)>;
@@ -1534,29 +1540,31 @@ def : InstAlias<"mov $seg, $mem", (MOV32ms i32mem:$mem, SEGMENT_REG:$seg)>;
 def : InstAlias<"movq $imm, $reg", (MOV64ri GR64:$reg, i64imm:$imm)>;
 
 // Match 'movq GR64, MMX' as an alias for movd.
-def : InstAlias<"movq $src, $dst", (MMX_MOVD64to64rr VR64:$dst, GR64:$src)>;
-def : InstAlias<"movq $src, $dst", (MMX_MOVD64from64rr GR64:$dst, VR64:$src)>;
+def : InstAlias<"movq $src, $dst",
+                (MMX_MOVD64to64rr VR64:$dst, GR64:$src), 0>;
+def : InstAlias<"movq $src, $dst",
+                (MMX_MOVD64from64rr GR64:$dst, VR64:$src), 0>;
 
 // movsd with no operands (as opposed to the SSE scalar move of a double) is an
 // alias for movsl. (as in rep; movsd)
 def : InstAlias<"movsd", (MOVSD)>;
 
 // movsx aliases
-def : InstAlias<"movsx $src, $dst", (MOVSX16rr8W GR16:$dst, GR8:$src)>;
-def : InstAlias<"movsx $src, $dst", (MOVSX16rm8W GR16:$dst, i8mem:$src)>;
-def : InstAlias<"movsx $src, $dst", (MOVSX32rr8 GR32:$dst, GR8:$src)>;
-def : InstAlias<"movsx $src, $dst", (MOVSX32rr16 GR32:$dst, GR16:$src)>;
-def : InstAlias<"movsx $src, $dst", (MOVSX64rr8 GR64:$dst, GR8:$src)>;
-def : InstAlias<"movsx $src, $dst", (MOVSX64rr16 GR64:$dst, GR16:$src)>;
-def : InstAlias<"movsx $src, $dst", (MOVSX64rr32 GR64:$dst, GR32:$src)>;
+def : InstAlias<"movsx $src, $dst", (MOVSX16rr8 GR16:$dst, GR8:$src), 0>;
+def : InstAlias<"movsx $src, $dst", (MOVSX16rm8 GR16:$dst, i8mem:$src), 0>;
+def : InstAlias<"movsx $src, $dst", (MOVSX32rr8 GR32:$dst, GR8:$src), 0>;
+def : InstAlias<"movsx $src, $dst", (MOVSX32rr16 GR32:$dst, GR16:$src), 0>;
+def : InstAlias<"movsx $src, $dst", (MOVSX64rr8 GR64:$dst, GR8:$src), 0>;
+def : InstAlias<"movsx $src, $dst", (MOVSX64rr16 GR64:$dst, GR16:$src), 0>;
+def : InstAlias<"movsx $src, $dst", (MOVSX64rr32 GR64:$dst, GR32:$src), 0>;
 
 // movzx aliases
-def : InstAlias<"movzx $src, $dst", (MOVZX16rr8W GR16:$dst, GR8:$src)>;
-def : InstAlias<"movzx $src, $dst", (MOVZX16rm8W GR16:$dst, i8mem:$src)>;
-def : InstAlias<"movzx $src, $dst", (MOVZX32rr8 GR32:$dst, GR8:$src)>;
-def : InstAlias<"movzx $src, $dst", (MOVZX32rr16 GR32:$dst, GR16:$src)>;
-def : InstAlias<"movzx $src, $dst", (MOVZX64rr8_Q GR64:$dst, GR8:$src)>;
-def : InstAlias<"movzx $src, $dst", (MOVZX64rr16_Q GR64:$dst, GR16:$src)>;
+def : InstAlias<"movzx $src, $dst", (MOVZX16rr8 GR16:$dst, GR8:$src), 0>;
+def : InstAlias<"movzx $src, $dst", (MOVZX16rm8 GR16:$dst, i8mem:$src), 0>;
+def : InstAlias<"movzx $src, $dst", (MOVZX32rr8 GR32:$dst, GR8:$src), 0>;
+def : InstAlias<"movzx $src, $dst", (MOVZX32rr16 GR32:$dst, GR16:$src), 0>;
+def : InstAlias<"movzx $src, $dst", (MOVZX64rr8_Q GR64:$dst, GR8:$src), 0>;
+def : InstAlias<"movzx $src, $dst", (MOVZX64rr16_Q GR64:$dst, GR16:$src), 0>;
 // Note: No GR32->GR64 movzx form.
 
 // outb %dx -> outb %al, %dx

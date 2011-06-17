@@ -41,8 +41,15 @@ X86ATTInstPrinter::X86ATTInstPrinter(TargetMachine &TM, const MCAsmInfo &MAI)
             &TM.getSubtarget<X86Subtarget>()));
 }
 
+void X86ATTInstPrinter::printRegName(raw_ostream &OS,
+                                     unsigned RegNo) const {
+  OS << '%' << getRegisterName(RegNo);
+}
+
 void X86ATTInstPrinter::printInst(const MCInst *MI, raw_ostream &OS) {
-  printInstruction(MI, OS);
+  // Try to print any aliases first.
+  if (!printAliasInstr(MI, OS))
+    printInstruction(MI, OS);
   
   // If verbose assembly is enabled, we can print some informative comments.
   if (CommentStream)

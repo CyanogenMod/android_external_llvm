@@ -232,7 +232,7 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     assert(!RegOp2MemOpTable2Addr.count(RegOp) && "Duplicated entries?");
     RegOp2MemOpTable2Addr[RegOp] = std::make_pair(MemOp, 0U);
 
-    // If this is not a reversable operation (because there is a many->one)
+    // If this is not a reversible operation (because there is a many->one)
     // mapping, don't insert the reverse of the operation into MemOp2RegOpTable.
     if (OpTbl2Addr[i][1] & TB_NOT_REVERSABLE)
       continue;
@@ -335,7 +335,7 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     assert(!RegOp2MemOpTable0.count(RegOp) && "Duplicated entries?");
     RegOp2MemOpTable0[RegOp] = std::make_pair(MemOp, Align);
 
-    // If this is not a reversable operation (because there is a many->one)
+    // If this is not a reversible operation (because there is a many->one)
     // mapping, don't insert the reverse of the operation into MemOp2RegOpTable.
     if (OpTbl0[i][1] & TB_NOT_REVERSABLE)
       continue;
@@ -460,7 +460,7 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     assert(!RegOp2MemOpTable1.count(RegOp) && "Duplicate entries");
     RegOp2MemOpTable1[RegOp] = std::make_pair(MemOp, Align);
 
-    // If this is not a reversable operation (because there is a many->one)
+    // If this is not a reversible operation (because there is a many->one)
     // mapping, don't insert the reverse of the operation into MemOp2RegOpTable.
     if (OpTbl1[i][1] & TB_NOT_REVERSABLE)
       continue;
@@ -682,7 +682,7 @@ X86InstrInfo::X86InstrInfo(X86TargetMachine &tm)
     assert(!RegOp2MemOpTable2.count(RegOp) && "Duplicate entry!");
     RegOp2MemOpTable2[RegOp] = std::make_pair(MemOp, Align);
 
-    // If this is not a reversable operation (because there is a many->one)
+    // If this is not a reversible operation (because there is a many->one)
     // mapping, don't insert the reverse of the operation into MemOp2RegOpTable.
     if (OpTbl2[i][1] & TB_NOT_REVERSABLE)
       continue;
@@ -916,7 +916,6 @@ X86InstrInfo::isReallyTriviallyReMaterializable(const MachineInstr *MI,
     case X86::MOVSDrm:
     case X86::MOVAPSrm:
     case X86::MOVUPSrm:
-    case X86::MOVUPSrm_Int:
     case X86::MOVAPDrm:
     case X86::MOVDQArm:
     case X86::MMX_MOVD64rm:
@@ -1790,7 +1789,6 @@ bool X86InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
           .addMBB(UnCondBrIter->getOperand(0).getMBB());
         BuildMI(MBB, UnCondBrIter, MBB.findDebugLoc(I), get(X86::JMP_4))
           .addMBB(TargetBB);
-        MBB.addSuccessor(TargetBB);
 
         OldInst->eraseFromParent();
         UnCondBrIter->eraseFromParent();
@@ -2016,62 +2014,48 @@ static unsigned getLoadStoreRegOpcode(unsigned Reg,
                                       bool isStackAligned,
                                       const TargetMachine &TM,
                                       bool load) {
-  switch (RC->getID()) {
+  switch (RC->getSize()) {
   default:
-    llvm_unreachable("Unknown regclass");
-  case X86::GR64RegClassID:
-  case X86::GR64_ABCDRegClassID:
-  case X86::GR64_NOREXRegClassID:
-  case X86::GR64_NOREX_NOSPRegClassID:
-  case X86::GR64_NOSPRegClassID:
-  case X86::GR64_TCRegClassID:
-  case X86::GR64_TCW64RegClassID:
-    return load ? X86::MOV64rm : X86::MOV64mr;
-  case X86::GR32RegClassID:
-  case X86::GR32_ABCDRegClassID:
-  case X86::GR32_ADRegClassID:
-  case X86::GR32_NOREXRegClassID:
-  case X86::GR32_NOSPRegClassID:
-  case X86::GR32_TCRegClassID:
-    return load ? X86::MOV32rm : X86::MOV32mr;
-  case X86::GR16RegClassID:
-  case X86::GR16_ABCDRegClassID:
-  case X86::GR16_NOREXRegClassID:
-    return load ? X86::MOV16rm : X86::MOV16mr;
-  case X86::GR8RegClassID:
-    // Copying to or from a physical H register on x86-64 requires a NOREX
-    // move.  Otherwise use a normal move.
-    if (isHReg(Reg) &&
-        TM.getSubtarget<X86Subtarget>().is64Bit())
-      return load ? X86::MOV8rm_NOREX : X86::MOV8mr_NOREX;
-    else
-      return load ? X86::MOV8rm : X86::MOV8mr;
-  case X86::GR8_ABCD_LRegClassID:
-  case X86::GR8_NOREXRegClassID:
-    return load ? X86::MOV8rm :X86::MOV8mr;
-  case X86::GR8_ABCD_HRegClassID:
+    llvm_unreachable("Unknown spill size");
+  case 1:
+    assert(X86::GR8RegClass.hasSubClassEq(RC) && "Unknown 1-byte regclass");
     if (TM.getSubtarget<X86Subtarget>().is64Bit())
-      return load ? X86::MOV8rm_NOREX : X86::MOV8mr_NOREX;
-    else
-      return load ? X86::MOV8rm : X86::MOV8mr;
-  case X86::RFP80RegClassID:
+      // Copying to or from a physical H register on x86-64 requires a NOREX
+      // move.  Otherwise use a normal move.
+      if (isHReg(Reg) || X86::GR8_ABCD_HRegClass.hasSubClassEq(RC))
+        return load ? X86::MOV8rm_NOREX : X86::MOV8mr_NOREX;
+    return load ? X86::MOV8rm : X86::MOV8mr;
+  case 2:
+    assert(X86::GR16RegClass.hasSubClassEq(RC) && "Unknown 2-byte regclass");
+    return load ? X86::MOV16rm : X86::MOV16mr;
+  case 4:
+    if (X86::GR32RegClass.hasSubClassEq(RC))
+      return load ? X86::MOV32rm : X86::MOV32mr;
+    if (X86::FR32RegClass.hasSubClassEq(RC))
+      return load ? X86::MOVSSrm : X86::MOVSSmr;
+    if (X86::RFP32RegClass.hasSubClassEq(RC))
+      return load ? X86::LD_Fp32m : X86::ST_Fp32m;
+    llvm_unreachable("Unknown 4-byte regclass");
+  case 8:
+    if (X86::GR64RegClass.hasSubClassEq(RC))
+      return load ? X86::MOV64rm : X86::MOV64mr;
+    if (X86::FR64RegClass.hasSubClassEq(RC))
+      return load ? X86::MOVSDrm : X86::MOVSDmr;
+    if (X86::VR64RegClass.hasSubClassEq(RC))
+      return load ? X86::MMX_MOVQ64rm : X86::MMX_MOVQ64mr;
+    if (X86::RFP64RegClass.hasSubClassEq(RC))
+      return load ? X86::LD_Fp64m : X86::ST_Fp64m;
+    llvm_unreachable("Unknown 8-byte regclass");
+  case 10:
+    assert(X86::RFP80RegClass.hasSubClassEq(RC) && "Unknown 10-byte regclass");
     return load ? X86::LD_Fp80m : X86::ST_FpP80m;
-  case X86::RFP64RegClassID:
-    return load ? X86::LD_Fp64m : X86::ST_Fp64m;
-  case X86::RFP32RegClassID:
-    return load ? X86::LD_Fp32m : X86::ST_Fp32m;
-  case X86::FR32RegClassID:
-    return load ? X86::MOVSSrm : X86::MOVSSmr;
-  case X86::FR64RegClassID:
-    return load ? X86::MOVSDrm : X86::MOVSDmr;
-  case X86::VR128RegClassID:
+  case 16:
+    assert(X86::VR128RegClass.hasSubClassEq(RC) && "Unknown 16-byte regclass");
     // If stack is realigned we can use aligned stores.
     if (isStackAligned)
       return load ? X86::MOVAPSrm : X86::MOVAPSmr;
     else
       return load ? X86::MOVUPSrm : X86::MOVUPSmr;
-  case X86::VR64RegClassID:
-    return load ? X86::MMX_MOVQ64rm : X86::MMX_MOVQ64mr;
   }
 }
 
@@ -2240,6 +2224,12 @@ X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   unsigned NumOps = MI->getDesc().getNumOperands();
   bool isTwoAddr = NumOps > 1 &&
     MI->getDesc().getOperandConstraint(1, TOI::TIED_TO) != -1;
+
+  // FIXME: AsmPrinter doesn't know how to handle
+  // X86II::MO_GOT_ABSOLUTE_ADDRESS after folding.
+  if (MI->getOpcode() == X86::ADD32ri &&
+      MI->getOperand(2).getTargetFlags() == X86II::MO_GOT_ABSOLUTE_ADDRESS)
+    return NULL;
 
   MachineInstr *NewMI = NULL;
   // Folding a memory location into the two-address part of a two-address
@@ -2429,7 +2419,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
       Alignment = 4;
       break;
     default:
-      llvm_unreachable("Don't know how to fold this instruction!");
+      return 0;
     }
   if (Ops.size() == 2 && Ops[0] == 0 && Ops[1] == 1) {
     unsigned NewOpc = 0;
@@ -2535,6 +2525,12 @@ bool X86InstrInfo::canFoldMemoryOperand(const MachineInstr *MI,
     case X86::TEST32rr:
     case X86::TEST64rr:
       return true;
+    case X86::ADD32ri:
+      // FIXME: AsmPrinter doesn't know how to handle
+      // X86II::MO_GOT_ABSOLUTE_ADDRESS after folding.
+      if (MI->getOperand(2).getTargetFlags() == X86II::MO_GOT_ABSOLUTE_ADDRESS)
+        return false;
+      break;
     }
   }
 
@@ -2845,11 +2841,9 @@ X86InstrInfo::areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
   case X86::FsMOVAPDrm:
   case X86::MOVAPSrm:
   case X86::MOVUPSrm:
-  case X86::MOVUPSrm_Int:
   case X86::MOVAPDrm:
   case X86::MOVDQArm:
   case X86::MOVDQUrm:
-  case X86::MOVDQUrm_Int:
     break;
   }
   switch (Opc2) {
@@ -2869,11 +2863,9 @@ X86InstrInfo::areLoadsFromSameBasePtr(SDNode *Load1, SDNode *Load2,
   case X86::FsMOVAPDrm:
   case X86::MOVAPSrm:
   case X86::MOVUPSrm:
-  case X86::MOVUPSrm_Int:
   case X86::MOVAPDrm:
   case X86::MOVDQArm:
   case X86::MOVDQUrm:
-  case X86::MOVDQUrm_Int:
     break;
   }
 

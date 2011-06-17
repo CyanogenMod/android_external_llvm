@@ -278,7 +278,7 @@ namespace {
       return AI;
     }
 
-    // isInlineAsm - Check if the instruction is a call to an inline asm chunk
+    // isInlineAsm - Check if the instruction is a call to an inline asm chunk.
     static bool isInlineAsm(const Instruction& I) {
       if (const CallInst *CI = dyn_cast<CallInst>(&I))
         return isa<InlineAsm>(CI->getCalledValue());
@@ -373,7 +373,7 @@ static std::string CBEMangle(const std::string &S) {
 ///
 bool CBackendNameAllUsedStructsAndMergeFunctions::runOnModule(Module &M) {
   // Get a set of types that are used by the program...
-  std::set<const Type *> UT = getAnalysis<FindUsedTypes>().getTypes();
+  SetVector<const Type *> UT = getAnalysis<FindUsedTypes>().getTypes();
 
   // Loop over the module symbol table, removing types from UT that are
   // already named, and removing names for types that are not used.
@@ -390,11 +390,10 @@ bool CBackendNameAllUsedStructsAndMergeFunctions::runOnModule(Module &M) {
       TST.remove(I);
     } else {
       // If this is not used, remove it from the symbol table.
-      std::set<const Type *>::iterator UTI = UT.find(I->second);
-      if (UTI == UT.end())
+      if (!UT.count(I->second))
         TST.remove(I);
       else
-        UT.erase(UTI);    // Only keep one name for this type.
+        UT.remove(I->second); // Only keep one name for this type.
     }
   }
 
@@ -403,7 +402,7 @@ bool CBackendNameAllUsedStructsAndMergeFunctions::runOnModule(Module &M) {
   //
   bool Changed = false;
   unsigned RenameCounter = 0;
-  for (std::set<const Type *>::const_iterator I = UT.begin(), E = UT.end();
+  for (SetVector<const Type *>::const_iterator I = UT.begin(), E = UT.end();
        I != E; ++I)
     if ((*I)->isStructTy() || (*I)->isArrayTy()) {
       while (M.addTypeName("unnamed"+utostr(RenameCounter), *I))
@@ -661,7 +660,7 @@ void CWriter::printConstantArray(ConstantArray *CPA, bool Static) {
 
   if (isString) {
     Out << '\"';
-    // Keep track of whether the last number was a hexadecimal escape
+    // Keep track of whether the last number was a hexadecimal escape.
     bool LastWasHex = false;
 
     // Do not include the last character, which we know is null

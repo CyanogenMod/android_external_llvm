@@ -23,6 +23,7 @@
 #include "llvm/GlobalVariable.h"
 #include "llvm/Instructions.h"
 #include "llvm/Intrinsics.h"
+#include "llvm/Operator.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/ADT/SmallVector.h"
@@ -1084,7 +1085,7 @@ llvm::canConstantFoldCallTo(const Function *F) {
   case 'c':
     return Name == "cos" || Name == "ceil" || Name == "cosf" || Name == "cosh";
   case 'e':
-    return Name == "exp";
+    return Name == "exp" || Name == "exp2";
   case 'f':
     return Name == "fabs" || Name == "fmod" || Name == "floor";
   case 'l':
@@ -1220,6 +1221,12 @@ llvm::ConstantFoldCall(Function *F,
       case 'e':
         if (Name == "exp")
           return ConstantFoldFP(exp, V, Ty);
+  
+        if (Name == "exp2") {
+          // Constant fold exp2(x) as pow(2,x) in case the host doesn't have a
+          // C99 library.
+          return ConstantFoldBinaryFP(pow, 2.0, V, Ty);
+        }
         break;
       case 'f':
         if (Name == "fabs")

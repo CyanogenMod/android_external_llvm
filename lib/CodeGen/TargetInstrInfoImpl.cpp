@@ -212,8 +212,7 @@ static const TargetRegisterClass *canFoldCopy(const MachineInstr *MI,
   if (TargetRegisterInfo::isPhysicalRegister(LiveOp.getReg()))
     return RC->contains(LiveOp.getReg()) ? RC : 0;
 
-  const TargetRegisterClass *LiveRC = MRI.getRegClass(LiveReg);
-  if (RC == LiveRC || RC->hasSubClass(LiveRC))
+  if (RC->hasSubClassEq(MRI.getRegClass(LiveReg)))
     return RC;
 
   // FIXME: Allow folding when register classes are memory compatible.
@@ -386,11 +385,6 @@ isReallyTriviallyReMaterializableGeneric(const MachineInstr *MI,
 
     // Only allow one virtual-register def, and that in the first operand.
     if (MO.isDef() != (i == 0))
-      return false;
-
-    // For the def, it should be the only def of that register.
-    if (MO.isDef() && (llvm::next(MRI.def_begin(Reg)) != MRI.def_end() ||
-                       MRI.isLiveIn(Reg)))
       return false;
 
     // Don't allow any virtual-register uses. Rematting an instruction with

@@ -514,7 +514,7 @@ void X86MCCodeEmitter::EmitVEXOpcodePrefix(uint64_t TSFlags, unsigned &CurByte,
     }
 
     // To only check operands before the memory address ones, start
-    // the search from the begining
+    // the search from the beginning
     if (IsDestMem)
       CurOp = 0;
 
@@ -1015,7 +1015,8 @@ EncodeInstruction(const MCInst &MI, raw_ostream &OS,
     } else {
       unsigned FixupKind;
       // FIXME: Is there a better way to know that we need a signed relocation?
-      if (MI.getOpcode() == X86::MOV64ri32 ||
+      if (MI.getOpcode() == X86::ADD64ri32 ||
+          MI.getOpcode() == X86::MOV64ri32 ||
           MI.getOpcode() == X86::MOV64mi32 ||
           MI.getOpcode() == X86::PUSH64i32)
         FixupKind = X86::reloc_signed_4byte;

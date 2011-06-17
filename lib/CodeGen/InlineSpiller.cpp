@@ -16,6 +16,7 @@
 #include "Spiller.h"
 #include "LiveRangeEdit.h"
 #include "VirtRegMap.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/LiveStackAnalysis.h"
@@ -30,6 +31,18 @@
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
+
+STATISTIC(NumSpilledRanges,   "Number of spilled live ranges");
+STATISTIC(NumSnippets,        "Number of snippets included in spills");
+STATISTIC(NumSpills,          "Number of spills inserted");
+STATISTIC(NumReloads,         "Number of reloads inserted");
+STATISTIC(NumFolded,          "Number of folded stack accesses");
+STATISTIC(NumFoldedLoads,     "Number of folded loads");
+STATISTIC(NumRemats,          "Number of rematerialized defs for spilling");
+STATISTIC(NumOmitReloadSpill, "Number of omitted spills after reloads");
+STATISTIC(NumHoistLocal,      "Number of locally hoisted spills");
+STATISTIC(NumHoistGlobal,     "Number of globally hoisted spills");
+STATISTIC(NumRedundantSpills, "Number of redundant spills identified");
 
 namespace {
 class InlineSpiller : public Spiller {
@@ -134,9 +147,10 @@ private:
   bool foldMemoryOperand(MachineBasicBlock::iterator MI,
                          const SmallVectorImpl<unsigned> &Ops,
                          MachineInstr *LoadMI = 0);
-  void insertReload(LiveInterval &NewLI, MachineBasicBlock::iterator MI);
+  void insertReload(LiveInterval &NewLI, SlotIndex,
+                    MachineBasicBlock::iterator MI);
   void insertSpill(LiveInterval &NewLI, const LiveInterval &OldLI,
-                   MachineBasicBlock::iterator MI);
+                   SlotIndex, MachineBasicBlock::iterator MI);
 
   void spillAroundUses(unsigned Reg);
   void spillAll();
@@ -246,10 +260,11 @@ void InlineSpiller::collectRegsToSpill() {
     if (!isSnippet(SnipLI))
       continue;
     SnippetCopies.insert(MI);
-    if (!isRegToSpill(SnipReg))
-      RegsToSpill.push_back(SnipReg);
-
+    if (isRegToSpill(SnipReg))
+      continue;
+    RegsToSpill.push_back(SnipReg);
     DEBUG(dbgs() << "\talso spill snippet " << SnipLI << '\n');
+    ++NumSnippets;
   }
 }
 
@@ -419,8 +434,10 @@ void InlineSpiller::analyzeSiblingValues() {
       }
       if (!DefMI && !VNI->isPHIDef())
         DefMI = LIS.getInstructionFromIndex(VNI->def);
-      if (DefMI)
-        Edit->checkRematerializable(VNI, DefMI, TII, AA);
+      if (DefMI && Edit->checkRematerializable(VNI, DefMI, TII, AA)) {
+        DEBUG(dbgs() << "Value " << PrintReg(Reg) << ':' << VNI->id << '@'
+                     << VNI->def << " may remat from " << *DefMI);
+      }
     }
   }
 }
@@ -431,7 +448,7 @@ bool InlineSpiller::hoistSpill(LiveInterval &SpillLI, MachineInstr *CopyMI) {
   SlotIndex Idx = LIS.getInstructionIndex(CopyMI);
   VNInfo *VNI = SpillLI.getVNInfoAt(Idx.getDefIndex());
   assert(VNI && VNI->def == Idx.getDefIndex() && "Not defined by copy");
-  SibValueMap::const_iterator I = SibValues.find(VNI);
+  SibValueMap::iterator I = SibValues.find(VNI);
   if (I == SibValues.end())
     return false;
 
@@ -440,6 +457,20 @@ bool InlineSpiller::hoistSpill(LiveInterval &SpillLI, MachineInstr *CopyMI) {
   // Let the normal folding code deal with the boring case.
   if (!SVI.AllDefsAreReloads && SVI.SpillVNI == VNI)
     return false;
+
+  // SpillReg may have been deleted by remat and DCE.
+  if (!LIS.hasInterval(SVI.SpillReg)) {
+    DEBUG(dbgs() << "Stale interval: " << PrintReg(SVI.SpillReg) << '\n');
+    SibValues.erase(I);
+    return false;
+  }
+
+  LiveInterval &SibLI = LIS.getInterval(SVI.SpillReg);
+  if (!SibLI.containsValue(SVI.SpillVNI)) {
+    DEBUG(dbgs() << "Stale value: " << PrintReg(SVI.SpillReg) << '\n');
+    SibValues.erase(I);
+    return false;
+  }
 
   // Conservatively extend the stack slot range to the range of the original
   // value. We may be able to do better with stack slot coloring by being more
@@ -452,19 +483,22 @@ bool InlineSpiller::hoistSpill(LiveInterval &SpillLI, MachineInstr *CopyMI) {
                << *StackInt << '\n');
 
   // Already spilled everywhere.
-  if (SVI.AllDefsAreReloads)
+  if (SVI.AllDefsAreReloads) {
+    ++NumOmitReloadSpill;
     return true;
-
+  }
   // We are going to spill SVI.SpillVNI immediately after its def, so clear out
   // any later spills of the same value.
-  eliminateRedundantSpills(LIS.getInterval(SVI.SpillReg), SVI.SpillVNI);
+  eliminateRedundantSpills(SibLI, SVI.SpillVNI);
 
   MachineBasicBlock *MBB = LIS.getMBBFromIndex(SVI.SpillVNI->def);
   MachineBasicBlock::iterator MII;
   if (SVI.SpillVNI->isPHIDef())
     MII = MBB->SkipPHIsAndLabels(MBB->begin());
   else {
-    MII = LIS.getInstructionFromIndex(SVI.SpillVNI->def);
+    MachineInstr *DefMI = LIS.getInstructionFromIndex(SVI.SpillVNI->def);
+    assert(DefMI && "Defining instruction disappeared");
+    MII = DefMI;
     ++MII;
   }
   // Insert spill without kill flag immediately after def.
@@ -474,6 +508,11 @@ bool InlineSpiller::hoistSpill(LiveInterval &SpillLI, MachineInstr *CopyMI) {
   LIS.InsertMachineInstrInMaps(MII);
   VRM.addSpillSlotUse(StackSlot, MII);
   DEBUG(dbgs() << "\thoisted: " << SVI.SpillVNI->def << '\t' << *MII);
+
+  if (MBB == CopyMI->getParent())
+    ++NumHoistLocal;
+  else
+    ++NumHoistGlobal;
   return true;
 }
 
@@ -489,8 +528,8 @@ void InlineSpiller::eliminateRedundantSpills(LiveInterval &SLI, VNInfo *VNI) {
     LiveInterval *LI;
     tie(LI, VNI) = WorkList.pop_back_val();
     unsigned Reg = LI->reg;
-    DEBUG(dbgs() << "Checking redundant spills for " << PrintReg(Reg) << ':'
-                 << VNI->id << '@' << VNI->def << '\n');
+    DEBUG(dbgs() << "Checking redundant spills for "
+                 << VNI->id << '@' << VNI->def << " in " << *LI << '\n');
 
     // Regs to spill are taken care of.
     if (isRegToSpill(Reg))
@@ -528,6 +567,7 @@ void InlineSpiller::eliminateRedundantSpills(LiveInterval &SLI, VNInfo *VNI) {
         // eliminateDeadDefs won't normally remove stores, so switch opcode.
         MI->setDesc(TII.get(TargetOpcode::KILL));
         DeadDefs.push_back(MI);
+        ++NumRedundantSpills;
       }
     }
   } while (!WorkList.empty());
@@ -623,6 +663,7 @@ bool InlineSpiller::reMaterializeFor(LiveInterval &VirtReg,
   if (RM.OrigMI->getDesc().canFoldAsLoad() &&
       foldMemoryOperand(MI, Ops, RM.OrigMI)) {
     Edit->markRematerialized(RM.ParentVNI);
+    ++NumFoldedLoads;
     return true;
   }
 
@@ -649,6 +690,7 @@ bool InlineSpiller::reMaterializeFor(LiveInterval &VirtReg,
   VNInfo *DefVNI = NewLI.getNextValue(DefIdx, 0, LIS.getVNInfoAllocator());
   NewLI.addRange(LiveRange(DefIdx, UseIdx.getDefIndex(), DefVNI));
   DEBUG(dbgs() << "\tinterval: " << NewLI << '\n');
+  ++NumRemats;
   return true;
 }
 
@@ -775,14 +817,15 @@ bool InlineSpiller::foldMemoryOperand(MachineBasicBlock::iterator MI,
     VRM.addSpillSlotUse(StackSlot, FoldMI);
   MI->eraseFromParent();
   DEBUG(dbgs() << "\tfolded: " << *FoldMI);
+  ++NumFolded;
   return true;
 }
 
 /// insertReload - Insert a reload of NewLI.reg before MI.
 void InlineSpiller::insertReload(LiveInterval &NewLI,
+                                 SlotIndex Idx,
                                  MachineBasicBlock::iterator MI) {
   MachineBasicBlock &MBB = *MI->getParent();
-  SlotIndex Idx = LIS.getInstructionIndex(MI).getDefIndex();
   TII.loadRegFromStackSlot(MBB, MI, NewLI.reg, StackSlot,
                            MRI.getRegClass(NewLI.reg), &TRI);
   --MI; // Point to load instruction.
@@ -792,19 +835,13 @@ void InlineSpiller::insertReload(LiveInterval &NewLI,
   VNInfo *LoadVNI = NewLI.getNextValue(LoadIdx, 0,
                                        LIS.getVNInfoAllocator());
   NewLI.addRange(LiveRange(LoadIdx, Idx, LoadVNI));
+  ++NumReloads;
 }
 
 /// insertSpill - Insert a spill of NewLI.reg after MI.
 void InlineSpiller::insertSpill(LiveInterval &NewLI, const LiveInterval &OldLI,
-                                MachineBasicBlock::iterator MI) {
+                                SlotIndex Idx, MachineBasicBlock::iterator MI) {
   MachineBasicBlock &MBB = *MI->getParent();
-
-  // Get the defined value. It could be an early clobber so keep the def index.
-  SlotIndex Idx = LIS.getInstructionIndex(MI).getDefIndex();
-  VNInfo *VNI = OldLI.getVNInfoAt(Idx);
-  assert(VNI && VNI->def.getDefIndex() == Idx && "Inconsistent VNInfo");
-  Idx = VNI->def;
-
   TII.storeRegToStackSlot(MBB, ++MI, NewLI.reg, true, StackSlot,
                           MRI.getRegClass(NewLI.reg), &TRI);
   --MI; // Point to store instruction.
@@ -813,10 +850,12 @@ void InlineSpiller::insertSpill(LiveInterval &NewLI, const LiveInterval &OldLI,
   DEBUG(dbgs() << "\tspilled: " << StoreIdx << '\t' << *MI);
   VNInfo *StoreVNI = NewLI.getNextValue(Idx, 0, LIS.getVNInfoAllocator());
   NewLI.addRange(LiveRange(Idx, StoreIdx, StoreVNI));
+  ++NumSpills;
 }
 
 /// spillAroundUses - insert spill code around each use of Reg.
 void InlineSpiller::spillAroundUses(unsigned Reg) {
+  DEBUG(dbgs() << "spillAroundUses " << PrintReg(Reg) << '\n');
   LiveInterval &OldLI = LIS.getInterval(Reg);
 
   // Iterate over instructions using Reg.
@@ -854,9 +893,22 @@ void InlineSpiller::spillAroundUses(unsigned Reg) {
     SmallVector<unsigned, 8> Ops;
     tie(Reads, Writes) = MI->readsWritesVirtualRegister(Reg, &Ops);
 
+    // Find the slot index where this instruction reads and writes OldLI.
+    // This is usually the def slot, except for tied early clobbers.
+    SlotIndex Idx = LIS.getInstructionIndex(MI).getDefIndex();
+    if (VNInfo *VNI = OldLI.getVNInfoAt(Idx.getUseIndex()))
+      if (SlotIndex::isSameInstr(Idx, VNI->def))
+        Idx = VNI->def;
+
     // Check for a sibling copy.
     unsigned SibReg = isFullCopyOf(MI, Reg);
     if (SibReg && isSibling(SibReg)) {
+      // This may actually be a copy between snippets.
+      if (isRegToSpill(SibReg)) {
+        DEBUG(dbgs() << "Found new snippet copy: " << *MI);
+        SnippetCopies.insert(MI);
+        continue;
+      }
       if (Writes) {
         // Hoist the spill of a sib-reg copy.
         if (hoistSpill(OldLI, MI)) {
@@ -867,7 +919,6 @@ void InlineSpiller::spillAroundUses(unsigned Reg) {
         }
       } else {
         // This is a reload for a sib-reg copy. Drop spills downstream.
-        SlotIndex Idx = LIS.getInstructionIndex(MI).getDefIndex();
         LiveInterval &SibLI = LIS.getInterval(SibReg);
         eliminateRedundantSpills(SibLI, SibLI.getVNInfoAt(Idx));
         // The COPY will fold to a reload below.
@@ -884,7 +935,7 @@ void InlineSpiller::spillAroundUses(unsigned Reg) {
     NewLI.markNotSpillable();
 
     if (Reads)
-      insertReload(NewLI, MI);
+      insertReload(NewLI, Idx, MI);
 
     // Rewrite instruction operands.
     bool hasLiveDef = false;
@@ -899,10 +950,11 @@ void InlineSpiller::spillAroundUses(unsigned Reg) {
           hasLiveDef = true;
       }
     }
+    DEBUG(dbgs() << "\trewrite: " << Idx << '\t' << *MI);
 
     // FIXME: Use a second vreg if instruction has no tied ops.
     if (Writes && hasLiveDef)
-      insertSpill(NewLI, OldLI, MI);
+      insertSpill(NewLI, OldLI, Idx, MI);
 
     DEBUG(dbgs() << "\tinterval: " << NewLI << '\n');
   }
@@ -938,13 +990,15 @@ void InlineSpiller::spillAll() {
   }
 
   // Finally delete the SnippetCopies.
-  for (MachineRegisterInfo::reg_iterator RI = MRI.reg_begin(Edit->getReg());
-       MachineInstr *MI = RI.skipInstruction();) {
-    assert(SnippetCopies.count(MI) && "Remaining use wasn't a snippet copy");
-    // FIXME: Do this with a LiveRangeEdit callback.
-    VRM.RemoveMachineInstrFromMaps(MI);
-    LIS.RemoveMachineInstrFromMaps(MI);
-    MI->eraseFromParent();
+  for (unsigned i = 0, e = RegsToSpill.size(); i != e; ++i) {
+    for (MachineRegisterInfo::reg_iterator RI = MRI.reg_begin(RegsToSpill[i]);
+         MachineInstr *MI = RI.skipInstruction();) {
+      assert(SnippetCopies.count(MI) && "Remaining use wasn't a snippet copy");
+      // FIXME: Do this with a LiveRangeEdit callback.
+      VRM.RemoveMachineInstrFromMaps(MI);
+      LIS.RemoveMachineInstrFromMaps(MI);
+      MI->eraseFromParent();
+    }
   }
 
   // Delete all spilled registers.
@@ -953,6 +1007,7 @@ void InlineSpiller::spillAll() {
 }
 
 void InlineSpiller::spill(LiveRangeEdit &edit) {
+  ++NumSpilledRanges;
   Edit = &edit;
   assert(!TargetRegisterInfo::isStackSlot(edit.getReg())
          && "Trying to spill a stack slot.");

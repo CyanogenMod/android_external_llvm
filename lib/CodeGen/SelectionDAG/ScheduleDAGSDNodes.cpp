@@ -83,10 +83,13 @@ SUnit *ScheduleDAGSDNodes::Clone(SUnit *Old) {
   SU->Latency = Old->Latency;
   SU->isVRegCycle = Old->isVRegCycle;
   SU->isCall = Old->isCall;
+  SU->isCallOp = Old->isCallOp;
   SU->isTwoAddress = Old->isTwoAddress;
   SU->isCommutable = Old->isCommutable;
   SU->hasPhysRegDefs = Old->hasPhysRegDefs;
   SU->hasPhysRegClobbers = Old->hasPhysRegClobbers;
+  SU->isScheduleHigh = Old->isScheduleHigh;
+  SU->isScheduleLow = Old->isScheduleLow;
   SU->SchedulingPref = Old->SchedulingPref;
   Old->isCloned = true;
   return SU;
@@ -283,6 +286,7 @@ void ScheduleDAGSDNodes::BuildSchedUnits() {
   Worklist.push_back(DAG->getRoot().getNode());
   Visited.insert(DAG->getRoot().getNode());
 
+  SmallVector<SUnit*, 8> CallSUnits;
   while (!Worklist.empty()) {
     SDNode *NI = Worklist.pop_back_val();
 
@@ -335,6 +339,15 @@ void ScheduleDAGSDNodes::BuildSchedUnits() {
       if (!HasGlueUse) break;
     }
 
+    if (NodeSUnit->isCall)
+      CallSUnits.push_back(NodeSUnit);
+
+    // Schedule zero-latency TokenFactor below any nodes that may increase the
+    // schedule height. Otherwise, ancestors of the TokenFactor may appear to
+    // have false stalls.
+    if (NI->getOpcode() == ISD::TokenFactor)
+      NodeSUnit->isScheduleLow = true;
+
     // If there are glue operands involved, N is now the bottom-most node
     // of the sequence of nodes that are glued together.
     // Update the SUnit.
@@ -342,15 +355,25 @@ void ScheduleDAGSDNodes::BuildSchedUnits() {
     assert(N->getNodeId() == -1 && "Node already inserted!");
     N->setNodeId(NodeSUnit->NodeNum);
 
-    // Set isVRegCycle if the node operands are live into and value is live out
-    // of a single block loop.
-    InitVRegCycleFlag(NodeSUnit);
-
     // Compute NumRegDefsLeft. This must be done before AddSchedEdges.
     InitNumRegDefsLeft(NodeSUnit);
 
     // Assign the Latency field of NodeSUnit using target-provided information.
     ComputeLatency(NodeSUnit);
+  }
+
+  // Find all call operands.
+  while (!CallSUnits.empty()) {
+    SUnit *SU = CallSUnits.pop_back_val();
+    for (const SDNode *SUNode = SU->getNode(); SUNode;
+         SUNode = SUNode->getGluedNode()) {
+      if (SUNode->getOpcode() != ISD::CopyToReg)
+        continue;
+      SDNode *SrcN = SUNode->getOperand(2).getNode();
+      if (isPassiveNode(SrcN)) continue;   // Not scheduled.
+      SUnit *SrcSU = &SUnits[SrcN->getNodeId()];
+      SrcSU->isCallOp = true;
+    }
   }
 }
 
@@ -412,11 +435,15 @@ void ScheduleDAGSDNodes::AddSchedEdges() {
         // it requires a cross class copy (cost < 0). That means we are only
         // treating "expensive to copy" register dependency as physical register
         // dependency. This may change in the future though.
-        if (Cost >= 0)
+        if (Cost >= 0 && !StressSched)
           PhysReg = 0;
 
         // If this is a ctrl dep, latency is 1.
         unsigned OpLatency = isChain ? 1 : OpSU->Latency;
+        // Special-case TokenFactor chains as zero-latency.
+        if(isChain && OpN->getOpcode() == ISD::TokenFactor)
+          OpLatency = 0;
+
         const SDep &dep = SDep(OpSU, isChain ? SDep::Order : SDep::Data,
                                OpLatency, PhysReg);
         if (!isChain && !UnitLatencies) {
@@ -512,47 +539,6 @@ void ScheduleDAGSDNodes::RegDefIter::Advance() {
   }
 }
 
-// Set isVRegCycle if this node's single use is CopyToReg and its only active
-// data operands are CopyFromReg.
-//
-// This is only relevant for single-block loops, in which case the VRegCycle
-// node is likely an induction variable in which the operand and target virtual
-// registers should be coalesced (e.g. pre/post increment values). Setting the
-// isVRegCycle flag helps the scheduler prioritize other uses of the same
-// CopyFromReg so that this node becomes the virtual register "kill". This
-// avoids interference between the values live in and out of the block and
-// eliminates a copy inside the loop.
-void ScheduleDAGSDNodes::InitVRegCycleFlag(SUnit *SU) {
-  if (!BB->isSuccessor(BB))
-    return;
-
-  SDNode *N = SU->getNode();
-  if (N->getGluedNode())
-    return;
-
-  if (!N->hasOneUse() || N->use_begin()->getOpcode() != ISD::CopyToReg)
-    return;
-
-  bool FoundLiveIn = false;
-  for (SDNode::op_iterator OI = N->op_begin(), E = N->op_end(); OI != E; ++OI) {
-    EVT OpVT = OI->getValueType();
-    assert(OpVT != MVT::Glue && "Glued nodes should be in same sunit!");
-
-    if (OpVT == MVT::Other)
-      continue; // ignore chain operands
-
-    if (isPassiveNode(OI->getNode()))
-      continue; // ignore constants and such
-
-    if (OI->getNode()->getOpcode() != ISD::CopyFromReg)
-      return;
-
-    FoundLiveIn = true;
-  }
-  if (FoundLiveIn)
-    SU->isVRegCycle = true;
-}
-
 void ScheduleDAGSDNodes::InitNumRegDefsLeft(SUnit *SU) {
   assert(SU->NumRegDefsLeft == 0 && "expect a new node");
   for (RegDefIter I(SU, this); I.IsValid(); I.Advance()) {
@@ -562,6 +548,16 @@ void ScheduleDAGSDNodes::InitNumRegDefsLeft(SUnit *SU) {
 }
 
 void ScheduleDAGSDNodes::ComputeLatency(SUnit *SU) {
+  SDNode *N = SU->getNode();
+
+  // TokenFactor operands are considered zero latency, and some schedulers
+  // (e.g. Top-Down list) may rely on the fact that operand latency is nonzero
+  // whenever node latency is nonzero.
+  if (N && N->getOpcode() == ISD::TokenFactor) {
+    SU->Latency = 0;
+    return;
+  }
+
   // Check to see if the scheduler cares about latencies.
   if (ForceUnitLatencies()) {
     SU->Latency = 1;
@@ -569,7 +565,6 @@ void ScheduleDAGSDNodes::ComputeLatency(SUnit *SU) {
   }
 
   if (!InstrItins || InstrItins->isEmpty()) {
-    SDNode *N = SU->getNode();
     if (N && N->isMachineOpcode() &&
         TII->isHighLatencyDef(N->getMachineOpcode()))
       SU->Latency = HighLatencyCycles;
@@ -641,7 +636,7 @@ namespace {
   };
 }
 
-/// ProcessSDDbgValues - Process SDDbgValues assoicated with this node.
+/// ProcessSDDbgValues - Process SDDbgValues associated with this node.
 static void ProcessSDDbgValues(SDNode *N, SelectionDAG *DAG,
                                InstrEmitter &Emitter,
                     SmallVector<std::pair<unsigned, MachineInstr*>, 32> &Orders,
