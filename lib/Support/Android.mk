@@ -6,6 +6,7 @@ support_SRC_FILES :=   \
 	APInt.cpp   \
 	APSInt.cpp  \
 	Atomic.cpp  \
+	BranchProbability.cpp \
 	CommandLine.cpp \
 	ConstantRange.cpp   \
 	CrashRecoveryContext.cpp	\
@@ -65,7 +66,7 @@ support_SRC_FILES :=   \
 	regerror.c  \
 	regexec.c   \
 	regfree.c   \
-	regstrlcpy.c\
+	regstrlcpy.c \
 	system_error.cpp
 
 # For the host

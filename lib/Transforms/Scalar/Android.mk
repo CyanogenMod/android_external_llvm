@@ -21,6 +21,7 @@ transforms_scalar_SRC_FILES := \
 	LoopUnswitch.cpp    \
 	LowerAtomic.cpp \
 	MemCpyOptimizer.cpp \
+	ObjCARC.cpp \
 	Reassociate.cpp \
 	Reg2Mem.cpp \
 	SCCP.cpp    \

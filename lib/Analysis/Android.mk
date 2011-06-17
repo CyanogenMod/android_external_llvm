@@ -8,6 +8,7 @@ analysis_SRC_FILES :=	\
 	AliasSetTracker.cpp	\
 	Analysis.cpp	\
 	BasicAliasAnalysis.cpp	\
+	BranchProbabilityInfo.cpp \
 	CFGPrinter.cpp	\
 	CaptureTracking.cpp	\
 	ConstantFolding.cpp	\
@@ -50,7 +51,7 @@ analysis_SRC_FILES :=	\
 	ScalarEvolutionNormalization.cpp    \
 	SparsePropagation.cpp   \
 	Trace.cpp   \
-        TypeBasedAliasAnalysis.cpp \
+	TypeBasedAliasAnalysis.cpp \
 	ValueTracking.cpp
 
 # For the host

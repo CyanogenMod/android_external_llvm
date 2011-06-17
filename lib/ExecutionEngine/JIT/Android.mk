@@ -11,8 +11,7 @@ LOCAL_SRC_FILES :=	\
 	JITDwarfEmitter.cpp	\
 	JITEmitter.cpp	\
 	JITMemoryManager.cpp	\
-	OProfileJITEventListener.cpp	\
-	TargetSelect.cpp
+	OProfileJITEventListener.cpp
 
 LOCAL_MODULE:= libLLVMJIT
 

@@ -15,6 +15,7 @@ LOCAL_SRC_FILES :=	\
 	CodeGenDAGPatterns.cpp  \
 	CodeGenInstruction.cpp  \
 	CodeGenTarget.cpp   \
+	CodeGenRegisters.cpp \
 	DAGISelEmitter.cpp  \
 	DAGISelMatcher.cpp  \
 	DAGISelMatcherEmitter.cpp   \
@@ -32,6 +33,7 @@ LOCAL_SRC_FILES :=	\
 	OptParserEmitter.cpp    \
 	Record.cpp  \
 	RegisterInfoEmitter.cpp \
+	SetTheory.cpp \
 	StringMatcher.cpp \
 	SubtargetEmitter.cpp    \
 	TGLexer.cpp \

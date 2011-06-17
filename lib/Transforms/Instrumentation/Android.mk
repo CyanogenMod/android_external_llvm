@@ -6,6 +6,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES :=      \
      EdgeProfiling.cpp   \
+     GCOVProfiling.cpp \
      Instrumentation.cpp \
      ProfilingUtils.cpp      \
      PathProfiling.cpp \

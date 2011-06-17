@@ -2,6 +2,7 @@ LOCAL_PATH:= $(call my-dir)
 
 codegen_SRC_FILES :=   \
 	AggressiveAntiDepBreaker.cpp    \
+	AllocationOrder.cpp \
 	Analysis.cpp    \
 	BranchFolding.cpp   \
 	CalcSpillWeights.cpp    \
@@ -19,11 +20,13 @@ codegen_SRC_FILES :=   \
 	GCStrategy.cpp  \
 	IfConversion.cpp    \
 	InlineSpiller.cpp	\
+	InterferenceCache.cpp \
 	IntrinsicLowering.cpp   \
 	LLVMTargetMachine.cpp   \
 	LatencyPriorityQueue.cpp    \
 	LiveDebugVariables.cpp \
 	LiveInterval.cpp    \
+	LiveIntervalUnion.cpp \
 	LiveIntervalAnalysis.cpp    \
 	LiveRangeEdit.cpp \
 	LiveStackAnalysis.cpp   \
@@ -31,6 +34,7 @@ codegen_SRC_FILES :=   \
 	LocalStackSlotAllocation.cpp	\
 	LowerSubregs.cpp    \
 	MachineBasicBlock.cpp   \
+	MachineBranchProbabilityInfo.cpp \
 	MachineCSE.cpp  \
 	MachineDominators.cpp   \
 	MachineFunction.cpp \
@@ -40,6 +44,7 @@ codegen_SRC_FILES :=   \
 	MachineInstr.cpp    \
 	MachineLICM.cpp \
 	MachineLoopInfo.cpp \
+	MachineLoopRanges.cpp \
 	MachineModuleInfo.cpp   \
 	MachineModuleInfoImpls.cpp  \
 	MachinePassRegistry.cpp \
@@ -59,10 +64,13 @@ codegen_SRC_FILES :=   \
 	ProcessImplicitDefs.cpp \
 	PrologEpilogInserter.cpp    \
 	PseudoSourceValue.cpp   \
+	RegAllocBasic.cpp \
 	RegAllocFast.cpp	\
+	RegAllocGreedy.cpp \
 	RegAllocLinearScan.cpp  \
 	RegAllocPBQP.cpp    \
 	RegisterCoalescer.cpp   \
+	RegisterClassInfo.cpp \
 	RegisterScavenging.cpp  \
 	RenderMachineFunction.cpp	\
 	ScheduleDAG.cpp \
@@ -76,6 +84,7 @@ codegen_SRC_FILES :=   \
 	SjLjEHPrepare.cpp   \
 	SlotIndexes.cpp \
 	Spiller.cpp \
+	SpillPlacement.cpp \
 	SplitKit.cpp	\
 	Splitter.cpp	\
 	StackProtector.cpp  \

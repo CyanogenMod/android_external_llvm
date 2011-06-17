@@ -7,7 +7,6 @@ transforms_utils_SRC_FILES :=	\
 	BreakCriticalEdges.cpp	\
 	BuildLibCalls.cpp	\
 	CloneFunction.cpp	\
-	CloneLoop.cpp	\
 	CloneModule.cpp	\
 	CodeExtractor.cpp	\
 	DemoteRegToStack.cpp	\

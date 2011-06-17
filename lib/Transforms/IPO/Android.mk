@@ -21,8 +21,7 @@ transforms_ipo_SRC_FILES :=	\
 	PartialInlining.cpp	\
 	PruneEH.cpp	\
 	StripDeadPrototypes.cpp	\
-	StripSymbols.cpp	\
-	StructRetPromotion.cpp
+	StripSymbols.cpp
 
 # For the host
 # =====================================================
