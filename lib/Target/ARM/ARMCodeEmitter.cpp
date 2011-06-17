@@ -301,7 +301,7 @@ namespace {
       // {12-9}  = reg
       // {8}     = (U)nsigned (add == '1', sub == '0')
       // {7-0}   = imm8
-      uint32_t Binary;
+      uint32_t Binary = 0;
       const MachineOperand &MO  = MI.getOperand(Op);
       uint32_t Reg = getMachineOpValue(MI, MO);
       Binary |= (Reg << 9);
