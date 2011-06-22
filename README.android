@@ -12,7 +12,11 @@
  * conflicts. 
  */ 
 
-* Synced to r129128.
+* For Honeycomb: Synced to upstream r112344.
+* For Honeycomb MR1: Synced to upstream r119309
+* For Honeycomb MR2: Synced to upstream r119309
+* For Ice Cream Sandwich: Synced to upstream r133240
+* Most recent update: From r129128 to 133240
 
 * We add 40+ Android's *.mk files that are specific to Android's build system.
 
