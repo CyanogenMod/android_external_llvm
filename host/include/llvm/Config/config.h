@@ -601,8 +601,8 @@
 /* Define if use udis86 library */
 #define USE_UDIS86 0
 
-/* Define use of PCSTR type for Windows platforms */
-#define WIN32_ELMCB_PCSTR PCSTR
+/* Define use of PSTR type for Windows platforms */
+#define WIN32_ELMCB_PCSTR PSTR
 
 /* Define to empty if `const' does not conform to ANSI C. */
 /* #undef const */
