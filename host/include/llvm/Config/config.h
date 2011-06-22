@@ -601,6 +601,8 @@
 /* Define if use udis86 library */
 #define USE_UDIS86 0
 
+#define WIN32_ELMCB_PCSTR PCSTR
+
 /* Define to empty if `const' does not conform to ANSI C. */
 /* #undef const */
 
