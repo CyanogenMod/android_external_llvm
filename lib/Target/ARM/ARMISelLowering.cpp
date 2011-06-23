@@ -5587,7 +5587,6 @@ static SDValue AddCombineToVPADDL(SDNode *N, SDValue N0, SDValue N1,
   // Create VPADDL node.
   SelectionDAG &DAG = DCI.DAG;
   const TargetLowering &TLI = DAG.getTargetLoweringInfo();
-  DebugLoc DL = N->getDebugLoc();
 
   // Build operand list.
   SmallVector<SDValue, 8> Ops;
@@ -7380,9 +7379,12 @@ ARMTargetLowering::getConstraintType(const std::string &Constraint) const {
     case 'l': return C_RegisterClass;
     case 'w': return C_RegisterClass;
     }
-  } else {
-    if (Constraint == "Uv")
-      return C_Memory;
+  } else if (Constraint.size() == 2) {
+    switch (Constraint[0]) {
+    default: break;
+    // All 'U+' constraints are addresses.
+    case 'U': return C_Memory;
+    }
   }
   return TargetLowering::getConstraintType(Constraint);
 }

@@ -19,6 +19,7 @@
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
@@ -33,8 +34,10 @@ using namespace llvm;
 namespace {
 
 class MCAsmStreamer : public MCStreamer {
+protected:
   formatted_raw_ostream &OS;
   const MCAsmInfo &MAI;
+private:
   OwningPtr<MCInstPrinter> InstPrinter;
   OwningPtr<MCCodeEmitter> Emitter;
   OwningPtr<TargetAsmBackend> AsmBackend;
@@ -1241,13 +1244,12 @@ void MCAsmStreamer::Finish() {
   if (!UseCFI)
     EmitFrames(false);
 }
-
 MCStreamer *llvm::createAsmStreamer(MCContext &Context,
                                     formatted_raw_ostream &OS,
                                     bool isVerboseAsm, bool useLoc,
-                                    bool useCFI,
-                                    MCInstPrinter *IP, MCCodeEmitter *CE,
-                                    TargetAsmBackend *TAB, bool ShowInst) {
+                                    bool useCFI, MCInstPrinter *IP,
+                                    MCCodeEmitter *CE, TargetAsmBackend *TAB,
+                                    bool ShowInst) {
   return new MCAsmStreamer(Context, OS, isVerboseAsm, useLoc, useCFI,
                            IP, CE, TAB, ShowInst);
 }

@@ -350,9 +350,7 @@ protected:
   ConstantArray(const ArrayType *T, const std::vector<Constant*> &Val);
 public:
   // ConstantArray accessors
-  static Constant *get(const ArrayType *T, const std::vector<Constant*> &V);
-  static Constant *get(const ArrayType *T, Constant *const *Vals, 
-                       unsigned NumVals);
+  static Constant *get(const ArrayType *T, ArrayRef<Constant*> V);
                              
   /// This method constructs a ConstantArray and initializes it with a text
   /// string. The default behavior (AddNull==true) causes a null terminator to
@@ -422,14 +420,29 @@ protected:
   ConstantStruct(const StructType *T, const std::vector<Constant*> &Val);
 public:
   // ConstantStruct accessors
-  static Constant *get(const StructType *T, const std::vector<Constant*> &V);
-  static Constant *get(LLVMContext &Context, 
-                       const std::vector<Constant*> &V, bool Packed);
-  static Constant *get(LLVMContext &Context,
-                       Constant *const *Vals, unsigned NumVals, bool Packed);
-  static Constant *get(LLVMContext &Context, bool Packed,
-                       Constant * Val, ...) END_WITH_NULL;
+  static Constant *get(const StructType *T, ArrayRef<Constant*> V);
+  static Constant *get(const StructType *T, ...) END_WITH_NULL;
 
+  /// getAnon - Return an anonymous struct that has the specified
+  /// elements.  If the struct is possibly empty, then you must specify a
+  /// context.
+  static Constant *getAnon(ArrayRef<Constant*> V, bool Packed = false) {
+    return get(getTypeForElements(V, Packed), V);
+  }
+  static Constant *getAnon(LLVMContext &Ctx, 
+                           ArrayRef<Constant*> V, bool Packed = false) {
+    return get(getTypeForElements(Ctx, V, Packed), V);
+  }
+
+  /// getTypeForElements - Return an anonymous struct type to use for a constant
+  /// with the specified set of elements.  The list must not be empty.
+  static StructType *getTypeForElements(ArrayRef<Constant*> V,
+                                        bool Packed = false);
+  /// getTypeForElements - This version of the method allows an empty list.
+  static StructType *getTypeForElements(LLVMContext &Ctx,
+                                        ArrayRef<Constant*> V,
+                                        bool Packed = false);
+  
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);
 
@@ -476,8 +489,6 @@ protected:
 public:
   // ConstantVector accessors
   static Constant *get(ArrayRef<Constant*> V);
-  // FIXME: Eliminate this constructor form.
-  static Constant *get(const VectorType *T, const std::vector<Constant*> &V);
   
   /// Transparently provide more efficient getOperand methods.
   DECLARE_TRANSPARENT_OPERAND_ACCESSORS(Constant);

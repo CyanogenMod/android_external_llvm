@@ -18,6 +18,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "FastISelEmitter.h"
+#include "Error.h"
 #include "Record.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/VectorExtras.h"
@@ -406,15 +407,7 @@ static std::string PhyRegForNode(TreePatternNode *Op,
   PhysReg += static_cast<StringInit*>(OpLeafRec->getValue( \
              "Namespace")->getValue())->getValue();
   PhysReg += "::";
-
-  std::vector<CodeGenRegister> Regs = Target.getRegisters();
-  for (unsigned i = 0; i < Regs.size(); ++i) {
-    if (Regs[i].TheDef == OpLeafRec) {
-      PhysReg += Regs[i].getName();
-      break;
-    }
-  }
-
+  PhysReg += Target.getRegBank().getReg(OpLeafRec)->getName();
   return PhysReg;
 }
 

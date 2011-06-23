@@ -59,6 +59,10 @@ public:
     return TLOF->getEHFrameSection();
   }
 
+  const MCSection *getCompactUnwindSection() const {
+    return TLOF->getCompactUnwindSection();
+  }
+
   const MCSection *getDwarfFrameSection() const {
     return TLOF->getDwarfFrameSection();
   }
@@ -77,6 +81,10 @@ public:
 
   bool isFunctionEHFrameSymbolPrivate() const {
     return TLOF->isFunctionEHFrameSymbolPrivate();
+  }
+
+  bool getSupportsCompactUnwindInfo() const {
+    return TLOF->getSupportsCompactUnwindInfo();
   }
 
   const unsigned *getCalleeSavedRegs(MachineFunction *MF = 0) const {

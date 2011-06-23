@@ -471,7 +471,6 @@ lltok::Kind LLLexer::LexIdentifier() {
   if (Len == strlen(#STR) && !memcmp(StartChar, #STR, strlen(#STR))) \
     return lltok::kw_##STR;
 
-  KEYWORD(begin);   KEYWORD(end);
   KEYWORD(true);    KEYWORD(false);
   KEYWORD(declare); KEYWORD(define);
   KEYWORD(global);  KEYWORD(constant);
@@ -636,7 +635,6 @@ lltok::Kind LLLexer::LexIdentifier() {
   INSTKEYWORD(extractelement, ExtractElement);
   INSTKEYWORD(insertelement,  InsertElement);
   INSTKEYWORD(shufflevector,  ShuffleVector);
-  INSTKEYWORD(getresult,      ExtractValue);
   INSTKEYWORD(extractvalue,   ExtractValue);
   INSTKEYWORD(insertvalue,    InsertValue);
 #undef INSTKEYWORD

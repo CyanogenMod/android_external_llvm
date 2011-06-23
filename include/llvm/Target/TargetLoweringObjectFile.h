@@ -68,6 +68,11 @@ protected:
   /// LSDASection - If exception handling is supported by the target, this is
   /// the section the Language Specific Data Area information is emitted to.
   const MCSection *LSDASection;
+
+  /// CompactUnwindSection - If exception handling is supported by the target
+  /// and the target can support a compact representation of the CIE and FDE,
+  /// this is the section to emit them into.
+  const MCSection *CompactUnwindSection;
   
   // Dwarf sections for debug info.  If a target supports debug info, these must
   // be set.
@@ -102,8 +107,12 @@ protected:
   /// private linkage, aka an L or .L label) or false if it should be a normal
   /// non-.globl label.  This defaults to true.
   bool IsFunctionEHFrameSymbolPrivate;
+
+  /// SupportsCompactUnwindInfo - This flag is set to true if the CIE and FDE
+  /// information should be emitted in a compact form.
+  bool SupportsCompactUnwindInfo;
+
 public:
-  
   MCContext &getContext() const { return *Ctx; }
   
   virtual ~TargetLoweringObjectFile();
@@ -121,9 +130,11 @@ public:
   bool getSupportsWeakOmittedEHFrame() const {
     return SupportsWeakOmittedEHFrame;
   }
-  
   bool getCommDirectiveSupportsAlignment() const {
     return CommDirectiveSupportsAlignment;
+  }
+  bool getSupportsCompactUnwindInfo() const {
+    return SupportsCompactUnwindInfo;
   }
 
   const MCSection *getTextSection() const { return TextSection; }
@@ -132,6 +143,7 @@ public:
   const MCSection *getStaticCtorSection() const { return StaticCtorSection; }
   const MCSection *getStaticDtorSection() const { return StaticDtorSection; }
   const MCSection *getLSDASection() const { return LSDASection; }
+  const MCSection *getCompactUnwindSection() const{return CompactUnwindSection;}
   virtual const MCSection *getEHFrameSection() const = 0;
   virtual void emitPersonalityValue(MCStreamer &Streamer,
                                     const TargetMachine &TM,

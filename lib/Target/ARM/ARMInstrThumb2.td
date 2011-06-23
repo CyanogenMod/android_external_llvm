@@ -1206,29 +1206,6 @@ def t2SUBrSPs   : T2sTwoRegImm<(outs GPR:$Rd), (ins GPR:$Rn, t2_so_reg:$imm),
 }
 } // end isCodeGenOnly = 1
 
-// Signed and unsigned division on v7-M
-def t2SDIV : T2ThreeReg<(outs rGPR:$Rd), (ins rGPR:$Rn, rGPR:$Rm), IIC_iALUi,
-                 "sdiv", "\t$Rd, $Rn, $Rm",
-                 [(set rGPR:$Rd, (sdiv rGPR:$Rn, rGPR:$Rm))]>,
-                 Requires<[HasDivide, IsThumb2]> {
-  let Inst{31-27} = 0b11111;
-  let Inst{26-21} = 0b011100;
-  let Inst{20} = 0b1;
-  let Inst{15-12} = 0b1111;
-  let Inst{7-4} = 0b1111;
-}
-
-def t2UDIV : T2ThreeReg<(outs rGPR:$Rd), (ins rGPR:$Rn, rGPR:$Rm), IIC_iALUi,
-                 "udiv", "\t$Rd, $Rn, $Rm",
-                 [(set rGPR:$Rd, (udiv rGPR:$Rn, rGPR:$Rm))]>,
-                 Requires<[HasDivide, IsThumb2]> {
-  let Inst{31-27} = 0b11111;
-  let Inst{26-21} = 0b011101;
-  let Inst{20} = 0b1;
-  let Inst{15-12} = 0b1111;
-  let Inst{7-4} = 0b1111;
-}
-
 //===----------------------------------------------------------------------===//
 //  Load / store Instructions.
 //
@@ -2560,6 +2537,32 @@ def t2SMLSLDX : T2FourReg_mac<1, 0b101, 0b1101, (outs rGPR:$Ra,rGPR:$Rd),
                         "\t$Ra, $Rd, $Rm, $Rn", []>;
 
 //===----------------------------------------------------------------------===//
+//  Division Instructions.
+//  Signed and unsigned division on v7-M
+//
+def t2SDIV : T2ThreeReg<(outs rGPR:$Rd), (ins rGPR:$Rn, rGPR:$Rm), IIC_iALUi,
+                 "sdiv", "\t$Rd, $Rn, $Rm",
+                 [(set rGPR:$Rd, (sdiv rGPR:$Rn, rGPR:$Rm))]>,
+                 Requires<[HasDivide, IsThumb2]> {
+  let Inst{31-27} = 0b11111;
+  let Inst{26-21} = 0b011100;
+  let Inst{20} = 0b1;
+  let Inst{15-12} = 0b1111;
+  let Inst{7-4} = 0b1111;
+}
+
+def t2UDIV : T2ThreeReg<(outs rGPR:$Rd), (ins rGPR:$Rn, rGPR:$Rm), IIC_iALUi,
+                 "udiv", "\t$Rd, $Rn, $Rm",
+                 [(set rGPR:$Rd, (udiv rGPR:$Rn, rGPR:$Rm))]>,
+                 Requires<[HasDivide, IsThumb2]> {
+  let Inst{31-27} = 0b11111;
+  let Inst{26-21} = 0b011101;
+  let Inst{20} = 0b1;
+  let Inst{15-12} = 0b1111;
+  let Inst{7-4} = 0b1111;
+}
+
+//===----------------------------------------------------------------------===//
 //  Misc. Arithmetic Instructions.
 //
 
@@ -2587,28 +2590,15 @@ def t2REV : T2I_misc<0b01, 0b00, (outs rGPR:$Rd), (ins rGPR:$Rm), IIC_iUNAr,
 
 def t2REV16 : T2I_misc<0b01, 0b01, (outs rGPR:$Rd), (ins rGPR:$Rm), IIC_iUNAr,
                        "rev16", ".w\t$Rd, $Rm",
-                [(set rGPR:$Rd,
-                    (or (and (srl rGPR:$Rm, (i32 8)), 0xFF),
-                        (or (and (shl rGPR:$Rm, (i32 8)), 0xFF00),
-                            (or (and (srl rGPR:$Rm, (i32 8)), 0xFF0000),
-                               (and (shl rGPR:$Rm, (i32 8)), 0xFF000000)))))]>;
+                [(set rGPR:$Rd, (rotr (bswap rGPR:$Rm), (i32 16)))]>;
 
 def t2REVSH : T2I_misc<0b01, 0b11, (outs rGPR:$Rd), (ins rGPR:$Rm), IIC_iUNAr,
                        "revsh", ".w\t$Rd, $Rm",
-                 [(set rGPR:$Rd,
-                    (sext_inreg
-                      (or (srl rGPR:$Rm, (i32 8)),
-                          (shl rGPR:$Rm, (i32 8))), i16))]>;
-
-def : T2Pat<(sext_inreg (or (srl (and rGPR:$Rm, 0xFF00), (i32 8)),
-                            (shl rGPR:$Rm, (i32 8))), i16),
-            (t2REVSH rGPR:$Rm)>;
+                 [(set rGPR:$Rd, (sra (bswap rGPR:$Rm), (i32 16)))]>;
 
 def : T2Pat<(or (sra (shl rGPR:$Rm, (i32 24)), (i32 16)),
-                   (and (srl rGPR:$Rm, (i32 8)), 0xFF)),
+                (and (srl rGPR:$Rm, (i32 8)), 0xFF)),
             (t2REVSH rGPR:$Rm)>;
-
-def : T2Pat<(sra (bswap rGPR:$Rm), (i32 16)), (t2REVSH rGPR:$Rm)>;
 
 def t2PKHBT : T2ThreeReg<
             (outs rGPR:$Rd), (ins rGPR:$Rn, rGPR:$Rm, shift_imm:$sh),
