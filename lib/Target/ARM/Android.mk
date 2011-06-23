@@ -33,6 +33,7 @@ arm_codegen_SRC_FILES :=   \
 	ARMInstrInfo.cpp    \
 	ARMJITInfo.cpp  \
 	ARMLoadStoreOptimizer.cpp   \
+	ARMMachObjectWriter.cpp \
 	ARMMCAsmInfo.cpp    \
 	ARMMCCodeEmitter.cpp\
 	ARMMCExpr.cpp	\
