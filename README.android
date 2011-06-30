@@ -17,10 +17,22 @@
 * For Honeycomb MR2: Synced to upstream r119309
 * For Ice Cream Sandwich: Synced to upstream r133718
 
-* Recent update #1: From r133240 to 133718
-* Recent update #2: From r129128 to 133240
-* Recent update #3: From r127116 to 129128
-* Recent update #4: From r119309 to 127116
+* Recent downstreaming on 2011/6/30: From r133240 to 133718
+  * This downstreaming could have broken bitcode compatibility
+    * Upstream was migrating from 2.7 bitcode to 3.0 bitcode.
+    * See the 4 commits on 2011/6/17:
+    ==> * 4f6bab9 - Drop the "2" suffix on some enums. (13 days ago) <Chris Lattner>
+    ==> * 96a74c5 - remove support for a bunch of obsolete instruction encodings and other backward compatibility hacks. (13 days ago) <Chris Lattner>
+        * 738f05a - Remove a useless copy of MCELFStreamer. Patch by Logan Chien! (13 days ago) <Benjamin Kramer>
+        * 981d826 - getSuccWeight returns now default 0 if Weights vector is empty. (13 days ago) <Jakub Staszak>
+        * 799a58a55 - missed a file. (13 days ago) <Chris Lattner>
+    ==> * 9d61dd9 - Remove some "2" suffixes from the metadata enums now that "1" is gone. (13 days ago) <Chris Lattner>
+    ==> * 020a5a4 - remove bitcode reader support for LLVM 2.7 metadata encoding. (13 days ago) <Chris Lattner>
+  * We maintain compatibility because Honeycomb SDK is out there.
+    * Our bitcode reader can read both 2.7 and 3.0 versions. Writer is tracking upstream.
+* Recent downstreaming on 2011/6/22: From r129128 to 133240
+* Recent downstreaming on 2011/4/8: From r127116 to 129128
+* Recent downstreaming on 2011/3/11: From r119309 to 127116
 
 * We add 40+ Android's *.mk files that are specific to Android's build system.
 
