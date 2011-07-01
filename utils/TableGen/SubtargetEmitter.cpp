@@ -606,15 +606,15 @@ void SubtargetEmitter::ParseFeaturesFunction(raw_ostream &OS) {
 
   OS << "// ParseSubtargetFeatures - Parses features string setting specified\n"
      << "// subtarget options.\n"
-     << "std::string llvm::";
+     << "void llvm::";
   OS << Target;
   OS << "Subtarget::ParseSubtargetFeatures(const std::string &FS,\n"
      << "                                  const std::string &CPU) {\n"
      << "  DEBUG(dbgs() << \"\\nFeatures:\" << FS);\n"
      << "  DEBUG(dbgs() << \"\\nCPU:\" << CPU);\n"
      << "  SubtargetFeatures Features(FS);\n"
-     << "  Features.setCPUIfNone(CPU);\n"
-     << "  uint64_t Bits =  Features.getBits(SubTypeKV, SubTypeKVSize,\n"
+     << "  uint64_t Bits =  Features.getFeatureBits(CPU, "
+     << "SubTypeKV, SubTypeKVSize,\n"
      << "                                    FeatureKV, FeatureKVSize);\n";
 
   for (unsigned i = 0; i < Features.size(); i++) {
@@ -635,13 +635,13 @@ void SubtargetEmitter::ParseFeaturesFunction(raw_ostream &OS) {
   if (HasItineraries) {
     OS << "\n"
        << "  InstrItinerary *Itinerary = (InstrItinerary *)"
-       <<              "Features.getInfo(ProcItinKV, ProcItinKVSize);\n"
+       <<              "Features.getItinerary(CPU, "
+       << "ProcItinKV, ProcItinKVSize);\n"
        << "  InstrItins = InstrItineraryData(Stages, OperandCycles, "
        << "ForwardingPathes, Itinerary);\n";
   }
 
-  OS << "  return Features.getCPU();\n"
-     << "}\n";
+  OS << "}\n";
 }
 
 //
@@ -654,8 +654,8 @@ void SubtargetEmitter::run(raw_ostream &OS) {
 
   OS << "#include \"llvm/Support/Debug.h\"\n";
   OS << "#include \"llvm/Support/raw_ostream.h\"\n";
-  OS << "#include \"llvm/Target/SubtargetFeature.h\"\n";
-  OS << "#include \"llvm/Target/TargetInstrItineraries.h\"\n\n";
+  OS << "#include \"llvm/MC/SubtargetFeature.h\"\n";
+  OS << "#include \"llvm/MC/MCInstrItineraries.h\"\n\n";
 
 //  Enumeration(OS, "FuncUnit", true);
 //  OS<<"\n";

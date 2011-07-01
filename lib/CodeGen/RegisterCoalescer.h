@@ -1,4 +1,4 @@
-//===-- SimpleRegisterCoalescing.h - Register Coalescing --------*- C++ -*-===//
+//===-- RegisterCoalescer.h - Register Coalescing Interface ------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -7,37 +7,38 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements a simple register copy coalescing phase.
+// This file contains the abstract interface for register coalescers, 
+// allowing them to interact with and query register allocators.
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CODEGEN_SIMPLE_REGISTER_COALESCING_H
-#define LLVM_CODEGEN_SIMPLE_REGISTER_COALESCING_H
-
-#include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/LiveIntervalAnalysis.h"
-#include "llvm/CodeGen/RegisterCoalescer.h"
 #include "RegisterClassInfo.h"
+#include "llvm/Support/IncludeFile.h"
+#include "llvm/CodeGen/LiveInterval.h"
+#include "llvm/ADT/SmallPtrSet.h"
+
+#ifndef LLVM_CODEGEN_REGISTER_COALESCER_H
+#define LLVM_CODEGEN_REGISTER_COALESCER_H
 
 namespace llvm {
-  class SimpleRegisterCoalescing;
-  class LiveDebugVariables;
+
+  class MachineFunction;
+  class RegallocQuery;
+  class AnalysisUsage;
+  class MachineInstr;
   class TargetRegisterInfo;
+  class TargetRegisterClass;
   class TargetInstrInfo;
+  class LiveDebugVariables;
   class VirtRegMap;
   class MachineLoopInfo;
 
-  /// CopyRec - Representation for copy instructions in coalescer queue.
-  ///
-  struct CopyRec {
-    MachineInstr *MI;
-    unsigned LoopDepth;
-    CopyRec(MachineInstr *mi, unsigned depth)
-      : MI(mi), LoopDepth(depth) {}
-  };
+  class CoalescerPair;
 
-  class SimpleRegisterCoalescing : public MachineFunctionPass,
-                                   public RegisterCoalescer {
+  /// An abstract interface for register coalescers.  Coalescers must
+  /// implement this interface to be part of the coalescer analysis
+  /// group.
+  class RegisterCoalescer : public MachineFunctionPass {
     MachineFunction* mf_;
     MachineRegisterInfo* mri_;
     const TargetMachine* tm_;
@@ -61,41 +62,20 @@ namespace llvm {
     /// been remat'ed.
     SmallPtrSet<MachineInstr*, 8> ReMatDefs;
 
-  public:
-    static char ID; // Pass identifcation, replacement for typeid
-    SimpleRegisterCoalescing() : MachineFunctionPass(ID) {
-      initializeSimpleRegisterCoalescingPass(*PassRegistry::getPassRegistry());
-    }
-
-    virtual void getAnalysisUsage(AnalysisUsage &AU) const;
-    virtual void releaseMemory();
-
-    /// runOnMachineFunction - pass entry point
-    virtual bool runOnMachineFunction(MachineFunction&);
-
-    bool coalesceFunction(MachineFunction &mf, RegallocQuery &) {
-      // This runs as an independent pass, so don't do anything.
-      return false;
-    }
-
-    /// print - Implement the dump method.
-    virtual void print(raw_ostream &O, const Module* = 0) const;
-
-  private:
     /// joinIntervals - join compatible live intervals
     void joinIntervals();
 
     /// CopyCoalesceInMBB - Coalesce copies in the specified MBB, putting
     /// copies that cannot yet be coalesced into the "TryAgain" list.
     void CopyCoalesceInMBB(MachineBasicBlock *MBB,
-                           std::vector<CopyRec> &TryAgain);
+                           std::vector<MachineInstr*> &TryAgain);
 
     /// JoinCopy - Attempt to join intervals corresponding to SrcReg/DstReg,
     /// which are the src/dst of the copy instruction CopyMI.  This returns true
     /// if the copy was successfully coalesced away. If it is not currently
     /// possible to coalesce this interval, but it may be possible if other
     /// things get coalesced, then it returns true by reference in 'Again'.
-    bool JoinCopy(CopyRec &TheCopy, bool &Again);
+    bool JoinCopy(MachineInstr *TheCopy, bool &Again);
 
     /// JoinIntervals - Attempt to join these two intervals.  On failure, this
     /// returns false.  The output "SrcInt" will not have been modified, so we can
@@ -155,8 +135,109 @@ namespace llvm {
 
     /// markAsJoined - Remember that CopyMI has already been joined.
     void markAsJoined(MachineInstr *CopyMI);
+
+  public:
+    static char ID; // Class identification, replacement for typeinfo
+    RegisterCoalescer() : MachineFunctionPass(ID) {
+      initializeRegisterCoalescerPass(*PassRegistry::getPassRegistry());
+    }
+
+    /// Register allocators must call this from their own
+    /// getAnalysisUsage to cover the case where the coalescer is not
+    /// a Pass in the proper sense and isn't managed by PassManager.
+    /// PassManager needs to know which analyses to make available and
+    /// which to invalidate when running the register allocator or any
+    /// pass that might call coalescing.  The long-term solution is to
+    /// allow hierarchies of PassManagers.
+    virtual void getAnalysisUsage(AnalysisUsage &AU) const;
+
+    virtual void releaseMemory();
+
+    /// runOnMachineFunction - pass entry point
+    virtual bool runOnMachineFunction(MachineFunction&);
+
+    /// print - Implement the dump method.
+    virtual void print(raw_ostream &O, const Module* = 0) const;
   };
 
+  /// CoalescerPair - A helper class for register coalescers. When deciding if
+  /// two registers can be coalesced, CoalescerPair can determine if a copy
+  /// instruction would become an identity copy after coalescing.
+  class CoalescerPair {
+    const TargetInstrInfo &tii_;
+    const TargetRegisterInfo &tri_;
+
+    /// dstReg_ - The register that will be left after coalescing. It can be a
+    /// virtual or physical register.
+    unsigned dstReg_;
+
+    /// srcReg_ - the virtual register that will be coalesced into dstReg.
+    unsigned srcReg_;
+
+    /// subReg_ - The subregister index of srcReg in dstReg_. It is possible the
+    /// coalesce srcReg_ into a subreg of the larger dstReg_ when dstReg_ is a
+    /// virtual register.
+    unsigned subIdx_;
+
+    /// partial_ - True when the original copy was a partial subregister copy.
+    bool partial_;
+
+    /// crossClass_ - True when both regs are virtual, and newRC is constrained.
+    bool crossClass_;
+
+    /// flipped_ - True when DstReg and SrcReg are reversed from the oriignal copy
+    /// instruction.
+    bool flipped_;
+
+    /// newRC_ - The register class of the coalesced register, or NULL if dstReg_
+    /// is a physreg.
+    const TargetRegisterClass *newRC_;
+
+  public:
+    CoalescerPair(const TargetInstrInfo &tii, const TargetRegisterInfo &tri)
+      : tii_(tii), tri_(tri), dstReg_(0), srcReg_(0), subIdx_(0),
+        partial_(false), crossClass_(false), flipped_(false), newRC_(0) {}
+
+    /// setRegisters - set registers to match the copy instruction MI. Return
+    /// false if MI is not a coalescable copy instruction.
+    bool setRegisters(const MachineInstr*);
+
+    /// flip - Swap srcReg_ and dstReg_. Return false if swapping is impossible
+    /// because dstReg_ is a physical register, or subIdx_ is set.
+    bool flip();
+
+    /// isCoalescable - Return true if MI is a copy instruction that will become
+    /// an identity copy after coalescing.
+    bool isCoalescable(const MachineInstr*) const;
+
+    /// isPhys - Return true if DstReg is a physical register.
+    bool isPhys() const { return !newRC_; }
+
+    /// isPartial - Return true if the original copy instruction did not copy the
+    /// full register, but was a subreg operation.
+    bool isPartial() const { return partial_; }
+
+    /// isCrossClass - Return true if DstReg is virtual and NewRC is a smaller register class than DstReg's.
+    bool isCrossClass() const { return crossClass_; }
+
+    /// isFlipped - Return true when getSrcReg is the register being defined by
+    /// the original copy instruction.
+    bool isFlipped() const { return flipped_; }
+
+    /// getDstReg - Return the register (virtual or physical) that will remain
+    /// after coalescing.
+    unsigned getDstReg() const { return dstReg_; }
+
+    /// getSrcReg - Return the virtual register that will be coalesced away.
+    unsigned getSrcReg() const { return srcReg_; }
+
+    /// getSubIdx - Return the subregister index in DstReg that SrcReg will be
+    /// coalesced into, or 0.
+    unsigned getSubIdx() const { return subIdx_; }
+
+    /// getNewRC - Return the register class of the coalesced register.
+    const TargetRegisterClass *getNewRC() const { return newRC_; }
+  };
 } // End llvm namespace
 
 #endif

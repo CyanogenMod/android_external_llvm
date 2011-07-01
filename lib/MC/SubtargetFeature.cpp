@@ -11,7 +11,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Target/SubtargetFeature.h"
+#include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ADT/StringExtras.h"
@@ -27,7 +27,7 @@ using namespace llvm;
 
 /// hasFlag - Determine if a feature has a flag; '+' or '-'
 ///
-static inline bool hasFlag(const std::string &Feature) {
+static inline bool hasFlag(const StringRef Feature) {
   assert(!Feature.empty() && "Empty string");
   // Get first character
   char Ch = Feature[0];
@@ -37,13 +37,13 @@ static inline bool hasFlag(const std::string &Feature) {
 
 /// StripFlag - Return string stripped of flag.
 ///
-static inline std::string StripFlag(const std::string &Feature) {
+static inline std::string StripFlag(const StringRef Feature) {
   return hasFlag(Feature) ? Feature.substr(1) : Feature;
 }
 
 /// isEnabled - Return true if enable flag; '+'.
 ///
-static inline bool isEnabled(const std::string &Feature) {
+static inline bool isEnabled(const StringRef Feature) {
   assert(!Feature.empty() && "Empty string");
   // Get first character
   char Ch = Feature[0];
@@ -53,16 +53,22 @@ static inline bool isEnabled(const std::string &Feature) {
 
 /// PrependFlag - Return a string with a prepended flag; '+' or '-'.
 ///
-static inline std::string PrependFlag(const std::string &Feature,
-                                      bool IsEnabled) {
+static inline std::string PrependFlag(const StringRef Feature,
+                                    bool IsEnabled) {
   assert(!Feature.empty() && "Empty string");
-  if (hasFlag(Feature)) return Feature;
-  return std::string(IsEnabled ? "+" : "-") + Feature;
+  if (hasFlag(Feature))
+    return Feature;
+  std::string Prefix = IsEnabled ? "+" : "-";
+  Prefix += Feature;
+  return Prefix;
 }
 
 /// Split - Splits a string of comma separated items in to a vector of strings.
 ///
-static void Split(std::vector<std::string> &V, const std::string &S) {
+static void Split(std::vector<std::string> &V, const StringRef S) {
+  if (S.empty())
+    return;
+
   // Start at beginning of string.
   size_t Pos = 0;
   while (true) {
@@ -88,7 +94,7 @@ static std::string Join(const std::vector<std::string> &V) {
   std::string Result;
   // If the vector is not empty 
   if (!V.empty()) {
-    // Start with the CPU feature
+    // Start with the first feature
     Result = V[0];
     // For each successive feature
     for (size_t i = 1; i < V.size(); i++) {
@@ -103,7 +109,7 @@ static std::string Join(const std::vector<std::string> &V) {
 }
 
 /// Adding features.
-void SubtargetFeatures::AddFeature(const std::string &String,
+void SubtargetFeatures::AddFeature(const StringRef String,
                                    bool IsEnabled) {
   // Don't add empty features
   if (!String.empty()) {
@@ -113,10 +119,10 @@ void SubtargetFeatures::AddFeature(const std::string &String,
 }
 
 /// Find KV in array using binary search.
-template<typename T> const T *Find(const std::string &S, const T *A, size_t L) {
+template<typename T> const T *Find(const StringRef S, const T *A, size_t L) {
   // Make the lower bound element we're looking for
   T KV;
-  KV.Key = S.c_str();
+  KV.Key = S.data();
   // Determine the end of the array
   const T *Hi = A + L;
   // Binary search the array
@@ -170,7 +176,7 @@ static void Help(const SubtargetFeatureKV *CPUTable, size_t CPUTableSize,
 //                    SubtargetFeatures Implementation
 //===----------------------------------------------------------------------===//
 
-SubtargetFeatures::SubtargetFeatures(const std::string &Initial) {
+SubtargetFeatures::SubtargetFeatures(const StringRef Initial) {
   // Break up string into separate features
   Split(Features, Initial);
 }
@@ -179,33 +185,6 @@ SubtargetFeatures::SubtargetFeatures(const std::string &Initial) {
 std::string SubtargetFeatures::getString() const {
   return Join(Features);
 }
-void SubtargetFeatures::setString(const std::string &Initial) {
-  // Throw out old features
-  Features.clear();
-  // Break up string into separate features
-  Split(Features, LowercaseString(Initial));
-}
-
-
-/// setCPU - Set the CPU string.  Replaces previous setting.  Setting to ""
-/// clears CPU.
-void SubtargetFeatures::setCPU(const std::string &String) {
-  Features[0] = LowercaseString(String);
-}
-
-
-/// setCPUIfNone - Setting CPU string only if no string is set.
-///
-void SubtargetFeatures::setCPUIfNone(const std::string &String) {
-  if (Features[0].empty()) setCPU(String);
-}
-
-/// getCPU - Returns current CPU.
-///
-const std::string & SubtargetFeatures::getCPU() const {
-  return Features[0];
-}
-
 
 /// SetImpliedBits - For each feature that is (transitively) implied by this
 /// feature, set it.
@@ -245,12 +224,13 @@ void ClearImpliedBits(uint64_t &Bits, const SubtargetFeatureKV *FeatureEntry,
   }
 }
 
-/// getBits - Get feature bits.
+/// getFeatureBits - Get feature bits a CPU.
 ///
-uint64_t SubtargetFeatures::getBits(const SubtargetFeatureKV *CPUTable,
-                                          size_t CPUTableSize,
-                                    const SubtargetFeatureKV *FeatureTable,
-                                          size_t FeatureTableSize) {
+uint64_t SubtargetFeatures::getFeatureBits(const StringRef CPU,
+                                         const SubtargetFeatureKV *CPUTable,
+                                         size_t CPUTableSize,
+                                         const SubtargetFeatureKV *FeatureTable,
+                                         size_t FeatureTableSize) {
   assert(CPUTable && "missing CPU table");
   assert(FeatureTable && "missing features table");
 #ifndef NDEBUG
@@ -266,12 +246,11 @@ uint64_t SubtargetFeatures::getBits(const SubtargetFeatureKV *CPUTable,
   uint64_t Bits = 0;                    // Resulting bits
 
   // Check if help is needed
-  if (Features[0] == "help")
+  if (CPU == "help")
     Help(CPUTable, CPUTableSize, FeatureTable, FeatureTableSize);
   
   // Find CPU entry
-  const SubtargetFeatureKV *CPUEntry =
-                            Find(Features[0], CPUTable, CPUTableSize);
+  const SubtargetFeatureKV *CPUEntry = Find(CPU, CPUTable, CPUTableSize);
   // If there is a match
   if (CPUEntry) {
     // Set base feature bits
@@ -284,13 +263,13 @@ uint64_t SubtargetFeatures::getBits(const SubtargetFeatureKV *CPUTable,
         SetImpliedBits(Bits, &FE, FeatureTable, FeatureTableSize);
     }
   } else {
-    errs() << "'" << Features[0]
+    errs() << "'" << CPU
            << "' is not a recognized processor for this target"
            << " (ignoring processor)\n";
   }
   // Iterate through each feature
-  for (size_t i = 1; i < Features.size(); i++) {
-    const std::string &Feature = Features[i];
+  for (size_t i = 0, E = Features.size(); i < E; i++) {
+    const StringRef Feature = Features[i];
     
     // Check for help
     if (Feature == "+help")
@@ -323,9 +302,10 @@ uint64_t SubtargetFeatures::getBits(const SubtargetFeatureKV *CPUTable,
   return Bits;
 }
 
-/// Get info pointer
-void *SubtargetFeatures::getInfo(const SubtargetInfoKV *Table,
-                                       size_t TableSize) {
+/// Get scheduling itinerary of a CPU.
+void *SubtargetFeatures::getItinerary(const StringRef CPU,
+                                      const SubtargetInfoKV *Table,
+                                      size_t TableSize) {
   assert(Table && "missing table");
 #ifndef NDEBUG
   for (size_t i = 1; i < TableSize; i++) {
@@ -334,12 +314,12 @@ void *SubtargetFeatures::getInfo(const SubtargetInfoKV *Table,
 #endif
 
   // Find entry
-  const SubtargetInfoKV *Entry = Find(Features[0], Table, TableSize);
+  const SubtargetInfoKV *Entry = Find(CPU, Table, TableSize);
   
   if (Entry) {
     return Entry->Value;
   } else {
-    errs() << "'" << Features[0]
+    errs() << "'" << CPU
            << "' is not a recognized processor for this target"
            << " (ignoring processor)\n";
     return NULL;
@@ -367,10 +347,7 @@ void SubtargetFeatures::dump() const {
 /// subtarget. It would be better if we could encode this information
 /// into the IR. See <rdar://5972456>.
 ///
-void SubtargetFeatures::getDefaultSubtargetFeatures(const std::string &CPU,
-                                                    const Triple& Triple) {
-  setCPU(CPU);
-
+void SubtargetFeatures::getDefaultSubtargetFeatures(const Triple& Triple) {
   if (Triple.getVendor() == Triple::Apple) {
     if (Triple.getArch() == Triple::ppc) {
       // powerpc-apple-*

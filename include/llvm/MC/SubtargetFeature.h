@@ -1,4 +1,4 @@
-//===-- llvm/Target/SubtargetFeature.h - CPU characteristics ----*- C++ -*-===//
+//===-- llvm/MC/SubtargetFeature.h - CPU characteristics --------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -15,17 +15,16 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_TARGET_SUBTARGETFEATURE_H
-#define LLVM_TARGET_SUBTARGETFEATURE_H
+#ifndef LLVM_MC_SUBTARGETFEATURE_H
+#define LLVM_MC_SUBTARGETFEATURE_H
 
-#include <string>
 #include <vector>
-#include <cstring>
 #include "llvm/ADT/Triple.h"
 #include "llvm/Support/DataTypes.h"
 
 namespace llvm {
   class raw_ostream;
+  class StringRef;
   
 //===----------------------------------------------------------------------===//
 ///
@@ -75,32 +74,24 @@ struct SubtargetInfoKV {
 class SubtargetFeatures {
   std::vector<std::string> Features;    // Subtarget features as a vector
 public:
-  explicit SubtargetFeatures(const std::string &Initial = std::string());
+  explicit SubtargetFeatures(const StringRef Initial = "");
 
   /// Features string accessors.
   std::string getString() const;
-  void setString(const std::string &Initial);
-
-  /// Set the CPU string.  Replaces previous setting.  Setting to "" clears CPU.
-  void setCPU(const std::string &String);
-
-  /// Setting CPU string only if no string is set.
-  void setCPUIfNone(const std::string &String);
-
-  /// Returns current CPU string.
-  const std::string & getCPU() const;
 
   /// Adding Features.
-  void AddFeature(const std::string &String, bool IsEnabled = true);
+  void AddFeature(const StringRef String, bool IsEnabled = true);
            
-  /// Get feature bits.
-  uint64_t getBits(const SubtargetFeatureKV *CPUTable,
-                         size_t CPUTableSize,
-                   const SubtargetFeatureKV *FeatureTable,
-                         size_t FeatureTableSize);
+  /// Get feature bits of a CPU.
+  uint64_t getFeatureBits(const StringRef CPU,
+                          const SubtargetFeatureKV *CPUTable,
+                          size_t CPUTableSize,
+                          const SubtargetFeatureKV *FeatureTable,
+                          size_t FeatureTableSize);
                          
-  /// Get info pointer
-  void *getInfo(const SubtargetInfoKV *Table, size_t TableSize);
+  /// Get scheduling itinerary of a CPU.
+  void *getItinerary(const StringRef CPU,
+                     const SubtargetInfoKV *Table, size_t TableSize);
   
   /// Print feature string.
   void print(raw_ostream &OS) const;
@@ -110,8 +101,7 @@ public:
 
   /// Retrieve a formatted string of the default features for the specified
   /// target triple.
-  void getDefaultSubtargetFeatures(const std::string &CPU,
-                                   const Triple& Triple);
+  void getDefaultSubtargetFeatures(const Triple& Triple);
 };
 
 } // End namespace llvm

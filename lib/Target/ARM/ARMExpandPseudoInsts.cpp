@@ -68,7 +68,7 @@ namespace {
 void ARMExpandPseudo::TransferImpOps(MachineInstr &OldMI,
                                      MachineInstrBuilder &UseMI,
                                      MachineInstrBuilder &DefMI) {
-  const TargetInstrDesc &Desc = OldMI.getDesc();
+  const MCInstrDesc &Desc = OldMI.getDesc();
   for (unsigned i = Desc.getNumOperands(), e = OldMI.getNumOperands();
        i != e; ++i) {
     const MachineOperand &MO = OldMI.getOperand(i);
@@ -856,10 +856,11 @@ bool ARMExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
       MI.eraseFromParent();
       return true;
     }
+    case ARM::tTPsoft:
     case ARM::TPsoft: {
       MachineInstrBuilder MIB =
         BuildMI(MBB, MBBI, MI.getDebugLoc(),
-                TII->get(ARM::BL))
+                TII->get(Opcode == ARM::tTPsoft ? ARM::tBL : ARM::BL))
         .addExternalSymbol("__aeabi_read_tp", 0);
 
       MIB->setMemRefs(MI.memoperands_begin(), MI.memoperands_end());

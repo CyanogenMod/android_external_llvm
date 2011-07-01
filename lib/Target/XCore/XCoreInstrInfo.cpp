@@ -18,10 +18,12 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineLocation.h"
-#include "XCoreGenInstrInfo.inc"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
+
+#define GET_INSTRINFO_MC_DESC
+#include "XCoreGenInstrInfo.inc"
 
 namespace llvm {
 namespace XCore {
@@ -38,7 +40,8 @@ namespace XCore {
 using namespace llvm;
 
 XCoreInstrInfo::XCoreInstrInfo()
-  : TargetInstrInfoImpl(XCoreInsts, array_lengthof(XCoreInsts)),
+  : TargetInstrInfoImpl(XCoreInsts, array_lengthof(XCoreInsts),
+                        XCore::ADJCALLSTACKDOWN, XCore::ADJCALLSTACKUP),
     RI(*this) {
 }
 
