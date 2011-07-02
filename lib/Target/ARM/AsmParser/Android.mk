@@ -8,7 +8,8 @@ include $(CLEAR_TBLGEN_VARS)
 TBLGEN_TABLES :=	\
 	ARMGenInstrInfo.inc	\
 	ARMGenRegisterInfo.inc \
-	ARMGenAsmMatcher.inc
+	ARMGenAsmMatcher.inc \
+	ARMGenSubtargetInfo.inc
 
 
 TBLGEN_TD_DIR := $(LOCAL_PATH)/..

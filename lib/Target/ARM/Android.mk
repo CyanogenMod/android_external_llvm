@@ -7,7 +7,7 @@ arm_codegen_TBLGEN_TABLES :=	\
 	ARMGenInstrInfo.inc	\
 	ARMGenDAGISel.inc	\
 	ARMGenFastISel.inc	\
-	ARMGenSubtarget.inc	\
+	ARMGenSubtargetInfo.inc	\
 	ARMGenCodeEmitter.inc	\
 	ARMGenCallingConv.inc
 

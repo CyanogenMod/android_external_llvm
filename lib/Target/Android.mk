@@ -14,7 +14,7 @@ target_SRC_FILES :=	\
 	TargetLibraryInfo.cpp	\
 	TargetMachine.cpp	\
 	TargetRegisterInfo.cpp	\
-	TargetSubtarget.cpp
+	TargetSubtargetInfo.cpp
 
 # For the host
 # =====================================================

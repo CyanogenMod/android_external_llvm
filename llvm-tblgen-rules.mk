@@ -83,8 +83,8 @@ $(intermediates)/%GenFastISel.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,fast-isel)
 endif
 
-ifneq ($(filter %GenSubtarget.inc,$(tblgen_gen_tables)),)
-$(intermediates)/%GenSubtarget.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
+ifneq ($(filter %GenSubtargetInfo.inc,$(tblgen_gen_tables)),)
+$(intermediates)/%GenSubtargetInfo.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,subtarget)
 endif
 

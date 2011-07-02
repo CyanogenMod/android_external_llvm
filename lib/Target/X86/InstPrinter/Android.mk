@@ -4,7 +4,8 @@ x86_instprinter_TBLGEN_TABLES := \
   X86GenAsmWriter.inc \
   X86GenAsmWriter1.inc \
   X86GenInstrInfo.inc \
-  X86GenRegisterInfo.inc
+  X86GenRegisterInfo.inc \
+  X86GenSubtargetInfo.inc
 
 x86_instprinter_SRC_FILES := \
   X86ATTInstPrinter.cpp \

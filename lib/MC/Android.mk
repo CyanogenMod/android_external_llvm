@@ -30,6 +30,7 @@ mc_SRC_FILES :=    \
 	MCSectionELF.cpp    \
 	MCSectionMachO.cpp  \
 	MCStreamer.cpp  \
+	MCSubtargetInfo.cpp \
 	MCSymbol.cpp    \
 	MCValue.cpp \
 	MCWin64EH.cpp \

@@ -8,7 +8,8 @@ include $(CLEAR_TBLGEN_VARS)
 TBLGEN_TABLES :=	\
 	X86GenAsmMatcher.inc	\
 	X86GenInstrInfo.inc	\
-	X86GenRegisterInfo.inc
+	X86GenRegisterInfo.inc \
+	X86GenSubtargetInfo.inc
 
 
 TBLGEN_TD_DIR := $(LOCAL_PATH)/..

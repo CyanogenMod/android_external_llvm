@@ -7,7 +7,7 @@ x86_codegen_TBLGEN_TABLES :=	\
     X86GenInstrInfo.inc	\
     X86GenDAGISel.inc	\
     X86GenFastISel.inc	\
-    X86GenSubtarget.inc	\
+    X86GenSubtargetInfo.inc	\
     X86GenCallingConv.inc
 
 x86_codegen_SRC_FILES :=	\
