@@ -1,8 +1,8 @@
 LOCAL_PATH := $(call my-dir)
 
 arm_target_info_TBLGEN_TABLES :=	\
-	ARMGenRegisterNames.inc	\
-	ARMGenInstrNames.inc
+	ARMGenRegisterInfo.inc	\
+	ARMGenInstrInfo.inc
 
 arm_target_info_SRC_FILES :=	\
 	ARMTargetInfo.cpp

@@ -1,8 +1,8 @@
 LOCAL_PATH := $(call my-dir)
 
 x86_target_info_TBLGEN_TABLES :=	\
-	X86GenRegisterNames.inc	\
-	X86GenInstrNames.inc
+	X86GenRegisterInfo.inc	\
+	X86GenInstrInfo.inc
 
 x86_target_info_SRC_FILES :=	\
 	X86TargetInfo.cpp

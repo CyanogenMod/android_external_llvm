@@ -60,7 +60,6 @@ codegen_SRC_FILES :=   \
 	Passes.cpp  \
 	PeepholeOptimizer.cpp	\
 	PostRASchedulerList.cpp \
-	PreAllocSplitting.cpp   \
 	ProcessImplicitDefs.cpp \
 	PrologEpilogInserter.cpp    \
 	PseudoSourceValue.cpp   \
@@ -71,6 +70,7 @@ codegen_SRC_FILES :=   \
 	RegAllocPBQP.cpp    \
 	RegisterCoalescer.cpp   \
 	RegisterClassInfo.cpp \
+	RegisterCoalescer.cpp \
 	RegisterScavenging.cpp  \
 	RenderMachineFunction.cpp	\
 	ScheduleDAG.cpp \
@@ -80,7 +80,6 @@ codegen_SRC_FILES :=   \
 	ScoreboardHazardRecognizer.cpp \
 	ShadowStackGC.cpp   \
 	ShrinkWrapping.cpp  \
-	SimpleRegisterCoalescing.cpp    \
 	SjLjEHPrepare.cpp   \
 	SlotIndexes.cpp \
 	Spiller.cpp \

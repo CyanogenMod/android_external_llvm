@@ -3,10 +3,7 @@ LOCAL_PATH := $(call my-dir)
 arm_codegen_TBLGEN_TABLES :=	\
 	ARMGenAsmWriter.inc	\
 	ARMGenMCCodeEmitter.inc \
-	ARMGenRegisterInfo.h.inc\
-	ARMGenRegisterNames.inc	\
 	ARMGenRegisterInfo.inc	\
-	ARMGenInstrNames.inc	\
 	ARMGenInstrInfo.inc	\
 	ARMGenDAGISel.inc	\
 	ARMGenFastISel.inc	\

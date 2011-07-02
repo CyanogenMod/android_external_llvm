@@ -272,10 +272,10 @@ namespace {
 
     unsigned getHiLo16ImmOpValue(const MachineInstr &MI, unsigned Op)
       const {
-      const TargetInstrDesc &TID = MI.getDesc();
+      const MCInstrDesc &MCID = MI.getDesc();
       const MachineOperand &MO = MI.getOperand(Op);
 
-      unsigned Reloc = (TID.Opcode == ARM::MOVi16 ?
+      unsigned Reloc = (MCID.Opcode == ARM::MOVi16 ?
                        ARM::reloc_arm_movw : ARM::reloc_arm_movt);
 
       if (!MO.isImm()) {
@@ -803,7 +803,7 @@ void ARMCodeEmitter::emitMOVi2piecesInstruction(const MachineInstr &MI) {
 
 void ARMCodeEmitter::emitLEApcrelInstruction(const MachineInstr &MI) {
   // It's basically add r, pc, (LCPI - $+8)
-  const TargetInstrDesc &TID = MI.getDesc();
+  const MCInstrDesc &MCID = MI.getDesc();
 
   unsigned Binary = 0;
 
@@ -811,7 +811,7 @@ void ARMCodeEmitter::emitLEApcrelInstruction(const MachineInstr &MI) {
   Binary |= II->getPredicate(&MI) << ARMII::CondShift;
 
   // Encode S bit if MI modifies CPSR.
-  Binary |= getAddrModeSBit(MI, TID);
+  Binary |= getAddrModeSBit(MI, MCID);
 
   // Encode Rd.
   Binary |= getMachineOpValue(MI, 0) << ARMII::RegRdShift;
@@ -1086,7 +1086,7 @@ void ARMCodeEmitter::emitDataProcessingInstruction(const MachineInstr &MI,
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
 
-  if (TID.Opcode == ARM::MOVi16 || TID.Opcode == ARM::MOVTi16) {
+  if (MCID.Opcode == ARM::MOVi16 || MCID.Opcode == ARM::MOVTi16) {
       emitWordLE(Binary);
       return;
   }
@@ -1359,7 +1359,7 @@ void ARMCodeEmitter::emitLoadStoreMultipleInstruction(const MachineInstr &MI) {
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
 
-  if (TID.getOpcode() == ARM::LDMIA_RET) {
+  if (MCID.getOpcode() == ARM::LDMIA_RET) {
     IsUpdating = true;
     Binary |= 0x8B00000;
   }
@@ -1571,7 +1571,7 @@ void ARMCodeEmitter::emitBranchInstruction(const MachineInstr &MI) {
   // Part of binary is determined by TableGn.
   unsigned Binary = getBinaryCodeForInstr(MI);
 
-  if (TID.Opcode == ARM::B) {
+  if (MCID.Opcode == ARM::B) {
     Binary = 0xEA000000;
   }
 

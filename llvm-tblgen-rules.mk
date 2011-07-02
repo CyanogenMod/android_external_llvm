@@ -28,29 +28,14 @@ ifneq ($(TBLGEN_TD_DIR),)
 tblgen_source_dir := $(TBLGEN_TD_DIR)
 endif
 
-ifneq ($(filter %GenRegisterNames.inc,$(tblgen_gen_tables)),)
-$(intermediates)/%GenRegisterNames.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
-	$(call transform-td-to-out,register-enums)
-endif
-
-ifneq ($(filter %GenRegisterInfo.h.inc,$(tblgen_gen_tables)),)
-$(intermediates)/%GenRegisterInfo.h.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
-	$(call transform-td-to-out,register-desc-header)
-endif
-
 ifneq ($(filter %GenRegisterInfo.inc,$(tblgen_gen_tables)),)
 $(intermediates)/%GenRegisterInfo.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
-	$(call transform-td-to-out,register-desc)
-endif
-
-ifneq ($(filter %GenInstrNames.inc,$(tblgen_gen_tables)),)
-$(intermediates)/%GenInstrNames.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
-	$(call transform-td-to-out,instr-enums)
+	$(call transform-td-to-out,register-info)
 endif
 
 ifneq ($(filter %GenInstrInfo.inc,$(tblgen_gen_tables)),)
 $(intermediates)/%GenInstrInfo.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
-	$(call transform-td-to-out,instr-desc)
+	$(call transform-td-to-out,instr-info)
 endif
 
 ifneq ($(filter %GenAsmWriter.inc,$(tblgen_gen_tables)),)

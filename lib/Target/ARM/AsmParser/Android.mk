@@ -6,9 +6,8 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 TBLGEN_TABLES :=	\
-	ARMGenInstrNames.inc	\
-	ARMGenRegisterNames.inc	\
-	ARMGenRegisterInfo.h.inc \
+	ARMGenInstrInfo.inc	\
+	ARMGenRegisterInfo.inc \
 	ARMGenAsmMatcher.inc
 
 

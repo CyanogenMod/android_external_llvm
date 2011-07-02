@@ -35,6 +35,7 @@ mc_SRC_FILES :=    \
 	MCWin64EH.cpp \
 	WinCOFFObjectWriter.cpp	\
 	WinCOFFStreamer.cpp	\
+	SubtargetFeature.cpp \
 	TargetAsmBackend.cpp
 
 # For the host

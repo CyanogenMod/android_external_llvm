@@ -3,10 +3,8 @@ LOCAL_PATH := $(call my-dir)
 arm_disassembler_TBLGEN_TABLES := \
     ARMGenDecoderTables.inc \
     ARMGenEDInfo.inc \
-    ARMGenInstrNames.inc \
     ARMGenInstrInfo.inc \
-    ARMGenRegisterNames.inc \
-    ARMGenRegisterInfo.h.inc
+    ARMGenRegisterInfo.inc
 
 arm_disassembler_SRC_FILES := \
     ARMDisassembler.cpp \

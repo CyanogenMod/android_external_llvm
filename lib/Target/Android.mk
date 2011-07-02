@@ -2,7 +2,6 @@ LOCAL_PATH:= $(call my-dir)
 
 target_SRC_FILES :=	\
 	Mangler.cpp	\
-	SubtargetFeature.cpp	\
 	Target.cpp	\
 	TargetAsmInfo.cpp	\
 	TargetAsmLexer.cpp	\

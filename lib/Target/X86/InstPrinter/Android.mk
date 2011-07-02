@@ -3,9 +3,8 @@ LOCAL_PATH := $(call my-dir)
 x86_instprinter_TBLGEN_TABLES := \
   X86GenAsmWriter.inc \
   X86GenAsmWriter1.inc \
-  X86GenInstrNames.inc \
-  X86GenRegisterNames.inc \
-  X86GenRegisterInfo.h.inc
+  X86GenInstrInfo.inc \
+  X86GenRegisterInfo.inc
 
 x86_instprinter_SRC_FILES := \
   X86ATTInstPrinter.cpp \
