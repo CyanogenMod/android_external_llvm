@@ -7,20 +7,23 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the Mips specific subclass of TargetSubtarget.
+// This file declares the Mips specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef MIPSSUBTARGET_H
 #define MIPSSUBTARGET_H
 
-#include "llvm/Target/TargetSubtarget.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include <string>
 
+#define GET_SUBTARGETINFO_HEADER
+#include "MipsGenSubtargetInfo.inc"
+
 namespace llvm {
 
-class MipsSubtarget : public TargetSubtarget {
+class MipsSubtarget : public MipsGenSubtargetInfo {
 
 public:
   enum MipsABIEnum {

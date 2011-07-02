@@ -7,16 +7,19 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the Cell SPU-specific subclass of TargetSubtarget.
+// This file declares the Cell SPU-specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef CELLSUBTARGET_H
 #define CELLSUBTARGET_H
 
-#include "llvm/Target/TargetSubtarget.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include <string>
+
+#define GET_SUBTARGETINFO_HEADER
+#include "SPUGenSubtargetInfo.inc"
 
 namespace llvm {
   class GlobalValue;
@@ -28,7 +31,7 @@ namespace llvm {
     };
   }
     
-  class SPUSubtarget : public TargetSubtarget {
+  class SPUSubtarget : public SPUGenSubtargetInfo {
   protected:
     /// stackAlignment - The minimum alignment known to hold of the stack frame
     /// on entry to the function and which must be maintained by every function.
@@ -85,7 +88,7 @@ namespace llvm {
     }
 
     bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                               TargetSubtarget::AntiDepBreakMode& Mode,
+                               TargetSubtargetInfo::AntiDepBreakMode& Mode,
                                RegClassVector& CriticalPathRCs) const;
   };
 } // End llvm namespace

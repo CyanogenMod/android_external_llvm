@@ -7,17 +7,20 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the PTX specific subclass of TargetSubtarget.
+// This file declares the PTX specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef PTX_SUBTARGET_H
 #define PTX_SUBTARGET_H
 
-#include "llvm/Target/TargetSubtarget.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
+
+#define GET_SUBTARGETINFO_HEADER
+#include "PTXGenSubtargetInfo.inc"
 
 namespace llvm {
-  class PTXSubtarget : public TargetSubtarget {
+  class PTXSubtarget : public PTXGenSubtargetInfo {
     public:
 
       /**

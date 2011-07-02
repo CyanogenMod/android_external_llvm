@@ -7,20 +7,23 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the MBlaze specific subclass of TargetSubtarget.
+// This file declares the MBlaze specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef MBLAZESUBTARGET_H
 #define MBLAZESUBTARGET_H
 
-#include "llvm/Target/TargetSubtarget.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include <string>
 
+#define GET_SUBTARGETINFO_HEADER
+#include "MBlazeGenSubtargetInfo.inc"
+
 namespace llvm {
 
-class MBlazeSubtarget : public TargetSubtarget {
+class MBlazeSubtarget : public MBlazeGenSubtargetInfo {
 
 protected:
   bool HasBarrel;
@@ -51,7 +54,7 @@ public:
 
   /// enablePostRAScheduler - True at 'More' optimization.
   bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
-                             TargetSubtarget::AntiDepBreakMode& Mode,
+                             TargetSubtargetInfo::AntiDepBreakMode& Mode,
                              RegClassVector& CriticalPathRCs) const;
 
   /// getInstrItins - Return the instruction itineraies based on subtarget.

@@ -7,19 +7,22 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the SPARC specific subclass of TargetSubtarget.
+// This file declares the SPARC specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef SPARC_SUBTARGET_H
 #define SPARC_SUBTARGET_H
 
-#include "llvm/Target/TargetSubtarget.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include <string>
+
+#define GET_SUBTARGETINFO_HEADER
+#include "SparcGenSubtargetInfo.inc"
 
 namespace llvm {
 
-class SparcSubtarget : public TargetSubtarget {
+class SparcSubtarget : public SparcGenSubtargetInfo {
   bool IsV9;
   bool V8DeprecatedInsts;
   bool IsVIS;

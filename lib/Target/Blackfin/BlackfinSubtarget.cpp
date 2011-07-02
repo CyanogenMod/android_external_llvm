@@ -7,19 +7,23 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the blackfin specific subclass of TargetSubtarget.
+// This file implements the blackfin specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #include "BlackfinSubtarget.h"
-#include "BlackfinGenSubtarget.inc"
+
+#define GET_SUBTARGETINFO_CTOR
+#define GET_SUBTARGETINFO_MC_DESC
+#define GET_SUBTARGETINFO_TARGET_DESC
+#include "BlackfinGenSubtargetInfo.inc"
 
 using namespace llvm;
 
 BlackfinSubtarget::BlackfinSubtarget(const std::string &TT,
                                      const std::string &CPU,
                                      const std::string &FS)
-  : sdram(false),
+  : BlackfinGenSubtargetInfo(), sdram(false),
     icplb(false),
     wa_mi_shift(false),
     wa_csync(false),

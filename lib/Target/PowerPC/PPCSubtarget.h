@@ -7,17 +7,20 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the PowerPC specific subclass of TargetSubtarget.
+// This file declares the PowerPC specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef POWERPCSUBTARGET_H
 #define POWERPCSUBTARGET_H
 
-#include "llvm/Target/TargetSubtarget.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include "llvm/ADT/Triple.h"
 #include <string>
+
+#define GET_SUBTARGETINFO_HEADER
+#include "PPCGenSubtargetInfo.inc"
 
 // GCC #defines PPC on Linux but we use it as our namespace name
 #undef PPC
@@ -42,7 +45,7 @@ namespace PPC {
 class GlobalValue;
 class TargetMachine;
   
-class PPCSubtarget : public TargetSubtarget {
+class PPCSubtarget : public PPCGenSubtargetInfo {
 protected:
   /// stackAlignment - The minimum alignment known to hold of the stack frame on
   /// entry to the function and which must be maintained by every function.

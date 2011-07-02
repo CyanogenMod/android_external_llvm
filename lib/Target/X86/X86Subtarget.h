@@ -7,7 +7,7 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the X86 specific subclass of TargetSubtarget.
+// This file declares the X86 specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
@@ -15,9 +15,12 @@
 #define X86SUBTARGET_H
 
 #include "llvm/ADT/Triple.h"
-#include "llvm/Target/TargetSubtarget.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/CallingConv.h"
 #include <string>
+
+#define GET_SUBTARGETINFO_HEADER
+#include "X86GenSubtargetInfo.inc"
 
 namespace llvm {
 class GlobalValue;
@@ -35,7 +38,7 @@ enum Style {
 };
 }
 
-class X86Subtarget : public TargetSubtarget {
+class X86Subtarget : public X86GenSubtargetInfo {
 protected:
   enum X86SSEEnum {
     NoMMXSSE, MMX, SSE1, SSE2, SSE3, SSSE3, SSE41, SSE42

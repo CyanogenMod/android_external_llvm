@@ -7,16 +7,22 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file implements the ARM specific subclass of TargetSubtarget.
+// This file implements the ARM specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #include "ARMSubtarget.h"
-#include "ARMGenSubtarget.inc"
 #include "ARMBaseRegisterInfo.h"
 #include "llvm/GlobalValue.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/ADT/SmallVector.h"
+
+#define GET_SUBTARGETINFO_CTOR
+#define GET_SUBTARGETINFO_MC_DESC
+#define GET_SUBTARGETINFO_TARGET_DESC
+#include "ARMGenSubtargetInfo.inc"
+
 using namespace llvm;
 
 static cl::opt<bool>
@@ -32,7 +38,8 @@ StrictAlign("arm-strict-align", cl::Hidden,
 
 ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &CPU,
                            const std::string &FS, bool isT)
-  : ARMArchVersion(V4)
+  : ARMGenSubtargetInfo()
+  , ARMArchVersion(V4)
   , ARMProcFamily(Others)
   , ARMFPUType(None)
   , UseNEONForSinglePrecisionFP(false)
@@ -55,6 +62,7 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &CPU,
   , HasMPExtension(false)
   , FPOnlySP(false)
   , AllowsUnalignedMem(false)
+  , Thumb2DSP(false)
   , stackAlignment(4)
   , CPUString(CPU)
   , TargetTriple(TT)
@@ -91,6 +99,9 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &CPU,
       if (Len >= Idx+2 && TT[Idx+1] == 'm') {
         ARMArchVersion = V7M;
         ARMArchFeature = "+v7m";
+      } else if (Len >= Idx+3 && TT[Idx+1] == 'e'&& TT[Idx+2] == 'm') {
+        ARMArchVersion = V7EM;
+        ARMArchFeature = "+v7em";
       }
     } else if (SubVer == '6') {
       ARMArchVersion = V6;
@@ -129,6 +140,9 @@ ARMSubtarget::ARMSubtarget(const std::string &TT, const std::string &CPU,
   else if (!FS.empty())
     FSWithArch = FSWithArch + "," + FS;
   ParseSubtargetFeatures(FSWithArch, CPUString);
+
+  // Initialize scheduling itinerary for the specified CPU.
+  InstrItins = getInstrItineraryForCPU(CPUString);
 
   // After parsing Itineraries, set ItinData.IssueWidth.
   computeIssueWidth();
@@ -241,9 +255,9 @@ void ARMSubtarget::computeIssueWidth() {
 
 bool ARMSubtarget::enablePostRAScheduler(
            CodeGenOpt::Level OptLevel,
-           TargetSubtarget::AntiDepBreakMode& Mode,
+           TargetSubtargetInfo::AntiDepBreakMode& Mode,
            RegClassVector& CriticalPathRCs) const {
-  Mode = TargetSubtarget::ANTIDEP_CRITICAL;
+  Mode = TargetSubtargetInfo::ANTIDEP_CRITICAL;
   CriticalPathRCs.clear();
   CriticalPathRCs.push_back(&ARM::GPRRegClass);
   return PostRAScheduler && OptLevel >= CodeGenOpt::Default;

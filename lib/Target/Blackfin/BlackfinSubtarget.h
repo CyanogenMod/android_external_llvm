@@ -7,19 +7,22 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file declares the BLACKFIN specific subclass of TargetSubtarget.
+// This file declares the BLACKFIN specific subclass of TargetSubtargetInfo.
 //
 //===----------------------------------------------------------------------===//
 
 #ifndef BLACKFIN_SUBTARGET_H
 #define BLACKFIN_SUBTARGET_H
 
-#include "llvm/Target/TargetSubtarget.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include <string>
+
+#define GET_SUBTARGETINFO_HEADER
+#include "BlackfinGenSubtargetInfo.inc"
 
 namespace llvm {
 
-  class BlackfinSubtarget : public TargetSubtarget {
+  class BlackfinSubtarget : public BlackfinGenSubtargetInfo {
     bool sdram;
     bool icplb;
     bool wa_mi_shift;
