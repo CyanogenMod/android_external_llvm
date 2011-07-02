@@ -5,18 +5,19 @@
  *  - Changes due to Android's toolchain.
  *  - Changes due to the limitations in Android-based consumer electronics.
  *
- * Some of them are to-dos. If and when they are done, there will no longer be 
+ * Some of them are to-dos. If and when they are done, there will no longer be
  * merge conflicts with upstream on those parts.
  *
- * The file contains useful hints when we try to resolve future 3-way merge 
- * conflicts. 
- */ 
+ * The file contains useful hints when we try to resolve future 3-way merge
+ * conflicts.
+ */
 
 * For Honeycomb: Synced to upstream r112344.
 * For Honeycomb MR1: Synced to upstream r119309
 * For Honeycomb MR2: Synced to upstream r119309
-* For Ice Cream Sandwich: Synced to upstream r133718
+* For Ice Cream Sandwich: Synced to upstream r134306
 
+* Recent downstreaming on 2011/7/2: From r133718 to 134306
 * Recent downstreaming on 2011/6/30: From r133240 to 133718
   * This downstreaming could have broken bitcode compatibility
     * Upstream was migrating from 2.7 bitcode to 3.0 bitcode.
@@ -43,15 +44,15 @@
 * All the tblgen work to enable Android to build a generator-generator binary
   and then run it in the middle of Android build process.
 
-* Explicitly include <cctype> header since is*() are not builtin functions in 
+* Explicitly include <cctype> header since is*() are not builtin functions in
 Android toolchain.
 
 * Code changes to make Android's toolchain stop outputting warnings. (This part
   should be pushed upstream eventually.)
 
 * lib/Target/{X86,ARM}/AsmPrinter/{X86,ARM}AsmPrinter.cpp
-   Move from lib/Target/{X86,ARM}/{X86,ARM}AsmPrinter.cpp. 
-   AsmPrinter is only needed in Android when disassembly functionality 
+   Move from lib/Target/{X86,ARM}/{X86,ARM}AsmPrinter.cpp.
+   AsmPrinter is only needed in Android when disassembly functionality
       is desired to be included.
 
 * Our ARM code generation fixes that upstream hasn't accepted yet. (This
