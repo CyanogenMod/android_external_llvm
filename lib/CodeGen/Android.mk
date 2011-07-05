@@ -70,7 +70,6 @@ codegen_SRC_FILES :=   \
 	RegAllocPBQP.cpp    \
 	RegisterCoalescer.cpp   \
 	RegisterClassInfo.cpp \
-	RegisterCoalescer.cpp \
 	RegisterScavenging.cpp  \
 	RenderMachineFunction.cpp	\
 	ScheduleDAG.cpp \
