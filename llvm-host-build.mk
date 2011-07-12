@@ -17,12 +17,6 @@ LOCAL_CFLAGS :=	\
 	$(LOCAL_CFLAGS)
 endif
 
-# force 32 bit code for sim build
-ifeq ($(TARGET_SIMULATOR),true)
-LOCAL_CFLAGS += -m32
-LOCAL_LDFLAGS += -m32
-endif
-
 ifneq ($(REQUIRES_EH),1)
 LOCAL_CFLAGS += -fno-exceptions
 else
