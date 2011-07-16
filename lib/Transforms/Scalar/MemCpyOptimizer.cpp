@@ -840,11 +840,11 @@ bool MemCpyOpt::processMemMove(MemMoveInst *M) {
   
   // If not, then we know we can transform this.
   Module *Mod = M->getParent()->getParent()->getParent();
-  const Type *ArgTys[3] = { M->getRawDest()->getType(),
-                            M->getRawSource()->getType(),
-                            M->getLength()->getType() };
+  Type *ArgTys[3] = { M->getRawDest()->getType(),
+                      M->getRawSource()->getType(),
+                      M->getLength()->getType() };
   M->setCalledFunction(Intrinsic::getDeclaration(Mod, Intrinsic::memcpy,
-                                                 ArgTys, 3));
+                                                 ArgTys));
 
   // MemDep may have over conservative information about this instruction, just
   // conservatively flush it from the cache.

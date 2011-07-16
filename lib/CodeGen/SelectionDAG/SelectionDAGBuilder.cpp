@@ -1727,7 +1727,8 @@ void SelectionDAGBuilder::visitBitTestCase(BitTestBlock &BB,
   SDValue ShiftOp = DAG.getCopyFromReg(getControlRoot(), getCurDebugLoc(),
                                        Reg, VT);
   SDValue Cmp;
-  if (CountPopulation_64(B.Mask) == 1) {
+  unsigned PopCount = CountPopulation_64(B.Mask);
+  if (PopCount == 1) {
     // Testing for a single bit; just compare the shift count with what it
     // would need to be to shift a 1 bit in that position.
     Cmp = DAG.getSetCC(getCurDebugLoc(),
@@ -1735,6 +1736,13 @@ void SelectionDAGBuilder::visitBitTestCase(BitTestBlock &BB,
                        ShiftOp,
                        DAG.getConstant(CountTrailingZeros_64(B.Mask), VT),
                        ISD::SETEQ);
+  } else if (PopCount == BB.Range) {
+    // There is only one zero bit in the range, test for it directly.
+    Cmp = DAG.getSetCC(getCurDebugLoc(),
+                       TLI.getSetCCResultType(VT),
+                       ShiftOp,
+                       DAG.getConstant(CountTrailingOnes_64(B.Mask), VT),
+                       ISD::SETNE);
   } else {
     // Make desired shift
     SDValue SwitchVal = DAG.getNode(ISD::SHL, getCurDebugLoc(), VT,
@@ -2501,6 +2509,22 @@ void SelectionDAGBuilder::visitShift(const User &I, unsigned Opcode) {
                            Op1.getValueType(), Op1, Op2));
 }
 
+void SelectionDAGBuilder::visitSDiv(const User &I) {
+  SDValue Op1 = getValue(I.getOperand(0));
+  SDValue Op2 = getValue(I.getOperand(1));
+
+  // Turn exact SDivs into multiplications.
+  // FIXME: This should be in DAGCombiner, but it doesn't have access to the
+  // exact bit.
+  if (isa<BinaryOperator>(&I) && cast<BinaryOperator>(&I)->isExact() &&
+      !isa<ConstantSDNode>(Op1) &&
+      isa<ConstantSDNode>(Op2) && !cast<ConstantSDNode>(Op2)->isNullValue())
+    setValue(&I, TLI.BuildExactSDIV(Op1, Op2, getCurDebugLoc(), DAG));
+  else
+    setValue(&I, DAG.getNode(ISD::SDIV, getCurDebugLoc(), Op1.getValueType(),
+                             Op1, Op2));
+}
+
 void SelectionDAGBuilder::visitICmp(const User &I) {
   ICmpInst::Predicate predicate = ICmpInst::BAD_ICMP_PREDICATE;
   if (const ICmpInst *IC = dyn_cast<ICmpInst>(&I))
@@ -2867,7 +2891,7 @@ void SelectionDAGBuilder::visitInsertValue(const InsertValueInst &I) {
   bool IntoUndef = isa<UndefValue>(Op0);
   bool FromUndef = isa<UndefValue>(Op1);
 
-  unsigned LinearIndex = ComputeLinearIndex(AggTy, I.idx_begin(), I.idx_end());
+  unsigned LinearIndex = ComputeLinearIndex(AggTy, I.getIndices());
 
   SmallVector<EVT, 4> AggValueVTs;
   ComputeValueVTs(TLI, AggTy, AggValueVTs);
@@ -2907,7 +2931,7 @@ void SelectionDAGBuilder::visitExtractValue(const ExtractValueInst &I) {
   const Type *ValTy = I.getType();
   bool OutOfUndef = isa<UndefValue>(Op0);
 
-  unsigned LinearIndex = ComputeLinearIndex(AggTy, I.idx_begin(), I.idx_end());
+  unsigned LinearIndex = ComputeLinearIndex(AggTy, I.getIndices());
 
   SmallVector<EVT, 4> ValValueVTs;
   ComputeValueVTs(TLI, ValTy, ValValueVTs);
@@ -4635,6 +4659,13 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   case Intrinsic::pow:
     visitPow(I);
     return 0;
+  case Intrinsic::fma:
+    setValue(&I, DAG.getNode(ISD::FMA, dl,
+                             getValue(I.getArgOperand(0)).getValueType(),
+                             getValue(I.getArgOperand(0)),
+                             getValue(I.getArgOperand(1)),
+                             getValue(I.getArgOperand(2))));
+    return 0;
   case Intrinsic::convert_to_fp16:
     setValue(&I, DAG.getNode(ISD::FP32_TO_FP16, dl,
                              MVT::i16, getValue(I.getArgOperand(0))));
@@ -4771,6 +4802,13 @@ SelectionDAGBuilder::visitIntrinsicCall(const CallInst &I, unsigned Intrinsic) {
   case Intrinsic::flt_rounds:
     setValue(&I, DAG.getNode(ISD::FLT_ROUNDS_, dl, MVT::i32));
     return 0;
+
+  case Intrinsic::expect: {
+    // Just replace __builtin_expect(exp, c) with EXP.
+    setValue(&I, getValue(I.getArgOperand(0)));
+    return 0;
+  }
+
   case Intrinsic::trap: {
     StringRef TrapFuncName = getTrapFunctionName();
     if (TrapFuncName.empty()) {
@@ -5668,10 +5706,13 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
       SDISelAsmOperandInfo &Input = ConstraintOperands[OpInfo.MatchingInput];
 
       if (OpInfo.ConstraintVT != Input.ConstraintVT) {
+	std::pair<unsigned, const TargetRegisterClass*> MatchRC =
+	  TLI.getRegForInlineAsmConstraint(OpInfo.ConstraintCode, OpInfo.ConstraintVT);
+	std::pair<unsigned, const TargetRegisterClass*> InputRC =
+	  TLI.getRegForInlineAsmConstraint(Input.ConstraintCode, Input.ConstraintVT);
         if ((OpInfo.ConstraintVT.isInteger() !=
              Input.ConstraintVT.isInteger()) ||
-            (OpInfo.ConstraintVT.getSizeInBits() !=
-             Input.ConstraintVT.getSizeInBits())) {
+            (MatchRC.second != InputRC.second)) {
           report_fatal_error("Unsupported asm: input constraint"
                              " with a matching output constraint of"
                              " incompatible type!");
@@ -5934,8 +5975,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
              "Don't know how to handle indirect register inputs yet!");
 
       // Copy the input into the appropriate registers.
-      if (OpInfo.AssignedRegs.Regs.empty() ||
-          !OpInfo.AssignedRegs.areValueTypesLegal(TLI))
+      if (OpInfo.AssignedRegs.Regs.empty())
         report_fatal_error("Couldn't allocate input reg for constraint '" +
                            Twine(OpInfo.ConstraintCode) + "'!");
 

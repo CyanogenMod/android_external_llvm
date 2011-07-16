@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "PPC.h"
-#include "PPCMCAsmInfo.h"
 #include "PPCTargetMachine.h"
 #include "llvm/PassManager.h"
 #include "llvm/MC/MCStreamer.h"
@@ -20,15 +19,6 @@
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/FormattedStream.h"
 using namespace llvm;
-
-static MCAsmInfo *createMCAsmInfo(const Target &T, StringRef TT) {
-  Triple TheTriple(TT);
-  bool isPPC64 = TheTriple.getArch() == Triple::ppc64;
-  if (TheTriple.isOSDarwin())
-    return new PPCMCAsmInfoDarwin(isPPC64);
-  return new PPCLinuxMCAsmInfo(isPPC64);
-  
-}
 
 // This is duplicated code. Refactor this.
 static MCStreamer *createMCStreamer(const Target &T, const std::string &TT,
@@ -48,9 +38,6 @@ extern "C" void LLVMInitializePowerPCTarget() {
   RegisterTargetMachine<PPC32TargetMachine> A(ThePPC32Target);  
   RegisterTargetMachine<PPC64TargetMachine> B(ThePPC64Target);
   
-  RegisterAsmInfoFn C(ThePPC32Target, createMCAsmInfo);
-  RegisterAsmInfoFn D(ThePPC64Target, createMCAsmInfo);
-  
   // Register the MC Code Emitter
   TargetRegistry::RegisterCodeEmitter(ThePPC32Target, createPPCMCCodeEmitter);
   TargetRegistry::RegisterCodeEmitter(ThePPC64Target, createPPCMCCodeEmitter);
@@ -69,7 +56,7 @@ extern "C" void LLVMInitializePowerPCTarget() {
 PPCTargetMachine::PPCTargetMachine(const Target &T, const std::string &TT,
                                    const std::string &CPU,
                                    const std::string &FS, bool is64Bit)
-  : LLVMTargetMachine(T, TT),
+  : LLVMTargetMachine(T, TT, CPU, FS),
     Subtarget(TT, CPU, FS, is64Bit),
     DataLayout(Subtarget.getTargetDataString()), InstrInfo(*this),
     FrameLowering(Subtarget), JITInfo(*this, is64Bit),

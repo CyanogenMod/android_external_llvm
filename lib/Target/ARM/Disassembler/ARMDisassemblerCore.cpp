@@ -70,9 +70,10 @@
 ///
 /// { ARM::CCRRegClassID, 0|(1<<MCOI::OptionalDef), 0 }
 ///
-/// And this maps to one MCOperand with the regsiter kind of ARM::CPSR.
-#define GET_INSTRINFO_MC_DESC
-#include "ARMGenInstrInfo.inc"
+
+namespace llvm {
+extern MCInstrDesc ARMInsts[];
+}
 
 using namespace llvm;
 
@@ -3092,11 +3093,6 @@ static bool DisassembleNVdVnVmOptImm(MCInst &MI, unsigned Opcode, uint32_t insn,
                                          : decodeNEONRm(insn))));
   ++OpIdx;
 
-  // Special case handling for VMOVDneon and VMOVQ because they are marked as
-  // N3RegFrm.
-  if (Opcode == ARM::VMOVDneon || Opcode == ARM::VMOVQ)
-    return true;
-
   // Dm = Inst{5:3-0} => NEON Rm
   // or
   // Dm is restricted to D0-D7 if size is 16, D0-D15 otherwise
@@ -3380,7 +3376,7 @@ static bool DisassemblePreLoadFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
 static bool DisassembleMiscFrm(MCInst &MI, unsigned Opcode, uint32_t insn,
     unsigned short NumOps, unsigned &NumOpsAdded, BO B) {
 
-  if (Opcode == ARM::DMB || Opcode == ARM::DSB) {
+  if (Opcode == ARM::DMB || Opcode == ARM::DSB || Opcode == ARM::ISB) {
     // Inst{3-0} encodes the memory barrier option for the variants.
     unsigned opt = slice(insn, 3, 0);
     switch (opt) {

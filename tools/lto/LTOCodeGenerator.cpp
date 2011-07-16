@@ -73,6 +73,8 @@ LTOCodeGenerator::LTOCodeGenerator()
       _nativeObjectFile(NULL)
 {
     InitializeAllTargets();
+    InitializeAllMCAsmInfos();
+    InitializeAllMCSubtargetInfos();
     InitializeAllAsmPrinters();
 }
 

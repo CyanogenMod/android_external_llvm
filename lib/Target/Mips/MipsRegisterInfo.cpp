@@ -37,7 +37,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Analysis/DebugInfo.h"
 
-#define GET_REGINFO_MC_DESC
 #define GET_REGINFO_TARGET_DESC
 #include "MipsGenRegisterInfo.inc"
 
@@ -218,51 +217,31 @@ eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
   else
     Offset = spOffset + stackSize;
 
-  if (MI.isDebugValue()) {
-    MI.getOperand(i).ChangeToRegister(FrameReg, false /*isDef*/);
-    MI.getOperand(i+1).ChangeToImmediate(Offset);
-    return;
-  }
-
-  Offset    += MI.getOperand(i-1).getImm();
+  Offset    += MI.getOperand(i+1).getImm();
 
   DEBUG(errs() << "Offset     : " << Offset << "\n" << "<--------->\n");
 
-  unsigned NewReg = 0;
-  int NewImm = 0;
-  MachineBasicBlock &MBB = *MI.getParent();
-  bool ATUsed;
-
-  // Offset fits in the 16-bit field
-  if (Offset < 0x8000 && Offset >= -0x8000) {
-    NewReg = FrameReg;
-    NewImm = Offset;
-    ATUsed = false;
-  }
-  else {
-    const TargetInstrInfo *TII = MF.getTarget().getInstrInfo();
+  // If MI is not a debug value, make sure Offset fits in the 16-bit immediate
+  // field. 
+  if (!MI.isDebugValue() && (Offset >= 0x8000 || Offset < -0x8000)) {
+    MachineBasicBlock &MBB = *MI.getParent();
     DebugLoc DL = II->getDebugLoc();
-    int ImmLo = (short)(Offset & 0xffff);
     int ImmHi = (((unsigned)Offset & 0xffff0000) >> 16) +
                 ((Offset & 0x8000) != 0);
 
     // FIXME: change this when mips goes MC".
-    BuildMI(MBB, II, DL, TII->get(Mips::NOAT));
-    BuildMI(MBB, II, DL, TII->get(Mips::LUi), Mips::AT).addImm(ImmHi);
-    BuildMI(MBB, II, DL, TII->get(Mips::ADDu), Mips::AT).addReg(FrameReg)
-                                                        .addReg(Mips::AT);
-    NewReg = Mips::AT;
-    NewImm = ImmLo;
-    
-    ATUsed = true;
+    BuildMI(MBB, II, DL, TII.get(Mips::NOAT));
+    BuildMI(MBB, II, DL, TII.get(Mips::LUi), Mips::AT).addImm(ImmHi);
+    BuildMI(MBB, II, DL, TII.get(Mips::ADDu), Mips::AT).addReg(FrameReg)
+                                                       .addReg(Mips::AT);
+    FrameReg = Mips::AT;
+    Offset = (short)(Offset & 0xffff);
+
+    BuildMI(MBB, ++II, MI.getDebugLoc(), TII.get(Mips::ATMACRO));
   }
 
-  // FIXME: change this when mips goes MC".
-  if (ATUsed)
-    BuildMI(MBB, ++II, MI.getDebugLoc(), TII.get(Mips::ATMACRO));
-
-  MI.getOperand(i).ChangeToRegister(NewReg, false);
-  MI.getOperand(i-1).ChangeToImmediate(NewImm);
+  MI.getOperand(i).ChangeToRegister(FrameReg, false);
+  MI.getOperand(i+1).ChangeToImmediate(Offset);
 }
 
 unsigned MipsRegisterInfo::

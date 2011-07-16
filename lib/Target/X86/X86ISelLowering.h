@@ -169,8 +169,8 @@ namespace llvm {
       /// PSHUFB - Shuffle 16 8-bit values within a vector.
       PSHUFB,
 
-      /// PANDN - and with not'd value.
-      PANDN,
+      /// ANDNP - Bitwise Logical AND NOT of Packed FP values.
+      ANDNP,
 
       /// PSIGNB/W/D - Copy integer sign.
       PSIGNB, PSIGNW, PSIGND,
@@ -825,6 +825,7 @@ namespace llvm {
     SDValue LowerLOAD_SUB(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerREADCYCLECOUNTER(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerMEMBARRIER(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
 
     // Utility functions to help LowerVECTOR_SHUFFLE
     SDValue LowerVECTOR_SHUFFLEv8i16(SDValue Op, SelectionDAG &DAG) const;

@@ -4,6 +4,7 @@ tablegen(ARMGenRegisterInfo.inc -gen-register-info)
 tablegen(ARMGenInstrInfo.inc -gen-instr-info)
 tablegen(ARMGenCodeEmitter.inc -gen-emitter)
 tablegen(ARMGenMCCodeEmitter.inc -gen-emitter -mc-emitter)
+tablegen(ARMGenMCPseudoLowering.inc -gen-pseudo-lowering)
 tablegen(ARMGenAsmWriter.inc -gen-asm-writer)
 tablegen(ARMGenAsmMatcher.inc -gen-asm-matcher)
 tablegen(ARMGenDAGISel.inc -gen-dag-isel)
@@ -35,7 +36,6 @@ add_llvm_target(ARMCodeGen
   ARMMCCodeEmitter.cpp
   ARMMCExpr.cpp
   ARMLoadStoreOptimizer.cpp
-  ARMMCAsmInfo.cpp
   ARMMCInstLower.cpp
   ARMRegisterInfo.cpp
   ARMSelectionDAGInfo.cpp
@@ -65,3 +65,4 @@ add_subdirectory(TargetInfo)
 add_subdirectory(AsmParser)
 add_subdirectory(Disassembler)
 add_subdirectory(InstPrinter)
+add_subdirectory(MCTargetDesc)

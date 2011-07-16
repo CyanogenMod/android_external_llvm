@@ -44,9 +44,9 @@ class BitcodeReaderValueList {
   /// number that holds the resolved value.
   typedef std::vector<std::pair<Constant*, unsigned> > ResolveConstantsTy;
   ResolveConstantsTy ResolveConstants;
-  LLVMContext& Context;
+  LLVMContext &Context;
 public:
-  BitcodeReaderValueList(LLVMContext& C) : Context(C) {}
+  BitcodeReaderValueList(LLVMContext &C) : Context(C) {}
   ~BitcodeReaderValueList() {
     assert(ResolveConstants.empty() && "Constants not resolved?");
   }
@@ -131,7 +131,7 @@ class BitcodeReader : public GVMaterializer {
   
   const char *ErrorString;
   
-  std::vector<PATypeHolder> TypeList;
+  std::vector<Type*> TypeList;
   BitcodeReaderValueList ValueList;
   BitcodeReaderMDValueList MDValueList;
   SmallVector<Instruction *, 64> InstructionList;
@@ -217,12 +217,12 @@ public:
   /// @returns true if an error occurred.
   bool ParseTriple(std::string &Triple);
 private:
-  const Type *getTypeByID(unsigned ID, bool isTypeTable = false);
+  Type *getTypeByID(unsigned ID);
+  Type *getTypeByIDOrNull(unsigned ID);
   Value *getFnValueByID(unsigned ID, const Type *Ty) {
-    if (Ty == Type::getMetadataTy(Context))
+    if (Ty && Ty->isMetadataTy())
       return MDValueList.getValueFwdRef(ID);
-    else
-      return ValueList.getValueFwdRef(ID, Ty);
+    return ValueList.getValueFwdRef(ID, Ty);
   }
   BasicBlock *getBasicBlock(unsigned ID) const {
     if (ID >= FunctionBBs.size()) return 0; // Invalid ID
@@ -266,7 +266,10 @@ private:
   bool ParseModule();
   bool ParseAttributeBlock();
   bool ParseTypeTable();
-  bool ParseTypeSymbolTable();
+  bool ParseOldTypeTable();         // FIXME: Remove in LLVM 3.1
+  bool ParseTypeTableBody();
+
+  bool ParseOldTypeSymbolTable();   // FIXME: Remove in LLVM 3.1
   bool ParseValueSymbolTable();
   bool ParseConstants();
   bool RememberAndSkipFunctionBody();

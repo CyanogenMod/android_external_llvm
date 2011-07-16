@@ -137,7 +137,8 @@ public:
   virtual void EmitWeakReference(MCSymbol *Alias, const MCSymbol *Symbol);
   virtual void EmitDwarfAdvanceLineAddr(int64_t LineDelta,
                                         const MCSymbol *LastLabel,
-                                        const MCSymbol *Label);
+                                        const MCSymbol *Label,
+                                        unsigned PointerSize);
   virtual void EmitDwarfAdvanceFrameAddr(const MCSymbol *LastLabel,
                                          const MCSymbol *Label);
 
@@ -364,9 +365,9 @@ void MCAsmStreamer::EmitWeakReference(MCSymbol *Alias, const MCSymbol *Symbol) {
 
 void MCAsmStreamer::EmitDwarfAdvanceLineAddr(int64_t LineDelta,
                                              const MCSymbol *LastLabel,
-                                             const MCSymbol *Label) {
-  EmitDwarfSetLineAddr(LineDelta, Label,
-                       getContext().getTargetAsmInfo().getPointerSize());
+                                             const MCSymbol *Label,
+                                             unsigned PointerSize) {
+  EmitDwarfSetLineAddr(LineDelta, Label, PointerSize);
 }
 
 void MCAsmStreamer::EmitDwarfAdvanceFrameAddr(const MCSymbol *LastLabel,
@@ -603,7 +604,7 @@ void MCAsmStreamer::EmitValueImpl(const MCExpr *Value, unsigned Size,
     int64_t IntValue;
     if (!Value->EvaluateAsAbsolute(IntValue))
       report_fatal_error("Don't know how to emit this value.");
-    if (getContext().getTargetAsmInfo().isLittleEndian()) {
+    if (getContext().getAsmInfo().isLittleEndian()) {
       EmitIntValue((uint32_t)(IntValue >> 0 ), 4, AddrSpace);
       EmitIntValue((uint32_t)(IntValue >> 32), 4, AddrSpace);
     } else {
@@ -825,9 +826,9 @@ void MCAsmStreamer::EmitCFIEndProc() {
 }
 
 void MCAsmStreamer::EmitRegisterName(int64_t Register) {
-  if (InstPrinter) {
-    const TargetAsmInfo &asmInfo = getContext().getTargetAsmInfo();
-    unsigned LLVMRegister = asmInfo.getLLVMRegNum(Register, true);
+  if (InstPrinter && !MAI.useDwarfRegNumForCFI()) {
+    const TargetAsmInfo &TAI = getContext().getTargetAsmInfo();
+    unsigned LLVMRegister = TAI.getLLVMRegNum(Register, true);
     InstPrinter->printRegName(OS, LLVMRegister);
   } else {
     OS << Register;
@@ -1088,7 +1089,7 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst) {
     }
   }
 
-  // FIXME: Node the fixup comments for Thumb2 are completely bogus since the
+  // FIXME: Note the fixup comments for Thumb2 are completely bogus since the
   // high order halfword of a 32-bit Thumb2 instruction is emitted first.
   OS << "encoding: [";
   for (unsigned i = 0, e = Code.size(); i != e; ++i) {
@@ -1123,7 +1124,7 @@ void MCAsmStreamer::AddEncodingComment(const MCInst &Inst) {
         unsigned Bit = (Code[i] >> j) & 1;
 
         unsigned FixupBit;
-        if (getContext().getTargetAsmInfo().isLittleEndian())
+        if (getContext().getAsmInfo().isLittleEndian())
           FixupBit = i * 8 + j;
         else
           FixupBit = i * 8 + (7-j);

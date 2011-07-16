@@ -30,12 +30,12 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/Support/BranchProbability.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/ADT/STLExtras.h"
 
-#define GET_INSTRINFO_MC_DESC
 #define GET_INSTRINFO_CTOR
 #include "ARMGenInstrInfo.inc"
 
@@ -528,35 +528,23 @@ unsigned ARMBaseInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
   const MachineFunction *MF = MBB.getParent();
   const MCAsmInfo *MAI = MF->getTarget().getMCAsmInfo();
 
-  // Basic size info comes from the TSFlags field.
   const MCInstrDesc &MCID = MI->getDesc();
-  uint64_t TSFlags = MCID.TSFlags;
+  if (MCID.getSize())
+    return MCID.getSize();
 
-  unsigned Opc = MI->getOpcode();
-  switch ((TSFlags & ARMII::SizeMask) >> ARMII::SizeShift) {
-  default: {
     // If this machine instr is an inline asm, measure it.
     if (MI->getOpcode() == ARM::INLINEASM)
       return getInlineAsmLength(MI->getOperand(0).getSymbolName(), *MAI);
     if (MI->isLabel())
       return 0;
+  unsigned Opc = MI->getOpcode();
     switch (Opc) {
-    default:
-      llvm_unreachable("Unknown or unset size field for instr!");
     case TargetOpcode::IMPLICIT_DEF:
     case TargetOpcode::KILL:
     case TargetOpcode::PROLOG_LABEL:
     case TargetOpcode::EH_LABEL:
     case TargetOpcode::DBG_VALUE:
       return 0;
-    }
-    break;
-  }
-  case ARMII::Size8Bytes: return 8;          // ARM instruction x 2.
-  case ARMII::Size4Bytes: return 4;          // ARM / Thumb2 instruction.
-  case ARMII::Size2Bytes: return 2;          // Thumb1 instruction.
-  case ARMII::SizeSpecial: {
-    switch (Opc) {
     case ARM::MOVi16_ga_pcrel:
     case ARM::MOVTi16_ga_pcrel:
     case ARM::t2MOVi16_ga_pcrel:
@@ -620,8 +608,6 @@ unsigned ARMBaseInstrInfo::GetInstSizeInBytes(const MachineInstr *MI) const {
       // Otherwise, pseudo-instruction sizes are zero.
       return 0;
     }
-  }
-  }
   return 0; // Not reached
 }
 
@@ -651,7 +637,7 @@ void ARMBaseInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   else if (ARM::DPRRegClass.contains(DestReg, SrcReg))
     Opc = ARM::VMOVD;
   else if (ARM::QPRRegClass.contains(DestReg, SrcReg))
-    Opc = ARM::VMOVQ;
+    Opc = ARM::VORRq;
   else if (ARM::QQPRRegClass.contains(DestReg, SrcReg))
     Opc = ARM::VMOVQQ;
   else if (ARM::QQQQPRRegClass.contains(DestReg, SrcReg))
@@ -661,6 +647,8 @@ void ARMBaseInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
 
   MachineInstrBuilder MIB = BuildMI(MBB, I, DL, get(Opc), DestReg);
   MIB.addReg(SrcReg, getKillRegState(KillSrc));
+  if (Opc == ARM::VORRq)
+    MIB.addReg(SrcReg, getKillRegState(KillSrc));
   if (Opc != ARM::VMOVQQ && Opc != ARM::VMOVQQQQ)
     AddDefaultPred(MIB);
 }
@@ -1273,20 +1261,20 @@ bool ARMBaseInstrInfo::isSchedulingBoundary(const MachineInstr *MI,
   return false;
 }
 
-bool ARMBaseInstrInfo::isProfitableToIfCvt(MachineBasicBlock &MBB,
-                                           unsigned NumCycles,
-                                           unsigned ExtraPredCycles,
-                                           float Probability,
-                                           float Confidence) const {
+bool ARMBaseInstrInfo::
+isProfitableToIfCvt(MachineBasicBlock &MBB,
+                    unsigned NumCycles, unsigned ExtraPredCycles,
+                    const BranchProbability &Probability) const {
   if (!NumCycles)
     return false;
 
   // Attempt to estimate the relative costs of predication versus branching.
-  float UnpredCost = Probability * NumCycles;
-  UnpredCost += 1.0; // The branch itself
-  UnpredCost += (1.0 - Confidence) * Subtarget.getMispredictionPenalty();
+  unsigned UnpredCost = Probability.getNumerator() * NumCycles;
+  UnpredCost /= Probability.getDenominator();
+  UnpredCost += 1; // The branch itself
+  UnpredCost += Subtarget.getMispredictionPenalty() / 10;
 
-  return (float)(NumCycles + ExtraPredCycles) < UnpredCost;
+  return (NumCycles + ExtraPredCycles) <= UnpredCost;
 }
 
 bool ARMBaseInstrInfo::
@@ -1294,16 +1282,23 @@ isProfitableToIfCvt(MachineBasicBlock &TMBB,
                     unsigned TCycles, unsigned TExtra,
                     MachineBasicBlock &FMBB,
                     unsigned FCycles, unsigned FExtra,
-                    float Probability, float Confidence) const {
+                    const BranchProbability &Probability) const {
   if (!TCycles || !FCycles)
     return false;
 
   // Attempt to estimate the relative costs of predication versus branching.
-  float UnpredCost = Probability * TCycles + (1.0 - Probability) * FCycles;
-  UnpredCost += 1.0; // The branch itself
-  UnpredCost += (1.0 - Confidence) * Subtarget.getMispredictionPenalty();
+  unsigned TUnpredCost = Probability.getNumerator() * TCycles;
+  TUnpredCost /= Probability.getDenominator();
+    
+  uint32_t Comp = Probability.getDenominator() - Probability.getNumerator();
+  unsigned FUnpredCost = Comp * FCycles;
+  FUnpredCost /= Probability.getDenominator();
 
-  return (float)(TCycles + FCycles + TExtra + FExtra) < UnpredCost;
+  unsigned UnpredCost = TUnpredCost + FUnpredCost;
+  UnpredCost += 1; // The branch itself
+  UnpredCost += Subtarget.getMispredictionPenalty() / 10;
+
+  return (TCycles + FCycles + TExtra + FExtra) <= UnpredCost;
 }
 
 /// getInstrPredicate - If instruction is predicated, returns its predicate

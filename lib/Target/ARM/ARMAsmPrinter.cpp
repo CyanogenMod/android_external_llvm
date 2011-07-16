@@ -654,7 +654,7 @@ void ARMAsmPrinter::emitAttributes() {
   }
 
   /* TODO: ARMBuildAttrs::Allowed is not completely accurate,
-   * since NEON can have 1 (allowed) or 2 (fused MAC operations) */
+   * since NEON can have 1 (allowed) or 2 (MAC operations) */
   if (Subtarget->hasNEON()) {
     AttrEmitter->EmitAttribute(ARMBuildAttrs::Advanced_SIMD_arch,
                                ARMBuildAttrs::Allowed);
@@ -1069,48 +1069,18 @@ void ARMAsmPrinter::EmitUnwindingInstruction(const MachineInstr *MI) {
 
 extern cl::opt<bool> EnableARMEHABI;
 
+// Simple pseudo-instructions have their lowering (with expansion to real
+// instructions) auto-generated.
+#include "ARMGenMCPseudoLowering.inc"
+
 void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
+  // Do any auto-generated pseudo lowerings.
+  if (emitPseudoExpansionLowering(OutStreamer, MI))
+    return;
+
+  // Check for manual lowerings.
   unsigned Opc = MI->getOpcode();
   switch (Opc) {
-  default: break;
-  case ARM::B: {
-    // B is just a Bcc with an 'always' predicate.
-    MCInst TmpInst;
-    LowerARMMachineInstrToMCInst(MI, TmpInst, *this);
-    TmpInst.setOpcode(ARM::Bcc);
-    // Add predicate operands.
-    TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
-    TmpInst.addOperand(MCOperand::CreateReg(0));
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
-  case ARM::LDMIA_RET: {
-    // LDMIA_RET is just a normal LDMIA_UPD instruction that targets PC and as
-    // such has additional code-gen properties and scheduling information.
-    // To emit it, we just construct as normal and set the opcode to LDMIA_UPD.
-    MCInst TmpInst;
-    LowerARMMachineInstrToMCInst(MI, TmpInst, *this);
-    TmpInst.setOpcode(ARM::LDMIA_UPD);
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
-  case ARM::t2LDMIA_RET: {
-    // As above for LDMIA_RET. Map to the tPOP instruction.
-    MCInst TmpInst;
-    LowerARMMachineInstrToMCInst(MI, TmpInst, *this);
-    TmpInst.setOpcode(ARM::t2LDMIA_UPD);
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
-  case ARM::tPOP_RET: {
-    // As above for LDMIA_RET. Map to the tPOP instruction.
-    MCInst TmpInst;
-    LowerARMMachineInstrToMCInst(MI, TmpInst, *this);
-    TmpInst.setOpcode(ARM::tPOP);
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
-
   case ARM::t2MOVi32imm: assert(0 && "Should be lowered by thumb2it pass");
   case ARM::DBG_VALUE: {
     if (isVerbose() && OutStreamer.hasRawTextSupport()) {
@@ -1119,14 +1089,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
       PrintDebugValueComment(MI, OS);
       OutStreamer.EmitRawText(StringRef(OS.str()));
     }
-    return;
-  }
-  case ARM::tBfar: {
-    MCInst TmpInst;
-    TmpInst.setOpcode(ARM::tBL);
-    TmpInst.addOperand(MCOperand::CreateExpr(MCSymbolRefExpr::Create(
-          MI->getOperand(0).getMBB()->getSymbol(), OutContext)));
-    OutStreamer.EmitInstruction(TmpInst);
     return;
   }
   case ARM::LEApcrel:
@@ -1159,39 +1121,8 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     OutStreamer.EmitInstruction(TmpInst);
     return;
   }
-  case ARM::MOVPCRX: {
-    MCInst TmpInst;
-    TmpInst.setOpcode(ARM::MOVr);
-    TmpInst.addOperand(MCOperand::CreateReg(ARM::PC));
-    TmpInst.addOperand(MCOperand::CreateReg(MI->getOperand(0).getReg()));
-    // Add predicate operands.
-    TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
-    TmpInst.addOperand(MCOperand::CreateReg(0));
-    // Add 's' bit operand (always reg0 for this)
-    TmpInst.addOperand(MCOperand::CreateReg(0));
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
   // Darwin call instructions are just normal call instructions with different
   // clobber semantics (they clobber R9).
-  case ARM::BLr9:
-  case ARM::BLr9_pred:
-  case ARM::BLXr9:
-  case ARM::BLXr9_pred: {
-    unsigned newOpc;
-    switch (Opc) {
-    default: assert(0);
-    case ARM::BLr9:       newOpc = ARM::BL; break;
-    case ARM::BLr9_pred:  newOpc = ARM::BL_pred; break;
-    case ARM::BLXr9:      newOpc = ARM::BLX; break;
-    case ARM::BLXr9_pred: newOpc = ARM::BLX_pred; break;
-    }
-    MCInst TmpInst;
-    LowerARMMachineInstrToMCInst(MI, TmpInst, *this);
-    TmpInst.setOpcode(newOpc);
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
   case ARM::BXr9_CALL:
   case ARM::BX_CALL: {
     {
@@ -1868,75 +1799,6 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
     }
     return;
   }
-  // Tail jump branches are really just branch instructions with additional
-  // code-gen attributes. Convert them to the canonical form here.
-  case ARM::TAILJMPd:
-  case ARM::TAILJMPdND: {
-    MCInst TmpInst, TmpInst2;
-    // Lower the instruction as-is to get the operands properly converted.
-    LowerARMMachineInstrToMCInst(MI, TmpInst2, *this);
-    TmpInst.setOpcode(ARM::Bcc);
-    TmpInst.addOperand(TmpInst2.getOperand(0));
-    // Add predicate operands.
-    TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
-    TmpInst.addOperand(MCOperand::CreateReg(0));
-    OutStreamer.AddComment("TAILCALL");
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
-  case ARM::tTAILJMPd:
-  case ARM::tTAILJMPdND: {
-    MCInst TmpInst, TmpInst2;
-    LowerARMMachineInstrToMCInst(MI, TmpInst2, *this);
-    // The Darwin toolchain doesn't support tail call relocations of 16-bit
-    // branches.
-    TmpInst.setOpcode(Opc == ARM::tTAILJMPd ? ARM::t2B : ARM::tB);
-    TmpInst.addOperand(TmpInst2.getOperand(0));
-    OutStreamer.AddComment("TAILCALL");
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
-  case ARM::TAILJMPrND:
-  case ARM::tTAILJMPrND:
-  case ARM::TAILJMPr:
-  case ARM::tTAILJMPr: {
-    unsigned newOpc = (Opc == ARM::TAILJMPr || Opc == ARM::TAILJMPrND)
-      ? ARM::BX : ARM::tBX;
-    MCInst TmpInst;
-    TmpInst.setOpcode(newOpc);
-    TmpInst.addOperand(MCOperand::CreateReg(MI->getOperand(0).getReg()));
-    // Predicate.
-    TmpInst.addOperand(MCOperand::CreateImm(ARMCC::AL));
-    TmpInst.addOperand(MCOperand::CreateReg(0));
-    OutStreamer.AddComment("TAILCALL");
-    OutStreamer.EmitInstruction(TmpInst);
-    return;
-  }
-
-  // These are the pseudos created to comply with stricter operand restrictions
-  // on ARMv5. Lower them now to "normal" instructions, since all the
-  // restrictions are already satisfied.
-  case ARM::MULv5:
-    EmitPatchedInstruction(MI, ARM::MUL);
-    return;
-  case ARM::MLAv5:
-    EmitPatchedInstruction(MI, ARM::MLA);
-    return;
-  case ARM::SMULLv5:
-    EmitPatchedInstruction(MI, ARM::SMULL);
-    return;
-  case ARM::UMULLv5:
-    EmitPatchedInstruction(MI, ARM::UMULL);
-    return;
-  case ARM::SMLALv5:
-    EmitPatchedInstruction(MI, ARM::SMLAL);
-    return;
-  case ARM::UMLALv5:
-    EmitPatchedInstruction(MI, ARM::UMLAL);
-    return;
-  case ARM::UMAALv5:
-    EmitPatchedInstruction(MI, ARM::UMAAL);
-    return;
   }
 
   MCInst TmpInst;
@@ -1954,11 +1816,10 @@ void ARMAsmPrinter::EmitInstruction(const MachineInstr *MI) {
 //===----------------------------------------------------------------------===//
 
 static MCInstPrinter *createARMMCInstPrinter(const Target &T,
-                                             TargetMachine &TM,
                                              unsigned SyntaxVariant,
                                              const MCAsmInfo &MAI) {
   if (SyntaxVariant == 0)
-    return new ARMInstPrinter(TM, MAI);
+    return new ARMInstPrinter(MAI);
   return 0;
 }
 

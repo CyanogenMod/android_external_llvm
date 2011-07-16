@@ -35,8 +35,8 @@ namespace llvm {
   class MCInstPrinter;
   class MCInstrInfo;
   class MCRegisterInfo;
-  class MCSubtargetInfo;
   class MCStreamer;
+  class MCSubtargetInfo;
   class TargetAsmBackend;
   class TargetAsmLexer;
   class TargetAsmParser;
@@ -66,11 +66,13 @@ namespace llvm {
 
     typedef unsigned (*TripleMatchQualityFnTy)(const std::string &TT);
 
-    typedef MCAsmInfo *(*AsmInfoCtorFnTy)(const Target &T,
-                                          StringRef TT);
+    typedef MCAsmInfo *(*MCAsmInfoCtorFnTy)(const Target &T,
+                                            StringRef TT);
     typedef MCInstrInfo *(*MCInstrInfoCtorFnTy)(void);
     typedef MCRegisterInfo *(*MCRegInfoCtorFnTy)(void);
-    typedef MCSubtargetInfo *(*MCSubtargetInfoCtorFnTy)(void);
+    typedef MCSubtargetInfo *(*MCSubtargetInfoCtorFnTy)(StringRef TT,
+                                                        StringRef CPU,
+                                                        StringRef Features);
     typedef TargetMachine *(*TargetMachineCtorTy)(const Target &T,
                                                   const std::string &TT,
                                                   const std::string &CPU,
@@ -81,15 +83,14 @@ namespace llvm {
                                                   const std::string &TT);
     typedef TargetAsmLexer *(*AsmLexerCtorTy)(const Target &T,
                                               const MCAsmInfo &MAI);
-    typedef TargetAsmParser *(*AsmParserCtorTy)(const Target &T,MCAsmParser &P,
-                                                TargetMachine &TM);
+    typedef TargetAsmParser *(*AsmParserCtorTy)(MCSubtargetInfo &STI,
+                                                MCAsmParser &P);
     typedef MCDisassembler *(*MCDisassemblerCtorTy)(const Target &T);
     typedef MCInstPrinter *(*MCInstPrinterCtorTy)(const Target &T,
-                                                  TargetMachine &TM,
                                                   unsigned SyntaxVariant,
                                                   const MCAsmInfo &MAI);
-    typedef MCCodeEmitter *(*CodeEmitterCtorTy)(const Target &T,
-                                                TargetMachine &TM,
+    typedef MCCodeEmitter *(*CodeEmitterCtorTy)(const MCInstrInfo &II,
+                                                const MCSubtargetInfo &STI,
                                                 MCContext &Ctx);
     typedef MCStreamer *(*ObjectStreamerCtorTy)(const Target &T,
                                                 const std::string &TT,
@@ -127,9 +128,9 @@ namespace llvm {
     /// HasJIT - Whether this target supports the JIT.
     bool HasJIT;
 
-    /// AsmInfoCtorFn - Constructor function for this target's MCAsmInfo, if
+    /// MCAsmInfoCtorFn - Constructor function for this target's MCAsmInfo, if
     /// registered.
-    AsmInfoCtorFnTy AsmInfoCtorFn;
+    MCAsmInfoCtorFnTy MCAsmInfoCtorFn;
 
     /// MCInstrInfoCtorFn - Constructor function for this target's MCInstrInfo,
     /// if registered.
@@ -239,17 +240,17 @@ namespace llvm {
     /// @name Feature Constructors
     /// @{
 
-    /// createAsmInfo - Create a MCAsmInfo implementation for the specified
+    /// createMCAsmInfo - Create a MCAsmInfo implementation for the specified
     /// target triple.
     ///
     /// \arg Triple - This argument is used to determine the target machine
     /// feature set; it should always be provided. Generally this should be
     /// either the target triple from the module, or the target triple of the
     /// host if that does not exist.
-    MCAsmInfo *createAsmInfo(StringRef Triple) const {
-      if (!AsmInfoCtorFn)
+    MCAsmInfo *createMCAsmInfo(StringRef Triple) const {
+      if (!MCAsmInfoCtorFn)
         return 0;
-      return AsmInfoCtorFn(*this, Triple);
+      return MCAsmInfoCtorFn(*this, Triple);
     }
 
     /// createMCInstrInfo - Create a MCInstrInfo implementation.
@@ -270,10 +271,18 @@ namespace llvm {
 
     /// createMCSubtargetInfo - Create a MCSubtargetInfo implementation.
     ///
-    MCSubtargetInfo *createMCSubtargetInfo() const {
+    /// \arg Triple - This argument is used to determine the target machine
+    /// feature set; it should always be provided. Generally this should be
+    /// either the target triple from the module, or the target triple of the
+    /// host if that does not exist.
+    /// \arg CPU - This specifies the name of the target CPU.
+    /// \arg Features - This specifies the string representation of the
+    /// additional target features.
+    MCSubtargetInfo *createMCSubtargetInfo(StringRef Triple, StringRef CPU,
+                                           StringRef Features) const {
       if (!MCSubtargetInfoCtorFn)
         return 0;
-      return MCSubtargetInfoCtorFn();
+      return MCSubtargetInfoCtorFn(Triple, CPU, Features);
     }
 
     /// createTargetMachine - Create a target specific machine implementation
@@ -313,11 +322,11 @@ namespace llvm {
     ///
     /// \arg Parser - The target independent parser implementation to use for
     /// parsing and lexing.
-    TargetAsmParser *createAsmParser(MCAsmParser &Parser,
-                                     TargetMachine &TM) const {
+    TargetAsmParser *createAsmParser(MCSubtargetInfo &STI,
+                                     MCAsmParser &Parser) const {
       if (!AsmParserCtorFn)
         return 0;
-      return AsmParserCtorFn(*this, Parser, TM);
+      return AsmParserCtorFn(STI, Parser);
     }
 
     /// createAsmPrinter - Create a target specific assembly printer pass.  This
@@ -334,20 +343,21 @@ namespace llvm {
       return MCDisassemblerCtorFn(*this);
     }
 
-    MCInstPrinter *createMCInstPrinter(TargetMachine &TM,
-                                       unsigned SyntaxVariant,
+    MCInstPrinter *createMCInstPrinter(unsigned SyntaxVariant,
                                        const MCAsmInfo &MAI) const {
       if (!MCInstPrinterCtorFn)
         return 0;
-      return MCInstPrinterCtorFn(*this, TM, SyntaxVariant, MAI);
+      return MCInstPrinterCtorFn(*this, SyntaxVariant, MAI);
     }
 
 
     /// createCodeEmitter - Create a target specific code emitter.
-    MCCodeEmitter *createCodeEmitter(TargetMachine &TM, MCContext &Ctx) const {
+    MCCodeEmitter *createCodeEmitter(const MCInstrInfo &II,
+                                     const MCSubtargetInfo &STI,
+                                     MCContext &Ctx) const {
       if (!CodeEmitterCtorFn)
         return 0;
-      return CodeEmitterCtorFn(*this, TM, Ctx);
+      return CodeEmitterCtorFn(II, STI, Ctx);
     }
 
     /// createObjectStreamer - Create a target specific MCStreamer.
@@ -475,7 +485,7 @@ namespace llvm {
                                Target::TripleMatchQualityFnTy TQualityFn,
                                bool HasJIT = false);
 
-    /// RegisterAsmInfo - Register a MCAsmInfo implementation for the
+    /// RegisterMCAsmInfo - Register a MCAsmInfo implementation for the
     /// given target.
     ///
     /// Clients are responsible for ensuring that registration doesn't occur
@@ -484,10 +494,10 @@ namespace llvm {
     ///
     /// @param T - The target being registered.
     /// @param Fn - A function to construct a MCAsmInfo for the target.
-    static void RegisterAsmInfo(Target &T, Target::AsmInfoCtorFnTy Fn) {
+    static void RegisterMCAsmInfo(Target &T, Target::MCAsmInfoCtorFnTy Fn) {
       // Ignore duplicate registration.
-      if (!T.AsmInfoCtorFn)
-        T.AsmInfoCtorFn = Fn;
+      if (!T.MCAsmInfoCtorFn)
+        T.MCAsmInfoCtorFn = Fn;
     }
 
     /// RegisterMCInstrInfo - Register a MCInstrInfo implementation for the
@@ -712,18 +722,18 @@ namespace llvm {
     }
   };
 
-  /// RegisterAsmInfo - Helper template for registering a target assembly info
+  /// RegisterMCAsmInfo - Helper template for registering a target assembly info
   /// implementation.  This invokes the static "Create" method on the class to
   /// actually do the construction.  Usage:
   ///
   /// extern "C" void LLVMInitializeFooTarget() {
   ///   extern Target TheFooTarget;
-  ///   RegisterAsmInfo<FooMCAsmInfo> X(TheFooTarget);
+  ///   RegisterMCAsmInfo<FooMCAsmInfo> X(TheFooTarget);
   /// }
   template<class MCAsmInfoImpl>
-  struct RegisterAsmInfo {
-    RegisterAsmInfo(Target &T) {
-      TargetRegistry::RegisterAsmInfo(T, &Allocator);
+  struct RegisterMCAsmInfo {
+    RegisterMCAsmInfo(Target &T) {
+      TargetRegistry::RegisterMCAsmInfo(T, &Allocator);
     }
   private:
     static MCAsmInfo *Allocator(const Target &T, StringRef TT) {
@@ -732,17 +742,17 @@ namespace llvm {
 
   };
 
-  /// RegisterAsmInfoFn - Helper template for registering a target assembly info
+  /// RegisterMCAsmInfoFn - Helper template for registering a target assembly info
   /// implementation.  This invokes the specified function to do the
   /// construction.  Usage:
   ///
   /// extern "C" void LLVMInitializeFooTarget() {
   ///   extern Target TheFooTarget;
-  ///   RegisterAsmInfoFn X(TheFooTarget, TheFunction);
+  ///   RegisterMCAsmInfoFn X(TheFooTarget, TheFunction);
   /// }
-  struct RegisterAsmInfoFn {
-    RegisterAsmInfoFn(Target &T, Target::AsmInfoCtorFnTy Fn) {
-      TargetRegistry::RegisterAsmInfo(T, Fn);
+  struct RegisterMCAsmInfoFn {
+    RegisterMCAsmInfoFn(Target &T, Target::MCAsmInfoCtorFnTy Fn) {
+      TargetRegistry::RegisterMCAsmInfo(T, Fn);
     }
   };
 
@@ -826,7 +836,8 @@ namespace llvm {
       TargetRegistry::RegisterMCSubtargetInfo(T, &Allocator);
     }
   private:
-    static MCSubtargetInfo *Allocator() {
+    static MCSubtargetInfo *Allocator(StringRef TT, StringRef CPU,
+                                      StringRef FS) {
       return new MCSubtargetInfoImpl();
     }
   };
@@ -922,9 +933,8 @@ namespace llvm {
     }
 
   private:
-    static TargetAsmParser *Allocator(const Target &T, MCAsmParser &P,
-                                      TargetMachine &TM) {
-      return new AsmParserImpl(T, P, TM);
+    static TargetAsmParser *Allocator(MCSubtargetInfo &STI, MCAsmParser &P) {
+      return new AsmParserImpl(STI, P);
     }
   };
 
@@ -963,9 +973,10 @@ namespace llvm {
     }
 
   private:
-    static MCCodeEmitter *Allocator(const Target &T, TargetMachine &TM,
+    static MCCodeEmitter *Allocator(const MCInstrInfo &II,
+                                    const MCSubtargetInfo &STI,
                                     MCContext &Ctx) {
-      return new CodeEmitterImpl(T, TM, Ctx);
+      return new CodeEmitterImpl();
     }
   };
 

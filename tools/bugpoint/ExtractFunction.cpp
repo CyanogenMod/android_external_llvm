@@ -116,8 +116,6 @@ Module *BugDriver::performFinalCleanups(Module *M, bool MayModifySemantics) {
   else
     CleanupPasses.push_back("deadargelim");
 
-  CleanupPasses.push_back("deadtypeelim");
-
   Module *New = runPassesOn(M, CleanupPasses);
   if (New == 0) {
     errs() << "Final cleanups failed.  Sorry. :(  Please report a bug!\n";
@@ -175,7 +173,7 @@ void llvm::DeleteFunctionBody(Function *F) {
 static Constant *GetTorInit(std::vector<std::pair<Function*, int> > &TorList) {
   assert(!TorList.empty() && "Don't create empty tor list!");
   std::vector<Constant*> ArrayElts;
-  const Type *Int32Ty = Type::getInt32Ty(TorList[0].first->getContext());
+  Type *Int32Ty = Type::getInt32Ty(TorList[0].first->getContext());
   
   const StructType *STy =
     StructType::get(Int32Ty, TorList[0].first->getType(), NULL);

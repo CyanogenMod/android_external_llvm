@@ -15,7 +15,6 @@ add_llvm_target(AlphaCodeGen
   AlphaISelLowering.cpp
   AlphaFrameLowering.cpp
   AlphaLLRP.cpp
-  AlphaMCAsmInfo.cpp
   AlphaRegisterInfo.cpp
   AlphaSubtarget.cpp
   AlphaTargetMachine.cpp
@@ -23,3 +22,4 @@ add_llvm_target(AlphaCodeGen
   )
 
 add_subdirectory(TargetInfo)
+add_subdirectory(MCTargetDesc)

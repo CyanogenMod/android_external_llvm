@@ -20,7 +20,6 @@ add_llvm_target(PowerPCCodeGen
   PPCISelLowering.cpp
   PPCFrameLowering.cpp
   PPCJITInfo.cpp
-  PPCMCAsmInfo.cpp
   PPCMCCodeEmitter.cpp
   PPCMCInstLower.cpp
   PPCPredicates.cpp
@@ -32,3 +31,4 @@ add_llvm_target(PowerPCCodeGen
 
 add_subdirectory(InstPrinter)
 add_subdirectory(TargetInfo)
+add_subdirectory(MCTargetDesc)

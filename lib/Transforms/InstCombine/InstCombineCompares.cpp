@@ -42,13 +42,12 @@ static ConstantInt *ExtractElement(Constant *V, Constant *Idx) {
 static bool HasAddOverflow(ConstantInt *Result,
                            ConstantInt *In1, ConstantInt *In2,
                            bool IsSigned) {
-  if (IsSigned)
-    if (In2->getValue().isNegative())
-      return Result->getValue().sgt(In1->getValue());
-    else
-      return Result->getValue().slt(In1->getValue());
-  else
+  if (!IsSigned)
     return Result->getValue().ult(In1->getValue());
+
+  if (In2->isNegative())
+    return Result->getValue().sgt(In1->getValue());
+  return Result->getValue().slt(In1->getValue());
 }
 
 /// AddWithOverflow - Compute Result = In1+In2, returning true if the result
@@ -77,13 +76,13 @@ static bool AddWithOverflow(Constant *&Result, Constant *In1,
 static bool HasSubOverflow(ConstantInt *Result,
                            ConstantInt *In1, ConstantInt *In2,
                            bool IsSigned) {
-  if (IsSigned)
-    if (In2->getValue().isNegative())
-      return Result->getValue().slt(In1->getValue());
-    else
-      return Result->getValue().sgt(In1->getValue());
-  else
+  if (!IsSigned)
     return Result->getValue().ugt(In1->getValue());
+  
+  if (In2->isNegative())
+    return Result->getValue().slt(In1->getValue());
+
+  return Result->getValue().sgt(In1->getValue());
 }
 
 /// SubWithOverflow - Compute Result = In1-In2, returning true if the result
@@ -128,8 +127,7 @@ static bool isSignBitCheck(ICmpInst::Predicate pred, ConstantInt *RHS,
   case ICmpInst::ICMP_UGT:
     // True if LHS u> RHS and RHS == high-bit-mask - 1
     TrueIfSigned = true;
-    return RHS->getValue() ==
-      APInt::getSignedMaxValue(RHS->getType()->getPrimitiveSizeInBits());
+    return RHS->isMaxValue(true);
   case ICmpInst::ICMP_UGE: 
     // True if LHS u>= RHS and RHS == high-bit-mask (2^7, 2^15, 2^31, etc)
     TrueIfSigned = true;
@@ -278,8 +276,7 @@ FoldCmpLoadFromIndexedGlobal(GetElementPtrInst *GEP, GlobalVariable *GV,
     
     // If this is indexing an array of structures, get the structure element.
     if (!LaterIndices.empty())
-      Elt = ConstantExpr::getExtractValue(Elt, LaterIndices.data(),
-                                          LaterIndices.size());
+      Elt = ConstantExpr::getExtractValue(Elt, LaterIndices);
     
     // If the element is masked, handle it.
     if (AndCst) Elt = ConstantExpr::getAnd(Elt, AndCst);
@@ -828,7 +825,7 @@ Instruction *InstCombiner::FoldICmpDivCst(ICmpInst &ICI, BinaryOperator *DivI,
         LoOverflow = AddWithOverflow(LoBound, HiBound, DivNeg, true) ? -1 : 0;
       }
     }
-  } else if (DivRHS->getValue().isNegative()) { // Divisor is < 0.
+  } else if (DivRHS->isNegative()) { // Divisor is < 0.
     if (DivI->isExact())
       RangeSize = cast<ConstantInt>(ConstantExpr::getNeg(RangeSize));
     if (CmpRHSV == 0) {       // (X / neg) op 0
@@ -1028,7 +1025,7 @@ Instruction *InstCombiner::visitICmpInstWithInstAndIntCst(ICmpInst &ICI,
         
         // If the sign bit of the XorCST is not set, there is no change to
         // the operation, just stop using the Xor.
-        if (!XorCST->getValue().isNegative()) {
+        if (!XorCST->isNegative()) {
           ICI.setOperand(0, CompareVal);
           Worklist.Add(LHSI);
           return &ICI;
@@ -1061,7 +1058,7 @@ Instruction *InstCombiner::visitICmpInstWithInstAndIntCst(ICmpInst &ICI,
         }
 
         // (icmp u/s (xor A ~SignBit), C) -> (icmp s/u (xor C ~SignBit), A)
-        if (!ICI.isEquality() && XorCST->getValue().isMaxSignedValue()) {
+        if (!ICI.isEquality() && XorCST->isMaxValue(true)) {
           const APInt &NotSignBit = XorCST->getValue();
           ICmpInst::Predicate Pred = ICI.isSigned()
                                          ? ICI.getUnsignedPredicate()
@@ -1088,7 +1085,7 @@ Instruction *InstCombiner::visitICmpInstWithInstAndIntCst(ICmpInst &ICI,
         // Extending a relational comparison when we're checking the sign
         // bit would not work.
         if (ICI.isEquality() ||
-            (AndCST->getValue().isNonNegative() && RHSV.isNonNegative())) {
+            (!AndCST->isNegative() && RHSV.isNonNegative())) {
           Value *NewAnd =
             Builder->CreateAnd(Cast->getOperand(0),
                                ConstantExpr::getZExt(AndCST, Cast->getSrcTy()));
@@ -1454,7 +1451,11 @@ Instruction *InstCombiner::visitICmpInstWithInstAndIntCst(ICmpInst &ICI,
             return new ICmpInst(isICMP_NE ? ICmpInst::ICMP_EQ :
                                 ICmpInst::ICMP_NE, LHSI,
                                 Constant::getNullValue(RHS->getType()));
-          
+
+          // Don't perform the following transforms if the AND has multiple uses
+          if (!BO->hasOneUse())
+            break;
+
           // Replace (and X, (1 << size(X)-1) != 0) with x s< 0
           if (BOC->getValue().isSignBit()) {
             Value *X = BO->getOperand(0);
@@ -1679,9 +1680,9 @@ static Instruction *ProcessUGT_ADDCST_ADD(ICmpInst &I, Value *A, Value *B,
   // result and the overflow bit.
   Module *M = I.getParent()->getParent()->getParent();
   
-  const Type *NewType = IntegerType::get(OrigAdd->getContext(), NewWidth);
+  Type *NewType = IntegerType::get(OrigAdd->getContext(), NewWidth);
   Value *F = Intrinsic::getDeclaration(M, Intrinsic::sadd_with_overflow,
-                                       &NewType, 1);
+                                       NewType);
 
   InstCombiner::BuilderTy *Builder = IC.Builder;
   
@@ -1721,8 +1722,8 @@ static Instruction *ProcessUAddIdiom(Instruction &I, Value *OrigAddV,
   Builder->SetInsertPoint(OrigAdd);
 
   Module *M = I.getParent()->getParent()->getParent();
-  const Type *Ty = LHS->getType();
-  Value *F = Intrinsic::getDeclaration(M, Intrinsic::uadd_with_overflow, &Ty,1);
+  Type *Ty = LHS->getType();
+  Value *F = Intrinsic::getDeclaration(M, Intrinsic::uadd_with_overflow, Ty);
   CallInst *Call = Builder->CreateCall2(F, LHS, RHS, "uadd");
   Value *Add = Builder->CreateExtractValue(Call, 0);
 
@@ -2384,7 +2385,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
                                 BO1->getOperand(0));
           }
           
-          if (CI->getValue().isMaxSignedValue()) {
+          if (CI->isMaxValue(true)) {
             ICmpInst::Predicate Pred = I.isSigned()
                                            ? I.getUnsignedPredicate()
                                            : I.getSignedPredicate();

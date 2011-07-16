@@ -873,7 +873,7 @@ def VULTOD : AVConv1XI<0b11101, 0b11, 0b1011, 0b1011, 1,
 } // End of 'let Constraints = "$a = $dst", isCodeGenOnly = 1 in'
 
 //===----------------------------------------------------------------------===//
-// FP FMA Operations.
+// FP Multiply-Accumulate Operations.
 //
 
 def VMLAD : ADbI<0b11100, 0b00, 0, 0,
@@ -990,12 +990,12 @@ def : Pat<(fsub_mlx (fmul_su SPR:$a, SPR:$b), SPR:$dstin),
 
 let neverHasSideEffects = 1 in {
 def VMOVDcc  : ARMPseudoInst<(outs DPR:$Dd), (ins DPR:$Dn, DPR:$Dm, pred:$p),
-                    Size4Bytes, IIC_fpUNA64,
+                    4, IIC_fpUNA64,
                     [/*(set DPR:$Dd, (ARMcmov DPR:$Dn, DPR:$Dm, imm:$cc))*/]>,
                  RegConstraint<"$Dn = $Dd">;
 
 def VMOVScc  : ARMPseudoInst<(outs SPR:$Sd), (ins SPR:$Sn, SPR:$Sm, pred:$p),
-                    Size4Bytes, IIC_fpUNA32,
+                    4, IIC_fpUNA32,
                     [/*(set SPR:$Sd, (ARMcmov SPR:$Sn, SPR:$Sm, imm:$cc))*/]>,
                  RegConstraint<"$Sn = $Sd">;
 } // neverHasSideEffects

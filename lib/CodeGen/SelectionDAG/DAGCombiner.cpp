@@ -1001,7 +1001,7 @@ void DAGCombiner::Run(CombineLevel AtLevel) {
           dbgs() << "\nWith: ";
           RV.getNode()->dump(&DAG);
           dbgs() << '\n');
-    
+
     // Transfer debug value.
     DAG.TransferDbgValues(SDValue(N, 0), RV);
     WorkListRemover DeadNodes(*this);
@@ -1566,6 +1566,8 @@ SDValue DAGCombiner::visitSUB(SDNode *N) {
   SDValue N1 = N->getOperand(1);
   ConstantSDNode *N0C = dyn_cast<ConstantSDNode>(N0.getNode());
   ConstantSDNode *N1C = dyn_cast<ConstantSDNode>(N1.getNode());
+  ConstantSDNode *N1C1 = N1.getOpcode() != ISD::ADD ? 0 :
+    dyn_cast<ConstantSDNode>(N1.getOperand(1).getNode());
   EVT VT = N0.getValueType();
 
   // fold vector ops
@@ -1597,6 +1599,12 @@ SDValue DAGCombiner::visitSUB(SDNode *N) {
   // fold (A+B)-B -> A
   if (N0.getOpcode() == ISD::ADD && N0.getOperand(1) == N1)
     return N0.getOperand(0);
+  // fold C2-(A+C1) -> (C2-C1)-A
+  if (N1.getOpcode() == ISD::ADD && N0C && N1C1) {
+    SDValue NewC = DAG.getConstant((N0C->getAPIntValue() - N1C1->getAPIntValue()), VT);
+    return DAG.getNode(ISD::SUB, N->getDebugLoc(), VT, NewC,
+		       N1.getOperand(0));
+  }
   // fold ((A+(B+or-C))-B) -> A+or-C
   if (N0.getOpcode() == ISD::ADD &&
       (N0.getOperand(1).getOpcode() == ISD::SUB ||
@@ -2571,7 +2579,7 @@ SDValue DAGCombiner::MatchBSwapHWordLow(SDNode *N, SDValue N0, SDValue N1,
       (!LookPassAnd0 || !LookPassAnd1) &&
       !DAG.MaskedValueIsZero(N10, APInt::getHighBitsSet(OpSizeInBits, 16)))
     return SDValue();
-  
+
   SDValue Res = DAG.getNode(ISD::BSWAP, N->getDebugLoc(), VT, N00);
   if (OpSizeInBits > 16)
     Res = DAG.getNode(ISD::SRL, N->getDebugLoc(), VT, Res,
@@ -5929,12 +5937,17 @@ bool DAGCombiner::CombineToPreIndexedLoadStore(SDNode *N) {
 
   // Now check for #3 and #4.
   bool RealUse = false;
+
+  // Caches for hasPredecessorHelper
+  SmallPtrSet<const SDNode *, 32> Visited;
+  SmallVector<const SDNode *, 16> Worklist;
+
   for (SDNode::use_iterator I = Ptr.getNode()->use_begin(),
          E = Ptr.getNode()->use_end(); I != E; ++I) {
     SDNode *Use = *I;
     if (Use == N)
       continue;
-    if (Use->isPredecessorOf(N))
+    if (N->hasPredecessorHelper(Use, Visited, Worklist))
       return false;
 
     if (!((Use->getOpcode() == ISD::LOAD &&

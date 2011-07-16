@@ -13,7 +13,6 @@ add_llvm_target(XCoreCodeGen
   XCoreInstrInfo.cpp
   XCoreISelDAGToDAG.cpp
   XCoreISelLowering.cpp
-  XCoreMCAsmInfo.cpp
   XCoreRegisterInfo.cpp
   XCoreSubtarget.cpp
   XCoreTargetMachine.cpp
@@ -22,3 +21,4 @@ add_llvm_target(XCoreCodeGen
   )
 
 add_subdirectory(TargetInfo)
+add_subdirectory(MCTargetDesc)

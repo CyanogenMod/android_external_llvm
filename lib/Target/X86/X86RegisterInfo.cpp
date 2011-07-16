@@ -40,7 +40,6 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/CommandLine.h"
 
-#define GET_REGINFO_MC_DESC
 #define GET_REGINFO_TARGET_DESC
 #include "X86GenRegisterInfo.inc"
 
@@ -107,8 +106,8 @@ int X86RegisterInfo::getLLVMRegNum(unsigned DwarfRegNo, bool isEH) const {
 
 /// getCompactUnwindRegNum - This function maps the register to the number for
 /// compact unwind encoding. Return -1 if the register isn't valid.
-int X86RegisterInfo::getCompactUnwindRegNum(unsigned RegNum) const {
-  switch (RegNum) {
+int X86RegisterInfo::getCompactUnwindRegNum(unsigned RegNum, bool isEH) const {
+  switch (getLLVMRegNum(RegNum, isEH)) {
   case X86::EBX: case X86::RBX: return 1;
   case X86::ECX: case X86::R12: return 2;
   case X86::EDX: case X86::R13: return 3;
@@ -730,7 +729,10 @@ X86RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   if (MI.getOperand(i+3).isImm()) {
     // Offset is a 32-bit integer.
-    int Offset = FIOffset + (int)(MI.getOperand(i + 3).getImm());
+    int Imm = (int)(MI.getOperand(i + 3).getImm());
+    int Offset = FIOffset + Imm;
+    assert((!Is64Bit || isInt<32>((long long)FIOffset + Imm)) &&
+           "Requesting 64-bit offset in 32-bit immediate!");
     MI.getOperand(i + 3).ChangeToImmediate(Offset);
   } else {
     // Offset is symbolic. This is extremely rare.

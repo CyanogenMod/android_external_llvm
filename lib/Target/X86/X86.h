@@ -15,7 +15,7 @@
 #ifndef TARGET_X86_H
 #define TARGET_X86_H
 
-#include "MCTargetDesc/X86TargetDesc.h"
+#include "MCTargetDesc/X86MCTargetDesc.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Target/TargetMachine.h"
 
@@ -23,10 +23,12 @@ namespace llvm {
 
 class FunctionPass;
 class JITCodeEmitter;
+class MachineCodeEmitter;
 class MCCodeEmitter;
 class MCContext;
+class MCInstrInfo;
 class MCObjectWriter;
-class MachineCodeEmitter;
+class MCSubtargetInfo;
 class Target;
 class TargetAsmBackend;
 class X86TargetMachine;
@@ -58,10 +60,9 @@ FunctionPass *createSSEDomainFixPass();
 FunctionPass *createX86JITCodeEmitterPass(X86TargetMachine &TM,
                                           JITCodeEmitter &JCE);
 
-MCCodeEmitter *createX86_32MCCodeEmitter(const Target &, TargetMachine &TM,
-                                         MCContext &Ctx);
-MCCodeEmitter *createX86_64MCCodeEmitter(const Target &, TargetMachine &TM,
-                                         MCContext &Ctx);
+MCCodeEmitter *createX86MCCodeEmitter(const MCInstrInfo &MCII,
+                                      const MCSubtargetInfo &STI,
+                                      MCContext &Ctx);
 
 TargetAsmBackend *createX86_32AsmBackend(const Target &, const std::string &);
 TargetAsmBackend *createX86_64AsmBackend(const Target &, const std::string &);

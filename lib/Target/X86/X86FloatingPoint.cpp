@@ -884,7 +884,7 @@ void FPS::adjustLiveRegs(unsigned Mask, MachineBasicBlock::iterator I) {
   // Kill registers by popping.
   if (Kills && I != MBB->begin()) {
     MachineBasicBlock::iterator I2 = llvm::prior(I);
-    for (;;) {
+    while (StackTop) {
       unsigned KReg = getStackEntry(0);
       if (!(Kills & (1 << KReg)))
         break;
@@ -1467,25 +1467,24 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
     }
 
     if (STUses && !isMask_32(STUses))
-      report_fatal_error("Inline asm fixed input regs"
-                         " must be last on the x87 stack");
+      MI->emitError("fixed input regs must be last on the x87 stack");
     unsigned NumSTUses = CountTrailingOnes_32(STUses);
 
     // Defs must be contiguous from the stack top. ST0-STn.
-    if (STDefs && !isMask_32(STDefs))
-      report_fatal_error("Inline asm output regs"
-                         " must be last on the x87 stack");
+    if (STDefs && !isMask_32(STDefs)) {
+      MI->emitError("output regs must be last on the x87 stack");
+      STDefs = NextPowerOf2(STDefs) - 1;
+    }
     unsigned NumSTDefs = CountTrailingOnes_32(STDefs);
 
     // So must the clobbered stack slots. ST0-STm, m >= n.
     if (STClobbers && !isMask_32(STDefs | STClobbers))
-      report_fatal_error("Inline asm clobbers must be last on the x87 stack");
+      MI->emitError("clobbers must be last on the x87 stack");
 
     // Popped inputs are the ones that are also clobbered or defined.
     unsigned STPopped = STUses & (STDefs | STClobbers);
     if (STPopped && !isMask_32(STPopped))
-      report_fatal_error("Inline asm implicitly popped regs"
-                         " must be last on the x87 stack");
+      MI->emitError("implicitly popped regs must be last on the x87 stack");
     unsigned NumSTPopped = CountTrailingOnes_32(STPopped);
 
     DEBUG(dbgs() << "Asm uses " << NumSTUses << " fixed regs, pops "
@@ -1501,7 +1500,7 @@ void FPS::handleSpecialFP(MachineBasicBlock::iterator &I) {
       if (!Op.isReg() || Op.getReg() < X86::FP0 || Op.getReg() > X86::FP6)
         continue;
       if (!Op.isUse())
-        report_fatal_error("Illegal \"f\" output constraint in inline asm");
+        MI->emitError("illegal \"f\" output constraint");
       unsigned FPReg = getFPReg(Op);
       FPUsed |= 1U << FPReg;
 

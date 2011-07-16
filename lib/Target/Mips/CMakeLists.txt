@@ -16,7 +16,8 @@ add_llvm_target(MipsCodeGen
   MipsISelDAGToDAG.cpp
   MipsISelLowering.cpp
   MipsFrameLowering.cpp
-  MipsMCAsmInfo.cpp
+  MipsMCInstLower.cpp
+  MipsMCSymbolRefExpr.cpp
   MipsRegisterInfo.cpp
   MipsSubtarget.cpp
   MipsTargetMachine.cpp
@@ -24,4 +25,6 @@ add_llvm_target(MipsCodeGen
   MipsSelectionDAGInfo.cpp
   )
 
+add_subdirectory(InstPrinter)
 add_subdirectory(TargetInfo)
+add_subdirectory(MCTargetDesc)

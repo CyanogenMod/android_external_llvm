@@ -30,6 +30,7 @@
 #include "llvm/LLVMContext.h"
 #include "llvm/Module.h"
 #include "llvm/Pass.h"
+#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Analysis/DIBuilder.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/Loads.h"
@@ -1094,16 +1095,37 @@ bool SROA::runOnFunction(Function &F) {
 namespace {
 class AllocaPromoter : public LoadAndStorePromoter {
   AllocaInst *AI;
+  DIBuilder *DIB;
+  SmallVector<DbgDeclareInst *, 4> DDIs;
+  SmallVector<DbgValueInst *, 4> DVIs;
 public:
   AllocaPromoter(const SmallVectorImpl<Instruction*> &Insts, SSAUpdater &S,
-                 DbgDeclareInst *DD, DIBuilder *&DB)
-    : LoadAndStorePromoter(Insts, S, DD, DB), AI(0) {}
+                 DIBuilder *DB)
+    : LoadAndStorePromoter(Insts, S), AI(0), DIB(DB) {}
   
   void run(AllocaInst *AI, const SmallVectorImpl<Instruction*> &Insts) {
     // Remember which alloca we're promoting (for isInstInList).
     this->AI = AI;
+    if (MDNode *DebugNode = MDNode::getIfExists(AI->getContext(), AI))
+      for (Value::use_iterator UI = DebugNode->use_begin(),
+             E = DebugNode->use_end(); UI != E; ++UI)
+        if (DbgDeclareInst *DDI = dyn_cast<DbgDeclareInst>(*UI))
+          DDIs.push_back(DDI);
+        else if (DbgValueInst *DVI = dyn_cast<DbgValueInst>(*UI))
+          DVIs.push_back(DVI);
+
     LoadAndStorePromoter::run(Insts);
     AI->eraseFromParent();
+    for (SmallVector<DbgDeclareInst *, 4>::iterator I = DDIs.begin(), 
+           E = DDIs.end(); I != E; ++I) {
+      DbgDeclareInst *DDI = *I;
+      DDI->eraseFromParent();
+    }
+    for (SmallVector<DbgValueInst *, 4>::iterator I = DVIs.begin(), 
+           E = DVIs.end(); I != E; ++I) {
+      DbgValueInst *DVI = *I;
+      DVI->eraseFromParent();
+    }
   }
   
   virtual bool isInstInList(Instruction *I,
@@ -1111,6 +1133,45 @@ public:
     if (LoadInst *LI = dyn_cast<LoadInst>(I))
       return LI->getOperand(0) == AI;
     return cast<StoreInst>(I)->getPointerOperand() == AI;
+  }
+
+  virtual void updateDebugInfo(Instruction *Inst) const {
+    for (SmallVector<DbgDeclareInst *, 4>::const_iterator I = DDIs.begin(), 
+           E = DDIs.end(); I != E; ++I) {
+      DbgDeclareInst *DDI = *I;
+      if (StoreInst *SI = dyn_cast<StoreInst>(Inst))
+        ConvertDebugDeclareToDebugValue(DDI, SI, *DIB);
+      else if (LoadInst *LI = dyn_cast<LoadInst>(Inst))
+        ConvertDebugDeclareToDebugValue(DDI, LI, *DIB);
+    }
+    for (SmallVector<DbgValueInst *, 4>::const_iterator I = DVIs.begin(), 
+           E = DVIs.end(); I != E; ++I) {
+      DbgValueInst *DVI = *I;
+      if (StoreInst *SI = dyn_cast<StoreInst>(Inst)) {
+        Instruction *DbgVal = NULL;
+        // If an argument is zero extended then use argument directly. The ZExt
+        // may be zapped by an optimization pass in future.
+        Argument *ExtendedArg = NULL;
+        if (ZExtInst *ZExt = dyn_cast<ZExtInst>(SI->getOperand(0)))
+          ExtendedArg = dyn_cast<Argument>(ZExt->getOperand(0));
+        if (SExtInst *SExt = dyn_cast<SExtInst>(SI->getOperand(0)))
+          ExtendedArg = dyn_cast<Argument>(SExt->getOperand(0));
+        if (ExtendedArg)
+          DbgVal = DIB->insertDbgValueIntrinsic(ExtendedArg, 0, 
+                                                DIVariable(DVI->getVariable()),
+                                                SI);
+        else
+          DbgVal = DIB->insertDbgValueIntrinsic(SI->getOperand(0), 0, 
+                                                DIVariable(DVI->getVariable()),
+                                                SI);
+        DbgVal->setDebugLoc(DVI->getDebugLoc());
+      } else if (LoadInst *LI = dyn_cast<LoadInst>(Inst)) {
+        Instruction *DbgVal = 
+          DIB->insertDbgValueIntrinsic(LI->getOperand(0), 0, 
+                                       DIVariable(DVI->getVariable()), LI);
+        DbgVal->setDebugLoc(DVI->getDebugLoc());
+      }
+    }
   }
 };
 } // end anon namespace
@@ -1381,10 +1442,9 @@ bool SROA::performPromotion(Function &F) {
     DT = &getAnalysis<DominatorTree>();
 
   BasicBlock &BB = F.getEntryBlock();  // Get the entry node for the function
-
+  DIBuilder DIB(*F.getParent());
   bool Changed = false;
   SmallVector<Instruction*, 64> Insts;
-  DIBuilder *DIB = 0;
   while (1) {
     Allocas.clear();
 
@@ -1408,21 +1468,13 @@ bool SROA::performPromotion(Function &F) {
         for (Value::use_iterator UI = AI->use_begin(), E = AI->use_end();
              UI != E; ++UI)
           Insts.push_back(cast<Instruction>(*UI));
-
-        DbgDeclareInst *DDI = FindAllocaDbgDeclare(AI);
-        if (DDI && !DIB)
-          DIB = new DIBuilder(*AI->getParent()->getParent()->getParent());
-        AllocaPromoter(Insts, SSA, DDI, DIB).run(AI, Insts);
+        AllocaPromoter(Insts, SSA, &DIB).run(AI, Insts);
         Insts.clear();
       }
     }
     NumPromoted += Allocas.size();
     Changed = true;
   }
-
-  // FIXME: Is there a better way to handle the lazy initialization of DIB
-  // so that there doesn't need to be an explicit delete?
-  delete DIB;
 
   return Changed;
 }

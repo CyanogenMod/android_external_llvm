@@ -17,7 +17,6 @@ add_llvm_target(MBlazeCodeGen
   MBlazeISelDAGToDAG.cpp
   MBlazeISelLowering.cpp
   MBlazeFrameLowering.cpp
-  MBlazeMCAsmInfo.cpp
   MBlazeRegisterInfo.cpp
   MBlazeSubtarget.cpp
   MBlazeTargetMachine.cpp
@@ -35,3 +34,4 @@ add_subdirectory(AsmParser)
 add_subdirectory(Disassembler)
 add_subdirectory(InstPrinter)
 add_subdirectory(TargetInfo)
+add_subdirectory(MCTargetDesc)

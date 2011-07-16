@@ -40,6 +40,7 @@ LLVMDisasmContextRef LLVMCreateDisasm(const char *TripleName, void *DisInfo,
   llvm::InitializeAllTargetInfos();
   // FIXME: We shouldn't need to initialize the Target(Machine)s.
   llvm::InitializeAllTargets();
+  llvm::InitializeAllMCAsmInfos();
   llvm::InitializeAllAsmPrinters();
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllDisassemblers();
@@ -50,7 +51,7 @@ LLVMDisasmContextRef LLVMCreateDisasm(const char *TripleName, void *DisInfo,
   assert(TheTarget && "Unable to create target!");
 
   // Get the assembler info needed to setup the MCContext.
-  const MCAsmInfo *MAI = TheTarget->createAsmInfo(TripleName);
+  const MCAsmInfo *MAI = TheTarget->createMCAsmInfo(TripleName);
   assert(MAI && "Unable to create target asm info!");
 
   // Package up features to be passed to target/subtarget
@@ -79,7 +80,7 @@ LLVMDisasmContextRef LLVMCreateDisasm(const char *TripleName, void *DisInfo,
 
   // Set up the instruction printer.
   int AsmPrinterVariant = MAI->getAssemblerDialect();
-  MCInstPrinter *IP = TheTarget->createMCInstPrinter(*TM, AsmPrinterVariant,
+  MCInstPrinter *IP = TheTarget->createMCInstPrinter(AsmPrinterVariant,
                                                      *MAI);
   assert(IP && "Unable to create instruction printer!");
 

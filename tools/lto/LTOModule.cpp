@@ -35,6 +35,7 @@
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Target/TargetAsmParser.h"
@@ -134,6 +135,8 @@ LTOModule *LTOModule::makeLTOModule(MemoryBuffer *buffer,
   static bool Initialized = false;
   if (!Initialized) {
     InitializeAllTargets();
+    InitializeAllMCAsmInfos();
+    InitializeAllMCSubtargetInfos();
     InitializeAllAsmParsers();
     Initialized = true;
   }
@@ -596,7 +599,8 @@ namespace {
     virtual void EmitFileDirective(StringRef Filename) {}
     virtual void EmitDwarfAdvanceLineAddr(int64_t LineDelta,
                                           const MCSymbol *LastLabel,
-                                        const MCSymbol *Label) {}
+                                          const MCSymbol *Label,
+                                          unsigned PointerSize) {}
 
     virtual void EmitInstruction(const MCInst &Inst) {
       // Scan for values.
@@ -618,8 +622,12 @@ bool LTOModule::addAsmGlobalSymbols(MCContext &Context) {
   OwningPtr<MCAsmParser> Parser(createMCAsmParser(_target->getTarget(), SrcMgr,
                                                   Context, *Streamer,
                                                   *_target->getMCAsmInfo()));
+  OwningPtr<MCSubtargetInfo> STI(_target->getTarget().
+                      createMCSubtargetInfo(_target->getTargetTriple(),
+                                            _target->getTargetCPU(),
+                                            _target->getTargetFeatureString()));
   OwningPtr<TargetAsmParser>
-    TAP(_target->getTarget().createAsmParser(*Parser.get(), *_target.get()));
+    TAP(_target->getTarget().createAsmParser(*STI, *Parser.get()));
   Parser->setTargetParser(*TAP);
   int Res = Parser->Run(false);
   if (Res)

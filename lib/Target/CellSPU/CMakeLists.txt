@@ -15,7 +15,6 @@ add_llvm_target(CellSPUCodeGen
   SPUISelDAGToDAG.cpp
   SPUISelLowering.cpp
   SPUFrameLowering.cpp
-  SPUMCAsmInfo.cpp
   SPURegisterInfo.cpp
   SPUSubtarget.cpp
   SPUTargetMachine.cpp
@@ -24,3 +23,4 @@ add_llvm_target(CellSPUCodeGen
   )
 
 add_subdirectory(TargetInfo)
+add_subdirectory(MCTargetDesc)

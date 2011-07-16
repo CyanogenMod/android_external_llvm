@@ -12,7 +12,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mips.h"
-#include "MipsMCAsmInfo.h"
 #include "MipsTargetMachine.h"
 #include "llvm/PassManager.h"
 #include "llvm/Target/TargetRegistry.h"
@@ -22,8 +21,6 @@ extern "C" void LLVMInitializeMipsTarget() {
   // Register the target.
   RegisterTargetMachine<MipsTargetMachine> X(TheMipsTarget);
   RegisterTargetMachine<MipselTargetMachine> Y(TheMipselTarget);
-  RegisterAsmInfo<MipsMCAsmInfo> A(TheMipsTarget);
-  RegisterAsmInfo<MipsMCAsmInfo> B(TheMipselTarget);
 }
 
 // DataLayout --> Big-endian, 32-bit pointer/ABI/alignment
@@ -37,7 +34,7 @@ MipsTargetMachine::
 MipsTargetMachine(const Target &T, const std::string &TT,
                   const std::string &CPU, const std::string &FS,
                   bool isLittle=false):
-  LLVMTargetMachine(T, TT),
+  LLVMTargetMachine(T, TT, CPU, FS),
   Subtarget(TT, CPU, FS, isLittle),
   DataLayout(isLittle ? 
              std::string("e-p:32:32:32-i8:8:32-i16:16:32-i64:64:64-n32") :

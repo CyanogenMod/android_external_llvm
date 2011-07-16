@@ -30,6 +30,14 @@ static Value *DecomposeSimpleLinearExpr(Value *Val, unsigned &Scale,
   }
   
   if (BinaryOperator *I = dyn_cast<BinaryOperator>(Val)) {
+    // Cannot look past anything that might overflow.
+    OverflowingBinaryOperator *OBI = dyn_cast<OverflowingBinaryOperator>(Val);
+    if (OBI && !OBI->hasNoUnsignedWrap()) {
+      Scale = 1;
+      Offset = 0;
+      return Val;
+    }
+
     if (ConstantInt *RHS = dyn_cast<ConstantInt>(I->getOperand(1))) {
       if (I->getOpcode() == Instruction::Shl) {
         // This is a value scaled by '1 << the shift amt'.
@@ -70,11 +78,6 @@ Instruction *InstCombiner::PromoteCastOfAllocation(BitCastInst &CI,
                                                    AllocaInst &AI) {
   // This requires TargetData to get the alloca alignment and size information.
   if (!TD) return 0;
-
-  // Insist that the amount-to-allocate not overflow.
-  OverflowingBinaryOperator *OBI =
-    dyn_cast<OverflowingBinaryOperator>(AI.getOperand(0));
-  if (OBI && !(OBI->hasNoSignedWrap() || OBI->hasNoUnsignedWrap())) return 0;
 
   const PointerType *PTy = cast<PointerType>(CI.getType());
   
@@ -1213,7 +1216,8 @@ Instruction *InstCombiner::visitFPTrunc(FPTruncInst &CI) {
   CallInst *Call = dyn_cast<CallInst>(CI.getOperand(0));
   if (Call && Call->getCalledFunction() &&
       Call->getCalledFunction()->getName() == "sqrt" &&
-      Call->getNumArgOperands() == 1) {
+      Call->getNumArgOperands() == 1 &&
+      Call->hasOneUse()) {
     CastInst *Arg = dyn_cast<CastInst>(Call->getArgOperand(0));
     if (Arg && Arg->getOpcode() == Instruction::FPExt &&
         CI.getType()->isFloatTy() &&
