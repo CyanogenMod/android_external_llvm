@@ -1,24 +1,24 @@
 LOCAL_PATH := $(call my-dir)
 
-x86_mc_desc_TBLGEN_TABLES :=	\
-	X86GenRegisterInfo.inc	\
-	X86GenInstrInfo.inc	\
-	X86GenSubtargetInfo.inc
+arm_mc_desc_TBLGEN_TABLES :=	\
+	ARMGenRegisterInfo.inc	\
+	ARMGenInstrInfo.inc	\
+	ARMGenSubtargetInfo.inc
 
-x86_mc_desc_SRC_FILES :=   \
-	X86MCAsmInfo.cpp \
-	X86MCTargetDesc.cpp
+arm_mc_desc_SRC_FILES :=   \
+	ARMMCAsmInfo.cpp \
+	ARMMCTargetDesc.cpp
 
 # For the host
 # =====================================================
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
-TBLGEN_TABLES := $(x86_mc_desc_TBLGEN_TABLES)
+TBLGEN_TABLES := $(arm_mc_desc_TBLGEN_TABLES)
 
-LOCAL_SRC_FILES := $(x86_mc_desc_SRC_FILES)
+LOCAL_SRC_FILES := $(arm_mc_desc_SRC_FILES)
 
-LOCAL_MODULE:= libLLVMX86Desc
+LOCAL_MODULE:= libLLVMARMDesc
 
 LOCAL_MODULE_TAGS := optional
 
@@ -29,15 +29,15 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device only
 # =====================================================
-ifeq ($(TARGET_ARCH),x86)
+ifeq ($(TARGET_ARCH),arm)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
-TBLGEN_TABLES := $(x86_mc_desc_TBLGEN_TABLES)
+TBLGEN_TABLES := $(arm_mc_desc_TBLGEN_TABLES)
 
-LOCAL_SRC_FILES := $(x86_mc_desc_SRC_FILES)
+LOCAL_SRC_FILES := $(arm_mc_desc_SRC_FILES)
 
-LOCAL_MODULE:= libLLVMX86Desc
+LOCAL_MODULE:= libLLVMARMDesc
 
 LOCAL_MODULE_TAGS := optional
 

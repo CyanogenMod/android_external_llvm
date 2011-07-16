@@ -1,6 +1,7 @@
 LOCAL_PATH := $(call my-dir)
 
 arm_target_info_TBLGEN_TABLES :=	\
+	ARMGenSubtargetInfo.inc \
 	ARMGenRegisterInfo.inc	\
 	ARMGenInstrInfo.inc
 

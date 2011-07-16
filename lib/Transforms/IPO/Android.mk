@@ -4,7 +4,6 @@ transforms_ipo_SRC_FILES :=	\
 	ArgumentPromotion.cpp	\
 	ConstantMerge.cpp	\
 	DeadArgumentElimination.cpp	\
-	DeadTypeElimination.cpp	\
 	ExtractGV.cpp	\
 	FunctionAttrs.cpp	\
 	GlobalDCE.cpp	\

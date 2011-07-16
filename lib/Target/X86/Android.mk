@@ -25,7 +25,6 @@ x86_codegen_SRC_FILES :=	\
     X86InstrInfo.cpp	\
     X86JITInfo.cpp	\
     X86MachObjectWriter.cpp \
-    X86MCAsmInfo.cpp	\
     X86MCCodeEmitter.cpp	\
     X86MCInstLower.cpp	\
     X86RegisterInfo.cpp	\

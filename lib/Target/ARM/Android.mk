@@ -3,6 +3,7 @@ LOCAL_PATH := $(call my-dir)
 arm_codegen_TBLGEN_TABLES :=	\
 	ARMGenAsmWriter.inc	\
 	ARMGenMCCodeEmitter.inc \
+	ARMGenMCPseudoLowering.inc \
 	ARMGenRegisterInfo.inc	\
 	ARMGenInstrInfo.inc	\
 	ARMGenDAGISel.inc	\
@@ -31,7 +32,6 @@ arm_codegen_SRC_FILES :=   \
 	ARMJITInfo.cpp  \
 	ARMLoadStoreOptimizer.cpp   \
 	ARMMachObjectWriter.cpp \
-	ARMMCAsmInfo.cpp    \
 	ARMMCCodeEmitter.cpp\
 	ARMMCExpr.cpp	\
 	ARMMCInstLower.cpp  \

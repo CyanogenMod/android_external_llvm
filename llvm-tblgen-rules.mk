@@ -28,6 +28,28 @@ ifneq ($(TBLGEN_TD_DIR),)
 tblgen_source_dir := $(TBLGEN_TD_DIR)
 endif
 
+#
+# The directory and the .td directory is not the same.
+#
+ifeq ($(tblgen_source_dir),$(LLVM_ROOT_PATH)/lib/Target/ARM/MCTargetDesc)
+$(intermediates)/%GenRegisterInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out, register-info)
+$(intermediates)/%GenInstrInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out,instr-info)
+$(intermediates)/%GenSubtargetInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out,subtarget)
+endif
+
+ifeq ($(tblgen_source_dir),$(LLVM_ROOT_PATH)/lib/Target/X86/MCTargetDesc)
+$(intermediates)/%GenRegisterInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out, register-info)
+$(intermediates)/%GenInstrInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out,instr-info)
+$(intermediates)/%GenSubtargetInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out,subtarget)
+endif
+
+
 ifneq ($(filter %GenRegisterInfo.inc,$(tblgen_gen_tables)),)
 $(intermediates)/%GenRegisterInfo.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,register-info)
@@ -61,6 +83,11 @@ endif
 ifneq ($(filter %GenMCCodeEmitter.inc,$(tblgen_gen_tables)),)
 $(intermediates)/%GenMCCodeEmitter.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,emitter -mc-emitter)
+endif
+
+ifneq ($(filter %GenMCPseudoLowering.inc,$(tblgen_gen_tables)),)
+$(intermediates)/%GenMCPseudoLowering.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
+	$(call transform-td-to-out,pseudo-lowering)
 endif
 
 ifneq ($(filter %GenDAGISel.inc,$(tblgen_gen_tables)),)

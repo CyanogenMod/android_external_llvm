@@ -4,6 +4,7 @@ arm_disassembler_TBLGEN_TABLES := \
     ARMGenDecoderTables.inc \
     ARMGenEDInfo.inc \
     ARMGenInstrInfo.inc \
+    ARMGenSubtargetInfo.inc \
     ARMGenRegisterInfo.inc
 
 arm_disassembler_SRC_FILES := \

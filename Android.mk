@@ -28,11 +28,13 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
 		lib/Target/ARM/AsmParser 	\
 		lib/Target/ARM/InstPrinter \
 		lib/Target/ARM/Disassembler	\
+		lib/Target/ARM/MCTargetDesc \
 		lib/Target/ARM/TargetInfo	\
 		lib/Target/X86	\
 		lib/Target/X86/AsmParser 	\
 		lib/Target/X86/InstPrinter	\
 		lib/Target/X86/Disassembler	\
+		lib/Target/X86/MCTargetDesc \
 		lib/Target/X86/TargetInfo	\
 		lib/Target/X86/Utils	\
 		lib/ExecutionEngine/JIT	\

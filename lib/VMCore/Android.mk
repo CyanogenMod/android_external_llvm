@@ -29,7 +29,6 @@ vmcore_SRC_FILES :=	\
 	PassRegistry.cpp	\
 	PrintModulePass.cpp	\
 	Type.cpp	\
-	TypeSymbolTable.cpp	\
 	Use.cpp	\
 	User.cpp\
 	Value.cpp	\

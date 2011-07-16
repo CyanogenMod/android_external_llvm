@@ -3,6 +3,7 @@ LOCAL_PATH := $(call my-dir)
 arm_asm_printer_TBLGEN_TABLES :=    \
     ARMGenAsmWriter.inc \
     ARMGenRegisterInfo.inc\
+    ARMGenSubtargetInfo.inc \
     ARMGenInstrInfo.inc
 
 arm_asm_printer_SRC_FILES :=    \

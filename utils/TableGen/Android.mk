@@ -32,6 +32,7 @@ LOCAL_SRC_FILES :=	\
 	LLVMCConfigurationEmitter.cpp   \
 	NeonEmitter.cpp	\
 	OptParserEmitter.cpp    \
+	PseudoLoweringEmitter.cpp \
 	Record.cpp  \
 	RegisterInfoEmitter.cpp \
 	SetTheory.cpp \

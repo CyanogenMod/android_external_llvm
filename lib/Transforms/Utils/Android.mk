@@ -16,6 +16,7 @@ transforms_utils_SRC_FILES :=	\
 	Local.cpp	\
 	LoopSimplify.cpp	\
 	LoopUnroll.cpp	\
+	LowerExpectIntrinsic.cpp \
 	LowerInvoke.cpp	\
 	LowerSwitch.cpp	\
 	Mem2Reg.cpp	\
