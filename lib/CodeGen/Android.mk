@@ -41,6 +41,7 @@ codegen_SRC_FILES :=   \
 	MachineFunctionAnalysis.cpp \
 	MachineFunctionPass.cpp \
 	MachineFunctionPrinterPass.cpp  \
+	MachineBlockFrequency.cpp \
 	MachineInstr.cpp    \
 	MachineLICM.cpp \
 	MachineLoopInfo.cpp \
