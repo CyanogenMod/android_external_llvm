@@ -17,9 +17,9 @@
 * For Honeycomb MR2: Synced to upstream r119309
 * For Ice Cream Sandwich: Synced to upstream r135360
 
-* Recent downstreaming on 2011/7/19: From r134306 to 135360
-* Recent downstreaming on 2011/7/2: From r133718 to 134306
-* Recent downstreaming on 2011/6/30: From r133240 to 133718
+* Recent downstreaming on 2011/7/19: From r134306 to 135360 (Contact sliao@ for merge questions.)
+* Recent downstreaming on 2011/7/2: From r133718 to 134306 (Contact sliao@ for merge questions.)
+* Recent downstreaming on 2011/6/30: From r133240 to 133718 (Contact sliao@ for merge questions.)
   * This downstreaming could have broken bitcode compatibility
     * Upstream was migrating from 2.7 bitcode to 3.0 bitcode.
     * See the 4 commits on 2011/6/17:
@@ -32,9 +32,9 @@
     ==> * 020a5a4 - remove bitcode reader support for LLVM 2.7 metadata encoding. (13 days ago) <Chris Lattner>
   * We maintain compatibility because Honeycomb SDK is out there.
     * Our bitcode reader can read both 2.7 and 3.0 versions. Writer is tracking upstream.
-* Recent downstreaming on 2011/6/22: From r129128 to 133240
-* Recent downstreaming on 2011/4/8: From r127116 to 129128
-* Recent downstreaming on 2011/3/11: From r119309 to 127116
+* Recent downstreaming on 2011/6/22: From r129128 to 133240 (Contact sliao@ for merge questions.)
+* Recent downstreaming on 2011/4/8: From r127116 to 129128 (Contact sliao@ for merge questions.)
+* Recent downstreaming on 2011/3/11: From r119309 to 127116 (Contact sliao@ for merge questions.)
 
 * We add 40+ Android's *.mk files that are specific to Android's build system.
 
