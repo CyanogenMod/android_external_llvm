@@ -39,6 +39,16 @@ extern "C" void LLVMInitializeSparcMCInstrInfo() {
   TargetRegistry::RegisterMCInstrInfo(TheSparcTarget, createSparcMCInstrInfo);
 }
 
+static MCRegisterInfo *createSparcMCRegisterInfo(StringRef TT) {
+  MCRegisterInfo *X = new MCRegisterInfo();
+  InitSparcMCRegisterInfo(X, SP::I7);
+  return X;
+}
+
+extern "C" void LLVMInitializeSparcMCRegisterInfo() {
+  TargetRegistry::RegisterMCRegInfo(TheSparcTarget, createSparcMCRegisterInfo);
+}
+
 static MCSubtargetInfo *createSparcMCSubtargetInfo(StringRef TT, StringRef CPU,
                                                    StringRef FS) {
   MCSubtargetInfo *X = new MCSubtargetInfo();
@@ -55,3 +65,17 @@ extern "C" void LLVMInitializeSparcMCAsmInfo() {
   RegisterMCAsmInfo<SparcELFMCAsmInfo> X(TheSparcTarget);
   RegisterMCAsmInfo<SparcELFMCAsmInfo> Y(TheSparcV9Target);
 }
+
+MCCodeGenInfo *createSparcMCCodeGenInfo(StringRef TT, Reloc::Model RM) {
+  MCCodeGenInfo *X = new MCCodeGenInfo();
+  X->InitMCCodeGenInfo(RM);
+  return X;
+}
+
+extern "C" void LLVMInitializeSparcMCCodeGenInfo() {
+  TargetRegistry::RegisterMCCodeGenInfo(TheSparcTarget,
+                                       createSparcMCCodeGenInfo);
+  TargetRegistry::RegisterMCCodeGenInfo(TheSparcV9Target,
+                                       createSparcMCCodeGenInfo);
+}
+

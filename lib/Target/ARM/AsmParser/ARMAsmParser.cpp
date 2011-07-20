@@ -79,6 +79,8 @@ class ARMAsmParser : public TargetAsmParser {
   bool MatchAndEmitInstruction(SMLoc IDLoc,
                                SmallVectorImpl<MCParsedAsmOperand*> &Operands,
                                MCStreamer &Out);
+  StringRef SplitMnemonic(StringRef Mnemonic, unsigned &PredicationCode,
+                          bool &CarrySetting, unsigned &ProcessorIMod);
   void GetMnemonicAcceptInfo(StringRef Mnemonic, bool &CanAcceptCarrySet,
                              bool &CanAcceptPredicationCode);
 
@@ -407,6 +409,24 @@ public:
     int64_t Value = CE->getValue();
     return Value >= 0 && Value < 65536;
   }
+  bool isImm0_65535Expr() const {
+    if (Kind != Immediate)
+      return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    // If it's not a constant expression, it'll generate a fixup and be
+    // handled later.
+    if (!CE) return true;
+    int64_t Value = CE->getValue();
+    return Value >= 0 && Value < 65536;
+  }
+  bool isARMSOImm() const {
+    if (Kind != Immediate)
+      return false;
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE) return false;
+    int64_t Value = CE->getValue();
+    return ARM_AM::getSOImmVal(Value) != -1;
+  }
   bool isT2SOImm() const {
     if (Kind != Immediate)
       return false;
@@ -609,6 +629,16 @@ public:
   }
 
   void addImm0_65535Operands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    addExpr(Inst, getImm());
+  }
+
+  void addImm0_65535ExprOperands(MCInst &Inst, unsigned N) const {
+    assert(N == 1 && "Invalid number of operands!");
+    addExpr(Inst, getImm());
+  }
+
+  void addARMSOImmOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     addExpr(Inst, getImm());
   }
@@ -1400,7 +1430,7 @@ tryParseMSRMaskOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   // Split spec_reg from flag, example: CPSR_sxf => "CPSR" and "sxf"
   size_t Start = 0, Next = Mask.find('_');
   StringRef Flags = "";
-  StringRef SpecReg = Mask.slice(Start, Next);
+  std::string SpecReg = LowercaseString(Mask.slice(Start, Next));
   if (Next != StringRef::npos)
     Flags = Mask.slice(Next+1, Mask.size());
 
@@ -1411,7 +1441,7 @@ tryParseMSRMaskOperand(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
 
   if (SpecReg == "apsr") {
     FlagsVal = StringSwitch<unsigned>(Flags)
-    .Case("nzcvq",  0x8) // same as CPSR_c
+    .Case("nzcvq",  0x8) // same as CPSR_f
     .Case("g",      0x4) // same as CPSR_s
     .Case("nzcvqg", 0xc) // same as CPSR_fs
     .Default(~0U);
@@ -1924,10 +1954,10 @@ ARMAsmParser::ApplyPrefixToExpr(const MCExpr *E,
 /// setting letters to form a canonical mnemonic and flags.
 //
 // FIXME: Would be nice to autogen this.
-static StringRef SplitMnemonic(StringRef Mnemonic,
-                               unsigned &PredicationCode,
-                               bool &CarrySetting,
-                               unsigned &ProcessorIMod) {
+StringRef ARMAsmParser::SplitMnemonic(StringRef Mnemonic,
+                                      unsigned &PredicationCode,
+                                      bool &CarrySetting,
+                                      unsigned &ProcessorIMod) {
   PredicationCode = ARMCC::AL;
   CarrySetting = false;
   ProcessorIMod = 0;
@@ -1935,23 +1965,19 @@ static StringRef SplitMnemonic(StringRef Mnemonic,
   // Ignore some mnemonics we know aren't predicated forms.
   //
   // FIXME: Would be nice to autogen this.
-  if (Mnemonic == "teq" || Mnemonic == "vceq" ||
-      Mnemonic == "movs" ||
-      Mnemonic == "svc" ||
-      (Mnemonic == "mls" || Mnemonic == "smmls" || Mnemonic == "vcls" ||
-       Mnemonic == "vmls" || Mnemonic == "vnmls") ||
-      Mnemonic == "vacge" || Mnemonic == "vcge" ||
-      Mnemonic == "vclt" ||
-      Mnemonic == "vacgt" || Mnemonic == "vcgt" ||
-      Mnemonic == "vcle" ||
-      (Mnemonic == "smlal" || Mnemonic == "umaal" || Mnemonic == "umlal" ||
-       Mnemonic == "vabal" || Mnemonic == "vmlal" || Mnemonic == "vpadal" ||
-       Mnemonic == "vqdmlal" || Mnemonic == "bics"))
+  if ((Mnemonic == "movs" && isThumb()) ||
+      Mnemonic == "teq"   || Mnemonic == "vceq"   || Mnemonic == "svc"   ||
+      Mnemonic == "mls"   || Mnemonic == "smmls"  || Mnemonic == "vcls"  ||
+      Mnemonic == "vmls"  || Mnemonic == "vnmls"  || Mnemonic == "vacge" ||
+      Mnemonic == "vcge"  || Mnemonic == "vclt"   || Mnemonic == "vacgt" ||
+      Mnemonic == "vcgt"  || Mnemonic == "vcle"   || Mnemonic == "smlal" ||
+      Mnemonic == "umaal" || Mnemonic == "umlal"  || Mnemonic == "vabal" ||
+      Mnemonic == "vmlal" || Mnemonic == "vpadal" || Mnemonic == "vqdmlal")
     return Mnemonic;
 
   // First, split out any predication code. Ignore mnemonics we know aren't
   // predicated but do have a carry-set and so weren't caught above.
-  if (Mnemonic != "adcs") {
+  if (Mnemonic != "adcs" && Mnemonic != "bics" && Mnemonic != "movs") {
     unsigned CC = StringSwitch<unsigned>(Mnemonic.substr(Mnemonic.size()-2))
       .Case("eq", ARMCC::EQ)
       .Case("ne", ARMCC::NE)
@@ -1981,10 +2007,10 @@ static StringRef SplitMnemonic(StringRef Mnemonic,
   // the instructions we know end in 's'.
   if (Mnemonic.endswith("s") &&
       !(Mnemonic == "asrs" || Mnemonic == "cps" || Mnemonic == "mls" ||
-        Mnemonic == "movs" || Mnemonic == "mrs" || Mnemonic == "smmls" ||
-        Mnemonic == "vabs" || Mnemonic == "vcls" || Mnemonic == "vmls" ||
-        Mnemonic == "vmrs" || Mnemonic == "vnmls" || Mnemonic == "vqabs" ||
-        Mnemonic == "vrecps" || Mnemonic == "vrsqrts")) {
+        Mnemonic == "mrs" || Mnemonic == "smmls" || Mnemonic == "vabs" ||
+        Mnemonic == "vcls" || Mnemonic == "vmls" || Mnemonic == "vmrs" ||
+        Mnemonic == "vnmls" || Mnemonic == "vqabs" || Mnemonic == "vrecps" ||
+        Mnemonic == "vrsqrts" || (Mnemonic == "movs" && isThumb()))) {
     Mnemonic = Mnemonic.slice(0, Mnemonic.size() - 1);
     CarrySetting = true;
   }
@@ -2032,8 +2058,8 @@ GetMnemonicAcceptInfo(StringRef Mnemonic, bool &CanAcceptCarrySet,
       Mnemonic == "cps" || Mnemonic == "mcr2" || Mnemonic == "it" ||
       Mnemonic == "mcrr2" || Mnemonic == "cbz" || Mnemonic == "cdp2" ||
       Mnemonic == "trap" || Mnemonic == "mrc2" || Mnemonic == "mrrc2" ||
-      Mnemonic == "dsb" || Mnemonic == "movs" || Mnemonic == "isb" ||
-      Mnemonic == "clrex" || Mnemonic.startswith("cps")) {
+      Mnemonic == "dsb" || Mnemonic == "isb" || Mnemonic == "clrex" ||
+      Mnemonic.startswith("cps") || (Mnemonic == "movs" && isThumb())) {
     CanAcceptPredicationCode = false;
   } else {
     CanAcceptPredicationCode = true;
@@ -2050,16 +2076,19 @@ bool ARMAsmParser::ParseInstruction(StringRef Name, SMLoc NameLoc,
                                SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   // Create the leading tokens for the mnemonic, split by '.' characters.
   size_t Start = 0, Next = Name.find('.');
-  StringRef Head = Name.slice(Start, Next);
+  StringRef Mnemonic = Name.slice(Start, Next);
 
   // Split out the predication code and carry setting flag from the mnemonic.
   unsigned PredicationCode;
   unsigned ProcessorIMod;
   bool CarrySetting;
-  Head = SplitMnemonic(Head, PredicationCode, CarrySetting,
+  Mnemonic = SplitMnemonic(Mnemonic, PredicationCode, CarrySetting,
                        ProcessorIMod);
 
-  Operands.push_back(ARMOperand::CreateToken(Head, NameLoc));
+  Operands.push_back(ARMOperand::CreateToken(Mnemonic, NameLoc));
+
+  // FIXME: This is all a pretty gross hack. We should automatically handle
+  // optional operands like this via tblgen.
 
   // Next, add the CCOut and ConditionCode operands, if needed.
   //
@@ -2069,13 +2098,13 @@ bool ARMAsmParser::ParseInstruction(StringRef Name, SMLoc NameLoc,
   // the matcher deal with finding the right instruction or generating an
   // appropriate error.
   bool CanAcceptCarrySet, CanAcceptPredicationCode;
-  GetMnemonicAcceptInfo(Head, CanAcceptCarrySet, CanAcceptPredicationCode);
+  GetMnemonicAcceptInfo(Mnemonic, CanAcceptCarrySet, CanAcceptPredicationCode);
 
   // If we had a carry-set on an instruction that can't do that, issue an
   // error.
   if (!CanAcceptCarrySet && CarrySetting) {
     Parser.EatToEndOfStatement();
-    return Error(NameLoc, "instruction '" + Head +
+    return Error(NameLoc, "instruction '" + Mnemonic +
                  "' can not set flags, but 's' suffix specified");
   }
 
@@ -2123,7 +2152,7 @@ bool ARMAsmParser::ParseInstruction(StringRef Name, SMLoc NameLoc,
   // Read the remaining operands.
   if (getLexer().isNot(AsmToken::EndOfStatement)) {
     // Read the first operand.
-    if (ParseOperand(Operands, Head)) {
+    if (ParseOperand(Operands, Mnemonic)) {
       Parser.EatToEndOfStatement();
       return true;
     }
@@ -2132,7 +2161,7 @@ bool ARMAsmParser::ParseInstruction(StringRef Name, SMLoc NameLoc,
       Parser.Lex();  // Eat the comma.
 
       // Parse and remember the operand.
-      if (ParseOperand(Operands, Head)) {
+      if (ParseOperand(Operands, Mnemonic)) {
         Parser.EatToEndOfStatement();
         return true;
       }
@@ -2145,6 +2174,27 @@ bool ARMAsmParser::ParseInstruction(StringRef Name, SMLoc NameLoc,
   }
 
   Parser.Lex(); // Consume the EndOfStatement
+
+
+  // The 'mov' mnemonic is special. One variant has a cc_out operand, while
+  // another does not. Specifically, the MOVW instruction does not. So we
+  // special case it here and remove the defaulted (non-setting) cc_out
+  // operand if that's the instruction we're trying to match.
+  //
+  // We do this post-processing of the explicit operands rather than just
+  // conditionally adding the cc_out in the first place because we need
+  // to check the type of the parsed immediate operand.
+  if (Mnemonic == "mov" && Operands.size() > 4 &&
+      !static_cast<ARMOperand*>(Operands[4])->isARMSOImm() &&
+      static_cast<ARMOperand*>(Operands[4])->isImm0_65535Expr() &&
+      static_cast<ARMOperand*>(Operands[1])->getReg() == 0) {
+    ARMOperand *Op = static_cast<ARMOperand*>(Operands[1]);
+    Operands.erase(Operands.begin() + 1);
+    delete Op;
+  }
+
+
+
   return false;
 }
 
@@ -2154,59 +2204,8 @@ MatchAndEmitInstruction(SMLoc IDLoc,
                         MCStreamer &Out) {
   MCInst Inst;
   unsigned ErrorInfo;
-  MatchResultTy MatchResult, MatchResult2;
+  MatchResultTy MatchResult;
   MatchResult = MatchInstructionImpl(Operands, Inst, ErrorInfo);
-  if (MatchResult != Match_Success) {
-    // If we get a Match_InvalidOperand it might be some arithmetic instruction
-    // that does not update the condition codes.  So try adding a CCOut operand
-    // with a value of reg0.
-    if (MatchResult == Match_InvalidOperand) {
-      Operands.insert(Operands.begin() + 1,
-                      ARMOperand::CreateCCOut(0,
-                                  ((ARMOperand*)Operands[0])->getStartLoc()));
-      MatchResult2 = MatchInstructionImpl(Operands, Inst, ErrorInfo);
-      if (MatchResult2 == Match_Success)
-        MatchResult = Match_Success;
-      else {
-        ARMOperand *CCOut = ((ARMOperand*)Operands[1]);
-        Operands.erase(Operands.begin() + 1);
-        delete CCOut;
-      }
-    }
-    // If we get a Match_MnemonicFail it might be some arithmetic instruction
-    // that updates the condition codes if it ends in 's'.  So see if the
-    // mnemonic ends in 's' and if so try removing the 's' and adding a CCOut
-    // operand with a value of CPSR.
-    else if (MatchResult == Match_MnemonicFail) {
-      // Get the instruction mnemonic, which is the first token.
-      StringRef Mnemonic = ((ARMOperand*)Operands[0])->getToken();
-      if (Mnemonic.substr(Mnemonic.size()-1) == "s") {
-        // removed the 's' from the mnemonic for matching.
-        StringRef MnemonicNoS = Mnemonic.slice(0, Mnemonic.size() - 1);
-        SMLoc NameLoc = ((ARMOperand*)Operands[0])->getStartLoc();
-        ARMOperand *OldMnemonic = ((ARMOperand*)Operands[0]);
-        Operands.erase(Operands.begin());
-        delete OldMnemonic;
-        Operands.insert(Operands.begin(),
-                        ARMOperand::CreateToken(MnemonicNoS, NameLoc));
-        Operands.insert(Operands.begin() + 1,
-                        ARMOperand::CreateCCOut(ARM::CPSR, NameLoc));
-        MatchResult2 = MatchInstructionImpl(Operands, Inst, ErrorInfo);
-        if (MatchResult2 == Match_Success)
-          MatchResult = Match_Success;
-        else {
-          ARMOperand *OldMnemonic = ((ARMOperand*)Operands[0]);
-          Operands.erase(Operands.begin());
-          delete OldMnemonic;
-          Operands.insert(Operands.begin(),
-                          ARMOperand::CreateToken(Mnemonic, NameLoc));
-          ARMOperand *CCOut = ((ARMOperand*)Operands[1]);
-          Operands.erase(Operands.begin() + 1);
-          delete CCOut;
-        }
-      }
-    }
-  }
   switch (MatchResult) {
   case Match_Success:
     Out.EmitInstruction(Inst);

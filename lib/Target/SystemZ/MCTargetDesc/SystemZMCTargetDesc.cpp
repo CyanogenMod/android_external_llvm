@@ -40,6 +40,17 @@ extern "C" void LLVMInitializeSystemZMCInstrInfo() {
                                       createSystemZMCInstrInfo);
 }
 
+static MCRegisterInfo *createSystemZMCRegisterInfo(StringRef TT) {
+  MCRegisterInfo *X = new MCRegisterInfo();
+  InitSystemZMCRegisterInfo(X, 0);
+  return X;
+}
+
+extern "C" void LLVMInitializeSystemZMCRegisterInfo() {
+  TargetRegistry::RegisterMCRegInfo(TheSystemZTarget,
+                                    createSystemZMCRegisterInfo);
+}
+
 static MCSubtargetInfo *createSystemZMCSubtargetInfo(StringRef TT,
                                                      StringRef CPU,
                                                      StringRef FS) {
@@ -55,4 +66,17 @@ extern "C" void LLVMInitializeSystemZMCSubtargetInfo() {
 
 extern "C" void LLVMInitializeSystemZMCAsmInfo() {
   RegisterMCAsmInfo<SystemZMCAsmInfo> X(TheSystemZTarget);
+}
+
+MCCodeGenInfo *createSystemZMCCodeGenInfo(StringRef TT, Reloc::Model RM) {
+  MCCodeGenInfo *X = new MCCodeGenInfo();
+  if (RM == Reloc::Default)
+    RM = Reloc::Static;
+  X->InitMCCodeGenInfo(RM);
+  return X;
+}
+
+extern "C" void LLVMInitializeSystemZMCCodeGenInfo() {
+  TargetRegistry::RegisterMCCodeGenInfo(TheSystemZTarget,
+                                        createSystemZMCCodeGenInfo);
 }

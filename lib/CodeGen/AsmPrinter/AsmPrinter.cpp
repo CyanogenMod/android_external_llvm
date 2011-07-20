@@ -629,6 +629,9 @@ void AsmPrinter::emitPrologLabel(const MachineInstr &MI) {
   if (needsCFIMoves() == CFI_M_None)
     return;
 
+  if (MMI->getCompactUnwindEncoding() != 0)
+    OutStreamer.EmitCompactUnwindEncoding(MMI->getCompactUnwindEncoding());
+
   MachineModuleInfo &MMI = MF->getMMI();
   std::vector<MachineMove> &Moves = MMI.getFrameMoves();
   bool FoundOne = false;
@@ -1026,7 +1029,7 @@ void AsmPrinter::EmitConstantPool() {
       unsigned NewOffset = (Offset + AlignMask) & ~AlignMask;
       OutStreamer.EmitFill(NewOffset - Offset, 0/*fillval*/, 0/*addrspace*/);
 
-      const Type *Ty = CPE.getType();
+      Type *Ty = CPE.getType();
       Offset = NewOffset + TM.getTargetData()->getTypeAllocSize(Ty);
       OutStreamer.EmitLabel(GetCPISymbol(CPI));
 
@@ -1423,8 +1426,7 @@ static const MCExpr *LowerConstant(const Constant *CV, AsmPrinter &AP) {
     // Generate a symbolic expression for the byte address
     const Constant *PtrVal = CE->getOperand(0);
     SmallVector<Value*, 8> IdxVec(CE->op_begin()+1, CE->op_end());
-    int64_t Offset = TD.getIndexedOffset(PtrVal->getType(), &IdxVec[0],
-                                         IdxVec.size());
+    int64_t Offset = TD.getIndexedOffset(PtrVal->getType(), IdxVec);
 
     const MCExpr *Base = LowerConstant(CE->getOperand(0), AP);
     if (Offset == 0)
@@ -1464,7 +1466,7 @@ static const MCExpr *LowerConstant(const Constant *CV, AsmPrinter &AP) {
     // Support only foldable casts to/from pointers that can be eliminated by
     // changing the pointer to the appropriately sized integer type.
     Constant *Op = CE->getOperand(0);
-    const Type *Ty = CE->getType();
+    Type *Ty = CE->getType();
 
     const MCExpr *OpExpr = LowerConstant(Op, AP);
 

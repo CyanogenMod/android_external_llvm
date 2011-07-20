@@ -83,19 +83,6 @@
 @ CHECK: bkpt  #10 @ encoding: [0x7a,0x00,0x20,0xe1]
         bkpt  #10
 
-@ CHECK: mrs  r8, cpsr @ encoding: [0x00,0x80,0x0f,0xe1]
-        mrs  r8, cpsr
-
-@ CHECK: mrc  p14, #0, r1, c1, c2, #4 @ encoding: [0x92,0x1e,0x11,0xee]
-        mrc  p14, #0, r1, c1, c2, #4
-@ CHECK: mrrc  p7, #1, r5, r4, c1 @ encoding: [0x11,0x57,0x54,0xec]
-        mrrc  p7, #1, r5, r4, c1
-
-@ CHECK: mrc2  p14, #0, r1, c1, c2, #4 @ encoding: [0x92,0x1e,0x11,0xfe]
-        mrc2  p14, #0, r1, c1, c2, #4
-@ CHECK: mrrc2  p7, #1, r5, r4, c1 @ encoding: [0x11,0x57,0x54,0xfc]
-        mrrc2  p7, #1, r5, r4, c1
-
 @ CHECK: cdp  p7, #1, c1, c1, c1, #4 @ encoding: [0x81,0x17,0x11,0xee]
         cdp  p7, #1, c1, c1, c1, #4
 @ CHECK: cdp2  p7, #1, c1, c1, c1, #4 @ encoding: [0x81,0x17,0x11,0xfe]
@@ -133,45 +120,6 @@
 
 @ CHECK: cpsie  if, #10 @ encoding: [0xca,0x00,0x0a,0xf1]
         cpsie  if, #10
-
-@ CHECK: msr  cpsr_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
-        msr  apsr, r0
-
-@ CHECK: msr  cpsr_s, r0 @ encoding: [0x00,0xf0,0x24,0xe1]
-        msr  apsr_g, r0
-
-@ CHECK: msr  cpsr_f, r0 @ encoding: [0x00,0xf0,0x28,0xe1]
-        msr  apsr_nzcvq, r0
-
-@ CHECK: msr  cpsr_fs, r0 @ encoding: [0x00,0xf0,0x2c,0xe1]
-        msr  apsr_nzcvqg, r0
-
-@ CHECK: msr  cpsr_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
-        msr  cpsr_fc, r0
-
-@ CHECK: msr  cpsr_c, r0 @ encoding: [0x00,0xf0,0x21,0xe1]
-        msr  cpsr_c, r0
-
-@ CHECK: msr  cpsr_x, r0 @ encoding: [0x00,0xf0,0x22,0xe1]
-        msr  cpsr_x, r0
-
-@ CHECK: msr  cpsr_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
-        msr  cpsr_fc, r0
-
-@ CHECK: msr  cpsr_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
-        msr  cpsr_all, r0
-
-@ CHECK: msr  cpsr_fsx, r0 @ encoding: [0x00,0xf0,0x2e,0xe1]
-        msr  cpsr_fsx, r0
-
-@ CHECK: msr  spsr_fc, r0 @ encoding: [0x00,0xf0,0x69,0xe1]
-        msr  spsr_fc, r0
-
-@ CHECK: msr  spsr_fsxc, r0 @ encoding: [0x00,0xf0,0x6f,0xe1]
-        msr  spsr_fsxc, r0
-
-@ CHECK: msr  cpsr_fsxc, r0 @ encoding: [0x00,0xf0,0x2f,0xe1]
-        msr  cpsr_fsxc, r0
 
 @ CHECK: add	r1, r2, r3, lsl r4      @ encoding: [0x13,0x14,0x82,0xe0]
   add r1, r2, r3, lsl r4

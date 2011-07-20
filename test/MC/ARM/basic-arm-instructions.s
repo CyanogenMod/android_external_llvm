@@ -671,6 +671,147 @@ _func:
 @ CHECK: mlsne	r2, r5, r6, r3          @ encoding: [0x95,0x36,0x62,0x10]
 
 @------------------------------------------------------------------------------
+@ MOV (immediate)
+@------------------------------------------------------------------------------
+    mov r3, #7
+    mov r4, #0xff0
+    mov r5, #0xff0000
+    mov r6, #0xffff
+    movw r9, #0xffff
+    movs r3, #7
+    moveq r4, #0xff0
+    movseq r5, #0xff0000
+
+@ CHECK: mov	r3, #7                  @ encoding: [0x07,0x30,0xa0,0xe3]
+@ CHECK: mov	r4, #4080               @ encoding: [0xff,0x4e,0xa0,0xe3]
+@ CHECK: mov	r5, #16711680           @ encoding: [0xff,0x58,0xa0,0xe3]
+@ CHECK: movw	r6, #65535              @ encoding: [0xff,0x6f,0x0f,0xe3]
+@ CHECK: movw	r9, #65535              @ encoding: [0xff,0x9f,0x0f,0xe3]
+@ CHECK: movs	r3, #7                  @ encoding: [0x07,0x30,0xb0,0xe3]
+@ CHECK: moveq	r4, #4080               @ encoding: [0xff,0x4e,0xa0,0x03]
+@ CHECK: movseq	r5, #16711680           @ encoding: [0xff,0x58,0xb0,0x03]
+
+@------------------------------------------------------------------------------
+@ MOV (register)
+@------------------------------------------------------------------------------
+        mov r2, r3
+        movs r2, r3
+        moveq r2, r3
+        movseq r2, r3
+
+@ CHECK: mov	r2, r3                  @ encoding: [0x03,0x20,0xa0,0xe1]
+@ CHECK: movs	r2, r3                  @ encoding: [0x03,0x20,0xb0,0xe1]
+@ CHECK: moveq	r2, r3                  @ encoding: [0x03,0x20,0xa0,0x01]
+@ CHECK: movseq	r2, r3                  @ encoding: [0x03,0x20,0xb0,0x01]
+
+@------------------------------------------------------------------------------
+@ MOVT
+@------------------------------------------------------------------------------
+    movt r3, #7
+    movt r6, #0xffff
+    movteq r4, #0xff0
+
+@ CHECK: movt	r3, #7                  @ encoding: [0x07,0x30,0x40,0xe3]
+@ CHECK: movt	r6, #65535              @ encoding: [0xff,0x6f,0x4f,0xe3]
+@ CHECK: movteq	r4, #4080               @ encoding: [0xf0,0x4f,0x40,0x03]
+
+
+@------------------------------------------------------------------------------
+@ MRC/MRC2
+@------------------------------------------------------------------------------
+        mrc  p14, #0, r1, c1, c2, #4
+        mrc2  p14, #0, r1, c1, c2, #4
+
+@ CHECK: mrc  p14, #0, r1, c1, c2, #4   @ encoding: [0x92,0x1e,0x11,0xee]
+@ CHECK: mrc2  p14, #0, r1, c1, c2, #4  @ encoding: [0x92,0x1e,0x11,0xfe]
+
+@------------------------------------------------------------------------------
+@ MRRC/MRRC2
+@------------------------------------------------------------------------------
+        mrrc  p7, #1, r5, r4, c1
+        mrrc2  p7, #1, r5, r4, c1
+
+@ CHECK: mrrc  p7, #1, r5, r4, c1       @ encoding: [0x11,0x57,0x54,0xec]
+@ CHECK: mrrc2  p7, #1, r5, r4, c1      @ encoding: [0x11,0x57,0x54,0xfc]
+
+
+@------------------------------------------------------------------------------
+@ MRS
+@------------------------------------------------------------------------------
+        mrs  r8, apsr
+        mrs  r8, cpsr
+        mrs  r8, spsr
+@ CHECK: mrs  r8, apsr @ encoding: [0x00,0x80,0x0f,0xe1]
+@ CHECK: mrs  r8, apsr @ encoding: [0x00,0x80,0x0f,0xe1]
+@ CHECK: mrs  r8, spsr @ encoding: [0x00,0x80,0x4f,0xe1]
+
+
+
+@------------------------------------------------------------------------------
+@ MSR
+@------------------------------------------------------------------------------
+
+        msr  apsr, #5
+        msr  apsr_g, #5
+        msr  apsr_nzcvq, #5
+        msr  APSR_nzcvq, #5
+        msr  apsr_nzcvqg, #5
+        msr  cpsr_fc, #5
+        msr  cpsr_c, #5
+        msr  cpsr_x, #5
+        msr  cpsr_fc, #5
+        msr  cpsr_all, #5
+        msr  cpsr_fsx, #5
+        msr  spsr_fc, #5
+        msr  SPSR_fsxc, #5
+        msr  cpsr_fsxc, #5
+
+@ CHECK: msr	CPSR_fc, #5             @ encoding: [0x05,0xf0,0x29,0xe3]
+@ CHECK: msr	APSR_g, #5              @ encoding: [0x05,0xf0,0x24,0xe3]
+@ CHECK: msr	APSR_nzcvq, #5          @ encoding: [0x05,0xf0,0x28,0xe3]
+@ CHECK: msr	APSR_nzcvq, #5          @ encoding: [0x05,0xf0,0x28,0xe3]
+@ CHECK: msr	APSR_nzcvqg, #5         @ encoding: [0x05,0xf0,0x2c,0xe3]
+@ CHECK: msr	CPSR_fc, #5             @ encoding: [0x05,0xf0,0x29,0xe3]
+@ CHECK: msr	CPSR_c, #5              @ encoding: [0x05,0xf0,0x21,0xe3]
+@ CHECK: msr	CPSR_x, #5              @ encoding: [0x05,0xf0,0x22,0xe3]
+@ CHECK: msr	CPSR_fc, #5             @ encoding: [0x05,0xf0,0x29,0xe3]
+@ CHECK: msr	CPSR_fc, #5             @ encoding: [0x05,0xf0,0x29,0xe3]
+@ CHECK: msr	CPSR_fsx, #5            @ encoding: [0x05,0xf0,0x2e,0xe3]
+@ CHECK: msr	SPSR_fc, #5             @ encoding: [0x05,0xf0,0x69,0xe3]
+@ CHECK: msr	SPSR_fsxc, #5           @ encoding: [0x05,0xf0,0x6f,0xe3]
+@ CHECK: msr	CPSR_fsxc, #5           @ encoding: [0x05,0xf0,0x2f,0xe3]
+
+        msr  apsr, r0
+        msr  apsr_g, r0
+        msr  apsr_nzcvq, r0
+        msr  APSR_nzcvq, r0
+        msr  apsr_nzcvqg, r0
+        msr  cpsr_fc, r0
+        msr  cpsr_c, r0
+        msr  cpsr_x, r0
+        msr  cpsr_fc, r0
+        msr  cpsr_all, r0
+        msr  cpsr_fsx, r0
+        msr  spsr_fc, r0
+        msr  SPSR_fsxc, r0
+        msr  cpsr_fsxc, r0
+
+@ CHECK: msr  CPSR_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
+@ CHECK: msr  APSR_g, r0 @ encoding: [0x00,0xf0,0x24,0xe1]
+@ CHECK: msr  APSR_nzcvq, r0 @ encoding: [0x00,0xf0,0x28,0xe1]
+@ CHECK: msr  APSR_nzcvq, r0 @ encoding: [0x00,0xf0,0x28,0xe1]
+@ CHECK: msr  APSR_nzcvqg, r0 @ encoding: [0x00,0xf0,0x2c,0xe1]
+@ CHECK: msr  CPSR_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
+@ CHECK: msr  CPSR_c, r0 @ encoding: [0x00,0xf0,0x21,0xe1]
+@ CHECK: msr  CPSR_x, r0 @ encoding: [0x00,0xf0,0x22,0xe1]
+@ CHECK: msr  CPSR_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
+@ CHECK: msr  CPSR_fc, r0 @ encoding: [0x00,0xf0,0x29,0xe1]
+@ CHECK: msr  CPSR_fsx, r0 @ encoding: [0x00,0xf0,0x2e,0xe1]
+@ CHECK: msr  SPSR_fc, r0 @ encoding: [0x00,0xf0,0x69,0xe1]
+@ CHECK: msr  SPSR_fsxc, r0 @ encoding: [0x00,0xf0,0x6f,0xe1]
+@ CHECK: msr  CPSR_fsxc, r0 @ encoding: [0x00,0xf0,0x2f,0xe1]
+
+@------------------------------------------------------------------------------
 @ STM*
 @------------------------------------------------------------------------------
         stm       r2, {r1,r3-r6,sp}

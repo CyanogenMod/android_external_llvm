@@ -30,6 +30,7 @@
 #include "llvm/Target/TargetAsmInfo.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
 #include "llvm/Transforms/Scalar.h"
@@ -103,8 +104,10 @@ EnableFastISelOption("fast-isel", cl::Hidden,
   cl::desc("Enable the \"fast\" instruction selector"));
 
 LLVMTargetMachine::LLVMTargetMachine(const Target &T, StringRef Triple,
-                                     StringRef CPU, StringRef FS)
+                                     StringRef CPU, StringRef FS,
+                                     Reloc::Model RM)
   : TargetMachine(T, Triple, CPU, FS) {
+  CodeGenInfo = T.createMCCodeGenInfo(Triple, RM);
   AsmInfo = T.createMCAsmInfo(Triple);
 }
 
@@ -370,7 +373,10 @@ bool LLVMTargetMachine::addCommonCodeGenPasses(PassManagerBase &PM,
   // Install a MachineModuleInfo class, which is an immutable pass that holds
   // all the per-module stuff we're generating, including MCContext.
   TargetAsmInfo *TAI = new TargetAsmInfo(*this);
-  MachineModuleInfo *MMI = new MachineModuleInfo(*getMCAsmInfo(), TAI);
+  MachineModuleInfo *MMI = new MachineModuleInfo(*getMCAsmInfo(),
+                                                 *getRegisterInfo(),
+                                     &getTargetLowering()->getObjFileLowering(),
+                                                 TAI);
   PM.add(MMI);
   OutContext = &MMI->getContext(); // Return the MCContext specifically by-ref.
 

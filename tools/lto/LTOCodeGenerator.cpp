@@ -31,6 +31,7 @@
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetSelect.h"
 #include "llvm/Support/CommandLine.h"
@@ -74,6 +75,8 @@ LTOCodeGenerator::LTOCodeGenerator()
 {
     InitializeAllTargets();
     InitializeAllMCAsmInfos();
+    InitializeAllMCCodeGenInfos();
+    InitializeAllMCRegisterInfos();
     InitializeAllMCSubtargetInfos();
     InitializeAllAsmPrinters();
 }
@@ -250,15 +253,16 @@ bool LTOCodeGenerator::determineTarget(std::string& errMsg)
 
         // The relocation model is actually a static member of TargetMachine
         // and needs to be set before the TargetMachine is instantiated.
+        Reloc::Model RelocModel = Reloc::Default;
         switch( _codeModel ) {
         case LTO_CODEGEN_PIC_MODEL_STATIC:
-            TargetMachine::setRelocationModel(Reloc::Static);
+            RelocModel = Reloc::Static;
             break;
         case LTO_CODEGEN_PIC_MODEL_DYNAMIC:
-            TargetMachine::setRelocationModel(Reloc::PIC_);
+            RelocModel = Reloc::PIC_;
             break;
         case LTO_CODEGEN_PIC_MODEL_DYNAMIC_NO_PIC:
-            TargetMachine::setRelocationModel(Reloc::DynamicNoPIC);
+            RelocModel = Reloc::DynamicNoPIC;
             break;
         }
 
@@ -266,7 +270,8 @@ bool LTOCodeGenerator::determineTarget(std::string& errMsg)
         SubtargetFeatures Features;
         Features.getDefaultSubtargetFeatures(llvm::Triple(Triple));
         std::string FeatureStr = Features.getString();
-        _target = march->createTargetMachine(Triple, _mCpu, FeatureStr);
+        _target = march->createTargetMachine(Triple, _mCpu, FeatureStr,
+                                             RelocModel);
     }
     return false;
 }
@@ -308,7 +313,8 @@ void LTOCodeGenerator::applyScopeRestrictions() {
   passes.add(createVerifierPass());
 
   // mark which symbols can not be internalized 
-  MCContext Context(*_target->getMCAsmInfo(), NULL);
+  MCContext Context(*_target->getMCAsmInfo(), *_target->getRegisterInfo(),
+                    NULL, NULL);
   Mangler mangler(Context, *_target->getTargetData());
   std::vector<const char*> mustPreserveList;
   SmallPtrSet<GlobalValue*, 8> asmUsed;
@@ -329,7 +335,7 @@ void LTOCodeGenerator::applyScopeRestrictions() {
   if (LLVMCompilerUsed)
     LLVMCompilerUsed->eraseFromParent();
 
-  const llvm::Type *i8PTy = llvm::Type::getInt8PtrTy(_context);
+  llvm::Type *i8PTy = llvm::Type::getInt8PtrTy(_context);
   std::vector<Constant*> asmUsed2;
   for (SmallPtrSet<GlobalValue*, 16>::const_iterator i = asmUsed.begin(),
          e = asmUsed.end(); i !=e; ++i) {

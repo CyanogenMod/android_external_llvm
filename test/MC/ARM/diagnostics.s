@@ -88,3 +88,32 @@
 @ CHECK-ERRORS: error: invalid operand for instruction
 @ CHECK-ERRORS: error: invalid operand for instruction
 @ CHECK-ERRORS: error: invalid operand for instruction
+
+
+        @ Out of range immediate for MOV
+        movw r9, 0x10000
+@ CHECK-ERRORS: error: invalid operand for instruction
+
+        @ Invalid 's' bit usage for MOVW
+        movs r6, #0xffff
+        movwseq r9, #0xffff
+@ CHECK-ERRORS: error: invalid operand for instruction
+@ CHECK-ERRORS: error: instruction 'movw' can not set flags, but 's' suffix specified
+
+        @ Out of range immediate for MOVT
+        movt r9, 0x10000
+@ CHECK-ERRORS: error: invalid operand for instruction
+
+        @ Out of range immediates for MRC/MRC2/MRRC/MRRC2
+        mrc  p14, #8, r1, c1, c2, #4
+        mrc  p14, #1, r1, c1, c2, #8
+        mrc2  p14, #8, r1, c1, c2, #4
+        mrc2  p14, #0, r1, c1, c2, #9
+        mrrc  p7, #16, r5, r4, c1
+        mrrc2  p7, #17, r5, r4, c1
+@ CHECK-ERRORS: error: invalid operand for instruction
+@ CHECK-ERRORS: error: invalid operand for instruction
+@ CHECK-ERRORS: error: invalid operand for instruction
+@ CHECK-ERRORS: error: invalid operand for instruction
+@ CHECK-ERRORS: error: invalid operand for instruction
+@ CHECK-ERRORS: error: invalid operand for instruction

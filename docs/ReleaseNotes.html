@@ -599,7 +599,10 @@ from the previous release.</p>
   LLVM API changes are:</p>
 
 <ul>
-
+<li>The biggest and most pervasive change is that llvm::Type's are no longer
+    returned or accepted as 'const' values.  Instead, just pass around non-const
+    Type's.</li>
+  
 <li><code>PHINode::reserveOperandSpace</code> has been removed. Instead, you
   must specify how many operands to reserve space for when you create the
   PHINode, by passing an extra argument into <code>PHINode::Create</code>.</li>
@@ -623,6 +626,8 @@ from the previous release.</p>
 <li><code>ConstantExpr::getIndices</code></li>
 <li><code>ConstantExpr::getInsertElement</code></li>
 <li><code>ConstantExpr::getWithOperands</code></li>
+<li><code>ConstantFoldCall</code> (in <code>llvm/Analysis/ConstantFolding.h</code>)</li>
+<li><code>ConstantFoldInstOperands</code> (in <code>llvm/Analysis/ConstantFolding.h</code>)</li>
 <li><code>ConstantVector::get</code></li>
 <li><code>DIBuilder::createComplexVariable</code></li>
 <li><code>DIBuilder::getOrCreateArray</code></li>
@@ -630,6 +635,8 @@ from the previous release.</p>
 <li><code>ExtractValueInst::getIndexedType</code></li>
 <li><code>ExtractValueInst::getIndices</code></li>
 <li><code>FindInsertedValue</code> (in <code>llvm/Analysis/ValueTracking.h</code>)</li>
+<li><code>gep_type_begin</code> (in <code>llvm/Support/GetElementPtrTypeIterator.h</code>)</li>
+<li><code>gep_type_end</code> (in <code>llvm/Support/GetElementPtrTypeIterator.h</code>)</li>
 <li><code>IRBuilder::CreateCall</code></li>
 <li><code>IRBuilder::CreateExtractValue</code></li>
 <li><code>IRBuilder::CreateInsertValue</code></li>
@@ -641,6 +648,8 @@ from the previous release.</p>
 <li><code>MDNode::getIfExists</code></li>
 <li><code>MDNode::getTemporary</code></li>
 <li><code>MDNode::getWhenValsUnresolved</code></li>
+<li><code>SimplifyGEPInst</code> (in <code>llvm/Analysis/InstructionSimplify.h</code>)</li>
+<li><code>TargetData::getIndexedOffset</code></li>
 </ul></li>
 
 <li>All forms of <code>StringMap::getOrCreateValue</code> have been remove

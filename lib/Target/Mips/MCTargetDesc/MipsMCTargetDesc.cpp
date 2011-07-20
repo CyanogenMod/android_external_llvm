@@ -13,6 +13,7 @@
 
 #include "MipsMCTargetDesc.h"
 #include "MipsMCAsmInfo.h"
+#include "llvm/MC/MachineLocation.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
@@ -39,6 +40,16 @@ extern "C" void LLVMInitializeMipsMCInstrInfo() {
   TargetRegistry::RegisterMCInstrInfo(TheMipsTarget, createMipsMCInstrInfo);
 }
 
+static MCRegisterInfo *createMipsMCRegisterInfo(StringRef TT) {
+  MCRegisterInfo *X = new MCRegisterInfo();
+  InitMipsMCRegisterInfo(X, Mips::RA);
+  return X;
+}
+
+extern "C" void LLVMInitializeMipsMCRegisterInfo() {
+  TargetRegistry::RegisterMCRegInfo(TheMipsTarget, createMipsMCRegisterInfo);
+  TargetRegistry::RegisterMCRegInfo(TheMipselTarget, createMipsMCRegisterInfo);
+}
 
 static MCSubtargetInfo *createMipsMCSubtargetInfo(StringRef TT, StringRef CPU,
                                                   StringRef FS) {
@@ -52,7 +63,38 @@ extern "C" void LLVMInitializeMipsMCSubtargetInfo() {
                                           createMipsMCSubtargetInfo);
 }
 
+static MCAsmInfo *createMipsMCAsmInfo(const Target &T, StringRef TT) {
+  MCAsmInfo *MAI = new MipsMCAsmInfo(T, TT);
+
+  MachineLocation Dst(MachineLocation::VirtualFP);
+  MachineLocation Src(Mips::SP, 0);
+  MAI->addInitialFrameState(0, Dst, Src);
+
+  return MAI;
+}
+
 extern "C" void LLVMInitializeMipsMCAsmInfo() {
-  RegisterMCAsmInfo<MipsMCAsmInfo> X(TheMipsTarget);
-  RegisterMCAsmInfo<MipsMCAsmInfo> Y(TheMipselTarget);
+  RegisterMCAsmInfoFn X(TheMipsTarget, createMipsMCAsmInfo);
+  RegisterMCAsmInfoFn Y(TheMipselTarget, createMipsMCAsmInfo);
+}
+
+MCCodeGenInfo *createMipsMCCodeGenInfo(StringRef TT, Reloc::Model RM) {
+  MCCodeGenInfo *X = new MCCodeGenInfo();
+  if (RM == Reloc::Default) {
+    // Abicall enables PIC by default
+    if (TT.find("mipsallegrex") != std::string::npos ||
+        TT.find("psp") != std::string::npos)
+      RM = Reloc::Static;
+    else
+      RM = Reloc::PIC_;
+  }
+  X->InitMCCodeGenInfo(RM);
+  return X;
+}
+
+extern "C" void LLVMInitializeMipsMCCodeGenInfo() {
+  TargetRegistry::RegisterMCCodeGenInfo(TheMipsTarget,
+                                        createMipsMCCodeGenInfo);
+  TargetRegistry::RegisterMCCodeGenInfo(TheMipselTarget,
+                                        createMipsMCCodeGenInfo);
 }

@@ -2176,9 +2176,9 @@ void DAGTypeLegalizer::ExpandIntRes_UADDSUBO(SDNode *N,
 void DAGTypeLegalizer::ExpandIntRes_XMULO(SDNode *N,
                                           SDValue &Lo, SDValue &Hi) {
   EVT VT = N->getValueType(0);
-  const Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
+  Type *RetTy = VT.getTypeForEVT(*DAG.getContext());
   EVT PtrVT = TLI.getPointerTy();
-  const Type *PtrTy = PtrVT.getTypeForEVT(*DAG.getContext());
+  Type *PtrTy = PtrVT.getTypeForEVT(*DAG.getContext());
   DebugLoc dl = N->getDebugLoc();
 
   // A divide for UMULO should be faster than a function call.
@@ -2222,7 +2222,7 @@ void DAGTypeLegalizer::ExpandIntRes_XMULO(SDNode *N,
   TargetLowering::ArgListEntry Entry;
   for (unsigned i = 0, e = N->getNumOperands(); i != e; ++i) {
     EVT ArgVT = N->getOperand(i).getValueType();
-    const Type *ArgTy = ArgVT.getTypeForEVT(*DAG.getContext());
+    Type *ArgTy = ArgVT.getTypeForEVT(*DAG.getContext());
     Entry.Node = N->getOperand(i);
     Entry.Ty = ArgTy;
     Entry.isSExt = true;
@@ -2775,7 +2775,6 @@ SDValue DAGTypeLegalizer::PromoteIntRes_EXTRACT_SUBVECTOR(SDNode *N) {
 
 
 SDValue DAGTypeLegalizer::PromoteIntRes_VECTOR_SHUFFLE(SDNode *N) {
-
   ShuffleVectorSDNode *SV = cast<ShuffleVectorSDNode>(N);
   EVT VT = N->getValueType(0);
   DebugLoc dl = N->getDebugLoc();
@@ -2838,13 +2837,12 @@ SDValue DAGTypeLegalizer::PromoteIntRes_INSERT_VECTOR_ELT(SDNode *N) {
   EVT NOutVTElem = NOutVT.getVectorElementType();
 
   DebugLoc dl = N->getDebugLoc();
-
-  SDValue ConvertedVector = DAG.getNode(ISD::ANY_EXTEND, dl, NOutVT,
-                                        N->getOperand(0));
+  SDValue V0 = GetPromotedInteger(N->getOperand(0));
+  SDValue ConvertedVector = DAG.getNode(ISD::ANY_EXTEND, dl, NOutVT, V0);
 
   SDValue ConvElem = DAG.getNode(ISD::ANY_EXTEND, dl,
     NOutVTElem, N->getOperand(1));
-  return DAG.getNode(ISD::INSERT_VECTOR_ELT, dl,NOutVT,
+  return DAG.getNode(ISD::INSERT_VECTOR_ELT, dl, NOutVT,
     ConvertedVector, ConvElem, N->getOperand(2));
 }
 
@@ -2860,15 +2858,16 @@ SDValue DAGTypeLegalizer::PromoteIntOp_EXTRACT_VECTOR_ELT(SDNode *N) {
 }
 
 SDValue DAGTypeLegalizer::PromoteIntOp_CONCAT_VECTORS(SDNode *N) {
-
   DebugLoc dl = N->getDebugLoc();
+  unsigned NumElems = N->getNumOperands();
 
   EVT RetSclrTy = N->getValueType(0).getVectorElementType();
 
   SmallVector<SDValue, 8> NewOps;
+  NewOps.reserve(NumElems);
 
   // For each incoming vector
-  for (unsigned VecIdx = 0, E = N->getNumOperands(); VecIdx!= E; ++VecIdx) {
+  for (unsigned VecIdx = 0; VecIdx != NumElems; ++VecIdx) {
     SDValue Incoming = GetPromotedInteger(N->getOperand(VecIdx));
     EVT SclrTy = Incoming->getValueType(0).getVectorElementType();
     unsigned NumElem = Incoming->getValueType(0).getVectorNumElements();

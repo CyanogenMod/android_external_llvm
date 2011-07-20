@@ -40,6 +40,17 @@ extern "C" void LLVMInitializeMBlazeMCInstrInfo() {
   TargetRegistry::RegisterMCInstrInfo(TheMBlazeTarget, createMBlazeMCInstrInfo);
 }
 
+static MCRegisterInfo *createMBlazeMCRegisterInfo(StringRef TT) {
+  MCRegisterInfo *X = new MCRegisterInfo();
+  InitMBlazeMCRegisterInfo(X, MBlaze::R15);
+  return X;
+}
+
+extern "C" void LLVMInitializeMBlazeMCRegisterInfo() {
+  TargetRegistry::RegisterMCRegInfo(TheMBlazeTarget,
+                                    createMBlazeMCRegisterInfo);
+}
+
 static MCSubtargetInfo *createMBlazeMCSubtargetInfo(StringRef TT, StringRef CPU,
                                                     StringRef FS) {
   MCSubtargetInfo *X = new MCSubtargetInfo();
@@ -62,4 +73,17 @@ static MCAsmInfo *createMCAsmInfo(const Target &T, StringRef TT) {
 
 extern "C" void LLVMInitializeMBlazeMCAsmInfo() {
   RegisterMCAsmInfoFn X(TheMBlazeTarget, createMCAsmInfo);
+}
+
+MCCodeGenInfo *createMBlazeMCCodeGenInfo(StringRef TT, Reloc::Model RM) {
+  MCCodeGenInfo *X = new MCCodeGenInfo();
+  if (RM == Reloc::Default)
+      RM = Reloc::Static;
+  X->InitMCCodeGenInfo(RM);
+  return X;
+}
+
+extern "C" void LLVMInitializeMBlazeMCCodeGenInfo() {
+  TargetRegistry::RegisterMCCodeGenInfo(TheMBlazeTarget,
+                                        createMBlazeMCCodeGenInfo);
 }

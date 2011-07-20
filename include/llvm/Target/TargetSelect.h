@@ -31,7 +31,15 @@ extern "C" {
 #include "llvm/Config/Targets.def"
 
 #define LLVM_TARGET(TargetName) \
+  void LLVMInitialize##TargetName##MCCodeGenInfo();
+#include "llvm/Config/Targets.def"
+
+#define LLVM_TARGET(TargetName) \
   void LLVMInitialize##TargetName##MCInstrInfo();
+#include "llvm/Config/Targets.def"
+
+#define LLVM_TARGET(TargetName) \
+  void LLVMInitialize##TargetName##MCRegisterInfo();
 #include "llvm/Config/Targets.def"
 
 #define LLVM_TARGET(TargetName) \
@@ -87,6 +95,16 @@ namespace llvm {
 #include "llvm/Config/Targets.def"
   }
   
+  /// InitializeAllMCCodeGenInfos - The main program should call this function
+  /// if it wants access to all targets machines that LLVM is configured to
+  /// support, to make them available via the TargetRegistry.
+  ///
+  /// It is legal for a client to make multiple calls to this function.
+  inline void InitializeAllMCCodeGenInfos() {
+#define LLVM_TARGET(TargetName) LLVMInitialize##TargetName##MCCodeGenInfo();
+#include "llvm/Config/Targets.def"
+  }
+  
   /// InitializeAllMCInstrInfos - The main program should call this function
   /// if it wants access to all available instruction infos for targets that
   /// LLVM is configured to support, to make them available via the
@@ -95,6 +113,17 @@ namespace llvm {
   /// It is legal for a client to make multiple calls to this function.
   inline void InitializeAllMCInstrInfos() {
 #define LLVM_TARGET(TargetName) LLVMInitialize##TargetName##MCInstrInfo();
+#include "llvm/Config/Targets.def"
+  }
+  
+  /// InitializeAllMCRegisterInfos - The main program should call this function
+  /// if it wants access to all available register infos for targets that
+  /// LLVM is configured to support, to make them available via the
+  /// TargetRegistry.
+  ///
+  /// It is legal for a client to make multiple calls to this function.
+  inline void InitializeAllMCRegisterInfos() {
+#define LLVM_TARGET(TargetName) LLVMInitialize##TargetName##MCRegisterInfo();
 #include "llvm/Config/Targets.def"
   }
   
@@ -149,6 +178,7 @@ namespace llvm {
     LLVM_NATIVE_TARGETINFO();
     LLVM_NATIVE_TARGET();
     LLVM_NATIVE_MCASMINFO();
+    LLVM_NATIVE_MCCODEGENINFO();
     return false;
 #else
     return true;

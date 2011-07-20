@@ -23,6 +23,7 @@
 #include "llvm/MC/MCParser/AsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCParser/MCParsedAsmOperand.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
@@ -2416,7 +2417,7 @@ bool GenericAsmParser::ParseRegisterOrRegisterNumber(int64_t &Register,
     if (getParser().getTargetParser().ParseRegister(RegNo, DirectiveLoc,
       DirectiveLoc))
       return true;
-    Register = getContext().getTargetAsmInfo().getDwarfRegNum(RegNo, true);
+    Register = getContext().getRegisterInfo().getDwarfRegNum(RegNo, true);
   } else
     return getParser().ParseAbsoluteExpression(Register);
 

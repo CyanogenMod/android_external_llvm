@@ -390,8 +390,8 @@ let isCall = 1,
   Uses = [SP] in {
   // Also used for Thumb2
   def tBL  : TIx2<0b11110, 0b11, 1,
-                  (outs), (ins t_bltarget:$func, variable_ops), IIC_Br,
-                  "bl\t$func",
+                  (outs), (ins pred:$p, t_bltarget:$func, variable_ops), IIC_Br,
+                  "bl${p}\t$func",
                   [(ARMtcall tglobaladdr:$func)]>,
              Requires<[IsThumb, IsNotDarwin]> {
     bits<21> func;
@@ -403,8 +403,8 @@ let isCall = 1,
 
   // ARMv5T and above, also used for Thumb2
   def tBLXi : TIx2<0b11110, 0b11, 0,
-                   (outs), (ins t_blxtarget:$func, variable_ops), IIC_Br,
-                   "blx\t$func",
+                   (outs), (ins pred:$p, t_blxtarget:$func, variable_ops), IIC_Br,
+                   "blx${p}\t$func",
                    [(ARMcall tglobaladdr:$func)]>,
               Requires<[IsThumb, HasV5T, IsNotDarwin]> {
     bits<21> func;
@@ -416,8 +416,8 @@ let isCall = 1,
   }
 
   // Also used for Thumb2
-  def tBLXr : TI<(outs), (ins GPR:$func, variable_ops), IIC_Br,
-                  "blx\t$func",
+  def tBLXr : TI<(outs), (ins pred:$p, GPR:$func, variable_ops), IIC_Br,
+                  "blx${p}\t$func",
                   [(ARMtcall GPR:$func)]>,
               Requires<[IsThumb, HasV5T, IsNotDarwin]>,
               T1Special<{1,1,1,?}> { // A6.2.3 & A8.6.24;
@@ -440,43 +440,22 @@ let isCall = 1,
   Defs = [R0,  R1,  R2,  R3,  R9,  R12, LR, QQQQ0, QQQQ2, QQQQ3, CPSR, FPSCR],
   Uses = [R7, SP] in {
   // Also used for Thumb2
-  def tBLr9 : TIx2<0b11110, 0b11, 1,
-                   (outs), (ins pred:$p, t_bltarget:$func, variable_ops),
-                   IIC_Br, "bl${p}\t$func",
-                   [(ARMtcall tglobaladdr:$func)]>,
-              Requires<[IsThumb, IsDarwin]> {
-    bits<21> func;
-    let Inst{25-16} = func{20-11};
-    let Inst{13} = 1;
-    let Inst{11} = 1;
-    let Inst{10-0} = func{10-0};
-  }
+  def tBLr9 : tPseudoExpand<(outs), (ins pred:$p, t_bltarget:$func, variable_ops),
+                          4, IIC_Br, [(ARMtcall tglobaladdr:$func)],
+                          (tBL pred:$p, t_bltarget:$func)>,
+              Requires<[IsThumb, IsDarwin]>;
 
   // ARMv5T and above, also used for Thumb2
-  def tBLXi_r9 : TIx2<0b11110, 0b11, 0,
-                      (outs), (ins pred:$p, t_blxtarget:$func, variable_ops),
-                      IIC_Br, "blx${p}\t$func",
-                      [(ARMcall tglobaladdr:$func)]>,
-                 Requires<[IsThumb, HasV5T, IsDarwin]> {
-    bits<21> func;
-    let Inst{25-16} = func{20-11};
-    let Inst{13} = 1;
-    let Inst{11} = 1;
-    let Inst{10-1} = func{10-1};
-    let Inst{0} = 0; // func{0} is assumed zero
-  }
+  def tBLXi_r9 : tPseudoExpand<(outs), (ins pred:$p, t_blxtarget:$func, variable_ops),
+                      4, IIC_Br, [(ARMcall tglobaladdr:$func)],
+                      (tBLXi pred:$p, t_blxtarget:$func)>,
+                 Requires<[IsThumb, HasV5T, IsDarwin]>;
 
   // Also used for Thumb2
-  def tBLXr_r9 : TI<(outs), (ins pred:$p, GPR:$func, variable_ops), IIC_Br,
-                    "blx${p}\t$func",
-                    [(ARMtcall GPR:$func)]>,
-                 Requires<[IsThumb, HasV5T, IsDarwin]>,
-                 T1Special<{1,1,1,?}> {
-    // A6.2.3 & A8.6.24
-    bits<4> func;
-    let Inst{6-3} = func;
-    let Inst{2-0} = 0b000;
-  }
+  def tBLXr_r9 : tPseudoExpand<(outs), (ins pred:$p, GPR:$func, variable_ops),
+                    2, IIC_Br, [(ARMtcall GPR:$func)],
+                    (tBLXr pred:$p, GPR:$func)>,
+                 Requires<[IsThumb, HasV5T, IsDarwin]>;
 
   // ARMv4T
   def tBXr9_CALL : tPseudoInst<(outs), (ins tGPR:$func, variable_ops),
@@ -498,8 +477,8 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1 in {
   // Just a pseudo for a tBL instruction. Needed to let regalloc know about
   // the clobber of LR.
   let Defs = [LR] in
-  def tBfar : tPseudoExpand<(outs), (ins t_bltarget:$target),
-                          4, IIC_Br, [], (tBL t_bltarget:$target)>;
+  def tBfar : tPseudoExpand<(outs), (ins t_bltarget:$target, pred:$p),
+                          4, IIC_Br, [], (tBL pred:$p, t_bltarget:$target)>;
 
   def tBR_JTr : tPseudoInst<(outs),
                       (ins tGPR:$target, i32imm:$jt, i32imm:$id),
@@ -678,7 +657,7 @@ def tLDRspi : T1pIs<(outs tGPR:$Rt), (ins t_addrmode_sp:$addr), IIC_iLoad_i,
 
 // Load tconstpool
 // FIXME: Use ldr.n to work around a Darwin assembler bug.
-let canFoldAsLoad = 1, isReMaterializable = 1 in
+let canFoldAsLoad = 1, isReMaterializable = 1, isCodeGenOnly = 1 in
 def tLDRpci : T1pIs<(outs tGPR:$Rt), (ins t_addrmode_pc:$addr), IIC_iLoad_i,
                   "ldr", ".n\t$Rt, $addr",
                   [(set tGPR:$Rt, (load (ARMWrapper tconstpool:$addr)))]>,
@@ -738,7 +717,7 @@ def tSTRspi : T1pIs<(outs), (ins tGPR:$Rt, t_addrmode_sp:$addr), IIC_iStore_i,
 
 multiclass thumb_ldst_mult<string asm, InstrItinClass itin,
                            InstrItinClass itin_upd, bits<6> T1Enc,
-                           bit L_bit> {
+                           bit L_bit, string baseOpc> {
   def IA :
     T1I<(outs), (ins GPR:$Rn, pred:$p, reglist:$regs, variable_ops),
         itin, !strconcat(asm, "ia${p}\t$Rn, $regs"), []>,
@@ -748,14 +727,19 @@ multiclass thumb_ldst_mult<string asm, InstrItinClass itin,
     let Inst{10-8} = Rn;
     let Inst{7-0}  = regs;
   }
+
   def IA_UPD :
-    T1It<(outs GPR:$wb), (ins GPR:$Rn, pred:$p, reglist:$regs, variable_ops),
-         itin_upd, !strconcat(asm, "ia${p}\t$Rn!, $regs"), "$Rn = $wb", []>,
-        T1Encoding<T1Enc> {
-    bits<3> Rn;
-    bits<8> regs;
-    let Inst{10-8} = Rn;
-    let Inst{7-0}  = regs;
+    InstTemplate<AddrModeNone, 0, IndexModeNone, Pseudo, GenericDomain, 
+                 "$Rn = $wb", itin_upd>,
+    PseudoInstExpansion<(!cast<Instruction>(!strconcat(baseOpc, "IA"))
+                       GPR:$Rn, pred:$p, reglist:$regs)> {
+    let Size = 2;
+    let OutOperandList = (outs GPR:$wb);
+    let InOperandList = (ins GPR:$Rn, pred:$p, reglist:$regs, variable_ops);
+    let Pattern = [];
+    let isCodeGenOnly = 1;
+    let isPseudo = 1;
+    list<Predicate> Predicates = [IsThumb];
   }
 }
 
@@ -764,11 +748,11 @@ let neverHasSideEffects = 1 in {
 
 let mayLoad = 1, hasExtraDefRegAllocReq = 1 in
 defm tLDM : thumb_ldst_mult<"ldm", IIC_iLoad_m, IIC_iLoad_mu,
-                            {1,1,0,0,1,?}, 1>;
+                            {1,1,0,0,1,?}, 1, "tLDM">;
 
 let mayStore = 1, hasExtraSrcRegAllocReq = 1 in
 defm tSTM : thumb_ldst_mult<"stm", IIC_iStore_m, IIC_iStore_mu,
-                            {1,1,0,0,0,?}, 0>;
+                            {1,1,0,0,0,?}, 0, "tSTM">;
 
 } // neverHasSideEffects
 

@@ -39,6 +39,16 @@ extern "C" void LLVMInitializeXCoreMCInstrInfo() {
   TargetRegistry::RegisterMCInstrInfo(TheXCoreTarget, createXCoreMCInstrInfo);
 }
 
+static MCRegisterInfo *createXCoreMCRegisterInfo(StringRef TT) {
+  MCRegisterInfo *X = new MCRegisterInfo();
+  InitXCoreMCRegisterInfo(X, XCore::LR);
+  return X;
+}
+
+extern "C" void LLVMInitializeXCoreMCRegisterInfo() {
+  TargetRegistry::RegisterMCRegInfo(TheXCoreTarget, createXCoreMCRegisterInfo);
+}
+
 static MCSubtargetInfo *createXCoreMCSubtargetInfo(StringRef TT, StringRef CPU,
                                                    StringRef FS) {
   MCSubtargetInfo *X = new MCSubtargetInfo();
@@ -51,6 +61,28 @@ extern "C" void LLVMInitializeXCoreMCSubtargetInfo() {
                                           createXCoreMCSubtargetInfo);
 }
 
+static MCAsmInfo *createXCoreMCAsmInfo(const Target &T, StringRef TT) {
+  MCAsmInfo *MAI = new XCoreMCAsmInfo(T, TT);
+
+  // Initial state of the frame pointer is SP.
+  MachineLocation Dst(MachineLocation::VirtualFP);
+  MachineLocation Src(XCore::SP, 0);
+  MAI->addInitialFrameState(0, Dst, Src);
+
+  return MAI;
+}
+
 extern "C" void LLVMInitializeXCoreMCAsmInfo() {
-  RegisterMCAsmInfo<XCoreMCAsmInfo> X(TheXCoreTarget);
+  RegisterMCAsmInfoFn X(TheXCoreTarget, createXCoreMCAsmInfo);
+}
+
+MCCodeGenInfo *createXCoreMCCodeGenInfo(StringRef TT, Reloc::Model RM) {
+  MCCodeGenInfo *X = new MCCodeGenInfo();
+  X->InitMCCodeGenInfo(RM);
+  return X;
+}
+
+extern "C" void LLVMInitializeXCoreMCCodeGenInfo() {
+  TargetRegistry::RegisterMCCodeGenInfo(TheXCoreTarget,
+                                        createXCoreMCCodeGenInfo);
 }

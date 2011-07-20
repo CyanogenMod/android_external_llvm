@@ -117,13 +117,13 @@ extern "C" void LLVMInitializeARMMCInstrInfo() {
   TargetRegistry::RegisterMCInstrInfo(TheThumbTarget, createARMMCInstrInfo);
 }
 
-static MCRegisterInfo *createARMMCRegisterInfo() {
+static MCRegisterInfo *createARMMCRegisterInfo(StringRef Triple) {
   MCRegisterInfo *X = new MCRegisterInfo();
-  InitARMMCRegisterInfo(X);
+  InitARMMCRegisterInfo(X, ARM::LR);
   return X;
 }
 
-extern "C" void LLVMInitializeARMMCRegInfo() {
+extern "C" void LLVMInitializeARMMCRegisterInfo() {
   TargetRegistry::RegisterMCRegInfo(TheARMTarget, createARMMCRegisterInfo);
   TargetRegistry::RegisterMCRegInfo(TheThumbTarget, createARMMCRegisterInfo);
 }
@@ -141,4 +141,17 @@ extern "C" void LLVMInitializeARMMCAsmInfo() {
   // Register the target asm info.
   RegisterMCAsmInfoFn A(TheARMTarget, createARMMCAsmInfo);
   RegisterMCAsmInfoFn B(TheThumbTarget, createARMMCAsmInfo);
+}
+
+MCCodeGenInfo *createARMMCCodeGenInfo(StringRef TT, Reloc::Model RM) {
+  MCCodeGenInfo *X = new MCCodeGenInfo();
+  if (RM == Reloc::Default)
+    RM = Reloc::DynamicNoPIC;
+  X->InitMCCodeGenInfo(RM);
+  return X;
+}
+
+extern "C" void LLVMInitializeARMMCCodeGenInfo() {
+  TargetRegistry::RegisterMCCodeGenInfo(TheARMTarget, createARMMCCodeGenInfo);
+  TargetRegistry::RegisterMCCodeGenInfo(TheThumbTarget, createARMMCCodeGenInfo);
 }

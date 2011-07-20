@@ -22,6 +22,7 @@
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCParser/AsmLexer.h"
@@ -107,7 +108,10 @@ void EDDisassembler::initialize() {
   
   InitializeAllTargetInfos();
   InitializeAllTargets();
+  InitializeAllMCCodeGenInfos();
   InitializeAllMCAsmInfos();
+  InitializeAllMCRegisterInfos();
+  InitializeAllMCSubtargetInfos();
   InitializeAllAsmPrinters();
   InitializeAllAsmParsers();
   InitializeAllDisassemblers();
@@ -184,6 +188,11 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   AsmInfo.reset(Tgt->createMCAsmInfo(tripleString));
   
   if (!AsmInfo)
+    return;
+
+  MRI.reset(Tgt->createMCRegInfo(tripleString));
+
+  if (!MRI)
     return;
 
   Disassembler.reset(Tgt->createMCDisassembler());
@@ -368,7 +377,7 @@ int EDDisassembler::parseInst(SmallVectorImpl<MCParsedAsmOperand*> &operands,
   SourceMgr sourceMgr;
   sourceMgr.setDiagHandler(diag_handler, static_cast<void*>(this));
   sourceMgr.AddNewSourceBuffer(buf, SMLoc()); // ownership of buf handed over
-  MCContext context(*AsmInfo, NULL);
+  MCContext context(*AsmInfo, *MRI, NULL, NULL);
   OwningPtr<MCStreamer> streamer(createNullStreamer(context));
   OwningPtr<MCAsmParser> genericParser(createMCAsmParser(*Tgt, sourceMgr,
                                                          context, *streamer,

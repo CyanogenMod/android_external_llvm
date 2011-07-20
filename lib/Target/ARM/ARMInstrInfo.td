@@ -443,10 +443,12 @@ def shift_so_reg : Operand<i32>,    // reg reg imm
 
 // so_imm - Match a 32-bit shifter_operand immediate operand, which is an
 // 8-bit immediate rotated by an arbitrary number of bits.
+def SOImmAsmOperand: AsmOperandClass { let Name = "ARMSOImm"; }
 def so_imm : Operand<i32>, ImmLeaf<i32, [{
     return ARM_AM::getSOImmVal(Imm) != -1;
   }]> {
   let EncoderMethod = "getSOImmOpValue";
+  let ParserMatchClass = SOImmAsmOperand;
 }
 
 // Break so_imm's up into two pieces.  This handles immediates with up to 16
@@ -492,11 +494,16 @@ def imm0_31_m1 : Operand<i32>, ImmLeaf<i32, [{
   let EncoderMethod = "getImmMinusOneOpValue";
 }
 
-// i32imm_hilo16 - For movt/movw - sets the MC Encoder method.
-// The imm is split into imm{15-12}, imm{11-0}
+// imm0_65535_expr - For movt/movw - 16-bit immediate that can also reference
+// a relocatable expression.
 //
-def i32imm_hilo16 : Operand<i32> {
+// FIXME: This really needs a Thumb version separate from the ARM version.
+// While the range is the same, and can thus use the same match class,
+// the encoding is different so it should have a different encoder method.
+def Imm0_65535ExprAsmOperand: AsmOperandClass { let Name = "Imm0_65535Expr"; }
+def imm0_65535_expr : Operand<i32> {
   let EncoderMethod = "getHiLo16ImmOpValue";
+  let ParserMatchClass = Imm0_65535ExprAsmOperand;
 }
 
 /// bf_inv_mask_imm predicate - An AND mask to clear an arbitrary width bitfield
@@ -2121,7 +2128,7 @@ def MOVi : AsI1<0b1101, (outs GPR:$Rd), (ins so_imm:$imm), DPFrm, IIC_iMOVi,
 }
 
 let isReMaterializable = 1, isAsCheapAsAMove = 1, isMoveImm = 1 in
-def MOVi16 : AI1<0b1000, (outs GPR:$Rd), (ins i32imm_hilo16:$imm),
+def MOVi16 : AI1<0b1000, (outs GPR:$Rd), (ins imm0_65535_expr:$imm),
                  DPFrm, IIC_iMOVi,
                  "movw", "\t$Rd, $imm",
                  [(set GPR:$Rd, imm0_65535:$imm)]>,
@@ -2135,11 +2142,15 @@ def MOVi16 : AI1<0b1000, (outs GPR:$Rd), (ins i32imm_hilo16:$imm),
   let Inst{25} = 1;
 }
 
+def : InstAlias<"mov${p} $Rd, $imm",
+                (MOVi16 GPR:$Rd, imm0_65535_expr:$imm, pred:$p)>,
+        Requires<[IsARM]>;
+
 def MOVi16_ga_pcrel : PseudoInst<(outs GPR:$Rd),
                                 (ins i32imm:$addr, pclabel:$id), IIC_iMOVi, []>;
 
 let Constraints = "$src = $Rd" in {
-def MOVTi16 : AI1<0b1010, (outs GPR:$Rd), (ins GPR:$src, i32imm_hilo16:$imm),
+def MOVTi16 : AI1<0b1010, (outs GPR:$Rd), (ins GPR:$src, imm0_65535_expr:$imm),
                   DPFrm, IIC_iMOVi,
                   "movt", "\t$Rd, $imm",
                   [(set GPR:$Rd,
@@ -3258,7 +3269,7 @@ def MOVCCs : ARMPseudoInst<(outs GPR:$Rd),
 
 let isMoveImm = 1 in
 def MOVCCi16 : ARMPseudoInst<(outs GPR:$Rd),
-                             (ins GPR:$false, i32imm_hilo16:$imm, pred:$p),
+                             (ins GPR:$false, imm0_65535_expr:$imm, pred:$p),
                              4, IIC_iMOVi,
                              []>,
       RegConstraint<"$false = $Rd">, Requires<[IsARM, HasV6T2]>;
@@ -3660,8 +3671,8 @@ def MCR : MovRCopro<"mcr", 0 /* from ARM core register to coprocessor */,
                                   imm:$CRm, imm:$opc2)]>;
 def MRC : MovRCopro<"mrc", 1 /* from coprocessor to ARM core register */,
                     (outs GPR:$Rt),
-                    (ins p_imm:$cop, i32imm:$opc1, c_imm:$CRn, c_imm:$CRm,
-                         i32imm:$opc2), []>;
+                    (ins p_imm:$cop, imm0_7:$opc1, c_imm:$CRn, c_imm:$CRm,
+                         imm0_7:$opc2), []>;
 
 def : ARMPat<(int_arm_mrc imm:$cop, imm:$opc1, imm:$CRn, imm:$CRm, imm:$opc2),
              (MRC imm:$cop, imm:$opc1, imm:$CRn, imm:$CRm, imm:$opc2)>;
@@ -3697,8 +3708,8 @@ def MCR2 : MovRCopro2<"mcr2", 0 /* from ARM core register to coprocessor */,
                                      imm:$CRm, imm:$opc2)]>;
 def MRC2 : MovRCopro2<"mrc2", 1 /* from coprocessor to ARM core register */,
                       (outs GPR:$Rt),
-                      (ins p_imm:$cop, i32imm:$opc1, c_imm:$CRn, c_imm:$CRm,
-                           i32imm:$opc2), []>;
+                      (ins p_imm:$cop, imm0_7:$opc1, c_imm:$CRn, c_imm:$CRm,
+                           imm0_7:$opc2), []>;
 
 def : ARMV5TPat<(int_arm_mrc2 imm:$cop, imm:$opc1, imm:$CRn,
                               imm:$CRm, imm:$opc2),
@@ -3758,20 +3769,22 @@ def MCRR2 : MovRRCopro2<"mcrr2", 0 /* from ARM core register to coprocessor */,
 def MRRC2 : MovRRCopro2<"mrrc2", 1 /* from coprocessor to ARM core register */>;
 
 //===----------------------------------------------------------------------===//
-// Move between special register and ARM core register -- for disassembly only
+// Move between special register and ARM core register
 //
 
 // Move to ARM core register from Special Register
-def MRS : ABI<0b0001, (outs GPR:$Rd), (ins), NoItinerary, "mrs", "\t$Rd, cpsr",
-              [/* For disassembly only; pattern left blank */]> {
+def MRS : ABI<0b0001, (outs GPR:$Rd), (ins), NoItinerary,
+              "mrs", "\t$Rd, apsr", []> {
   bits<4> Rd;
   let Inst{23-16} = 0b00001111;
   let Inst{15-12} = Rd;
   let Inst{7-4} = 0b0000;
 }
 
-def MRSsys : ABI<0b0001, (outs GPR:$Rd), (ins), NoItinerary,"mrs","\t$Rd, spsr",
-              [/* For disassembly only; pattern left blank */]> {
+def : InstAlias<"mrs${p} $Rd, cpsr", (MRS GPR:$Rd, pred:$p)>, Requires<[IsARM]>;
+
+def MRSsys : ABI<0b0001, (outs GPR:$Rd), (ins), NoItinerary,
+                 "mrs", "\t$Rd, spsr", []> {
   bits<4> Rd;
   let Inst{23-16} = 0b01001111;
   let Inst{15-12} = Rd;
@@ -3785,8 +3798,7 @@ def MRSsys : ABI<0b0001, (outs GPR:$Rd), (ins), NoItinerary,"mrs","\t$Rd, spsr",
 // operand contains the special register (R Bit) in bit 4 and bits 3-0 contains
 // the mask with the fields to be accessed in the special register.
 def MSR : ABI<0b0001, (outs), (ins msr_mask:$mask, GPR:$Rn), NoItinerary,
-              "msr", "\t$mask, $Rn",
-              [/* For disassembly only; pattern left blank */]> {
+              "msr", "\t$mask, $Rn", []> {
   bits<5> mask;
   bits<4> Rn;
 
@@ -3800,8 +3812,7 @@ def MSR : ABI<0b0001, (outs), (ins msr_mask:$mask, GPR:$Rn), NoItinerary,
 }
 
 def MSRi : ABI<0b0011, (outs), (ins msr_mask:$mask,  so_imm:$a), NoItinerary,
-               "msr", "\t$mask, $a",
-               [/* For disassembly only; pattern left blank */]> {
+               "msr", "\t$mask, $a", []> {
   bits<5> mask;
   bits<12> a;
 

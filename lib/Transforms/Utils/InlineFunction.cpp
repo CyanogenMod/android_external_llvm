@@ -636,7 +636,7 @@ static Value *HandleByValArgument(Value *Arg, Instruction *TheCall,
                                   const Function *CalledFunc,
                                   InlineFunctionInfo &IFI,
                                   unsigned ByValAlignment) {
-  const Type *AggTy = cast<PointerType>(Arg->getType())->getElementType();
+  Type *AggTy = cast<PointerType>(Arg->getType())->getElementType();
 
   // If the called function is readonly, then it could not mutate the caller's
   // copy of the byval'd memory.  In this case, it is safe to elide the copy and
@@ -726,7 +726,7 @@ static bool isUsedByLifetimeMarker(Value *V) {
 // hasLifetimeMarkers - Check whether the given alloca already has
 // lifetime.start or lifetime.end intrinsics.
 static bool hasLifetimeMarkers(AllocaInst *AI) {
-  const Type *Int8PtrTy = Type::getInt8PtrTy(AI->getType()->getContext());
+  Type *Int8PtrTy = Type::getInt8PtrTy(AI->getType()->getContext());
   if (AI->getType() == Int8PtrTy)
     return isUsedByLifetimeMarker(AI);
 
@@ -770,8 +770,15 @@ static void fixupLineNumbers(Function *Fn, Function::iterator FI,
     for (BasicBlock::iterator BI = FI->begin(), BE = FI->end();
          BI != BE; ++BI) {
       DebugLoc DL = BI->getDebugLoc();
-      if (!DL.isUnknown())
+      if (!DL.isUnknown()) {
         BI->setDebugLoc(updateInlinedAtInfo(DL, TheCallDL, BI->getContext()));
+        if (DbgValueInst *DVI = dyn_cast<DbgValueInst>(BI)) {
+          LLVMContext &Ctx = BI->getContext();
+          MDNode *InlinedAt = BI->getDebugLoc().getInlinedAt(Ctx);
+          DVI->setOperand(2, createInlinedVariable(DVI->getVariable(), 
+                                                   InlinedAt, Ctx));
+        }
+      }
     }
   }
 }
@@ -1090,7 +1097,7 @@ bool llvm::InlineFunction(CallSite CS, InlineFunctionInfo &IFI) {
 
   // Handle all of the return instructions that we just cloned in, and eliminate
   // any users of the original call/invoke instruction.
-  const Type *RTy = CalledFunc->getReturnType();
+  Type *RTy = CalledFunc->getReturnType();
 
   PHINode *PHI = 0;
   if (Returns.size() > 1) {

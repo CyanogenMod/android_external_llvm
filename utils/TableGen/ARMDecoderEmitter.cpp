@@ -1614,15 +1614,6 @@ ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
     if (!thumbInstruction(Form))
       return false;
 
-    // A8.6.189 STM / STMIA / STMEA -- Encoding T1
-    // There's only STMIA_UPD for Thumb1.
-    if (Name == "tSTMIA")
-      return false;
-
-    // On Darwin R9 is call-clobbered.  Ignore the non-Darwin counterparts.
-    if (Name == "tBL" || Name == "tBLXi" || Name == "tBLXr")
-      return false;
-
     // A8.6.25 BX.  Use the generic tBX_Rm, ignore tBX_RET and tBX_RET_vararg.
     if (Name == "tBX_RET" || Name == "tBX_RET_vararg")
       return false;
@@ -1654,14 +1645,12 @@ ARMDEBackend::populateInstruction(const CodeGenInstruction &CGI,
 
     // Resolve conflicts:
     //
-    //   tBfar conflicts with tBLr9
     //   t2LDMIA_RET conflict with t2LDM (ditto)
     //   tMOVCCi conflicts with tMOVi8
     //   tMOVCCr conflicts with tMOVgpr2gpr
     //   tLDRcp conflicts with tLDRspi
     //   t2MOVCCi16 conflicts with tMOVi16
-    if (Name == "tBfar" ||
-        Name == "t2LDMIA_RET" ||
+    if (Name == "t2LDMIA_RET" ||
         Name == "tMOVCCi" || Name == "tMOVCCr" ||
         Name == "tLDRcp" || 
         Name == "t2MOVCCi16")

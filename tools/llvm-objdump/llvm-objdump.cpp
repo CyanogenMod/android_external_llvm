@@ -107,7 +107,7 @@ public:
   uint64_t getExtent() const { return Bytes.size(); }
 
   int readByte(uint64_t Addr, uint8_t *Byte) const {
-    if (Addr > getExtent())
+    if (Addr >= getExtent())
       return -1;
     *Byte = Bytes[Addr];
     return 0;
@@ -270,6 +270,7 @@ int main(int argc, char **argv) {
   // FIXME: We shouldn't need to initialize the Target(Machine)s.
   llvm::InitializeAllTargets();
   llvm::InitializeAllMCAsmInfos();
+  llvm::InitializeAllMCCodeGenInfos();
   llvm::InitializeAllAsmPrinters();
   llvm::InitializeAllAsmParsers();
   llvm::InitializeAllDisassemblers();

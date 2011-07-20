@@ -40,6 +40,7 @@
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Target/TargetAsmParser.h"
 #include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetRegistry.h"
 #include "llvm/Target/TargetSelect.h"
 
@@ -135,6 +136,7 @@ LTOModule *LTOModule::makeLTOModule(MemoryBuffer *buffer,
   static bool Initialized = false;
   if (!Initialized) {
     InitializeAllTargets();
+    InitializeAllMCCodeGenInfos();
     InitializeAllMCAsmInfos();
     InitializeAllMCSubtargetInfos();
     InitializeAllAsmParsers();
@@ -662,7 +664,8 @@ static bool isAliasToDeclaration(const GlobalAlias &V) {
 
 bool LTOModule::ParseSymbols() {
   // Use mangler to add GlobalPrefix to names to match linker names.
-  MCContext Context(*_target->getMCAsmInfo(), NULL);
+  MCContext Context(*_target->getMCAsmInfo(), *_target->getRegisterInfo(),
+                    NULL, NULL);
   Mangler mangler(Context, *_target->getTargetData());
 
   // add functions

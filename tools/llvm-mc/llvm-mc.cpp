@@ -18,6 +18,8 @@
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCInstPrinter.h"
 #include "llvm/MC/MCInstrInfo.h"
+#include "llvm/MC/MCObjectFileInfo.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSubtargetInfo.h"
@@ -110,6 +112,21 @@ MCPU("mcpu",
      cl::desc("Target a specific cpu type (-mcpu=help for details)"),
      cl::value_desc("cpu-name"),
      cl::init(""));
+
+static cl::opt<Reloc::Model>
+RelocModel("relocation-model",
+             cl::desc("Choose relocation model"),
+             cl::init(Reloc::Default),
+             cl::values(
+            clEnumValN(Reloc::Default, "default",
+                       "Target default relocation model"),
+            clEnumValN(Reloc::Static, "static",
+                       "Non-relocatable code"),
+            clEnumValN(Reloc::PIC_, "pic",
+                       "Fully relocatable, position independent code"),
+            clEnumValN(Reloc::DynamicNoPIC, "dynamic-no-pic",
+                       "Relocatable external references, non-relocatable code"),
+            clEnumValEnd));
 
 static cl::opt<bool>
 NoInitialTextSection("n", cl::desc("Don't assume assembly file starts "
@@ -309,6 +326,9 @@ static int AssembleInput(const char *ProgName) {
   llvm::OwningPtr<MCAsmInfo> MAI(TheTarget->createMCAsmInfo(TripleName));
   assert(MAI && "Unable to create target asm info!");
 
+  llvm::OwningPtr<MCRegisterInfo> MRI(TheTarget->createMCRegInfo(TripleName));
+  assert(MRI && "Unable to create target register info!");
+
   // Package up features to be passed to target/subtarget
   std::string FeaturesStr;
 
@@ -318,7 +338,8 @@ static int AssembleInput(const char *ProgName) {
   //        the .cpu and .code16 directives).
   OwningPtr<TargetMachine> TM(TheTarget->createTargetMachine(TripleName,
                                                              MCPU,
-                                                             FeaturesStr));
+                                                             FeaturesStr,
+                                                             RelocModel));
 
   if (!TM) {
     errs() << ProgName << ": error: could not create target for triple '"
@@ -327,7 +348,12 @@ static int AssembleInput(const char *ProgName) {
   }
 
   const TargetAsmInfo *tai = new TargetAsmInfo(*TM);
-  MCContext Ctx(*MAI, tai);
+  // FIXME: This is not pretty. MCContext has a ptr to MCObjectFileInfo and
+  // MCObjectFileInfo needs a MCContext reference in order to initialize itself.
+  OwningPtr<MCObjectFileInfo> MOFI(new MCObjectFileInfo());
+  MCContext Ctx(*MAI, *MRI, MOFI.get(), tai);
+  MOFI->InitMCObjectFileInfo(TripleName, RelocModel, Ctx);
+
   if (SaveTempLabels)
     Ctx.setAllowTemporaryLabels(false);
 
@@ -437,7 +463,9 @@ int main(int argc, char **argv) {
   // FIXME: We shouldn't need to initialize the Target(Machine)s.
   llvm::InitializeAllTargets();
   llvm::InitializeAllMCAsmInfos();
+  llvm::InitializeAllMCCodeGenInfos();
   llvm::InitializeAllMCInstrInfos();
+  llvm::InitializeAllMCRegisterInfos();
   llvm::InitializeAllMCSubtargetInfos();
   llvm::InitializeAllAsmPrinters();
   llvm::InitializeAllAsmParsers();
