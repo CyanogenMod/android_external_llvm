@@ -2537,12 +2537,12 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       if (Record.size() < 3) {
         return Error("Invalid MALLOC record");
       }
-      const PointerType *Ty =
+      PointerType *Ty =
           dyn_cast_or_null<PointerType>(getTypeByID(Record[0]));
       Value *Size = getFnValueByID(Record[1], Type::getInt32Ty(Context));
       if (!Ty || !Size) return Error("Invalid MALLOC record");
       if (!CurBB) return Error("Invalid malloc instruction with no BB");
-      const Type *Int32Ty = IntegerType::getInt32Ty(CurBB->getContext());
+      Type *Int32Ty = IntegerType::getInt32Ty(CurBB->getContext());
       Constant *AllocSize = ConstantExpr::getSizeOf(Ty->getElementType());
       AllocSize = ConstantExpr::getTruncOrBitCast(AllocSize, Int32Ty);
       I = CallInst::CreateMalloc(CurBB, Int32Ty, Ty->getElementType(),
@@ -2570,9 +2570,9 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
         return Error("Invalid ALLOCA record");
       }
       unsigned OpNum = 0;
-      const PointerType *Ty =
+      PointerType *Ty =
         dyn_cast_or_null<PointerType>(getTypeByID(Record[OpNum++]));
-      const Type *OpTy = Record.size() == 4 ? getTypeByID(Record[OpNum++]) :
+      Type *OpTy = Record.size() == 4 ? getTypeByID(Record[OpNum++]) :
                                               Type::getInt32Ty(Context);
       Value *Size = getFnValueByID(Record[OpNum++], OpTy);
       unsigned Align = Record[OpNum++];
