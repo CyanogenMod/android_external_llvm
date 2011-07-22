@@ -15,9 +15,9 @@
 * For Honeycomb: Synced to upstream r112344.
 * For Honeycomb MR1: Synced to upstream r119309
 * For Honeycomb MR2: Synced to upstream r119309
-* For Ice Cream Sandwich: Synced to upstream r135568
+* For Ice Cream Sandwich: Synced to upstream r135569
 
-* Recent downstreaming on 2011/7/21: From r135360 to 135568 (Contact sliao & Logan for merge questions.)
+* Recent downstreaming on 2011/7/21: From r135360 to 135569 (Contact sliao & logan for merge questions.)
 * Recent downstreaming on 2011/7/19: From r134306 to 135360 (Contact sliao for merge questions.)
 * Recent downstreaming on 2011/7/2: From r133718 to 134306 (Contact sliao for merge questions.)
 * Recent downstreaming on 2011/6/30: From r133240 to 133718 (Contact sliao for merge questions.)
