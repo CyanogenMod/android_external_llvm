@@ -129,15 +129,11 @@ namespace bitc {
 
   enum MetadataCodes {
     METADATA_STRING        = 1,   // MDSTRING:      [values]
-    METADATA_NODE_27      = 2,
-    METADATA_FN_NODE_27   = 3,
     // 2 is unused.
     // 3 is unused.
     METADATA_NAME          = 4,   // STRING:        [values]
-    METADATA_NAMED_NODE_27 = 5,
     // 5 is unused.
     METADATA_KIND          = 6,   // [n x [id, name]]
-    METADATA_ATTACHMENT_27 = 7,
     // 7 is unused.
     METADATA_NODE          = 8,   // NODE:          [n x (type num, value num)]
     METADATA_FN_NODE       = 9,   // FN_NODE:       [n x (type num, value num)]
@@ -244,14 +240,10 @@ namespace bitc {
     FUNC_CODE_INST_UNREACHABLE = 15, // UNREACHABLE
 
     FUNC_CODE_INST_PHI         = 16, // PHI:        [ty, val0,bb0, ...]
-    FUNC_CODE_INST_MALLOC_27   = 17,
-    FUNC_CODE_INST_FREE_27     = 18,
     // 17 is unused.
     // 18 is unused.
     FUNC_CODE_INST_ALLOCA      = 19, // ALLOCA:     [instty, op, align]
     FUNC_CODE_INST_LOAD        = 20, // LOAD:       [opty, op, align, vol]
-    FUNC_CODE_INST_STORE_27    = 21,
-    FUNC_CODE_INST_CALL_27     = 22,
     // 21 is unused.
     // 22 is unused.
     FUNC_CODE_INST_VAARG       = 23, // VAARG:      [valistty, valist, instty]
@@ -259,7 +251,6 @@ namespace bitc {
     // this is so information only available in the pointer type (e.g. address
     // spaces) is retained.
     FUNC_CODE_INST_STORE       = 24, // STORE:      [ptrty,ptr,val, align, vol]
-    FUNC_CODE_INST_GETRESULT_27 = 25,
     // 25 is unused.
     FUNC_CODE_INST_EXTRACTVAL  = 26, // EXTRACTVAL: [n x operands]
     FUNC_CODE_INST_INSERTVAL   = 27, // INSERTVAL:  [n x operands]
@@ -270,7 +261,6 @@ namespace bitc {
     FUNC_CODE_INST_VSELECT     = 29, // VSELECT:    [ty,opval,opval,predty,pred]
     FUNC_CODE_INST_INBOUNDS_GEP= 30, // INBOUNDS_GEP: [n x operands]
     FUNC_CODE_INST_INDIRECTBR  = 31, // INDIRECTBR: [opty, op0, op1, ...]
-    FUNC_CODE_DEBUG_LOC_27     = 32,
     // 32 is unused.
     FUNC_CODE_DEBUG_LOC_AGAIN  = 33, // DEBUG_LOC_AGAIN
 

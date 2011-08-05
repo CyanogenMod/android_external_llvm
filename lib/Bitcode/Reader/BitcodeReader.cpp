@@ -1040,11 +1040,7 @@ bool BitcodeReader::ParseMetadata() {
 
       // METADATA_NAME is always followed by METADATA_NAMED_NODE.
       unsigned NextBitCode = Stream.ReadRecord(Code, Record);
-      if (NextBitCode == bitc::METADATA_NAMED_NODE_27) {
-        LLVM2_7MetadataDetected = true;
-      } else if (NextBitCode != bitc::METADATA_NAMED_NODE) {
-        assert(!"Invalid Named Metadata record.");  (void)NextBitCode;
-      }
+      assert(NextBitCode == bitc::METADATA_NAMED_NODE); (void)NextBitCode;
 
       // Read named metadata elements.
       unsigned Size = Record.size();
@@ -1055,23 +1051,12 @@ bool BitcodeReader::ParseMetadata() {
           return Error("Malformed metadata record");
         NMD->addOperand(MD);
       }
-
-      if (LLVM2_7MetadataDetected) {
-        MDValueList.AssignValue(0, NextMDValueNo++);
-      }
       break;
     }
-    case bitc::METADATA_FN_NODE_27:
     case bitc::METADATA_FN_NODE:
       IsFunctionLocal = true;
       // fall-through
-    case bitc::METADATA_NODE_27:
     case bitc::METADATA_NODE: {
-      if (Code == bitc::METADATA_FN_NODE_27 ||
-          Code == bitc::METADATA_NODE_27) {
-        LLVM2_7MetadataDetected = true;
-      }
-
       if (Record.size() % 2 == 1)
         return Error("Invalid METADATA_NODE record");
 
@@ -2003,8 +1988,6 @@ bool BitcodeReader::ParseMetadataAttachment() {
     switch (Stream.ReadRecord(Code, Record)) {
     default:  // Default behavior: ignore.
       break;
-    case bitc::METADATA_ATTACHMENT_27:
-      LLVM2_7MetadataDetected = true;
     case bitc::METADATA_ATTACHMENT: {
       unsigned RecordLength = Record.size();
       if (Record.empty() || (RecordLength - 1) % 2 == 1)
@@ -2117,8 +2100,6 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       I = 0;
       continue;
         
-    case bitc::FUNC_CODE_DEBUG_LOC_27:
-      LLVM2_7MetadataDetected = true;
     case bitc::FUNC_CODE_DEBUG_LOC: {      // DEBUG_LOC: [line, col, scope, ia]
       I = 0;     // Get the last instruction emitted.
       if (CurBB && !CurBB->empty())
@@ -2356,19 +2337,6 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       break;
     }
 
-    case bitc::FUNC_CODE_INST_GETRESULT_27: {
-      if (Record.size() != 2) {
-        return Error("Invalid GETRESULT record");
-      }
-      unsigned OpNum = 0;
-      Value *Op;
-      getValueTypePair(Record, OpNum, NextValueNo, Op);
-      unsigned Index = Record[1];
-      I = ExtractValueInst::Create(Op, Index);
-      InstructionList.push_back(I);
-      break;
-    }
-
     case bitc::FUNC_CODE_INST_RET: // RET: [opty,opval<optional>]
       {
         unsigned Size = Record.size();
@@ -2531,51 +2499,14 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       break;
     }
 
-    case bitc::FUNC_CODE_INST_MALLOC_27: { // MALLOC: [instty, op, align]
-      // Autoupgrade malloc instruction to malloc call.
-      // FIXME: Remove in LLVM 3.0.
-      if (Record.size() < 3) {
-        return Error("Invalid MALLOC record");
-      }
-      PointerType *Ty =
-          dyn_cast_or_null<PointerType>(getTypeByID(Record[0]));
-      Value *Size = getFnValueByID(Record[1], Type::getInt32Ty(Context));
-      if (!Ty || !Size) return Error("Invalid MALLOC record");
-      if (!CurBB) return Error("Invalid malloc instruction with no BB");
-      Type *Int32Ty = IntegerType::getInt32Ty(CurBB->getContext());
-      Constant *AllocSize = ConstantExpr::getSizeOf(Ty->getElementType());
-      AllocSize = ConstantExpr::getTruncOrBitCast(AllocSize, Int32Ty);
-      I = CallInst::CreateMalloc(CurBB, Int32Ty, Ty->getElementType(),
-                                 AllocSize, Size, NULL);
-      InstructionList.push_back(I);
-      break;
-    }
-    case bitc::FUNC_CODE_INST_FREE_27: { // FREE: [op, opty]
-      unsigned OpNum = 0;
-      Value *Op;
-      if (getValueTypePair(Record, OpNum, NextValueNo, Op) ||
-          OpNum != Record.size()) {
-        return Error("Invalid FREE record");
-      }
-      if (!CurBB) return Error("Invalid free instruction with no BB");
-      I = CallInst::CreateFree(Op, CurBB);
-      InstructionList.push_back(I);
-      break;
-    }
-
     case bitc::FUNC_CODE_INST_ALLOCA: { // ALLOCA: [instty, opty, op, align]
-      // For backward compatibility, tolerate a lack of an opty, and use i32.
-      // Remove this in LLVM 3.0.
-      if (Record.size() < 3 || Record.size() > 4) {
+      if (Record.size() != 4)
         return Error("Invalid ALLOCA record");
-      }
-      unsigned OpNum = 0;
       PointerType *Ty =
-        dyn_cast_or_null<PointerType>(getTypeByID(Record[OpNum++]));
-      Type *OpTy = Record.size() == 4 ? getTypeByID(Record[OpNum++]) :
-                                              Type::getInt32Ty(Context);
-      Value *Size = getFnValueByID(Record[OpNum++], OpTy);
-      unsigned Align = Record[OpNum++];
+        dyn_cast_or_null<PointerType>(getTypeByID(Record[0]));
+      Type *OpTy = getTypeByID(Record[1]);
+      Value *Size = getFnValueByID(Record[2], OpTy);
+      unsigned Align = Record[3];
       if (!Ty || !Size) return Error("Invalid ALLOCA record");
       I = new AllocaInst(Ty->getElementType(), Size, (1 << Align) >> 1);
       InstructionList.push_back(I);
@@ -2605,21 +2536,6 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       InstructionList.push_back(I);
       break;
     }
-    case bitc::FUNC_CODE_INST_STORE_27: {
-      unsigned OpNum = 0;
-      Value *Val, *Ptr;
-      if (getValueTypePair(Record, OpNum, NextValueNo, Val) ||
-          getValue(Record, OpNum,
-                   PointerType::getUnqual(Val->getType()), Ptr)||
-          OpNum+2 != Record.size()) {
-        return Error("Invalid STORE record");
-      }
-      I = new StoreInst(Val, Ptr, Record[OpNum+1], (1 << Record[OpNum]) >> 1);
-      InstructionList.push_back(I);
-      break;
-    }
-    case bitc::FUNC_CODE_INST_CALL_27:
-      LLVM2_7MetadataDetected = true;
     case bitc::FUNC_CODE_INST_CALL: {
       // CALL: [paramattrs, cc, fnty, fnid, arg0, arg1...]
       if (Record.size() < 3)
@@ -2738,16 +2654,10 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
     
     BlockAddrFwdRefs.erase(BAFRI);
   }
-
-  unsigned NewMDValueListSize = MDValueList.size();
+  
   // Trim the value list down to the size it was before we parsed this function.
   ValueList.shrinkTo(ModuleValueListSize);
   MDValueList.shrinkTo(ModuleMDValueListSize);
-
-  if (LLVM2_7MetadataDetected) {
-    MDValueList.resize(NewMDValueListSize);
-  }
-
   std::vector<BasicBlock*>().swap(FunctionBBs);
   return false;
 }
