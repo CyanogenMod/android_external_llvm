@@ -15,6 +15,7 @@ transforms_scalar_SRC_FILES := \
 	LICM.cpp    \
 	LoopDeletion.cpp    \
 	LoopIdiomRecognize.cpp \
+	LoopInstSimplify.cpp \
 	LoopRotation.cpp    \
 	LoopStrengthReduce.cpp  \
 	LoopUnrollPass.cpp  \

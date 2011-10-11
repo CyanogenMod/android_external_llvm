@@ -25,6 +25,7 @@ transforms_utils_SRC_FILES :=	\
 	SimplifyCFG.cpp	\
 	SimplifyInstructions.cpp	\
 	UnifyFunctionExitNodes.cpp	\
+	Utils.cpp \
 	ValueMapper.cpp
 
 # For the host
