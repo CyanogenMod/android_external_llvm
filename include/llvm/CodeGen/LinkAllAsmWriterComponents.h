@@ -18,6 +18,7 @@
 #include "llvm/CodeGen/GCs.h"
 #include <cstdlib>
 
+#ifndef ANDROID_TARGET_BUILD
 namespace {
   struct ForceAsmWriterLinking {
     ForceAsmWriterLinking() {
@@ -33,5 +34,6 @@ namespace {
     }
   } ForceAsmWriterLinking; // Force link by creating a global definition.
 }
+#endif
 
 #endif // LLVM_CODEGEN_LINKALLASMWRITERCOMPONENTS_H

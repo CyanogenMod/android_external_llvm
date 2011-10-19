@@ -4,45 +4,60 @@ LLVM_ROOT_PATH := $(LOCAL_PATH)/../..
 
 
 #===---------------------------------------------------------------===
-# opt command line tool (common)
+# llc command line tool (common)
 #===---------------------------------------------------------------===
 
-llvm_opt_SRC_FILES := \
-  AnalysisWrappers.cpp \
-  GraphPrinters.cpp \
-  PrintSCC.cpp \
-  opt.cpp
+llvm_llc_SRC_FILES := \
+  llc.cpp
 
-llvm_opt_STATIC_LIBRARIES := \
-  libLLVMipo \
-  libLLVMScalarOpts \
+llvm_llc_STATIC_LIBRARIES := \
+  libLLVMARMCodeGen \
+  libLLVMARMDisassembler \
+  libLLVMARMAsmParser \
+  libLLVMARMDesc \
+  libLLVMARMInfo \
+  libLLVMAsmPrinter \
+  libLLVMAsmParser \
+  libLLVMBitReader \
+  libLLVMBitWriter \
+  libLLVMSelectionDAG \
   libLLVMInstCombine \
   libLLVMInstrumentation \
-  libLLVMTransformUtils \
+  libLLVMCodeGen \
+  libLLVMipo \
   libLLVMipa \
-  libLLVMAnalysis \
-  libLLVMTarget \
+  libLLVMLinker \
   libLLVMMC \
-  libLLVMAsmParser \
-  libLLVMBitWriter \
-  libLLVMBitReader \
+  libLLVMMCParser \
+  libLLVMScalarOpts \
+  libLLVMTransformUtils \
+  libLLVMAnalysis \
   libLLVMCore \
-  libLLVMSupport
+  libLLVMSupport \
+  libLLVMTarget
 
 
 #===---------------------------------------------------------------===
-# opt command line tool (host)
+# llc command line tool (host)
 #===---------------------------------------------------------------===
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := opt
+LOCAL_MODULE := llc
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_IS_HOST_MODULE := true
 
-LOCAL_SRC_FILES := $(llvm_opt_SRC_FILES)
-LOCAL_STATIC_LIBRARIES := $(llvm_opt_STATIC_LIBRARIES)
+LOCAL_SRC_FILES := $(llvm_llc_SRC_FILES)
+LOCAL_STATIC_LIBRARIES := \
+  libLLVMX86Info \
+  libLLVMX86AsmParser \
+  libLLVMX86CodeGen \
+  libLLVMX86Disassembler \
+  libLLVMX86AsmPrinter \
+  libLLVMX86Desc \
+  libLLVMX86Utils \
+  $(llvm_llc_STATIC_LIBRARIES)
 LOCAL_LDLIBS += -lpthread -lm -ldl
 LOCAL_C_INCLUDES += external/llvm/include
 
@@ -53,18 +68,18 @@ include $(BUILD_HOST_EXECUTABLE)
 
 
 #===---------------------------------------------------------------===
-# opt command line tool (target)
+# llc command line tool (target)
 #===---------------------------------------------------------------===
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := opt
+LOCAL_MODULE := llc
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := EXECUTABLES
 
-LOCAL_SRC_FILES := $(llvm_opt_SRC_FILES)
+LOCAL_SRC_FILES := $(llvm_llc_SRC_FILES)
 LOCAL_C_INCLUDES += external/llvm/include
-LOCAL_STATIC_LIBRARIES := $(llvm_opt_STATIC_LIBRARIES)
+LOCAL_STATIC_LIBRARIES := $(llvm_llc_STATIC_LIBRARIES)
 LOCAL_SHARED_LIBRARIES := \
   libdl \
   libstlport
