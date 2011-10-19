@@ -27,8 +27,8 @@ include $(CLEAR_TBLGEN_VARS)
 
 LOCAL_MODULE:= libLLVMARMAsmParser
 LOCAL_MODULE_TAGS := optional
-LOCAL_SRC_FILES :=	$(arm_asm_parser_SRC_FILES)
-LOCAL_C_INCLUDES +=	$(arm_asm_parser_C_INCLUDES)
+LOCAL_SRC_FILES := $(arm_asm_parser_SRC_FILES)
+LOCAL_C_INCLUDES += $(arm_asm_parser_C_INCLUDES)
 TBLGEN_TABLES := $(arm_asm_parser_TBLGEN_TABLES)
 TBLGEN_TD_DIR := $(arm_asm_parser_TBLGEN_TD_DIR)
 
@@ -45,8 +45,8 @@ include $(CLEAR_TBLGEN_VARS)
 
 LOCAL_MODULE:= libLLVMARMAsmParser
 LOCAL_MODULE_TAGS := optional
-LOCAL_SRC_FILES :=	$(arm_asm_parser_SRC_FILES)
-LOCAL_C_INCLUDES +=	$(arm_asm_parser_C_INCLUDES)
+LOCAL_SRC_FILES := $(arm_asm_parser_SRC_FILES)
+LOCAL_C_INCLUDES += $(arm_asm_parser_C_INCLUDES)
 TBLGEN_TABLES := $(arm_asm_parser_TBLGEN_TABLES)
 TBLGEN_TD_DIR := $(arm_asm_parser_TBLGEN_TD_DIR)
 
