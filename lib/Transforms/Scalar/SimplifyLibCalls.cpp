@@ -338,16 +338,17 @@ struct StrCmpOpt : public LibCallOptimization {
     bool HasStr1 = GetConstantStringInfo(Str1P, Str1);
     bool HasStr2 = GetConstantStringInfo(Str2P, Str2);
 
-    if (HasStr1 && Str1.empty()) // strcmp("", x) -> *x
-      return B.CreateZExt(B.CreateLoad(Str2P, "strcmpload"), CI->getType());
-
-    if (HasStr2 && Str2.empty()) // strcmp(x,"") -> *x
-      return B.CreateZExt(B.CreateLoad(Str1P, "strcmpload"), CI->getType());
-
     // strcmp(x, y)  -> cnst  (if both x and y are constant strings)
     if (HasStr1 && HasStr2)
       return ConstantInt::get(CI->getType(),
-                                     strcmp(Str1.c_str(),Str2.c_str()));
+                              StringRef(Str1).compare(Str2));
+
+    if (HasStr1 && Str1.empty()) // strcmp("", x) -> -*x
+      return B.CreateNeg(B.CreateZExt(B.CreateLoad(Str2P, "strcmpload"),
+                                      CI->getType()));
+
+    if (HasStr2 && Str2.empty()) // strcmp(x,"") -> *x
+      return B.CreateZExt(B.CreateLoad(Str1P, "strcmpload"), CI->getType());
 
     // strcmp(P, "x") -> memcmp(P, "x", 2)
     uint64_t Len1 = GetStringLength(Str1P);
@@ -400,16 +401,20 @@ struct StrNCmpOpt : public LibCallOptimization {
     bool HasStr1 = GetConstantStringInfo(Str1P, Str1);
     bool HasStr2 = GetConstantStringInfo(Str2P, Str2);
 
-    if (HasStr1 && Str1.empty())  // strncmp("", x, n) -> *x
-      return B.CreateZExt(B.CreateLoad(Str2P, "strcmpload"), CI->getType());
+    // strncmp(x, y)  -> cnst  (if both x and y are constant strings)
+    if (HasStr1 && HasStr2) {
+      StringRef SubStr1 = StringRef(Str1).substr(0, Length);
+      StringRef SubStr2 = StringRef(Str2).substr(0, Length);
+      return ConstantInt::get(CI->getType(), SubStr1.compare(SubStr2));
+    }
+
+    if (HasStr1 && Str1.empty())  // strncmp("", x, n) -> -*x
+      return B.CreateNeg(B.CreateZExt(B.CreateLoad(Str2P, "strcmpload"),
+                                      CI->getType()));
 
     if (HasStr2 && Str2.empty())  // strncmp(x, "", n) -> *x
       return B.CreateZExt(B.CreateLoad(Str1P, "strcmpload"), CI->getType());
 
-    // strncmp(x, y)  -> cnst  (if both x and y are constant strings)
-    if (HasStr1 && HasStr2)
-      return ConstantInt::get(CI->getType(),
-                              strncmp(Str1.c_str(), Str2.c_str(), Length));
     return 0;
   }
 };
@@ -874,8 +879,8 @@ struct PowOpt : public LibCallOptimization {
                                          Callee->getAttributes());
       Value *FAbs = EmitUnaryFloatFnCall(Sqrt, "fabs", B,
                                          Callee->getAttributes());
-      Value *FCmp = B.CreateFCmpOEQ(Op1, NegInf, "tmp");
-      Value *Sel = B.CreateSelect(FCmp, Inf, FAbs, "tmp");
+      Value *FCmp = B.CreateFCmpOEQ(Op1, NegInf);
+      Value *Sel = B.CreateSelect(FCmp, Inf, FAbs);
       return Sel;
     }
 
@@ -908,10 +913,10 @@ struct Exp2Opt : public LibCallOptimization {
     Value *LdExpArg = 0;
     if (SIToFPInst *OpC = dyn_cast<SIToFPInst>(Op)) {
       if (OpC->getOperand(0)->getType()->getPrimitiveSizeInBits() <= 32)
-        LdExpArg = B.CreateSExt(OpC->getOperand(0), B.getInt32Ty(), "tmp");
+        LdExpArg = B.CreateSExt(OpC->getOperand(0), B.getInt32Ty());
     } else if (UIToFPInst *OpC = dyn_cast<UIToFPInst>(Op)) {
       if (OpC->getOperand(0)->getType()->getPrimitiveSizeInBits() < 32)
-        LdExpArg = B.CreateZExt(OpC->getOperand(0), B.getInt32Ty(), "tmp");
+        LdExpArg = B.CreateZExt(OpC->getOperand(0), B.getInt32Ty());
     }
 
     if (LdExpArg) {
@@ -996,10 +1001,10 @@ struct FFSOpt : public LibCallOptimization {
     Value *F = Intrinsic::getDeclaration(Callee->getParent(),
                                          Intrinsic::cttz, ArgType);
     Value *V = B.CreateCall(F, Op, "cttz");
-    V = B.CreateAdd(V, ConstantInt::get(V->getType(), 1), "tmp");
-    V = B.CreateIntCast(V, B.getInt32Ty(), false, "tmp");
+    V = B.CreateAdd(V, ConstantInt::get(V->getType(), 1));
+    V = B.CreateIntCast(V, B.getInt32Ty(), false);
 
-    Value *Cond = B.CreateICmpNE(Op, Constant::getNullValue(ArgType), "tmp");
+    Value *Cond = B.CreateICmpNE(Op, Constant::getNullValue(ArgType));
     return B.CreateSelect(Cond, V, B.getInt32(0));
   }
 };

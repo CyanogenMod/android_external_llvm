@@ -170,7 +170,7 @@ public:
   /// to true.
   /// @returns true iff this constant's bits are all set to true.
   /// @brief Determine if the value is all ones.
-  bool isAllOnesValue() const { 
+  bool isMinusOne() const { 
     return Val.isAllOnesValue();
   }
 
@@ -203,7 +203,7 @@ public:
   /// value.
   /// @returns true iff this constant is greater or equal to the given number.
   /// @brief Determine if the value is greater or equal to the given number.
-  bool uge(uint64_t Num) {
+  bool uge(uint64_t Num) const {
     return Val.getActiveBits() > 64 || Val.getZExtValue() >= Num;
   }
 
@@ -329,7 +329,7 @@ class ConstantArray : public Constant {
                                     std::vector<Constant*> >;
   ConstantArray(const ConstantArray &);      // DO NOT IMPLEMENT
 protected:
-  ConstantArray(ArrayType *T, const std::vector<Constant*> &Val);
+  ConstantArray(ArrayType *T, ArrayRef<Constant *> Val);
 public:
   // ConstantArray accessors
   static Constant *get(ArrayType *T, ArrayRef<Constant*> V);
@@ -390,7 +390,7 @@ struct OperandTraits<ConstantArray> :
   public VariadicOperandTraits<ConstantArray> {
 };
 
-DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantArray, Constant)
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantArray, Constant)
 
 //===----------------------------------------------------------------------===//
 // ConstantStruct - Constant Struct Declarations
@@ -400,7 +400,7 @@ class ConstantStruct : public Constant {
                                     std::vector<Constant*> >;
   ConstantStruct(const ConstantStruct &);      // DO NOT IMPLEMENT
 protected:
-  ConstantStruct(StructType *T, const std::vector<Constant*> &Val);
+  ConstantStruct(StructType *T, ArrayRef<Constant *> Val);
 public:
   // ConstantStruct accessors
   static Constant *get(StructType *T, ArrayRef<Constant*> V);
@@ -450,7 +450,7 @@ struct OperandTraits<ConstantStruct> :
   public VariadicOperandTraits<ConstantStruct> {
 };
 
-DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantStruct, Constant)
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantStruct, Constant)
 
 
 //===----------------------------------------------------------------------===//
@@ -461,7 +461,7 @@ class ConstantVector : public Constant {
                                     std::vector<Constant*> >;
   ConstantVector(const ConstantVector &);      // DO NOT IMPLEMENT
 protected:
-  ConstantVector(VectorType *T, const std::vector<Constant*> &Val);
+  ConstantVector(VectorType *T, ArrayRef<Constant *> Val);
 public:
   // ConstantVector accessors
   static Constant *get(ArrayRef<Constant*> V);
@@ -501,7 +501,7 @@ struct OperandTraits<ConstantVector> :
   public VariadicOperandTraits<ConstantVector> {
 };
 
-DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantVector, Constant)
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantVector, Constant)
 
 //===----------------------------------------------------------------------===//
 /// ConstantPointerNull - a constant pointer value that points to null
@@ -575,7 +575,7 @@ struct OperandTraits<BlockAddress> :
   public FixedNumOperandTraits<BlockAddress, 2> {
 };
 
-DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(BlockAddress, Value)
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(BlockAddress, Value)
   
 
 //===----------------------------------------------------------------------===//
@@ -788,25 +788,40 @@ public:
   /// all elements must be Constant's.
   ///
   static Constant *getGetElementPtr(Constant *C,
-                                    Constant *const *IdxList, unsigned NumIdx,
+                                    ArrayRef<Constant *> IdxList,
                                     bool InBounds = false) {
-    return getGetElementPtr(C, (Value**)IdxList, NumIdx, InBounds);
+    return getGetElementPtr(C, makeArrayRef((Value * const *)IdxList.data(),
+                                            IdxList.size()),
+                            InBounds);
   }
   static Constant *getGetElementPtr(Constant *C,
-                                    Value *const *IdxList, unsigned NumIdx,
+                                    Constant *Idx,
+                                    bool InBounds = false) {
+    // This form of the function only exists to avoid ambiguous overload
+    // warnings about whether to convert Idx to ArrayRef<Constant *> or
+    // ArrayRef<Value *>.
+    return getGetElementPtr(C, cast<Value>(Idx), InBounds);
+  }
+  static Constant *getGetElementPtr(Constant *C,
+                                    ArrayRef<Value *> IdxList,
                                     bool InBounds = false);
 
   /// Create an "inbounds" getelementptr. See the documentation for the
   /// "inbounds" flag in LangRef.html for details.
   static Constant *getInBoundsGetElementPtr(Constant *C,
-                                            Constant *const *IdxList,
-                                            unsigned NumIdx) {
-    return getGetElementPtr(C, IdxList, NumIdx, true);
+                                            ArrayRef<Constant *> IdxList) {
+    return getGetElementPtr(C, IdxList, true);
   }
   static Constant *getInBoundsGetElementPtr(Constant *C,
-                                            Value* const *IdxList,
-                                            unsigned NumIdx) {
-    return getGetElementPtr(C, IdxList, NumIdx, true);
+                                            Constant *Idx) {
+    // This form of the function only exists to avoid ambiguous overload
+    // warnings about whether to convert Idx to ArrayRef<Constant *> or
+    // ArrayRef<Value *>.
+    return getGetElementPtr(C, Idx, true);
+  }
+  static Constant *getInBoundsGetElementPtr(Constant *C,
+                                            ArrayRef<Value *> IdxList) {
+    return getGetElementPtr(C, IdxList, true);
   }
 
   static Constant *getExtractElement(Constant *Vec, Constant *Idx);
@@ -869,7 +884,7 @@ struct OperandTraits<ConstantExpr> :
   public VariadicOperandTraits<ConstantExpr, 1> {
 };
 
-DEFINE_TRANSPARENT_CASTED_OPERAND_ACCESSORS(ConstantExpr, Constant)
+DEFINE_TRANSPARENT_OPERAND_ACCESSORS(ConstantExpr, Constant)
 
 //===----------------------------------------------------------------------===//
 /// UndefValue - 'undef' values are things that do not have specified contents.

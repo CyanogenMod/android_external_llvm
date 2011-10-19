@@ -174,6 +174,7 @@ SPUTargetLowering::SPUTargetLowering(SPUTargetMachine &TM)
 
   // SPU has no intrinsics for these particular operations:
   setOperationAction(ISD::MEMBARRIER, MVT::Other, Expand);
+  setOperationAction(ISD::ATOMIC_FENCE, MVT::Other, Expand);
 
   // SPU has no division/remainder instructions
   setOperationAction(ISD::SREM,    MVT::i8,   Expand);
@@ -401,6 +402,9 @@ SPUTargetLowering::SPUTargetLowering(SPUTargetMachine &TM)
        i <= (unsigned)MVT::LAST_VECTOR_VALUETYPE; ++i) {
     MVT::SimpleValueType VT = (MVT::SimpleValueType)i;
 
+    // Set operation actions to legal types only.
+    if (!isTypeLegal(VT)) continue;
+
     // add/sub are legal for all supported vector VT's.
     setOperationAction(ISD::ADD,     VT, Legal);
     setOperationAction(ISD::SUB,     VT, Legal);
@@ -420,6 +424,13 @@ SPUTargetLowering::SPUTargetLowering(SPUTargetMachine &TM)
     setOperationAction(ISD::UDIV,    VT, Expand);
     setOperationAction(ISD::UREM,    VT, Expand);
 
+    // Expand all trunc stores
+    for (unsigned j = (unsigned)MVT::FIRST_VECTOR_VALUETYPE;
+         j <= (unsigned)MVT::LAST_VECTOR_VALUETYPE; ++j) {
+      MVT::SimpleValueType TargetVT = (MVT::SimpleValueType)j;
+    setTruncStoreAction(VT, TargetVT, Expand);
+    }
+
     // Custom lower build_vector, constant pool spills, insert and
     // extract vector elements:
     setOperationAction(ISD::BUILD_VECTOR, VT, Custom);
@@ -430,6 +441,8 @@ SPUTargetLowering::SPUTargetLowering(SPUTargetMachine &TM)
     setOperationAction(ISD::VECTOR_SHUFFLE, VT, Custom);
   }
 
+  setOperationAction(ISD::SHL, MVT::v2i64, Expand);
+
   setOperationAction(ISD::AND, MVT::v16i8, Custom);
   setOperationAction(ISD::OR,  MVT::v16i8, Custom);
   setOperationAction(ISD::XOR, MVT::v16i8, Custom);
@@ -438,6 +451,7 @@ SPUTargetLowering::SPUTargetLowering(SPUTargetMachine &TM)
   setOperationAction(ISD::FDIV, MVT::v4f32, Legal);
 
   setBooleanContents(ZeroOrNegativeOneBooleanContent);
+  setBooleanVectorContents(ZeroOrNegativeOneBooleanContent); // FIXME: Is this correct?
 
   setStackPointerRegisterToSaveRestore(SPU::R1);
 
@@ -497,7 +511,7 @@ SPUTargetLowering::getTargetNodeName(unsigned Opcode) const
 // Return the Cell SPU's SETCC result type
 //===----------------------------------------------------------------------===//
 
-MVT::SimpleValueType SPUTargetLowering::getSetCCResultType(EVT VT) const {
+EVT SPUTargetLowering::getSetCCResultType(EVT VT) const {
   // i8, i16 and i32 are valid SETCC result types
   MVT::SimpleValueType retval;
 
@@ -1738,9 +1752,11 @@ SPU::LowerV2I64Splat(EVT OpVT, SelectionDAG& DAG, uint64_t SplatVal,
 
     // Both upper and lower are special, lower to a constant pool load:
     if (lower_special && upper_special) {
-      SDValue SplatValCN = DAG.getConstant(SplatVal, MVT::i64);
-      return DAG.getNode(ISD::BUILD_VECTOR, dl, MVT::v2i64,
-                         SplatValCN, SplatValCN);
+      SDValue UpperVal = DAG.getConstant(upper, MVT::i32);
+      SDValue LowerVal = DAG.getConstant(lower, MVT::i32);
+      SDValue BV = DAG.getNode(ISD::BUILD_VECTOR, dl, MVT::v4i32,
+                         UpperVal, LowerVal, UpperVal, LowerVal);
+      return DAG.getNode(ISD::BITCAST, dl, OpVT, BV);
     }
 
     SDValue LO32;
@@ -2727,6 +2743,7 @@ static SDValue LowerSIGN_EXTEND(SDValue Op, SelectionDAG &DAG)
   // the type to extend from needs to be i64 or i32.
   assert((OpVT == MVT::i128 && (Op0VT == MVT::i64 || Op0VT == MVT::i32)) &&
           "LowerSIGN_EXTEND: input and/or output operand have wrong size");
+  (void)OpVT;
 
   // Create shuffle mask
   unsigned mask1 = 0x10101010; // byte 0 - 3 and 4 - 7

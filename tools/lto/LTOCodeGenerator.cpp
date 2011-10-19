@@ -23,6 +23,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/Passes.h"
+#include "llvm/Analysis/Verifier.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
@@ -32,19 +33,20 @@
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetSelect.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/PassManagerBuilder.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/system_error.h"
 #include "llvm/Config/config.h"
+#include "llvm/Transforms/IPO.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include <cstdlib>
 #include <unistd.h>
 #include <fcntl.h>
@@ -74,10 +76,7 @@ LTOCodeGenerator::LTOCodeGenerator()
       _nativeObjectFile(NULL)
 {
     InitializeAllTargets();
-    InitializeAllMCAsmInfos();
-    InitializeAllMCCodeGenInfos();
-    InitializeAllMCRegisterInfos();
-    InitializeAllMCSubtargetInfos();
+    InitializeAllTargetMCs();
     InitializeAllAsmPrinters();
 }
 
@@ -194,7 +193,7 @@ bool LTOCodeGenerator::compile_to_file(const char** name, std::string& errMsg)
   bool genResult = false;
   tool_output_file objFile(uniqueObjPath.c_str(), errMsg);
   if (!errMsg.empty())
-    return NULL;
+    return true;
   genResult = this->generateObjectFile(objFile.os(), errMsg);
   objFile.os().close();
   if (objFile.os().has_error()) {
@@ -266,7 +265,7 @@ bool LTOCodeGenerator::determineTarget(std::string& errMsg)
             break;
         }
 
-        // construct LTModule, hand over ownership of module and target
+        // construct LTOModule, hand over ownership of module and target
         SubtargetFeatures Features;
         Features.getDefaultSubtargetFeatures(llvm::Triple(Triple));
         std::string FeatureStr = Features.getString();
@@ -313,8 +312,7 @@ void LTOCodeGenerator::applyScopeRestrictions() {
   passes.add(createVerifierPass());
 
   // mark which symbols can not be internalized 
-  MCContext Context(*_target->getMCAsmInfo(), *_target->getRegisterInfo(),
-                    NULL, NULL);
+  MCContext Context(*_target->getMCAsmInfo(), *_target->getRegisterInfo(), NULL);
   Mangler mangler(Context, *_target->getTargetData());
   std::vector<const char*> mustPreserveList;
   SmallPtrSet<GlobalValue*, 8> asmUsed;

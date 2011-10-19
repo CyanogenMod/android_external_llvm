@@ -40,7 +40,6 @@ namespace llvm {
   bool JITExceptionHandling;
   bool JITEmitDebugInfo;
   bool JITEmitDebugInfoToDisk;
-  CodeModel::Model CMModel;
   bool GuaranteedTailCallOpt;
   unsigned StackAlignmentOverride;
   bool RealignStack;
@@ -48,6 +47,7 @@ namespace llvm {
   bool StrongPHIElim;
   bool HasDivModLibcall;
   bool AsmVerbosityDefault(false);
+  bool EnableSegmentedStacks;
 }
 
 static cl::opt<bool, true>
@@ -142,23 +142,6 @@ EmitJitDebugInfoToDisk("jit-emit-debug-to-disk",
   cl::location(JITEmitDebugInfoToDisk),
   cl::init(false));
 
-static cl::opt<llvm::CodeModel::Model, true>
-DefCodeModel("code-model",
-  cl::desc("Choose code model"),
-  cl::location(CMModel),
-  cl::init(CodeModel::Default),
-  cl::values(
-    clEnumValN(CodeModel::Default, "default",
-               "Target default code model"),
-    clEnumValN(CodeModel::Small, "small",
-               "Small code model"),
-    clEnumValN(CodeModel::Kernel, "kernel",
-               "Kernel code model"),
-    clEnumValN(CodeModel::Medium, "medium",
-               "Medium code model"),
-    clEnumValN(CodeModel::Large, "large",
-               "Large code model"),
-    clEnumValEnd));
 static cl::opt<bool, true>
 EnableGuaranteedTailCallOpt("tailcallopt",
   cl::desc("Turn fastcc calls into tail calls by (potentially) changing ABI."),
@@ -196,6 +179,12 @@ static cl::opt<bool>
 FunctionSections("ffunction-sections",
   cl::desc("Emit functions into separate sections"),
   cl::init(false));
+static cl::opt<bool, true>
+SegmentedStacks("segmented-stacks",
+  cl::desc("Use segmented stacks if possible."),
+  cl::location(EnableSegmentedStacks),
+  cl::init(false));
+                         
 //---------------------------------------------------------------------------
 // TargetMachine Class
 //
@@ -208,7 +197,8 @@ TargetMachine::TargetMachine(const Target &T,
     MCNoExecStack(false),
     MCSaveTempLabels(false),
     MCUseLoc(true),
-    MCUseCFI(true) {
+    MCUseCFI(true),
+    MCUseDwarfDirectory(true) {
   // Typically it will be subtargets that will adjust FloatABIType from Default
   // to Soft or Hard.
   if (UseSoftFloat)
@@ -230,13 +220,10 @@ Reloc::Model TargetMachine::getRelocationModel() const {
 
 /// getCodeModel - Returns the code model. The choices are small, kernel,
 /// medium, large, and target default.
-CodeModel::Model TargetMachine::getCodeModel() {
-  return CMModel;
-}
-
-/// setCodeModel - Sets the code model.
-void TargetMachine::setCodeModel(CodeModel::Model Model) {
-  CMModel = Model;
+CodeModel::Model TargetMachine::getCodeModel() const {
+  if (!CodeGenInfo)
+    return CodeModel::Default;
+  return CodeGenInfo->getCodeModel();
 }
 
 bool TargetMachine::getAsmVerbosityDefault() {

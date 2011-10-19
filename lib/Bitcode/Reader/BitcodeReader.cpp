@@ -131,6 +131,44 @@ static int GetDecodedBinaryOpcode(unsigned Val, Type *Ty) {
   }
 }
 
+static AtomicRMWInst::BinOp GetDecodedRMWOperation(unsigned Val) {
+  switch (Val) {
+  default: return AtomicRMWInst::BAD_BINOP;
+  case bitc::RMW_XCHG: return AtomicRMWInst::Xchg;
+  case bitc::RMW_ADD: return AtomicRMWInst::Add;
+  case bitc::RMW_SUB: return AtomicRMWInst::Sub;
+  case bitc::RMW_AND: return AtomicRMWInst::And;
+  case bitc::RMW_NAND: return AtomicRMWInst::Nand;
+  case bitc::RMW_OR: return AtomicRMWInst::Or;
+  case bitc::RMW_XOR: return AtomicRMWInst::Xor;
+  case bitc::RMW_MAX: return AtomicRMWInst::Max;
+  case bitc::RMW_MIN: return AtomicRMWInst::Min;
+  case bitc::RMW_UMAX: return AtomicRMWInst::UMax;
+  case bitc::RMW_UMIN: return AtomicRMWInst::UMin;
+  }
+}
+
+static AtomicOrdering GetDecodedOrdering(unsigned Val) {
+  switch (Val) {
+  case bitc::ORDERING_NOTATOMIC: return NotAtomic;
+  case bitc::ORDERING_UNORDERED: return Unordered;
+  case bitc::ORDERING_MONOTONIC: return Monotonic;
+  case bitc::ORDERING_ACQUIRE: return Acquire;
+  case bitc::ORDERING_RELEASE: return Release;
+  case bitc::ORDERING_ACQREL: return AcquireRelease;
+  default: // Map unknown orderings to sequentially-consistent.
+  case bitc::ORDERING_SEQCST: return SequentiallyConsistent;
+  }
+}
+
+static SynchronizationScope GetDecodedSynchScope(unsigned Val) {
+  switch (Val) {
+  case bitc::SYNCHSCOPE_SINGLETHREAD: return SingleThread;
+  default: // Map unknown scopes to cross-thread.
+  case bitc::SYNCHSCOPE_CROSSTHREAD: return CrossThread;
+  }
+}
+
 namespace llvm {
 namespace {
   /// @brief A class for maintaining the slot number definition
@@ -362,7 +400,7 @@ Type *BitcodeReader::getTypeByID(unsigned ID) {
 
   // If we have a forward reference, the only possible case is when it is to a
   // named struct.  Just create a placeholder for now.
-  return TypeList[ID] = StructType::createNamed(Context, "");
+  return TypeList[ID] = StructType::create(Context);
 }
 
 /// FIXME: Remove in LLVM 3.1, only used by ParseOldTypeTable.
@@ -630,7 +668,7 @@ bool BitcodeReader::ParseTypeTableBody() {
         Res->setName(TypeName);
         TypeList[NumRecords] = 0;
       } else  // Otherwise, create a new struct.
-        Res = StructType::createNamed(Context, TypeName);
+        Res = StructType::create(Context, TypeName);
       TypeName.clear();
       
       SmallVector<Type*, 8> EltTys;
@@ -659,7 +697,7 @@ bool BitcodeReader::ParseTypeTableBody() {
         Res->setName(TypeName);
         TypeList[NumRecords] = 0;
       } else  // Otherwise, create a new struct with no body.
-        Res = StructType::createNamed(Context, TypeName);
+        Res = StructType::create(Context, TypeName);
       TypeName.clear();
       ResultTy = Res;
       break;
@@ -793,7 +831,7 @@ RestartScan:
       break;
     case bitc::TYPE_CODE_OPAQUE:    // OPAQUE
       if (NextTypeID < TypeList.size() && TypeList[NextTypeID] == 0)
-        ResultTy = StructType::createNamed(Context, "");
+        ResultTy = StructType::create(Context);
       break;
     case bitc::TYPE_CODE_STRUCT_OLD: {// STRUCT_OLD
       if (NextTypeID >= TypeList.size()) break;
@@ -804,7 +842,7 @@ RestartScan:
 
       // Set a type.
       if (TypeList[NextTypeID] == 0)
-        TypeList[NextTypeID] = StructType::createNamed(Context, "");
+        TypeList[NextTypeID] = StructType::create(Context);
 
       std::vector<Type*> EltTys;
       for (unsigned i = 1, e = Record.size(); i != e; ++i) {
@@ -923,7 +961,7 @@ bool BitcodeReader::ParseOldTypeSymbolTable() {
 
       // Only apply the type name to a struct type with no name.
       if (StructType *STy = dyn_cast<StructType>(TypeList[TypeID]))
-        if (!STy->isAnonymous() && !STy->hasName())
+        if (!STy->isLiteral() && !STy->hasName())
           STy->setName(TypeName);
       TypeName.clear();
       break;
@@ -1351,12 +1389,10 @@ bool BitcodeReader::ParseConstants() {
         if (!ElTy) return Error("Invalid CE_GEP record");
         Elts.push_back(ValueList.getConstantFwdRef(Record[i+1], ElTy));
       }
-      if (BitCode == bitc::CST_CODE_CE_INBOUNDS_GEP)
-        V = ConstantExpr::getInBoundsGetElementPtr(Elts[0], &Elts[1],
-                                                   Elts.size()-1);
-      else
-        V = ConstantExpr::getGetElementPtr(Elts[0], &Elts[1],
-                                           Elts.size()-1);
+      ArrayRef<Constant *> Indices(Elts.begin() + 1, Elts.end());
+      V = ConstantExpr::getGetElementPtr(Elts[0], Indices,
+                                         BitCode ==
+                                           bitc::CST_CODE_CE_INBOUNDS_GEP);
       break;
     }
     case bitc::CST_CODE_CE_SELECT:  // CE_SELECT: [opval#, opval#, opval#]
@@ -1823,9 +1859,9 @@ bool BitcodeReader::ParseBitcodeInto(Module *M) {
 
     if (Code != bitc::ENTER_SUBBLOCK) {
 
-      // The ranlib in xcode 4 will align archive members by appending newlines to the
-      // end of them. If this file size is a multiple of 4 but not 8, we have to read and
-      // ignore these final 4 bytes :-(
+      // The ranlib in xcode 4 will align archive members by appending newlines
+      // to the end of them. If this file size is a multiple of 4 but not 8, we
+      // have to read and ignore these final 4 bytes :-(
       if (Stream.GetAbbrevIDWidth() == 2 && Code == 2 &&
           Stream.Read(6) == 2 && Stream.Read(24) == 0xa0a0a &&
 	  Stream.AtEndOfStream())
@@ -2183,7 +2219,7 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
         GEPIdx.push_back(Op);
       }
 
-      I = GetElementPtrInst::Create(BasePtr, GEPIdx.begin(), GEPIdx.end());
+      I = GetElementPtrInst::Create(BasePtr, GEPIdx);
       InstructionList.push_back(I);
       if (BitCode == bitc::FUNC_CODE_INST_INBOUNDS_GEP)
         cast<GetElementPtrInst>(I)->setIsInBounds(true);
@@ -2472,6 +2508,15 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       cast<InvokeInst>(I)->setAttributes(PAL);
       break;
     }
+    case bitc::FUNC_CODE_INST_RESUME: { // RESUME: [opval]
+      unsigned Idx = 0;
+      Value *Val = 0;
+      if (getValueTypePair(Record, Idx, NextValueNo, Val))
+        return Error("Invalid RESUME record");
+      I = ResumeInst::Create(Val);
+      InstructionList.push_back(I);
+      break;
+    }
     case bitc::FUNC_CODE_INST_UNWIND: // UNWIND
       I = new UnwindInst(Context);
       InstructionList.push_back(I);
@@ -2499,6 +2544,45 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       break;
     }
 
+    case bitc::FUNC_CODE_INST_LANDINGPAD: {
+      // LANDINGPAD: [ty, val, val, num, (id0,val0 ...)?]
+      unsigned Idx = 0;
+      if (Record.size() < 4)
+        return Error("Invalid LANDINGPAD record");
+      Type *Ty = getTypeByID(Record[Idx++]);
+      if (!Ty) return Error("Invalid LANDINGPAD record");
+      Value *PersFn = 0;
+      if (getValueTypePair(Record, Idx, NextValueNo, PersFn))
+        return Error("Invalid LANDINGPAD record");
+
+      bool IsCleanup = !!Record[Idx++];
+      unsigned NumClauses = Record[Idx++];
+      LandingPadInst *LP = LandingPadInst::Create(Ty, PersFn, NumClauses);
+      LP->setCleanup(IsCleanup);
+      for (unsigned J = 0; J != NumClauses; ++J) {
+        LandingPadInst::ClauseType CT =
+          LandingPadInst::ClauseType(Record[Idx++]); (void)CT;
+        Value *Val;
+
+        if (getValueTypePair(Record, Idx, NextValueNo, Val)) {
+          delete LP;
+          return Error("Invalid LANDINGPAD record");
+        }
+
+        assert((CT != LandingPadInst::Catch ||
+                !isa<ArrayType>(Val->getType())) &&
+               "Catch clause has a invalid type!");
+        assert((CT != LandingPadInst::Filter ||
+                isa<ArrayType>(Val->getType())) &&
+               "Filter clause has invalid type!");
+        LP->addClause(Val);
+      }
+
+      I = LP;
+      InstructionList.push_back(I);
+      break;
+    }
+
     case bitc::FUNC_CODE_INST_ALLOCA: { // ALLOCA: [instty, opty, op, align]
       if (Record.size() != 4)
         return Error("Invalid ALLOCA record");
@@ -2523,6 +2607,28 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
       InstructionList.push_back(I);
       break;
     }
+    case bitc::FUNC_CODE_INST_LOADATOMIC: {
+       // LOADATOMIC: [opty, op, align, vol, ordering, synchscope]
+      unsigned OpNum = 0;
+      Value *Op;
+      if (getValueTypePair(Record, OpNum, NextValueNo, Op) ||
+          OpNum+4 != Record.size())
+        return Error("Invalid LOADATOMIC record");
+        
+
+      AtomicOrdering Ordering = GetDecodedOrdering(Record[OpNum+2]);
+      if (Ordering == NotAtomic || Ordering == Release ||
+          Ordering == AcquireRelease)
+        return Error("Invalid LOADATOMIC record");
+      if (Ordering != NotAtomic && Record[OpNum] == 0)
+        return Error("Invalid LOADATOMIC record");
+      SynchronizationScope SynchScope = GetDecodedSynchScope(Record[OpNum+3]);
+
+      I = new LoadInst(Op, "", Record[OpNum+1], (1 << Record[OpNum]) >> 1,
+                       Ordering, SynchScope);
+      InstructionList.push_back(I);
+      break;
+    }
     case bitc::FUNC_CODE_INST_STORE: { // STORE2:[ptrty, ptr, val, align, vol]
       unsigned OpNum = 0;
       Value *Val, *Ptr;
@@ -2533,6 +2639,83 @@ bool BitcodeReader::ParseFunctionBody(Function *F) {
         return Error("Invalid STORE record");
 
       I = new StoreInst(Val, Ptr, Record[OpNum+1], (1 << Record[OpNum]) >> 1);
+      InstructionList.push_back(I);
+      break;
+    }
+    case bitc::FUNC_CODE_INST_STOREATOMIC: {
+      // STOREATOMIC: [ptrty, ptr, val, align, vol, ordering, synchscope]
+      unsigned OpNum = 0;
+      Value *Val, *Ptr;
+      if (getValueTypePair(Record, OpNum, NextValueNo, Ptr) ||
+          getValue(Record, OpNum,
+                    cast<PointerType>(Ptr->getType())->getElementType(), Val) ||
+          OpNum+4 != Record.size())
+        return Error("Invalid STOREATOMIC record");
+
+      AtomicOrdering Ordering = GetDecodedOrdering(Record[OpNum+2]);
+      if (Ordering == NotAtomic || Ordering == Acquire ||
+          Ordering == AcquireRelease)
+        return Error("Invalid STOREATOMIC record");
+      SynchronizationScope SynchScope = GetDecodedSynchScope(Record[OpNum+3]);
+      if (Ordering != NotAtomic && Record[OpNum] == 0)
+        return Error("Invalid STOREATOMIC record");
+
+      I = new StoreInst(Val, Ptr, Record[OpNum+1], (1 << Record[OpNum]) >> 1,
+                        Ordering, SynchScope);
+      InstructionList.push_back(I);
+      break;
+    }
+    case bitc::FUNC_CODE_INST_CMPXCHG: {
+      // CMPXCHG:[ptrty, ptr, cmp, new, vol, ordering, synchscope]
+      unsigned OpNum = 0;
+      Value *Ptr, *Cmp, *New;
+      if (getValueTypePair(Record, OpNum, NextValueNo, Ptr) ||
+          getValue(Record, OpNum,
+                    cast<PointerType>(Ptr->getType())->getElementType(), Cmp) ||
+          getValue(Record, OpNum,
+                    cast<PointerType>(Ptr->getType())->getElementType(), New) ||
+          OpNum+3 != Record.size())
+        return Error("Invalid CMPXCHG record");
+      AtomicOrdering Ordering = GetDecodedOrdering(Record[OpNum+1]);
+      if (Ordering == NotAtomic || Ordering == Unordered)
+        return Error("Invalid CMPXCHG record");
+      SynchronizationScope SynchScope = GetDecodedSynchScope(Record[OpNum+2]);
+      I = new AtomicCmpXchgInst(Ptr, Cmp, New, Ordering, SynchScope);
+      cast<AtomicCmpXchgInst>(I)->setVolatile(Record[OpNum]);
+      InstructionList.push_back(I);
+      break;
+    }
+    case bitc::FUNC_CODE_INST_ATOMICRMW: {
+      // ATOMICRMW:[ptrty, ptr, val, op, vol, ordering, synchscope]
+      unsigned OpNum = 0;
+      Value *Ptr, *Val;
+      if (getValueTypePair(Record, OpNum, NextValueNo, Ptr) ||
+          getValue(Record, OpNum,
+                    cast<PointerType>(Ptr->getType())->getElementType(), Val) ||
+          OpNum+4 != Record.size())
+        return Error("Invalid ATOMICRMW record");
+      AtomicRMWInst::BinOp Operation = GetDecodedRMWOperation(Record[OpNum]);
+      if (Operation < AtomicRMWInst::FIRST_BINOP ||
+          Operation > AtomicRMWInst::LAST_BINOP)
+        return Error("Invalid ATOMICRMW record");
+      AtomicOrdering Ordering = GetDecodedOrdering(Record[OpNum+2]);
+      if (Ordering == NotAtomic || Ordering == Unordered)
+        return Error("Invalid ATOMICRMW record");
+      SynchronizationScope SynchScope = GetDecodedSynchScope(Record[OpNum+3]);
+      I = new AtomicRMWInst(Operation, Ptr, Val, Ordering, SynchScope);
+      cast<AtomicRMWInst>(I)->setVolatile(Record[OpNum+1]);
+      InstructionList.push_back(I);
+      break;
+    }
+    case bitc::FUNC_CODE_INST_FENCE: { // FENCE:[ordering, synchscope]
+      if (2 != Record.size())
+        return Error("Invalid FENCE record");
+      AtomicOrdering Ordering = GetDecodedOrdering(Record[0]);
+      if (Ordering == NotAtomic || Ordering == Unordered ||
+          Ordering == Monotonic)
+        return Error("Invalid FENCE record");
+      SynchronizationScope SynchScope = GetDecodedSynchScope(Record[1]);
+      I = new FenceInst(Context, Ordering, SynchScope);
       InstructionList.push_back(I);
       break;
     }
@@ -2755,6 +2938,9 @@ bool BitcodeReader::MaterializeModule(Module *M, std::string *ErrInfo) {
     }
   }
   std::vector<std::pair<Function*, Function*> >().swap(UpgradedIntrinsics);
+
+  // Upgrade to new EH scheme. N.B. This will go away in 3.1.
+  UpgradeExceptionHandling(M);
 
   // Check debug info intrinsics.
   CheckDebugInfoIntrinsics(TheModule);

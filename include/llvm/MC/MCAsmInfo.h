@@ -32,6 +32,14 @@ namespace llvm {
     enum ExceptionsType { None, DwarfCFI, SjLj, ARM, Win64 };
   }
 
+  namespace LCOMM {
+    enum LCOMMType { None, NoAlignment, ByteAlignment };
+  }
+
+  namespace Structors {
+    enum OutputOrder { None, PriorityOrder, ReversePriorityOrder };
+  }
+
   /// MCAsmInfo - This class is intended to be used as a base class for asm
   /// properties and features specific to the target.
   class MCAsmInfo {
@@ -63,6 +71,11 @@ namespace llvm {
     /// HasMachoTBSSDirective - True if this is a MachO target that supports
     /// the macho-specific .tbss directive for emitting thread local BSS Symbols
     bool HasMachoTBSSDirective;                 // Default is false.
+
+    /// StructorOutputOrder - Whether the static ctor/dtor list should be output
+    /// in no particular order, in order of increasing priority or the reverse:
+    /// in order of decreasing priority (the default).
+    Structors::OutputOrder StructorOutputOrder; // Default is reverse order.
 
     /// HasStaticCtorDtorReferenceInStaticMode - True if the compiler should
     /// emit a ".reference .constructors_used" or ".reference .destructors_used"
@@ -117,6 +130,13 @@ namespace llvm {
     const char *InlineAsmStart;              // Defaults to "#APP\n"
     const char *InlineAsmEnd;                // Defaults to "#NO_APP\n"
 
+    /// Code16Directive, Code32Directive, Code64Directive - These are assembly
+    /// directives that tells the assembler to interpret the following
+    /// instructions differently.
+    const char *Code16Directive;             // Defaults to ".code16"
+    const char *Code32Directive;             // Defaults to ".code32"
+    const char *Code64Directive;             // Defaults to ".code64"
+
     /// AssemblerDialect - Which dialect of an assembler variant to use.
     unsigned AssemblerDialect;               // Defaults to 0
 
@@ -156,6 +176,18 @@ namespace llvm {
     const char *Data16bitsDirective;         // Defaults to "\t.short\t"
     const char *Data32bitsDirective;         // Defaults to "\t.long\t"
     const char *Data64bitsDirective;         // Defaults to "\t.quad\t"
+
+    /// [Data|Code]Begin - These magic labels are used to marked a region as
+    /// data or code, and are used to provide additional information for
+    /// correct disassembly on targets that like to mix data and code within
+    /// a segment.  These labels will be implicitly suffixed by the streamer
+    /// to give them unique names.
+    const char *DataBegin;                   // Defaults to "$d."
+    const char *CodeBegin;                   // Defaults to "$a."
+    const char *JT8Begin;                    // Defaults to "$a."
+    const char *JT16Begin;                   // Defaults to "$a."
+    const char *JT32Begin;                   // Defaults to "$a."
+    bool SupportsDataRegions;
 
     /// GPRel32Directive - if non-null, a directive that is used to emit a word
     /// which should be relocated as a 32-bit GP-relative offset, e.g. .gpword
@@ -222,9 +254,9 @@ namespace llvm {
     /// .long a - b
     bool HasAggressiveSymbolFolding;           // Defaults to true.
 
-    /// HasLCOMMDirective - This is true if the target supports the .lcomm
-    /// directive.
-    bool HasLCOMMDirective;                  // Defaults to false.
+    /// LCOMMDirectiveType - Describes if the target supports the .lcomm
+    /// directive and whether it has an alignment parameter.
+    LCOMM::LCOMMType LCOMMDirectiveType;     // Defaults to LCOMM::None.
 
     /// COMMDirectiveAlignmentIsInBytes - True is COMMDirective's optional
     /// alignment is to be specified in bytes instead of log2(n).
@@ -351,6 +383,14 @@ namespace llvm {
     }
     const char *getGPRel32Directive() const { return GPRel32Directive; }
 
+    /// [Code|Data]Begin label name accessors.
+    const char *getCodeBeginLabelName() const { return CodeBegin; }
+    const char *getDataBeginLabelName() const { return DataBegin; }
+    const char *getJumpTable8BeginLabelName() const { return JT8Begin; }
+    const char *getJumpTable16BeginLabelName() const { return JT16Begin; }
+    const char *getJumpTable32BeginLabelName() const { return JT32Begin; }
+    bool getSupportsDataRegions() const { return SupportsDataRegions; }
+
     /// getNonexecutableStackSection - Targets can implement this method to
     /// specify a section to switch to if the translation unit doesn't have any
     /// trampolines that require an executable stack.
@@ -384,6 +424,9 @@ namespace llvm {
     //
     bool hasMachoZeroFillDirective() const { return HasMachoZeroFillDirective; }
     bool hasMachoTBSSDirective() const { return HasMachoTBSSDirective; }
+    Structors::OutputOrder getStructorOutputOrder() const {
+      return StructorOutputOrder;
+    }
     bool hasStaticCtorDtorReferenceInStaticMode() const {
       return HasStaticCtorDtorReferenceInStaticMode;
     }
@@ -422,6 +465,15 @@ namespace llvm {
     }
     const char *getInlineAsmEnd() const {
       return InlineAsmEnd;
+    }
+    const char *getCode16Directive() const {
+      return Code16Directive;
+    }
+    const char *getCode32Directive() const {
+      return Code32Directive;
+    }
+    const char *getCode64Directive() const {
+      return Code64Directive;
     }
     unsigned getAssemblerDialect() const {
       return AssemblerDialect;
@@ -463,7 +515,9 @@ namespace llvm {
     bool hasAggressiveSymbolFolding() const {
       return HasAggressiveSymbolFolding;
     }
-    bool hasLCOMMDirective() const { return HasLCOMMDirective; }
+    LCOMM::LCOMMType getLCOMMDirectiveType() const {
+      return LCOMMDirectiveType;
+    }
     bool hasDotTypeDotSizeDirective() const {return HasDotTypeDotSizeDirective;}
     bool getCOMMDirectiveAlignmentIsInBytes() const {
       return COMMDirectiveAlignmentIsInBytes;

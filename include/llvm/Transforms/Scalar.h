@@ -112,6 +112,8 @@ Pass *createLICMPass();
 //
 Pass *createLoopStrengthReducePass(const TargetLowering *TLI = 0);
 
+Pass *createGlobalMergePass(const TargetLowering *TLI = 0);
+
 //===----------------------------------------------------------------------===//
 //
 // LoopUnswitch - This pass is a simple loop unswitching pass.
@@ -173,13 +175,6 @@ extern char &DemoteRegisterToMemoryID;
 // For example:  4 + (x + 5)  ->  x + (4 + 5)
 //
 FunctionPass *createReassociatePass();
-
-//===----------------------------------------------------------------------===//
-//
-// TailDuplication - Eliminate unconditional branches through controlled code
-// duplication, creating simpler CFG structures.
-//
-FunctionPass *createTailDuplicationPass();
 
 //===----------------------------------------------------------------------===//
 //

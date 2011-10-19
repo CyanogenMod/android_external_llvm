@@ -32,25 +32,10 @@ using namespace llvm;
 // Methods to implement the globals and functions lists.
 //
 
-GlobalVariable *ilist_traits<GlobalVariable>::createSentinel() {
-  GlobalVariable *Ret = new GlobalVariable(Type::getInt32Ty(getGlobalContext()),
-                                           false, GlobalValue::ExternalLinkage);
-  // This should not be garbage monitored.
-  LeakDetector::removeGarbageObject(Ret);
-  return Ret;
-}
-GlobalAlias *ilist_traits<GlobalAlias>::createSentinel() {
-  GlobalAlias *Ret = new GlobalAlias(Type::getInt32Ty(getGlobalContext()),
-                                     GlobalValue::ExternalLinkage);
-  // This should not be garbage monitored.
-  LeakDetector::removeGarbageObject(Ret);
-  return Ret;
-}
-
 // Explicit instantiations of SymbolTableListTraits since some of the methods
 // are not in the public header file.
-template class llvm::SymbolTableListTraits<GlobalVariable, Module>;
 template class llvm::SymbolTableListTraits<Function, Module>;
+template class llvm::SymbolTableListTraits<GlobalVariable, Module>;
 template class llvm::SymbolTableListTraits<GlobalAlias, Module>;
 
 //===----------------------------------------------------------------------===//
@@ -82,8 +67,10 @@ Module::Endianness Module::getEndianness() const {
   Module::Endianness ret = AnyEndianness;
   
   while (!temp.empty()) {
-    StringRef token = DataLayout;
-    tie(token, temp) = getToken(temp, "-");
+    std::pair<StringRef, StringRef> P = getToken(temp, "-");
+    
+    StringRef token = P.first;
+    temp = P.second;
     
     if (token[0] == 'e') {
       ret = LittleEndian;
@@ -95,15 +82,16 @@ Module::Endianness Module::getEndianness() const {
   return ret;
 }
 
-/// Target Pointer Size information...
+/// Target Pointer Size information.
 Module::PointerSize Module::getPointerSize() const {
   StringRef temp = DataLayout;
   Module::PointerSize ret = AnyPointerSize;
   
   while (!temp.empty()) {
-    StringRef token, signalToken;
-    tie(token, temp) = getToken(temp, "-");
-    tie(signalToken, token) = getToken(token, ":");
+    std::pair<StringRef, StringRef> TmpP = getToken(temp, "-");
+    temp = TmpP.second;
+    TmpP = getToken(TmpP.first, ":");
+    StringRef token = TmpP.second, signalToken = TmpP.first;
     
     if (signalToken[0] == 'p') {
       int size = 0;
@@ -549,5 +537,3 @@ namespace {
 void Module::findUsedStructTypes(std::vector<StructType*> &StructTypes) const {
   TypeFinder(StructTypes).run(*this);
 }
-
-

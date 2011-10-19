@@ -59,6 +59,7 @@ MCJIT::MCJIT(Module *m, TargetMachine *tm, TargetJITInfo &tji,
              bool AllocateGVsWithCode)
   : ExecutionEngine(m), TM(tm), MemMgr(MM), M(m), OS(Buffer), Dyld(MM) {
 
+  setTargetData(TM->getTargetData());
   PM.add(new TargetData(*TM->getTargetData()));
 
   // Turn the machine code intermediate representation into bytes in memory
@@ -216,6 +217,6 @@ GenericValue MCJIT::runFunction(Function *F,
     }
   }
 
-  assert("Full-featured argument passing not supported yet!");
+  assert(0 && "Full-featured argument passing not supported yet!");
   return GenericValue();
 }

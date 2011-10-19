@@ -42,7 +42,6 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -50,6 +49,7 @@
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Support/InstVisitor.h"
 #include "llvm/Support/MathExtras.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Config/config.h"
 #include <algorithm>
@@ -63,16 +63,6 @@ extern "C" void LLVMInitializeCBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CTargetMachine> X(TheCBackendTarget);
 }
-
-extern "C" void LLVMInitializeCBackendMCAsmInfo() {}
-
-extern "C" void LLVMInitializeCBackendMCRegisterInfo() {}
-
-extern "C" void LLVMInitializeCBackendMCInstrInfo() {}
-
-extern "C" void LLVMInitializeCBackendMCSubtargetInfo() {}
-
-extern "C" void LLVMInitializeCBackendMCCodeGenInfo() {}
 
 namespace {
   class CBEMCAsmInfo : public MCAsmInfo {
@@ -298,9 +288,11 @@ namespace {
     void visitInvokeInst(InvokeInst &I) {
       llvm_unreachable("Lowerinvoke pass didn't work!");
     }
-
     void visitUnwindInst(UnwindInst &I) {
       llvm_unreachable("Lowerinvoke pass didn't work!");
+    }
+    void visitResumeInst(ResumeInst &I) {
+      llvm_unreachable("DwarfEHPrepare pass didn't work!");
     }
     void visitUnreachableInst(UnreachableInst &I);
 
@@ -371,7 +363,7 @@ static std::string CBEMangle(const std::string &S) {
 }
 
 std::string CWriter::getStructName(StructType *ST) {
-  if (!ST->isAnonymous() && !ST->getName().empty())
+  if (!ST->isLiteral() && !ST->getName().empty())
     return CBEMangle("l_"+ST->getName().str());
   
   return "l_unnamed_" + utostr(UnnamedStructIDs[ST]);
@@ -1676,7 +1668,7 @@ bool CWriter::doInitialization(Module &M) {
 #endif
   TAsm = new CBEMCAsmInfo();
   MRI  = new MCRegisterInfo();
-  TCtx = new MCContext(*TAsm, *MRI, NULL, NULL);
+  TCtx = new MCContext(*TAsm, *MRI, NULL);
   Mang = new Mangler(*TCtx, *TD);
 
   // Keep track of which functions are static ctors/dtors so they can have
@@ -2060,7 +2052,7 @@ void CWriter::printModuleTypes() {
   for (unsigned i = 0, e = StructTypes.size(); i != e; ++i) {
     StructType *ST = StructTypes[i];
 
-    if (ST->isAnonymous() || ST->getName().empty())
+    if (ST->isLiteral() || ST->getName().empty())
       UnnamedStructIDs[ST] = NextTypeID++;
 
     std::string Name = getStructName(ST);
@@ -2391,22 +2383,29 @@ void CWriter::visitReturnInst(ReturnInst &I) {
 
 void CWriter::visitSwitchInst(SwitchInst &SI) {
 
+  Value* Cond = SI.getCondition();
+
   Out << "  switch (";
-  writeOperand(SI.getOperand(0));
+  writeOperand(Cond);
   Out << ") {\n  default:\n";
   printPHICopiesForSuccessor (SI.getParent(), SI.getDefaultDest(), 2);
   printBranchToBlock(SI.getParent(), SI.getDefaultDest(), 2);
   Out << ";\n";
-  for (unsigned i = 2, e = SI.getNumOperands(); i != e; i += 2) {
+
+  unsigned NumCases = SI.getNumCases();
+  // Skip the first item since that's the default case.
+  for (unsigned i = 1; i < NumCases; ++i) {
+    ConstantInt* CaseVal = SI.getCaseValue(i);
+    BasicBlock* Succ = SI.getSuccessor(i);
     Out << "  case ";
-    writeOperand(SI.getOperand(i));
+    writeOperand(CaseVal);
     Out << ":\n";
-    BasicBlock *Succ = cast<BasicBlock>(SI.getOperand(i+1));
     printPHICopiesForSuccessor (SI.getParent(), Succ, 2);
     printBranchToBlock(SI.getParent(), Succ, 2);
     if (Function::iterator(Succ) == llvm::next(Function::iterator(SI.getParent())))
       Out << "    break;\n";
   }
+
   Out << "  }\n";
 }
 
@@ -2840,7 +2839,6 @@ void CWriter::lowerIntrinsics(Function &F) {
         if (Function *F = CI->getCalledFunction())
           switch (F->getIntrinsicID()) {
           case Intrinsic::not_intrinsic:
-          case Intrinsic::memory_barrier:
           case Intrinsic::vastart:
           case Intrinsic::vacopy:
           case Intrinsic::vaend:
@@ -3031,9 +3029,6 @@ bool CWriter::visitBuiltinCall(CallInst &I, Intrinsic::ID ID,
     WroteCallee = true;
     return false;
   }
-  case Intrinsic::memory_barrier:
-    Out << "__sync_synchronize()";
-    return true;
   case Intrinsic::vastart:
     Out << "0; ";
 

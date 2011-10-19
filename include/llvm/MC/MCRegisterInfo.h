@@ -21,6 +21,89 @@
 
 namespace llvm {
 
+/// MCRegisterClass - Base class of TargetRegisterClass.
+class MCRegisterClass {
+public:
+  typedef const unsigned* iterator;
+  typedef const unsigned* const_iterator;
+private:
+  unsigned ID;
+  const char *Name;
+  const unsigned RegSize, Alignment; // Size & Alignment of register in bytes
+  const int CopyCost;
+  const bool Allocatable;
+  const iterator RegsBegin, RegsEnd;
+  const unsigned char *const RegSet;
+  const unsigned RegSetSize;
+public:
+  MCRegisterClass(unsigned id, const char *name,
+                  unsigned RS, unsigned Al, int CC, bool Allocable,
+                  iterator RB, iterator RE, const unsigned char *Bits,
+                  unsigned NumBytes)
+    : ID(id), Name(name), RegSize(RS), Alignment(Al), CopyCost(CC),
+      Allocatable(Allocable), RegsBegin(RB), RegsEnd(RE), RegSet(Bits),
+      RegSetSize(NumBytes) {
+    for (iterator i = RegsBegin; i != RegsEnd; ++i)
+       assert(contains(*i) && "Bit field corrupted.");
+  }
+
+  /// getID() - Return the register class ID number.
+  ///
+  unsigned getID() const { return ID; }
+
+  /// getName() - Return the register class name for debugging.
+  ///
+  const char *getName() const { return Name; }
+
+  /// begin/end - Return all of the registers in this class.
+  ///
+  iterator       begin() const { return RegsBegin; }
+  iterator         end() const { return RegsEnd; }
+
+  /// getNumRegs - Return the number of registers in this class.
+  ///
+  unsigned getNumRegs() const { return (unsigned)(RegsEnd-RegsBegin); }
+
+  /// getRegister - Return the specified register in the class.
+  ///
+  unsigned getRegister(unsigned i) const {
+    assert(i < getNumRegs() && "Register number out of range!");
+    return RegsBegin[i];
+  }
+
+  /// contains - Return true if the specified register is included in this
+  /// register class.  This does not include virtual registers.
+  bool contains(unsigned Reg) const {
+    unsigned InByte = Reg % 8;
+    unsigned Byte = Reg / 8;
+    if (Byte >= RegSetSize)
+      return false;
+    return (RegSet[Byte] & (1 << InByte)) != 0;
+  }
+
+  /// contains - Return true if both registers are in this class.
+  bool contains(unsigned Reg1, unsigned Reg2) const {
+    return contains(Reg1) && contains(Reg2);
+  }
+
+  /// getSize - Return the size of the register in bytes, which is also the size
+  /// of a stack slot allocated to hold a spilled copy of this register.
+  unsigned getSize() const { return RegSize; }
+
+  /// getAlignment - Return the minimum required alignment for a register of
+  /// this class.
+  unsigned getAlignment() const { return Alignment; }
+
+  /// getCopyCost - Return the cost of copying a value between two registers in
+  /// this class. A negative number means the register class is very expensive
+  /// to copy e.g. status flag register classes.
+  int getCopyCost() const { return CopyCost; }
+
+  /// isAllocatable - Return true if this register class may be used to create
+  /// virtual registers.
+  bool isAllocatable() const { return Allocatable; }
+};
+
 /// MCRegisterDesc - This record contains all of the information known about
 /// a particular register.  The Overlaps field contains a pointer to a zero
 /// terminated array of registers that this register aliases, starting with
@@ -51,10 +134,14 @@ struct MCRegisterDesc {
 /// virtual methods.
 ///
 class MCRegisterInfo {
+public:
+  typedef const MCRegisterClass *regclass_iterator;
 private:
   const MCRegisterDesc *Desc;                 // Pointer to the descriptor array
   unsigned NumRegs;                           // Number of entries in the array
   unsigned RAReg;                             // Return address register
+  const MCRegisterClass *Classes;             // Pointer to the regclass array
+  unsigned NumClasses;                        // Number of entries in the array
   DenseMap<unsigned, int> L2DwarfRegs;        // LLVM to Dwarf regs mapping
   DenseMap<unsigned, int> EHL2DwarfRegs;      // LLVM to Dwarf regs mapping EH
   DenseMap<unsigned, unsigned> Dwarf2LRegs;   // Dwarf to LLVM regs mapping
@@ -64,10 +151,13 @@ private:
 public:
   /// InitMCRegisterInfo - Initialize MCRegisterInfo, called by TableGen
   /// auto-generated routines. *DO NOT USE*.
-  void InitMCRegisterInfo(const MCRegisterDesc *D, unsigned NR, unsigned RA) {
+  void InitMCRegisterInfo(const MCRegisterDesc *D, unsigned NR, unsigned RA,
+                          const MCRegisterClass *C, unsigned NC) {
     Desc = D;
     NumRegs = NR;
     RAReg = RA;
+    Classes = C;
+    NumClasses = NC;
   }
 
   /// mapLLVMRegToDwarfReg - Used to initialize LLVM register to Dwarf
@@ -195,6 +285,20 @@ public:
     const DenseMap<unsigned, int>::const_iterator I = L2SEHRegs.find(RegNum);
     if (I == L2SEHRegs.end()) return (int)RegNum;
     return I->second;
+  }
+
+  regclass_iterator regclass_begin() const { return Classes; }
+  regclass_iterator regclass_end() const { return Classes+NumClasses; }
+
+  unsigned getNumRegClasses() const {
+    return (unsigned)(regclass_end()-regclass_begin());
+  }
+
+  /// getRegClass - Returns the register class associated with the enumeration
+  /// value.  See class MCOperandInfo.
+  const MCRegisterClass getRegClass(unsigned i) const {
+    assert(i < getNumRegClasses() && "Register Class ID out of range");
+    return Classes[i];
   }
 };
  

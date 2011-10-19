@@ -31,7 +31,6 @@ namespace llvm {
   class MCLineSection;
   class StringRef;
   class Twine;
-  class TargetAsmInfo;
   class MCSectionMachO;
   class MCSectionELF;
 
@@ -53,8 +52,6 @@ namespace llvm {
 
     /// The MCObjectFileInfo for this target.
     const MCObjectFileInfo *MOFI;
-
-    const TargetAsmInfo *TAI;
 
     /// Allocator - Allocator object used for creating machine code objects.
     ///
@@ -119,7 +116,7 @@ namespace llvm {
 
   public:
     explicit MCContext(const MCAsmInfo &MAI, const MCRegisterInfo &MRI,
-                       const MCObjectFileInfo *MOFI, const TargetAsmInfo *TAI);
+                       const MCObjectFileInfo *MOFI);
     ~MCContext();
 
     const MCAsmInfo &getAsmInfo() const { return MAI; }
@@ -127,8 +124,6 @@ namespace llvm {
     const MCRegisterInfo &getRegisterInfo() const { return MRI; }
 
     const MCObjectFileInfo *getObjectFileInfo() const { return MOFI; }
-
-    const TargetAsmInfo &getTargetAsmInfo() const { return *TAI; }
 
     void setAllowTemporaryLabels(bool Value) { AllowTemporaryLabels = Value; }
 
@@ -209,7 +204,8 @@ namespace llvm {
     /// @{
 
     /// GetDwarfFile - creates an entry in the dwarf file and directory tables.
-    unsigned GetDwarfFile(StringRef FileName, unsigned FileNumber);
+    unsigned GetDwarfFile(StringRef Directory, StringRef FileName,
+                          unsigned FileNumber);
 
     bool isValidDwarfFileNumber(unsigned FileNumber);
 

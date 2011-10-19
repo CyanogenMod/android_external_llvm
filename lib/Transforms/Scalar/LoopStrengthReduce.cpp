@@ -70,11 +70,26 @@
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetLowering.h"
 #include <algorithm>
 using namespace llvm;
+
+namespace llvm {
+cl::opt<bool> EnableNested(
+  "enable-lsr-nested", cl::Hidden, cl::desc("Enable LSR on nested loops"));
+
+cl::opt<bool> EnableRetry(
+    "enable-lsr-retry", cl::Hidden, cl::desc("Enable LSR retry"));
+
+// Temporary flag to cleanup congruent phis after LSR phi expansion.
+// It's currently disabled until we can determine whether it's truly useful or
+// not. The flag should be removed after the v3.0 release.
+cl::opt<bool> EnablePhiElim(
+    "enable-lsr-phielim", cl::Hidden, cl::desc("Enable LSR phi elimination"));
+}
 
 namespace {
 
@@ -670,6 +685,21 @@ public:
 
   void Loose();
 
+#ifndef NDEBUG
+  // Once any of the metrics loses, they must all remain losers.
+  bool isValid() {
+    return ((NumRegs | AddRecCost | NumIVMuls | NumBaseAdds
+             | ImmCost | SetupCost) != ~0u)
+      || ((NumRegs & AddRecCost & NumIVMuls & NumBaseAdds
+           & ImmCost & SetupCost) == ~0u);
+  }
+#endif
+
+  bool isLoser() {
+    assert(isValid() && "invalid cost");
+    return NumRegs == ~0u;
+  }
+
   void RateFormula(const Formula &F,
                    SmallPtrSet<const SCEV *, 16> &Regs,
                    const DenseSet<const SCEV *> &VisitedRegs,
@@ -702,34 +732,48 @@ void Cost::RateRegister(const SCEV *Reg,
     if (AR->getLoop() == L)
       AddRecCost += 1; /// TODO: This should be a function of the stride.
 
-    // If this is an addrec for a loop that's already been visited by LSR,
-    // don't second-guess its addrec phi nodes. LSR isn't currently smart
-    // enough to reason about more than one loop at a time. Consider these
-    // registers free and leave them alone.
-    else if (L->contains(AR->getLoop()) ||
+    // If this is an addrec for another loop, don't second-guess its addrec phi
+    // nodes. LSR isn't currently smart enough to reason about more than one
+    // loop at a time. LSR has either already run on inner loops, will not run
+    // on other loops, and cannot be expected to change sibling loops. If the
+    // AddRec exists, consider it's register free and leave it alone. Otherwise,
+    // do not consider this formula at all.
+    // FIXME: why do we need to generate such fomulae?
+    else if (!EnableNested || L->contains(AR->getLoop()) ||
              (!AR->getLoop()->contains(L) &&
               DT.dominates(L->getHeader(), AR->getLoop()->getHeader()))) {
       for (BasicBlock::iterator I = AR->getLoop()->getHeader()->begin();
-           PHINode *PN = dyn_cast<PHINode>(I); ++I)
+           PHINode *PN = dyn_cast<PHINode>(I); ++I) {
         if (SE.isSCEVable(PN->getType()) &&
             (SE.getEffectiveSCEVType(PN->getType()) ==
              SE.getEffectiveSCEVType(AR->getType())) &&
             SE.getSCEV(PN) == AR)
           return;
-
+      }
+      if (!EnableNested) {
+        Loose();
+        return;
+      }
       // If this isn't one of the addrecs that the loop already has, it
       // would require a costly new phi and add. TODO: This isn't
       // precisely modeled right now.
       ++NumBaseAdds;
-      if (!Regs.count(AR->getStart()))
+      if (!Regs.count(AR->getStart())) {
         RateRegister(AR->getStart(), Regs, L, SE, DT);
+        if (isLoser())
+          return;
+      }
     }
 
     // Add the step value register, if it needs one.
     // TODO: The non-affine case isn't precisely modeled here.
-    if (!AR->isAffine() || !isa<SCEVConstant>(AR->getOperand(1)))
-      if (!Regs.count(AR->getStart()))
+    if (!AR->isAffine() || !isa<SCEVConstant>(AR->getOperand(1))) {
+      if (!Regs.count(AR->getOperand(1))) {
         RateRegister(AR->getOperand(1), Regs, L, SE, DT);
+        if (isLoser())
+          return;
+      }
+    }
   }
   ++NumRegs;
 
@@ -769,6 +813,8 @@ void Cost::RateFormula(const Formula &F,
       return;
     }
     RatePrimaryRegister(ScaledReg, Regs, L, SE, DT);
+    if (isLoser())
+      return;
   }
   for (SmallVectorImpl<const SCEV *>::const_iterator I = F.BaseRegs.begin(),
        E = F.BaseRegs.end(); I != E; ++I) {
@@ -778,6 +824,8 @@ void Cost::RateFormula(const Formula &F,
       return;
     }
     RatePrimaryRegister(BaseReg, Regs, L, SE, DT);
+    if (isLoser())
+      return;
   }
 
   // Determine how many (unfolded) adds we'll need inside the loop.
@@ -795,6 +843,7 @@ void Cost::RateFormula(const Formula &F,
     else if (Offset != 0)
       ImmCost += APInt(64, Offset, true).getMinSignedBits();
   }
+  assert(isValid() && "invalid cost");
 }
 
 /// Loose - Set this cost to a losing value.
@@ -1156,7 +1205,7 @@ static bool isLegalUse(const TargetLowering::AddrMode &AM,
     // If we have low-level target information, ask the target if it can fold an
     // integer immediate on an icmp.
     if (AM.BaseOffs != 0) {
-      if (TLI) return TLI->isLegalICmpImmediate(-AM.BaseOffs);
+      if (TLI) return TLI->isLegalICmpImmediate(-(uint64_t)AM.BaseOffs);
       return false;
     }
 
@@ -1427,6 +1476,7 @@ void LSRInstance::OptimizeShadowIV() {
     ++UI;
     Instruction *ShadowUse = CandidateUI->getUser();
     Type *DestTy = NULL;
+    bool IsSigned = false;
 
     /* If shadow use is a int->float cast then insert a second IV
        to eliminate this cast.
@@ -1440,10 +1490,14 @@ void LSRInstance::OptimizeShadowIV() {
          for (unsigned i = 0; i < n; ++i, ++d)
            foo(d);
     */
-    if (UIToFPInst *UCast = dyn_cast<UIToFPInst>(CandidateUI->getUser()))
+    if (UIToFPInst *UCast = dyn_cast<UIToFPInst>(CandidateUI->getUser())) {
+      IsSigned = false;
       DestTy = UCast->getDestTy();
-    else if (SIToFPInst *SCast = dyn_cast<SIToFPInst>(CandidateUI->getUser()))
+    }
+    else if (SIToFPInst *SCast = dyn_cast<SIToFPInst>(CandidateUI->getUser())) {
+      IsSigned = true;
       DestTy = SCast->getDestTy();
+    }
     if (!DestTy) continue;
 
     if (TLI) {
@@ -1474,7 +1528,9 @@ void LSRInstance::OptimizeShadowIV() {
 
     ConstantInt *Init = dyn_cast<ConstantInt>(PH->getIncomingValue(Entry));
     if (!Init) continue;
-    Constant *NewInit = ConstantFP::get(DestTy, Init->getZExtValue());
+    Constant *NewInit = ConstantFP::get(DestTy, IsSigned ?
+                                        (double)Init->getSExtValue() :
+                                        (double)Init->getZExtValue());
 
     BinaryOperator *Incr =
       dyn_cast<BinaryOperator>(PH->getIncomingValue(Latch));
@@ -3275,6 +3331,9 @@ retry:
   skip:;
   }
 
+  if (!EnableRetry && !AnySatisfiedReqRegs)
+    return;
+
   // If none of the formulae had all of the required registers, relax the
   // constraint so that we don't exclude all formulae.
   if (!AnySatisfiedReqRegs) {
@@ -3298,6 +3357,10 @@ void LSRInstance::Solve(SmallVectorImpl<const Formula *> &Solution) const {
   // SolveRecurse does all the work.
   SolveRecurse(Solution, SolutionCost, Workspace, CurCost,
                CurRegs, VisitedRegs);
+  if (Solution.empty()) {
+    DEBUG(dbgs() << "\nNo Satisfactory Solution\n");
+    return;
+  }
 
   // Ok, we've now made all our decisions.
   DEBUG(dbgs() << "\n"
@@ -3416,6 +3479,9 @@ LSRInstance::AdjustInsertPositionForExpand(BasicBlock::iterator IP,
   // Don't insert instructions before PHI nodes.
   while (isa<PHINode>(IP)) ++IP;
 
+  // Ignore landingpad instructions.
+  while (isa<LandingPadInst>(IP)) ++IP;
+
   // Ignore debug intrinsics.
   while (isa<DbgInfoIntrinsic>(IP)) ++IP;
 
@@ -3527,7 +3593,7 @@ Value *LSRInstance::Expand(const LSRFixup &LF,
       // The other interesting way of "folding" with an ICmpZero is to use a
       // negated immediate.
       if (!ICmpScaledV)
-        ICmpScaledV = ConstantInt::get(IntTy, -Offset);
+        ICmpScaledV = ConstantInt::get(IntTy, -(uint64_t)Offset);
       else {
         Ops.push_back(SE.getUnknown(ICmpScaledV));
         ICmpScaledV = ConstantInt::get(IntTy, Offset);
@@ -3611,10 +3677,20 @@ void LSRInstance::RewriteForPHI(PHINode *PN,
       // users.
       if (e != 1 && BB->getTerminator()->getNumSuccessors() > 1 &&
           !isa<IndirectBrInst>(BB->getTerminator())) {
-        Loop *PNLoop = LI.getLoopFor(PN->getParent());
-        if (!PNLoop || PN->getParent() != PNLoop->getHeader()) {
+        BasicBlock *Parent = PN->getParent();
+        Loop *PNLoop = LI.getLoopFor(Parent);
+        if (!PNLoop || Parent != PNLoop->getHeader()) {
           // Split the critical edge.
-          BasicBlock *NewBB = SplitCriticalEdge(BB, PN->getParent(), P);
+          BasicBlock *NewBB = 0;
+          if (!Parent->isLandingPad()) {
+            NewBB = SplitCriticalEdge(BB, Parent, P,
+                                      /*MergeIdenticalEdges=*/true,
+                                      /*DontDeleteUselessPhis=*/true);
+          } else {
+            SmallVector<BasicBlock*, 2> NewBBs;
+            SplitLandingPadPredecessors(Parent, BB, "", "", P, NewBBs);
+            NewBB = NewBBs[0];
+          }
 
           // If PN is outside of the loop and BB is in the loop, we want to
           // move the block to be immediately before the PHI block, not
@@ -3700,6 +3776,7 @@ LSRInstance::ImplementSolution(const SmallVectorImpl<const Formula *> &Solution,
 
   SCEVExpander Rewriter(SE, "lsr");
   Rewriter.disableCanonicalMode();
+  Rewriter.enableLSRMode();
   Rewriter.setIVIncInsertPos(L, IVIncInsertPos);
 
   // Expand the new value definitions and update the users.
@@ -3740,6 +3817,23 @@ LSRInstance::LSRInstance(const TargetLowering *tli, Loop *l, Pass *P)
   OptimizeShadowIV();
   OptimizeLoopTermCond();
 
+  // If loop preparation eliminates all interesting IV users, bail.
+  if (IU.empty()) return;
+
+  // Skip nested loops until we can model them better with formulae.
+  if (!EnableNested && !L->empty()) {
+
+    if (EnablePhiElim) {
+      // Remove any extra phis created by processing inner loops.
+      SmallVector<WeakVH, 16> DeadInsts;
+      SCEVExpander Rewriter(SE, "lsr");
+      Changed |= Rewriter.replaceCongruentIVs(L, &DT, DeadInsts);
+      Changed |= DeleteTriviallyDeadInstructions(DeadInsts);
+    }
+    DEBUG(dbgs() << "LSR skipping outer loop " << *L << "\n");
+    return;
+  }
+
   // Start collecting data and preparing for the solver.
   CollectInterestingTypesAndFactors();
   CollectFixupsAndInitialFormulae();
@@ -3763,6 +3857,9 @@ LSRInstance::LSRInstance(const TargetLowering *tli, Loop *l, Pass *P)
   Types.clear();
   RegUses.clear();
 
+  if (Solution.empty())
+    return;
+
 #ifndef NDEBUG
   // Formulae should be legal.
   for (SmallVectorImpl<LSRUse>::const_iterator I = Uses.begin(),
@@ -3778,6 +3875,14 @@ LSRInstance::LSRInstance(const TargetLowering *tli, Loop *l, Pass *P)
 
   // Now that we've decided what we want, make it so.
   ImplementSolution(Solution, P);
+
+  if (EnablePhiElim) {
+    // Remove any extra phis created by processing inner loops.
+    SmallVector<WeakVH, 16> DeadInsts;
+    SCEVExpander Rewriter(SE, "lsr");
+    Changed |= Rewriter.replaceCongruentIVs(L, &DT, DeadInsts);
+    Changed |= DeleteTriviallyDeadInstructions(DeadInsts);
+  }
 }
 
 void LSRInstance::print_factors_and_types(raw_ostream &OS) const {

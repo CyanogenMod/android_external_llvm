@@ -36,7 +36,7 @@ using namespace llvm;
 /// - the promotion of vector elements. This feature is disabled by default
 /// and only enabled using this flag.
 static cl::opt<bool>
-AllowPromoteIntElem("promote-elements", cl::Hidden,
+AllowPromoteIntElem("promote-elements", cl::Hidden, cl::init(true),
   cl::desc("Allow promotion of integer vector element types"));
 
 namespace llvm {
@@ -317,7 +317,7 @@ static void InitLibcallNames(const char **Names) {
   Names[RTLIB::SYNC_FETCH_AND_OR_8] = "__sync_fetch_and_or_8";
   Names[RTLIB::SYNC_FETCH_AND_XOR_1] = "__sync_fetch_and_xor_1";
   Names[RTLIB::SYNC_FETCH_AND_XOR_2] = "__sync_fetch_and_xor_2";
-  Names[RTLIB::SYNC_FETCH_AND_XOR_4] = "__sync_fetch_and-xor_4";
+  Names[RTLIB::SYNC_FETCH_AND_XOR_4] = "__sync_fetch_and_xor_4";
   Names[RTLIB::SYNC_FETCH_AND_XOR_8] = "__sync_fetch_and_xor_8";
   Names[RTLIB::SYNC_FETCH_AND_NAND_1] = "__sync_fetch_and_nand_1";
   Names[RTLIB::SYNC_FETCH_AND_NAND_2] = "__sync_fetch_and_nand_2";
@@ -609,6 +609,7 @@ TargetLowering::TargetLowering(const TargetMachine &tm,
   ExceptionPointerRegister = 0;
   ExceptionSelectorRegister = 0;
   BooleanContents = UndefinedBooleanContent;
+  BooleanVectorContents = UndefinedBooleanContent;
   SchedPreferenceInfo = Sched::Latency;
   JumpBufSize = 0;
   JumpBufAlignment = 0;
@@ -617,6 +618,7 @@ TargetLowering::TargetLowering(const TargetMachine &tm,
   PrefLoopAlignment = 0;
   MinStackArgumentAlignment = 1;
   ShouldFoldAtomicFences = false;
+  InsertFencesForAtomic = false;
 
   InitLibcallNames(LibcallRoutineNames);
   InitCmpLibcallCCs(CmpLibcallCCs);
@@ -914,7 +916,8 @@ const char *TargetLowering::getTargetNodeName(unsigned Opcode) const {
 }
 
 
-MVT::SimpleValueType TargetLowering::getSetCCResultType(EVT VT) const {
+EVT TargetLowering::getSetCCResultType(EVT VT) const {
+  assert(!VT.isVector() && "No default SetCC type for vectors!");
   return PointerTy.SimpleTy;
 }
 
@@ -1764,17 +1767,16 @@ bool TargetLowering::SimplifyDemandedBits(SDValue Op,
     break;
   }
   case ISD::AssertZext: {
-    // Demand all the bits of the input that are demanded in the output.
-    // The low bits are obvious; the high bits are demanded because we're
-    // asserting that they're zero here.
-    if (SimplifyDemandedBits(Op.getOperand(0), NewMask,
+    // AssertZext demands all of the high bits, plus any of the low bits
+    // demanded by its users.
+    EVT VT = cast<VTSDNode>(Op.getOperand(1))->getVT();
+    APInt InMask = APInt::getLowBitsSet(BitWidth,
+                                        VT.getSizeInBits());
+    if (SimplifyDemandedBits(Op.getOperand(0), ~InMask | NewMask,
                              KnownZero, KnownOne, TLO, Depth+1))
       return true;
     assert((KnownZero & KnownOne) == 0 && "Bits known to be one AND zero?");
 
-    EVT VT = cast<VTSDNode>(Op.getOperand(1))->getVT();
-    APInt InMask = APInt::getLowBitsSet(BitWidth,
-                                        VT.getSizeInBits());
     KnownZero |= ~InMask & NewMask;
     break;
   }
@@ -2191,7 +2193,7 @@ TargetLowering::SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
         }
       } else if (N1C->getAPIntValue() == 1 &&
                  (VT == MVT::i1 ||
-                  getBooleanContents() == ZeroOrOneBooleanContent)) {
+                  getBooleanContents(false) == ZeroOrOneBooleanContent)) {
         SDValue Op0 = N0;
         if (Op0.getOpcode() == ISD::TRUNCATE)
           Op0 = Op0.getOperand(0);
@@ -2758,16 +2760,8 @@ getRegForInlineAsmConstraint(const std::string &Constraint,
 
     // If none of the value types for this register class are valid, we
     // can't use it.  For example, 64-bit reg classes on 32-bit targets.
-    bool isLegal = false;
-    for (TargetRegisterClass::vt_iterator I = RC->vt_begin(), E = RC->vt_end();
-         I != E; ++I) {
-      if (isTypeLegal(*I)) {
-        isLegal = true;
-        break;
-      }
-    }
-
-    if (!isLegal) continue;
+    if (!isLegalRC(RC))
+      continue;
 
     for (TargetRegisterClass::iterator I = RC->begin(), E = RC->end();
          I != E; ++I) {

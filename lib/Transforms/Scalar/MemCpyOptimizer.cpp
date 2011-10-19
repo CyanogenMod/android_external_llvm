@@ -384,7 +384,7 @@ Instruction *MemCpyOpt::tryMergingIntoMemset(Instruction *StartInst,
     
     if (StoreInst *NextStore = dyn_cast<StoreInst>(BI)) {
       // If this is a store, see if we can merge it in.
-      if (NextStore->isVolatile()) break;
+      if (!NextStore->isSimple()) break;
     
       // Check to see if this stored value is of the same byte-splattable value.
       if (ByteVal != isBytewiseValue(NextStore->getOperand(0)))
@@ -479,7 +479,7 @@ Instruction *MemCpyOpt::tryMergingIntoMemset(Instruction *StartInst,
 
 
 bool MemCpyOpt::processStore(StoreInst *SI, BasicBlock::iterator &BBI) {
-  if (SI->isVolatile()) return false;
+  if (!SI->isSimple()) return false;
   
   if (TD == 0) return false;
 
@@ -487,7 +487,7 @@ bool MemCpyOpt::processStore(StoreInst *SI, BasicBlock::iterator &BBI) {
   // happen to be using a load-store pair to implement it, rather than
   // a memcpy.
   if (LoadInst *LI = dyn_cast<LoadInst>(SI->getOperand(0))) {
-    if (!LI->isVolatile() && LI->hasOneUse() &&
+    if (LI->isSimple() && LI->hasOneUse() &&
         LI->getParent() == SI->getParent()) {
       MemDepResult ldep = MD->getDependency(LI);
       CallInst *C = 0;
@@ -806,21 +806,26 @@ bool MemCpyOpt::processMemCpy(MemCpyInst *M) {
   //   a) memcpy-memcpy xform which exposes redundance for DSE.
   //   b) call-memcpy xform for return slot optimization.
   MemDepResult DepInfo = MD->getDependency(M);
-  if (!DepInfo.isClobber())
-    return false;
-  
-  if (MemCpyInst *MDep = dyn_cast<MemCpyInst>(DepInfo.getInst()))
-    return processMemCpyMemCpyDependence(M, MDep, CopySize->getZExtValue());
-    
-  if (CallInst *C = dyn_cast<CallInst>(DepInfo.getInst())) {
-    if (performCallSlotOptzn(M, M->getDest(), M->getSource(),
-                             CopySize->getZExtValue(), C)) {
-      MD->removeInstruction(M);
-      M->eraseFromParent();
-      return true;
+  if (DepInfo.isClobber()) {
+    if (CallInst *C = dyn_cast<CallInst>(DepInfo.getInst())) {
+      if (performCallSlotOptzn(M, M->getDest(), M->getSource(),
+                               CopySize->getZExtValue(), C)) {
+        MD->removeInstruction(M);
+        M->eraseFromParent();
+        return true;
+      }
     }
   }
   
+  AliasAnalysis &AA = getAnalysis<AliasAnalysis>();
+  AliasAnalysis::Location SrcLoc = AA.getLocationForSource(M);
+  MemDepResult SrcDepInfo = MD->getPointerDependencyFrom(SrcLoc, true,
+                                                         M, M->getParent());
+  if (SrcDepInfo.isClobber()) {
+    if (MemCpyInst *MDep = dyn_cast<MemCpyInst>(SrcDepInfo.getInst()))
+      return processMemCpyMemCpyDependence(M, MDep, CopySize->getZExtValue());
+  }
+
   return false;
 }
 
@@ -860,7 +865,7 @@ bool MemCpyOpt::processByValArgument(CallSite CS, unsigned ArgNo) {
 
   // Find out what feeds this byval argument.
   Value *ByValArg = CS.getArgument(ArgNo);
-  Type *ByValTy =cast<PointerType>(ByValArg->getType())->getElementType();
+  Type *ByValTy = cast<PointerType>(ByValArg->getType())->getElementType();
   uint64_t ByValSize = TD->getTypeAllocSize(ByValTy);
   MemDepResult DepInfo =
     MD->getPointerDependencyFrom(AliasAnalysis::Location(ByValArg, ByValSize),

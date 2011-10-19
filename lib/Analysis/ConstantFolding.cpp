@@ -45,8 +45,13 @@ using namespace llvm;
 /// ConstantExpr if unfoldable.
 static Constant *FoldBitCast(Constant *C, Type *DestTy,
                              const TargetData &TD) {
-  
-  // This only handles casts to vectors currently.
+  // Catch the obvious splat cases.
+  if (C->isNullValue() && !DestTy->isX86_MMXTy())
+    return Constant::getNullValue(DestTy);
+  if (C->isAllOnesValue() && !DestTy->isX86_MMXTy())
+    return Constant::getAllOnesValue(DestTy);
+
+  // The code below only handles casts to vectors currently.
   VectorType *DestVTy = dyn_cast<VectorType>(DestTy);
   if (DestVTy == 0)
     return ConstantExpr::getBitCast(C, DestTy);
@@ -547,8 +552,7 @@ static Constant *CastGEPIndices(ArrayRef<Constant *> Ops,
   for (unsigned i = 1, e = Ops.size(); i != e; ++i) {
     if ((i == 1 ||
          !isa<StructType>(GetElementPtrInst::getIndexedType(Ops[0]->getType(),
-                                                            Ops.data() + 1,
-                                                            i-1))) &&
+                                                        Ops.slice(1, i-1)))) &&
         Ops[i]->getType() != IntPtrTy) {
       Any = true;
       NewIdxs.push_back(ConstantExpr::getCast(CastInst::getCastOpcode(Ops[i],
@@ -562,7 +566,7 @@ static Constant *CastGEPIndices(ArrayRef<Constant *> Ops,
   if (!Any) return 0;
 
   Constant *C =
-    ConstantExpr::getGetElementPtr(Ops[0], &NewIdxs[0], NewIdxs.size());
+    ConstantExpr::getGetElementPtr(Ops[0], NewIdxs);
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(C))
     if (Constant *Folded = ConstantFoldConstantExpression(CE, TD))
       C = Folded;
@@ -702,7 +706,7 @@ static Constant *SymbolicallyEvaluateGEP(ArrayRef<Constant *> Ops,
 
   // Create a GEP.
   Constant *C =
-    ConstantExpr::getGetElementPtr(Ptr, &NewIdxs[0], NewIdxs.size());
+    ConstantExpr::getGetElementPtr(Ptr, NewIdxs);
   assert(cast<PointerType>(C->getType())->getElementType() == Ty &&
          "Computed GetElementPtr has unexpected type!");
 
@@ -889,8 +893,7 @@ Constant *llvm::ConstantFoldInstOperands(unsigned Opcode, Type *DestTy,
     if (Constant *C = SymbolicallyEvaluateGEP(Ops, DestTy, TD))
       return C;
     
-    return ConstantExpr::getGetElementPtr(Ops[0], Ops.data() + 1,
-                                          Ops.size() - 1);
+    return ConstantExpr::getGetElementPtr(Ops[0], Ops.slice(1));
   }
 }
 

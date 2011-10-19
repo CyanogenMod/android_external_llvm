@@ -62,6 +62,21 @@ bool Constant::isNullValue() const {
   return isa<ConstantAggregateZero>(this) || isa<ConstantPointerNull>(this);
 }
 
+bool Constant::isAllOnesValue() const {
+  // Check for -1 integers
+  if (const ConstantInt *CI = dyn_cast<ConstantInt>(this))
+    return CI->isMinusOne();
+
+  // Check for FP which are bitcasted from -1 integers
+  if (const ConstantFP *CFP = dyn_cast<ConstantFP>(this))
+    return CFP->getValueAPF().bitcastToAPInt().isAllOnesValue();
+
+  // Check for constant vectors
+  if (const ConstantVector *CV = dyn_cast<ConstantVector>(this))
+    return CV->isAllOnesValue();
+
+  return false;
+}
 // Constructor to create a '0' constant of arbitrary type...
 Constant *Constant::getNullValue(Type *Ty) {
   switch (Ty->getTypeID()) {
@@ -90,7 +105,7 @@ Constant *Constant::getNullValue(Type *Ty) {
     return ConstantAggregateZero::get(Ty);
   default:
     // Function, Label, or Opaque type?
-    assert(!"Cannot create a null constant of that type!");
+    assert(0 && "Cannot create a null constant of that type!");
     return 0;
   }
 }
@@ -126,7 +141,7 @@ Constant *Constant::getAllOnesValue(Type *Ty) {
   SmallVector<Constant*, 16> Elts;
   VectorType *VTy = cast<VectorType>(Ty);
   Elts.resize(VTy->getNumElements(), getAllOnesValue(VTy->getElementType()));
-  assert(Elts[0] && "Not a vector integer type!");
+  assert(Elts[0] && "Invalid AllOnes value!");
   return cast<ConstantVector>(ConstantVector::get(Elts));
 }
 
@@ -573,21 +588,16 @@ bool ConstantFP::isExactlyValue(const APFloat &V) const {
 //===----------------------------------------------------------------------===//
 
 
-ConstantArray::ConstantArray(ArrayType *T,
-                             const std::vector<Constant*> &V)
+ConstantArray::ConstantArray(ArrayType *T, ArrayRef<Constant *> V)
   : Constant(T, ConstantArrayVal,
              OperandTraits<ConstantArray>::op_end(this) - V.size(),
              V.size()) {
   assert(V.size() == T->getNumElements() &&
          "Invalid initializer vector for constant array");
-  Use *OL = OperandList;
-  for (std::vector<Constant*>::const_iterator I = V.begin(), E = V.end();
-       I != E; ++I, ++OL) {
-    Constant *C = *I;
-    assert(C->getType() == T->getElementType() &&
+  for (unsigned i = 0, e = V.size(); i != e; ++i)
+    assert(V[i]->getType() == T->getElementType() &&
            "Initializer for array element doesn't match array element type!");
-    *OL = C;
-  }
+  std::copy(V.begin(), V.end(), op_begin());
 }
 
 Constant *ConstantArray::get(ArrayType *Ty, ArrayRef<Constant*> V) {
@@ -653,21 +663,16 @@ StructType *ConstantStruct::getTypeForElements(ArrayRef<Constant*> V,
 }
 
 
-ConstantStruct::ConstantStruct(StructType *T,
-                               const std::vector<Constant*> &V)
+ConstantStruct::ConstantStruct(StructType *T, ArrayRef<Constant *> V)
   : Constant(T, ConstantStructVal,
              OperandTraits<ConstantStruct>::op_end(this) - V.size(),
              V.size()) {
-  assert((T->isOpaque() || V.size() == T->getNumElements()) &&
+  assert(V.size() == T->getNumElements() &&
          "Invalid initializer vector for constant structure");
-  Use *OL = OperandList;
-  for (std::vector<Constant*>::const_iterator I = V.begin(), E = V.end();
-       I != E; ++I, ++OL) {
-    Constant *C = *I;
-    assert((T->isOpaque() || C->getType() == T->getElementType(I-V.begin())) &&
+  for (unsigned i = 0, e = V.size(); i != e; ++i)
+    assert((T->isOpaque() || V[i]->getType() == T->getElementType(i)) &&
            "Initializer for struct element doesn't match struct element type!");
-    *OL = C;
-  }
+  std::copy(V.begin(), V.end(), op_begin());
 }
 
 // ConstantStruct accessors.
@@ -682,7 +687,7 @@ Constant *ConstantStruct::get(StructType *ST, ArrayRef<Constant*> V) {
   return ConstantAggregateZero::get(ST);
 }
 
-Constant* ConstantStruct::get(StructType *T, ...) {
+Constant *ConstantStruct::get(StructType *T, ...) {
   va_list ap;
   SmallVector<Constant*, 8> Values;
   va_start(ap, T);
@@ -692,19 +697,14 @@ Constant* ConstantStruct::get(StructType *T, ...) {
   return get(T, Values);
 }
 
-ConstantVector::ConstantVector(VectorType *T,
-                               const std::vector<Constant*> &V)
+ConstantVector::ConstantVector(VectorType *T, ArrayRef<Constant *> V)
   : Constant(T, ConstantVectorVal,
              OperandTraits<ConstantVector>::op_end(this) - V.size(),
              V.size()) {
-  Use *OL = OperandList;
-  for (std::vector<Constant*>::const_iterator I = V.begin(), E = V.end();
-       I != E; ++I, ++OL) {
-    Constant *C = *I;
-    assert(C->getType() == T->getElementType() &&
+  for (size_t i = 0, e = V.size(); i != e; i++)
+    assert(V[i]->getType() == T->getElementType() &&
            "Initializer for vector element doesn't match vector element type!");
-    *OL = C;
-  }
+  std::copy(V.begin(), V.end(), op_begin());
 }
 
 // ConstantVector accessors.
@@ -839,13 +839,13 @@ ConstantExpr::getWithOperandReplaced(unsigned OpNo, Constant *Op) const {
     for (unsigned i = 1, e = getNumOperands(); i != e; ++i)
       Ops[i-1] = getOperand(i);
     if (OpNo == 0)
-      return cast<GEPOperator>(this)->isInBounds() ?
-        ConstantExpr::getInBoundsGetElementPtr(Op, &Ops[0], Ops.size()) :
-        ConstantExpr::getGetElementPtr(Op, &Ops[0], Ops.size());
+      return
+        ConstantExpr::getGetElementPtr(Op, Ops,
+                                       cast<GEPOperator>(this)->isInBounds());
     Ops[OpNo-1] = Op;
-    return cast<GEPOperator>(this)->isInBounds() ?
-      ConstantExpr::getInBoundsGetElementPtr(getOperand(0), &Ops[0],Ops.size()):
-      ConstantExpr::getGetElementPtr(getOperand(0), &Ops[0], Ops.size());
+    return
+      ConstantExpr::getGetElementPtr(getOperand(0), Ops,
+                                     cast<GEPOperator>(this)->isInBounds());
   }
   default:
     assert(getNumOperands() == 2 && "Must be binary operator?");
@@ -891,9 +891,9 @@ getWithOperands(ArrayRef<Constant*> Ops, Type *Ty) const {
   case Instruction::ShuffleVector:
     return ConstantExpr::getShuffleVector(Ops[0], Ops[1], Ops[2]);
   case Instruction::GetElementPtr:
-    return cast<GEPOperator>(this)->isInBounds() ?
-      ConstantExpr::getInBoundsGetElementPtr(Ops[0], &Ops[1], Ops.size()-1) :
-      ConstantExpr::getGetElementPtr(Ops[0], &Ops[1], Ops.size()-1);
+    return
+      ConstantExpr::getGetElementPtr(Ops[0], Ops.slice(1),
+                                     cast<GEPOperator>(this)->isInBounds());
   case Instruction::ICmp:
   case Instruction::FCmp:
     return ConstantExpr::getCompare(getPredicate(), Ops[0], Ops[1]);
@@ -1079,13 +1079,16 @@ bool ConstantVector::isAllOnesValue() const {
   // Check out first element.
   const Constant *Elt = getOperand(0);
   const ConstantInt *CI = dyn_cast<ConstantInt>(Elt);
-  if (!CI || !CI->isAllOnesValue()) return false;
+  const ConstantFP *CF = dyn_cast<ConstantFP>(Elt);
+
   // Then make sure all remaining elements point to the same value.
   for (unsigned I = 1, E = getNumOperands(); I < E; ++I)
     if (getOperand(I) != Elt)
       return false;
   
-  return true;
+  // First value is all-ones.
+  return (CI && CI->isAllOnesValue()) || 
+         (CF && CF->isAllOnesValue());
 }
 
 /// getSplatValue - If this is a splat constant, where all of the
@@ -1518,7 +1521,7 @@ Constant *ConstantExpr::getSizeOf(Type* Ty) {
   // Note that a non-inbounds gep is used, as null isn't within any object.
   Constant *GEPIdx = ConstantInt::get(Type::getInt32Ty(Ty->getContext()), 1);
   Constant *GEP = getGetElementPtr(
-                 Constant::getNullValue(PointerType::getUnqual(Ty)), &GEPIdx, 1);
+                 Constant::getNullValue(PointerType::getUnqual(Ty)), GEPIdx);
   return getPtrToInt(GEP, 
                      Type::getInt64Ty(Ty->getContext()));
 }
@@ -1532,7 +1535,7 @@ Constant *ConstantExpr::getAlignOf(Type* Ty) {
   Constant *Zero = ConstantInt::get(Type::getInt64Ty(Ty->getContext()), 0);
   Constant *One = ConstantInt::get(Type::getInt32Ty(Ty->getContext()), 1);
   Constant *Indices[2] = { Zero, One };
-  Constant *GEP = getGetElementPtr(NullPtr, Indices, 2);
+  Constant *GEP = getGetElementPtr(NullPtr, Indices);
   return getPtrToInt(GEP,
                      Type::getInt64Ty(Ty->getContext()));
 }
@@ -1550,7 +1553,7 @@ Constant *ConstantExpr::getOffsetOf(Type* Ty, Constant *FieldNo) {
     FieldNo
   };
   Constant *GEP = getGetElementPtr(
-                Constant::getNullValue(PointerType::getUnqual(Ty)), GEPIdx, 2);
+                Constant::getNullValue(PointerType::getUnqual(Ty)), GEPIdx);
   return getPtrToInt(GEP,
                      Type::getInt64Ty(Ty->getContext()));
 }
@@ -1592,15 +1595,13 @@ Constant *ConstantExpr::getSelect(Constant *C, Constant *V1, Constant *V2) {
   return pImpl->ExprConstants.getOrCreate(V1->getType(), Key);
 }
 
-Constant *ConstantExpr::getGetElementPtr(Constant *C, Value* const *Idxs,
-                                         unsigned NumIdx, bool InBounds) {
-  if (Constant *FC = ConstantFoldGetElementPtr(C, InBounds,
-                                               makeArrayRef(Idxs, NumIdx)))
+Constant *ConstantExpr::getGetElementPtr(Constant *C, ArrayRef<Value *> Idxs,
+                                         bool InBounds) {
+  if (Constant *FC = ConstantFoldGetElementPtr(C, InBounds, Idxs))
     return FC;          // Fold a few common cases.
 
   // Get the result type of the getelementptr!
-  Type *Ty = 
-    GetElementPtrInst::getIndexedType(C->getType(), Idxs, Idxs+NumIdx);
+  Type *Ty = GetElementPtrInst::getIndexedType(C->getType(), Idxs);
   assert(Ty && "GEP indices invalid!");
   unsigned AS = cast<PointerType>(C->getType())->getAddressSpace();
   Type *ReqTy = Ty->getPointerTo(AS);
@@ -1609,9 +1610,9 @@ Constant *ConstantExpr::getGetElementPtr(Constant *C, Value* const *Idxs,
          "Non-pointer type for constant GetElementPtr expression");
   // Look up the constant in the table first to ensure uniqueness
   std::vector<Constant*> ArgVec;
-  ArgVec.reserve(NumIdx+1);
+  ArgVec.reserve(1 + Idxs.size());
   ArgVec.push_back(C);
-  for (unsigned i = 0; i != NumIdx; ++i)
+  for (unsigned i = 0, e = Idxs.size(); i != e; ++i)
     ArgVec.push_back(cast<Constant>(Idxs[i]));
   const ExprMapKeyType Key(Instruction::GetElementPtr, ArgVec, 0,
                            InBounds ? GEPOperator::IsInBounds : 0);
@@ -2092,8 +2093,7 @@ void ConstantExpr::replaceUsesOfWithOnConstant(Value *From, Value *ToV,
       if (Val == From) Val = To;
       Indices.push_back(Val);
     }
-    Replacement = ConstantExpr::getGetElementPtr(Pointer,
-                                                 &Indices[0], Indices.size(),
+    Replacement = ConstantExpr::getGetElementPtr(Pointer, Indices,
                                          cast<GEPOperator>(this)->isInBounds());
   } else if (getOpcode() == Instruction::ExtractValue) {
     Constant *Agg = getOperand(0);

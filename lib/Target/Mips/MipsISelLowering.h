@@ -83,7 +83,10 @@ namespace llvm {
 
       DynAlloc,
 
-      Sync
+      Sync,
+
+      Ext,
+      Ins
     };
   }
 
@@ -95,6 +98,8 @@ namespace llvm {
   public:
     explicit MipsTargetLowering(MipsTargetMachine &TM);
 
+    virtual bool allowsUnalignedMemoryAccesses (EVT VT) const;
+
     /// LowerOperation - Provide custom lowering hooks for some operations.
     virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
 
@@ -103,13 +108,14 @@ namespace llvm {
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
     /// getSetCCResultType - get the ISD::SETCC result ValueType
-    MVT::SimpleValueType getSetCCResultType(EVT VT) const;
+    EVT getSetCCResultType(EVT VT) const;
 
     virtual SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const;
   private:
     // Subtarget Info
     const MipsSubtarget *Subtarget;
-
+    
+    bool HasMips64, IsN64;
 
     // Lower Operand helpers
     SDValue LowerCallResult(SDValue Chain, SDValue InFlag,
@@ -131,6 +137,7 @@ namespace llvm {
     SDValue LowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerMEMBARRIER(SDValue Op, SelectionDAG& DAG) const;
+    SDValue LowerATOMIC_FENCE(SDValue Op, SelectionDAG& DAG) const;
 
     virtual SDValue
       LowerFormalArguments(SDValue Chain,

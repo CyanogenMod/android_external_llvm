@@ -29,7 +29,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Config/config.h"
 #include <algorithm>
@@ -76,16 +76,6 @@ extern "C" void LLVMInitializeCppBackendTarget() {
   // Register the target.
   RegisterTargetMachine<CPPTargetMachine> X(TheCppBackendTarget);
 }
-
-extern "C" void LLVMInitializeCppBackendMCAsmInfo() {}
-
-extern "C" void LLVMInitializeCppBackendMCRegisterInfo() {}
-
-extern "C" void LLVMInitializeCppBackendMCInstrInfo() {}
-
-extern "C" void LLVMInitializeCppBackendMCSubtargetInfo() {}
-
-extern "C" void LLVMInitializeCppBackendMCCodeGenInfo() {}
 
 namespace {
   typedef std::vector<Type*> TypeList;
@@ -164,7 +154,7 @@ namespace {
     void printFunctionHead(const Function *F);
     void printFunctionBody(const Function *F);
     void printInstruction(const Instruction *I, const std::string& bbname);
-    std::string getOpName(Value*);
+    std::string getOpName(const Value*);
 
     void printModuleBody();
   };
@@ -480,6 +470,9 @@ void CppWriter::printAttributes(const AttrListPtr &PAL,
       HANDLE_ATTR(NoImplicitFloat);
       HANDLE_ATTR(Naked);
       HANDLE_ATTR(InlineHint);
+      HANDLE_ATTR(ReturnsTwice);
+      HANDLE_ATTR(UWTable);
+      HANDLE_ATTR(NonLazyBind);
 #undef HANDLE_ATTR
       if (attrs & Attribute::StackAlignment)
         Out << " | Attribute::constructStackAlignmentFromInt("
@@ -540,11 +533,19 @@ void CppWriter::printType(Type* Ty) {
   }
   case Type::StructTyID: {
     StructType* ST = cast<StructType>(Ty);
-    if (!ST->isAnonymous()) {
-      Out << "StructType *" << typeName << " = ";
-      Out << "StructType::createNamed(mod->getContext(), \"";
+    if (!ST->isLiteral()) {
+      Out << "StructType *" << typeName << " = mod->getTypeByName(\"";
       printEscapedString(ST->getName());
       Out << "\");";
+      nl(Out);
+      Out << "if (!" << typeName << ") {";
+      nl(Out);
+      Out << typeName << " = ";
+      Out << "StructType::create(mod->getContext(), \"";
+      printEscapedString(ST->getName());
+      Out << "\");";
+      nl(Out);
+      Out << "}";
       nl(Out);
       // Indicate that this type is now defined.
       DefinedTypes.insert(Ty);
@@ -563,16 +564,22 @@ void CppWriter::printType(Type* Ty) {
       nl(Out);
     }
 
-    if (ST->isAnonymous()) {
+    if (ST->isLiteral()) {
       Out << "StructType *" << typeName << " = ";
       Out << "StructType::get(" << "mod->getContext(), ";
     } else {
+      Out << "if (" << typeName << "->isOpaque()) {";
+      nl(Out);
       Out << typeName << "->setBody(";
     }
 
     Out << typeName << "_fields, /*isPacked=*/"
         << (ST->isPacked() ? "true" : "false") << ");";
     nl(Out);
+    if (!ST->isLiteral()) {
+      Out << "}";
+      nl(Out);
+    }
     break;
   }
   case Type::ArrayTyID: {
@@ -766,9 +773,7 @@ void CppWriter::printConstant(const Constant *CV) {
       Out << "Constant* " << constName
           << " = ConstantExpr::getGetElementPtr("
           << getCppName(CE->getOperand(0)) << ", "
-          << "&" << constName << "_indices[0], "
-          << constName << "_indices.size()"
-          << ");";
+          << constName << "_indices);";
     } else if (CE->isCast()) {
       printConstant(CE->getOperand(0));
       Out << "Constant* " << constName << " = ConstantExpr::getCast(";
@@ -988,7 +993,7 @@ void CppWriter::printVariableBody(const GlobalVariable *GV) {
   }
 }
 
-std::string CppWriter::getOpName(Value* V) {
+std::string CppWriter::getOpName(const Value* V) {
   if (!isa<Instruction>(V) || DefinedValues.find(V) != DefinedValues.end())
     return getCppName(V);
 
@@ -1053,14 +1058,17 @@ void CppWriter::printInstruction(const Instruction *I,
   case Instruction::Switch: {
     const SwitchInst *SI = cast<SwitchInst>(I);
     Out << "SwitchInst* " << iName << " = SwitchInst::Create("
-        << opNames[0] << ", "
-        << opNames[1] << ", "
+        << getOpName(SI->getCondition()) << ", "
+        << getOpName(SI->getDefaultDest()) << ", "
         << SI->getNumCases() << ", " << bbname << ");";
     nl(Out);
-    for (unsigned i = 2; i != SI->getNumOperands(); i += 2) {
+    unsigned NumCases = SI->getNumCases();
+    for (unsigned i = 1; i < NumCases; ++i) {
+      const ConstantInt* CaseVal = SI->getCaseValue(i);
+      const BasicBlock* BB = SI->getSuccessor(i);
       Out << iName << "->addCase("
-          << opNames[i] << ", "
-          << opNames[i+1] << ");";
+          << getOpName(CaseVal) << ", "
+          << getOpName(BB) << ");";
       nl(Out);
     }
     break;
@@ -1074,6 +1082,11 @@ void CppWriter::printInstruction(const Instruction *I,
       Out << iName << "->addDestination(" << opNames[i] << ");";
       nl(Out);
     }
+    break;
+  }
+  case Instruction::Resume: {
+    Out << "ResumeInst::Create(mod->getContext(), " << opNames[0]
+        << ", " << bbname << ");";
     break;
   }
   case Instruction::Invoke: {
@@ -1090,8 +1103,7 @@ void CppWriter::printInstruction(const Instruction *I,
         << getOpName(inv->getCalledFunction()) << ", "
         << getOpName(inv->getNormalDest()) << ", "
         << getOpName(inv->getUnwindDest()) << ", "
-        << iName << "_params.begin(), "
-        << iName << "_params.end(), \"";
+        << iName << "_params, \"";
     printEscapedString(inv->getName());
     Out << "\", " << bbname << ");";
     nl(Out) << iName << "->setCallingConv(";
@@ -1252,8 +1264,7 @@ void CppWriter::printInstruction(const Instruction *I,
         nl(Out);
       }
       Out << "Instruction* " << iName << " = GetElementPtrInst::Create("
-          << opNames[0] << ", " << iName << "_indices.begin(), "
-          << iName << "_indices.end()";
+          << opNames[0] << ", " << iName << "_indices";
     }
     Out << ", \"";
     printEscapedString(gep->getName());
@@ -1304,7 +1315,7 @@ void CppWriter::printInstruction(const Instruction *I,
     case Instruction::PtrToInt: Out << "PtrToIntInst"; break;
     case Instruction::IntToPtr: Out << "IntToPtrInst"; break;
     case Instruction::BitCast:  Out << "BitCastInst"; break;
-    default: assert(!"Unreachable"); break;
+    default: assert(0 && "Unreachable"); break;
     }
     Out << "(" << opNames[0] << ", "
         << getCppName(cst->getType()) << ", \"";
@@ -1331,8 +1342,7 @@ void CppWriter::printInstruction(const Instruction *I,
       }
       Out << "CallInst* " << iName << " = CallInst::Create("
           << opNames[call->getNumArgOperands()] << ", "
-          << iName << "_params.begin(), "
-          << iName << "_params.end(), \"";
+          << iName << "_params, \"";
     } else if (call->getNumArgOperands() == 1) {
       Out << "CallInst* " << iName << " = CallInst::Create("
           << opNames[call->getNumArgOperands()] << ", " << opNames[0] << ", \"";
@@ -1415,7 +1425,7 @@ void CppWriter::printInstruction(const Instruction *I,
     Out << "ExtractValueInst* " << getCppName(evi)
         << " = ExtractValueInst::Create(" << opNames[0]
         << ", "
-        << iName << "_indices.begin(), " << iName << "_indices.end(), \"";
+        << iName << "_indices, \"";
     printEscapedString(evi->getName());
     Out << "\", " << bbname << ");";
     break;
@@ -1432,7 +1442,7 @@ void CppWriter::printInstruction(const Instruction *I,
     Out << "InsertValueInst* " << getCppName(ivi)
         << " = InsertValueInst::Create(" << opNames[0]
         << ", " << opNames[1] << ", "
-        << iName << "_indices.begin(), " << iName << "_indices.end(), \"";
+        << iName << "_indices, \"";
     printEscapedString(ivi->getName());
     Out << "\", " << bbname << ");";
     break;
@@ -1542,13 +1552,12 @@ void CppWriter::printFunctionUses(const Function* F) {
 
 void CppWriter::printFunctionHead(const Function* F) {
   nl(Out) << "Function* " << getCppName(F);
-  if (is_inline) {
-    Out << " = mod->getFunction(\"";
-    printEscapedString(F->getName());
-    Out << "\", " << getCppName(F->getFunctionType()) << ");";
-    nl(Out) << "if (!" << getCppName(F) << ") {";
-    nl(Out) << getCppName(F);
-  }
+  Out << " = mod->getFunction(\"";
+  printEscapedString(F->getName());
+  Out << "\");";
+  nl(Out) << "if (!" << getCppName(F) << ") {";
+  nl(Out) << getCppName(F);
+
   Out<< " = Function::Create(";
   nl(Out,1) << "/*Type=*/" << getCppName(F->getFunctionType()) << ",";
   nl(Out) << "/*Linkage=*/";
@@ -1585,10 +1594,8 @@ void CppWriter::printFunctionHead(const Function* F) {
     Out << "->setGC(\"" << F->getGC() << "\");";
     nl(Out);
   }
-  if (is_inline) {
-    Out << "}";
-    nl(Out);
-  }
+  Out << "}";
+  nl(Out);
   printAttributes(F->getAttributes(), getCppName(F));
   printCppName(F);
   Out << "->setAttributes(" << getCppName(F) << "_PAL);";

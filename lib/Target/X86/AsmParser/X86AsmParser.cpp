@@ -7,14 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Target/TargetAsmParser.h"
-#include "X86.h"
-#include "X86Subtarget.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetAsmParser.h"
+#include "MCTargetDesc/X86BaseInfo.h"
+#include "llvm/MC/MCTargetAsmParser.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCRegisterInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/MC/MCParser/MCAsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
@@ -26,6 +24,7 @@
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -33,7 +32,7 @@ using namespace llvm;
 namespace {
 struct X86Operand;
 
-class X86ATTAsmParser : public TargetAsmParser {
+class X86ATTAsmParser : public MCTargetAsmParser {
   MCSubtargetInfo &STI;
   MCAsmParser &Parser;
 
@@ -42,12 +41,16 @@ private:
 
   MCAsmLexer &getLexer() const { return Parser.getLexer(); }
 
-  bool Error(SMLoc L, const Twine &Msg) { return Parser.Error(L, Msg); }
+  bool Error(SMLoc L, const Twine &Msg,
+             ArrayRef<SMRange> Ranges = ArrayRef<SMRange>()) {
+    return Parser.Error(L, Msg, Ranges);
+  }
 
   X86Operand *ParseOperand();
   X86Operand *ParseMemOperand(unsigned SegReg, SMLoc StartLoc);
 
   bool ParseDirectiveWord(unsigned Size, SMLoc L);
+  bool ParseDirectiveCode(StringRef IDVal, SMLoc L);
 
   bool MatchAndEmitInstruction(SMLoc IDLoc,
                                SmallVectorImpl<MCParsedAsmOperand*> &Operands,
@@ -65,6 +68,10 @@ private:
     // FIXME: Can tablegen auto-generate this?
     return (STI.getFeatureBits() & X86::Mode64Bit) != 0;
   }
+  void SwitchMode() {
+    unsigned FB = ComputeAvailableFeatures(STI.ToggleFeature(X86::Mode64Bit));
+    setAvailableFeatures(FB);
+  }
 
   /// @name Auto-generated Matcher Functions
   /// {
@@ -76,7 +83,7 @@ private:
 
 public:
   X86ATTAsmParser(MCSubtargetInfo &sti, MCAsmParser &parser)
-    : TargetAsmParser(), STI(sti), Parser(parser) {
+    : MCTargetAsmParser(), STI(sti), Parser(parser) {
 
     // Initialize the set of available features.
     setAvailableFeatures(ComputeAvailableFeatures(STI.getFeatureBits()));
@@ -141,6 +148,8 @@ struct X86Operand : public MCParsedAsmOperand {
   SMLoc getStartLoc() const { return StartLoc; }
   /// getEndLoc - Get the location of the last token of this operand.
   SMLoc getEndLoc() const { return EndLoc; }
+  
+  SMRange getLocRange() const { return SMRange(StartLoc, EndLoc); }
 
   virtual void print(raw_ostream &OS) const {}
 
@@ -223,6 +232,21 @@ struct X86Operand : public MCParsedAsmOperand {
             (0x00000000FFFFFF80ULL <= Value && Value <= 0x00000000FFFFFFFFULL)||
             (0xFFFFFFFFFFFFFF80ULL <= Value && Value <= 0xFFFFFFFFFFFFFFFFULL));
   }
+  bool isImmZExtu32u8() const {
+    if (!isImm())
+      return false;
+
+    // If this isn't a constant expr, just assume it fits and let relaxation
+    // handle it.
+    const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
+    if (!CE)
+      return true;
+
+    // Otherwise, check the value is in a range that makes sense for this
+    // extension.
+    uint64_t Value = CE->getValue();
+    return (Value <= 0x00000000000000FFULL);
+  }
   bool isImmSExti64i8() const {
     if (!isImm())
       return false;
@@ -298,7 +322,8 @@ struct X86Operand : public MCParsedAsmOperand {
   }
 
   static X86Operand *CreateToken(StringRef Str, SMLoc Loc) {
-    X86Operand *Res = new X86Operand(Token, Loc, Loc);
+    SMLoc EndLoc = SMLoc::getFromPointer(Loc.getPointer() + Str.size() - 1);
+    X86Operand *Res = new X86Operand(Token, Loc, EndLoc);
     Res->Tok.Data = Str.data();
     Res->Tok.Length = Str.size();
     return Res;
@@ -380,21 +405,29 @@ bool X86ATTAsmParser::ParseRegister(unsigned &RegNo,
 
   const AsmToken &Tok = Parser.getTok();
   if (Tok.isNot(AsmToken::Identifier))
-    return Error(Tok.getLoc(), "invalid register name");
+    return Error(StartLoc, "invalid register name",
+                 SMRange(StartLoc, Tok.getEndLoc()));
 
-  // FIXME: Validate register for the current architecture; we have to do
-  // validation later, so maybe there is no need for this here.
   RegNo = MatchRegisterName(Tok.getString());
 
   // If the match failed, try the register name as lowercase.
   if (RegNo == 0)
     RegNo = MatchRegisterName(LowercaseString(Tok.getString()));
 
-  // FIXME: This should be done using Requires<In32BitMode> and
-  // Requires<In64BitMode> so "eiz" usage in 64-bit instructions
-  // can be also checked.
-  if (RegNo == X86::RIZ && !is64BitMode())
-    return Error(Tok.getLoc(), "riz register in 64-bit mode only");
+  if (!is64BitMode()) {
+    // FIXME: This should be done using Requires<In32BitMode> and
+    // Requires<In64BitMode> so "eiz" usage in 64-bit instructions can be also
+    // checked.
+    // FIXME: Check AH, CH, DH, BH cannot be used in an instruction requiring a
+    // REX prefix.
+    if (RegNo == X86::RIZ ||
+        X86MCRegisterClasses[X86::GR64RegClassID].contains(RegNo) ||
+        X86II::isX86_64NonExtLowByteReg(RegNo) ||
+        X86II::isX86_64ExtendedReg(RegNo))
+      return Error(StartLoc, "register %"
+                   + Tok.getString() + " is only available in 64-bit mode",
+                   SMRange(StartLoc, Tok.getEndLoc()));
+  }
 
   // Parse "%st" as "%st(0)" and "%st(1)", which is multiple tokens.
   if (RegNo == 0 && (Tok.getString() == "st" || Tok.getString() == "ST")) {
@@ -454,9 +487,10 @@ bool X86ATTAsmParser::ParseRegister(unsigned &RegNo,
   }
 
   if (RegNo == 0)
-    return Error(Tok.getLoc(), "invalid register name");
+    return Error(StartLoc, "invalid register name",
+                 SMRange(StartLoc, Tok.getEndLoc()));
 
-  EndLoc = Tok.getLoc();
+  EndLoc = Tok.getEndLoc();
   Parser.Lex(); // Eat identifier token.
   return false;
 }
@@ -472,7 +506,8 @@ X86Operand *X86ATTAsmParser::ParseOperand() {
     SMLoc Start, End;
     if (ParseRegister(RegNo, Start, End)) return 0;
     if (RegNo == X86::EIZ || RegNo == X86::RIZ) {
-      Error(Start, "eiz and riz can only be used as index registers");
+      Error(Start, "%eiz and %riz can only be used as index registers",
+            SMRange(Start, End));
       return 0;
     }
 
@@ -556,10 +591,11 @@ X86Operand *X86ATTAsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
   unsigned BaseReg = 0, IndexReg = 0, Scale = 1;
 
   if (getLexer().is(AsmToken::Percent)) {
-    SMLoc L;
-    if (ParseRegister(BaseReg, L, L)) return 0;
+    SMLoc StartLoc, EndLoc;
+    if (ParseRegister(BaseReg, StartLoc, EndLoc)) return 0;
     if (BaseReg == X86::EIZ || BaseReg == X86::RIZ) {
-      Error(L, "eiz and riz can only be used as index registers");
+      Error(StartLoc, "eiz and riz can only be used as index registers",
+            SMRange(StartLoc, EndLoc));
       return 0;
     }
   }
@@ -956,6 +992,7 @@ MatchAndEmitInstruction(SMLoc IDLoc,
 
   // First, try a direct match.
   switch (MatchInstructionImpl(Operands, Inst, OrigErrorInfo)) {
+  default: break;
   case Match_Success:
     Out.EmitInstruction(Inst);
     return false;
@@ -994,7 +1031,7 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   // Check for the various suffix matches.
   Tmp[Base.size()] = Suffixes[0];
   unsigned ErrorInfoIgnore;
-  MatchResultTy Match1, Match2, Match3, Match4;
+  unsigned Match1, Match2, Match3, Match4;
   
   Match1 = MatchInstructionImpl(Operands, Inst, ErrorInfoIgnore);
   Tmp[Base.size()] = Suffixes[1];
@@ -1052,21 +1089,24 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   if ((Match1 == Match_MnemonicFail) && (Match2 == Match_MnemonicFail) &&
       (Match3 == Match_MnemonicFail) && (Match4 == Match_MnemonicFail)) {
     if (!WasOriginallyInvalidOperand) {
-      Error(IDLoc, "invalid instruction mnemonic '" + Base + "'");
-      return true;
+      return Error(IDLoc, "invalid instruction mnemonic '" + Base + "'",
+                   Op->getLocRange());
     }
 
     // Recover location info for the operand if we know which was the problem.
-    SMLoc ErrorLoc = IDLoc;
     if (OrigErrorInfo != ~0U) {
       if (OrigErrorInfo >= Operands.size())
         return Error(IDLoc, "too few operands for instruction");
 
-      ErrorLoc = ((X86Operand*)Operands[OrigErrorInfo])->getStartLoc();
-      if (ErrorLoc == SMLoc()) ErrorLoc = IDLoc;
+      X86Operand *Operand = (X86Operand*)Operands[OrigErrorInfo];
+      if (Operand->getStartLoc().isValid()) {
+        SMRange OperandRange = Operand->getLocRange();
+        return Error(Operand->getStartLoc(), "invalid operand for instruction",
+                     OperandRange);
+      }
     }
 
-    return Error(ErrorLoc, "invalid operand for instruction");
+    return Error(IDLoc, "invalid operand for instruction");
   }
 
   // If one instruction matched with a missing feature, report this as a
@@ -1086,7 +1126,6 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   }
 
   // If all of these were an outright failure, report it in a useless way.
-  // FIXME: We should give nicer diagnostics about the exact failure.
   Error(IDLoc, "unknown use of instruction mnemonic without a size suffix");
   return true;
 }
@@ -1096,6 +1135,8 @@ bool X86ATTAsmParser::ParseDirective(AsmToken DirectiveID) {
   StringRef IDVal = DirectiveID.getIdentifier();
   if (IDVal == ".word")
     return ParseDirectiveWord(2, DirectiveID.getLoc());
+  else if (IDVal.startswith(".code"))
+    return ParseDirectiveCode(IDVal, DirectiveID.getLoc());
   return true;
 }
 
@@ -1124,15 +1165,35 @@ bool X86ATTAsmParser::ParseDirectiveWord(unsigned Size, SMLoc L) {
   return false;
 }
 
+/// ParseDirectiveCode
+///  ::= .code32 | .code64
+bool X86ATTAsmParser::ParseDirectiveCode(StringRef IDVal, SMLoc L) {
+  if (IDVal == ".code32") {
+    Parser.Lex();
+    if (is64BitMode()) {
+      SwitchMode();
+      getParser().getStreamer().EmitAssemblerFlag(MCAF_Code32);
+    }
+  } else if (IDVal == ".code64") {
+    Parser.Lex();
+    if (!is64BitMode()) {
+      SwitchMode();
+      getParser().getStreamer().EmitAssemblerFlag(MCAF_Code64);
+    }
+  } else {
+    return Error(L, "unexpected directive " + IDVal);
+  }
 
+  return false;
+}
 
 
 extern "C" void LLVMInitializeX86AsmLexer();
 
 // Force static initialization.
 extern "C" void LLVMInitializeX86AsmParser() {
-  RegisterAsmParser<X86ATTAsmParser> X(TheX86_32Target);
-  RegisterAsmParser<X86ATTAsmParser> Y(TheX86_64Target);
+  RegisterMCAsmParser<X86ATTAsmParser> X(TheX86_32Target);
+  RegisterMCAsmParser<X86ATTAsmParser> Y(TheX86_64Target);
   LLVMInitializeX86AsmLexer();
 }
 

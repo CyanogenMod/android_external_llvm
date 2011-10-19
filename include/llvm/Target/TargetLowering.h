@@ -113,6 +113,22 @@ public:
     ZeroOrNegativeOneBooleanContent // All bits equal to bit 0.
   };
 
+  static ISD::NodeType getExtendForContent(BooleanContent Content) {
+    switch (Content) {
+    default:
+      assert(false && "Unknown BooleanContent!");
+    case UndefinedBooleanContent:
+      // Extend by adding rubbish bits.
+      return ISD::ANY_EXTEND;
+    case ZeroOrOneBooleanContent:
+      // Extend by adding zero bits.
+      return ISD::ZERO_EXTEND;
+    case ZeroOrNegativeOneBooleanContent:
+      // Extend by copying the sign bit.
+      return ISD::SIGN_EXTEND;
+    }
+  }
+
   /// NOTE: The constructor takes ownership of TLOF.
   explicit TargetLowering(const TargetMachine &TM,
                           const TargetLoweringObjectFile *TLOF);
@@ -148,8 +164,7 @@ public:
   /// the condition operand of SELECT and BRCOND nodes.  In the case of
   /// BRCOND the argument passed is MVT::Other since there are no other
   /// operands to get a type hint from.
-  virtual
-  MVT::SimpleValueType getSetCCResultType(EVT VT) const;
+  virtual EVT getSetCCResultType(EVT VT) const;
 
   /// getCmpLibcallReturnType - Return the ValueType for comparison
   /// libcalls. Comparions libcalls include floating point comparion calls,
@@ -162,7 +177,13 @@ public:
   /// "Boolean values" are special true/false values produced by nodes like
   /// SETCC and consumed (as the condition) by nodes like SELECT and BRCOND.
   /// Not to be confused with general values promoted from i1.
-  BooleanContent getBooleanContents() const { return BooleanContents;}
+  /// Some cpus distinguish between vectors of boolean and scalars; the isVec
+  /// parameter selects between the two kinds.  For example on X86 a scalar
+  /// boolean should be zero extended from i1, while the elements of a vector
+  /// of booleans should be sign extended from i1.
+  BooleanContent getBooleanContents(bool isVec) const {
+    return isVec ? BooleanVectorContents : BooleanContents;
+  }
 
   /// getSchedulingPreference - Return target scheduling preference.
   Sched::Preference getSchedulingPreference() const {
@@ -265,9 +286,9 @@ public:
     assert(!VT.isVector());
     while (true) {
       switch (getTypeAction(Context, VT)) {
-      case Legal:
+      case TypeLegal:
         return VT;
-      case Expand:
+      case TypeExpandInteger:
         VT = getTypeToTransformTo(Context, VT);
         break;
       default:
@@ -714,6 +735,13 @@ public:
     return ShouldFoldAtomicFences;
   }
 
+  /// getInsertFencesFor - return whether the DAG builder should automatically
+  /// insert fences and reduce ordering for atomics.
+  ///
+  bool getInsertFencesForAtomic() const {
+    return InsertFencesForAtomic;
+  }
+
   /// getPreIndexedAddressParts - returns true by value, base pointer and
   /// offset pointer and addressing mode by reference if the node's address
   /// can be legally represented as pre-indexed load / store address.
@@ -931,6 +959,12 @@ protected:
   /// setBooleanContents - Specify how the target extends the result of a
   /// boolean value from i1 to a wider type.  See getBooleanContents.
   void setBooleanContents(BooleanContent Ty) { BooleanContents = Ty; }
+  /// setBooleanVectorContents - Specify how the target extends the result
+  /// of a vector boolean value from a vector of i1 to a wider type.  See
+  /// getBooleanContents.
+  void setBooleanVectorContents(BooleanContent Ty) {
+    BooleanVectorContents = Ty;
+  }
 
   /// setSchedulingPreference - Specify the target scheduling preference.
   void setSchedulingPreference(Sched::Preference Pref) {
@@ -1104,26 +1138,28 @@ protected:
     JumpBufAlignment = Align;
   }
 
-  /// setMinFunctionAlignment - Set the target's minimum function alignment.
+  /// setMinFunctionAlignment - Set the target's minimum function alignment (in
+  /// log2(bytes))
   void setMinFunctionAlignment(unsigned Align) {
     MinFunctionAlignment = Align;
   }
 
   /// setPrefFunctionAlignment - Set the target's preferred function alignment.
   /// This should be set if there is a performance benefit to
-  /// higher-than-minimum alignment
+  /// higher-than-minimum alignment (in log2(bytes))
   void setPrefFunctionAlignment(unsigned Align) {
     PrefFunctionAlignment = Align;
   }
 
   /// setPrefLoopAlignment - Set the target's preferred loop alignment. Default
   /// alignment is zero, it means the target does not care about loop alignment.
+  /// The alignment is specified in log2(bytes).
   void setPrefLoopAlignment(unsigned Align) {
     PrefLoopAlignment = Align;
   }
 
   /// setMinStackArgumentAlignment - Set the minimum stack alignment of an
-  /// argument.
+  /// argument (in log2(bytes)).
   void setMinStackArgumentAlignment(unsigned Align) {
     MinStackArgumentAlignment = Align;
   }
@@ -1132,6 +1168,13 @@ protected:
   /// atomic operation intrinsics includes locking. Default is false.
   void setShouldFoldAtomicFences(bool fold) {
     ShouldFoldAtomicFences = fold;
+  }
+
+  /// setInsertFencesForAtomic - Set if the the DAG builder should
+  /// automatically insert fences and reduce the order of atomic memory
+  /// operations to Monotonic.
+  void setInsertFencesForAtomic(bool fence) {
+    InsertFencesForAtomic = fence;
   }
 
 public:
@@ -1457,6 +1500,13 @@ public:
   virtual MachineBasicBlock *
     EmitInstrWithCustomInserter(MachineInstr *MI, MachineBasicBlock *MBB) const;
 
+  /// AdjustInstrPostInstrSelection - This method should be implemented by
+  /// targets that mark instructions with the 'hasPostISelHook' flag. These
+  /// instructions must be adjusted after instruction selection by target hooks.
+  /// e.g. To fill in optional defs for ARM 's' setting instructions.
+  virtual void
+  AdjustInstrPostInstrSelection(MachineInstr *MI, SDNode *Node) const;
+
   //===--------------------------------------------------------------------===//
   // Addressing mode description hooks (used by LSR etc).
   //
@@ -1483,6 +1533,22 @@ public:
   /// mode is legal for a load/store of any legal type.
   /// TODO: Handle pre/postinc as well.
   virtual bool isLegalAddressingMode(const AddrMode &AM, Type *Ty) const;
+
+  /// isLegalICmpImmediate - Return true if the specified immediate is legal
+  /// icmp immediate, that is the target has icmp instructions which can compare
+  /// a register against the immediate without having to materialize the
+  /// immediate into a register.
+  virtual bool isLegalICmpImmediate(int64_t Imm) const {
+    return true;
+  }
+
+  /// isLegalAddImmediate - Return true if the specified immediate is legal
+  /// add immediate, that is the target has add instructions which can add
+  /// a register with the immediate without having to materialize the
+  /// immediate into a register.
+  virtual bool isLegalAddImmediate(int64_t Imm) const {
+    return true;
+  }
 
   /// isTruncateFree - Return true if it's free to truncate a value of
   /// type Ty1 to type Ty2. e.g. On x86 it's free to truncate a i32 value in
@@ -1516,22 +1582,6 @@ public:
   /// from i32 to i8 but not from i32 to i16.
   virtual bool isNarrowingProfitable(EVT VT1, EVT VT2) const {
     return false;
-  }
-
-  /// isLegalICmpImmediate - Return true if the specified immediate is legal
-  /// icmp immediate, that is the target has icmp instructions which can compare
-  /// a register against the immediate without having to materialize the
-  /// immediate into a register.
-  virtual bool isLegalICmpImmediate(int64_t Imm) const {
-    return true;
-  }
-
-  /// isLegalAddImmediate - Return true if the specified immediate is legal
-  /// add immediate, that is the target has add instructions which can add
-  /// a register with the immediate without having to materialize the
-  /// immediate into a register.
-  virtual bool isLegalAddImmediate(int64_t Imm) const {
-    return true;
   }
 
   //===--------------------------------------------------------------------===//
@@ -1636,6 +1686,10 @@ private:
   /// BooleanContents - Information about the contents of the high-bits in
   /// boolean values held in a type wider than i1.  See getBooleanContents.
   BooleanContent BooleanContents;
+  /// BooleanVectorContents - Information about the contents of the high-bits
+  /// in boolean vector values when the element type is wider than i1.  See
+  /// getBooleanContents.
+  BooleanContent BooleanVectorContents;
 
   /// SchedPreferenceInfo - The target scheduling preference: shortest possible
   /// total cycles or lowest register usage.
@@ -1672,6 +1726,11 @@ private:
   /// be folded into the enclosed atomic intrinsic instruction by the
   /// combiner.
   bool ShouldFoldAtomicFences;
+
+  /// InsertFencesForAtomic - Whether the DAG builder should automatically
+  /// insert fences and reduce ordering for atomics.  (This will be set for
+  /// for most architectures with weak memory ordering.)
+  bool InsertFencesForAtomic;
 
   /// StackPointerRegisterToSaveRestore - If set to a physical register, this
   /// specifies the register that llvm.savestack/llvm.restorestack should save

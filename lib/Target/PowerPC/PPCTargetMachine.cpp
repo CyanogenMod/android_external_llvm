@@ -16,46 +16,21 @@
 #include "llvm/PassManager.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetRegistry.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/TargetRegistry.h"
 using namespace llvm;
-
-// This is duplicated code. Refactor this.
-static MCStreamer *createMCStreamer(const Target &T, const std::string &TT,
-                                    MCContext &Ctx, TargetAsmBackend &TAB,
-                                    raw_ostream &OS,
-                                    MCCodeEmitter *Emitter,
-                                    bool RelaxAll,
-                                    bool NoExecStack) {
-  if (Triple(TT).isOSDarwin())
-    return createMachOStreamer(Ctx, TAB, OS, Emitter, RelaxAll);
-
-  return NULL;
-}
 
 extern "C" void LLVMInitializePowerPCTarget() {
   // Register the targets
   RegisterTargetMachine<PPC32TargetMachine> A(ThePPC32Target);  
   RegisterTargetMachine<PPC64TargetMachine> B(ThePPC64Target);
-  
-  // Register the MC Code Emitter
-  TargetRegistry::RegisterCodeEmitter(ThePPC32Target, createPPCMCCodeEmitter);
-  TargetRegistry::RegisterCodeEmitter(ThePPC64Target, createPPCMCCodeEmitter);
-  
-  
-  // Register the asm backend.
-  TargetRegistry::RegisterAsmBackend(ThePPC32Target, createPPCAsmBackend);
-  TargetRegistry::RegisterAsmBackend(ThePPC64Target, createPPCAsmBackend);
-  
-  // Register the object streamer.
-  TargetRegistry::RegisterObjectStreamer(ThePPC32Target, createMCStreamer);
-  TargetRegistry::RegisterObjectStreamer(ThePPC64Target, createMCStreamer);
 }
 
 PPCTargetMachine::PPCTargetMachine(const Target &T, StringRef TT,
                                    StringRef CPU, StringRef FS,
-                                   Reloc::Model RM, bool is64Bit)
-  : LLVMTargetMachine(T, TT, CPU, FS, RM),
+                                   Reloc::Model RM, CodeModel::Model CM,
+                                   bool is64Bit)
+  : LLVMTargetMachine(T, TT, CPU, FS, RM, CM),
     Subtarget(TT, CPU, FS, is64Bit),
     DataLayout(Subtarget.getTargetDataString()), InstrInfo(*this),
     FrameLowering(Subtarget), JITInfo(*this, is64Bit),
@@ -68,16 +43,16 @@ PPCTargetMachine::PPCTargetMachine(const Target &T, StringRef TT,
 bool PPCTargetMachine::getEnableTailMergeDefault() const { return false; }
 
 PPC32TargetMachine::PPC32TargetMachine(const Target &T, StringRef TT, 
-                                       StringRef CPU,
-                                       StringRef FS, Reloc::Model RM) 
-  : PPCTargetMachine(T, TT, CPU, FS, RM, false) {
+                                       StringRef CPU, StringRef FS,
+                                       Reloc::Model RM, CodeModel::Model CM) 
+  : PPCTargetMachine(T, TT, CPU, FS, RM, CM, false) {
 }
 
 
 PPC64TargetMachine::PPC64TargetMachine(const Target &T, StringRef TT, 
-                                       StringRef CPU, 
-                                       StringRef FS, Reloc::Model RM)
-  : PPCTargetMachine(T, TT, CPU, FS, RM, true) {
+                                       StringRef CPU,  StringRef FS,
+                                       Reloc::Model RM, CodeModel::Model CM)
+  : PPCTargetMachine(T, TT, CPU, FS, RM, CM, true) {
 }
 
 

@@ -35,6 +35,12 @@
 //  * It is illegal to have a ret instruction that returns a value that does not
 //    agree with the function return value type.
 //  * Function call argument types match the function prototype
+//  * A landing pad is defined by a landingpad instruction, and can be jumped to
+//    only by the unwind edge of an invoke instruction.
+//  * A landingpad instruction must be the first non-PHI instruction in the
+//    block.
+//  * All landingpad instructions must use the same personality function with
+//    the same function.
 //  * All other things that are tested by asserts spread about the code...
 //
 //===----------------------------------------------------------------------===//
@@ -131,18 +137,22 @@ namespace {
     /// already.
     SmallPtrSet<MDNode *, 32> MDNodes;
 
+    /// PersonalityFn - The personality function referenced by the
+    /// LandingPadInsts. All LandingPadInsts within the same function must use
+    /// the same personality function.
+    const Value *PersonalityFn;
+
     Verifier()
-      : FunctionPass(ID), 
-      Broken(false), RealPass(true), action(AbortProcessAction),
-      Mod(0), Context(0), DT(0), MessagesStr(Messages) {
-        initializeVerifierPass(*PassRegistry::getPassRegistry());
-      }
+      : FunctionPass(ID), Broken(false), RealPass(true),
+        action(AbortProcessAction), Mod(0), Context(0), DT(0),
+        MessagesStr(Messages), PersonalityFn(0) {
+      initializeVerifierPass(*PassRegistry::getPassRegistry());
+    }
     explicit Verifier(VerifierFailureAction ctn)
-      : FunctionPass(ID), 
-      Broken(false), RealPass(true), action(ctn), Mod(0), Context(0), DT(0),
-      MessagesStr(Messages) {
-        initializeVerifierPass(*PassRegistry::getPassRegistry());
-      }
+      : FunctionPass(ID), Broken(false), RealPass(true), action(ctn), Mod(0),
+        Context(0), DT(0), MessagesStr(Messages), PersonalityFn(0) {
+      initializeVerifierPass(*PassRegistry::getPassRegistry());
+    }
 
     bool doInitialization(Module &M) {
       Mod = &M;
@@ -165,6 +175,7 @@ namespace {
 
       visit(F);
       InstsInThisBlock.clear();
+      PersonalityFn = 0;
 
       // If this is a real pass, in a pass manager, we must abort before
       // returning back to the pass manager, or else the pass manager may try to
@@ -278,9 +289,13 @@ namespace {
     void visitUserOp1(Instruction &I);
     void visitUserOp2(Instruction &I) { visitUserOp1(I); }
     void visitIntrinsicFunctionCall(Intrinsic::ID ID, CallInst &CI);
+    void visitAtomicCmpXchgInst(AtomicCmpXchgInst &CXI);
+    void visitAtomicRMWInst(AtomicRMWInst &RMWI);
+    void visitFenceInst(FenceInst &FI);
     void visitAllocaInst(AllocaInst &AI);
     void visitExtractValueInst(ExtractValueInst &EVI);
     void visitInsertValueInst(InsertValueInst &IVI);
+    void visitLandingPadInst(LandingPadInst &LPI);
 
     void VerifyCallSite(CallSite CS);
     bool PerformTypeCheck(Intrinsic::ID ID, Function *F, Type *Ty,
@@ -1152,6 +1167,12 @@ void Verifier::visitCallInst(CallInst &CI) {
 
 void Verifier::visitInvokeInst(InvokeInst &II) {
   VerifyCallSite(&II);
+
+  // Verify that there is a landingpad instruction as the first non-PHI
+  // instruction of the 'unwind' destination.
+  Assert1(II.getUnwindDest()->isLandingPad(),
+          "The unwind destination does not have a landingpad instruction!",&II);
+
   visitTerminatorInst(II);
 }
 
@@ -1274,10 +1295,13 @@ void Verifier::visitShuffleVectorInst(ShuffleVectorInst &SV) {
 }
 
 void Verifier::visitGetElementPtrInst(GetElementPtrInst &GEP) {
+  Assert1(cast<PointerType>(GEP.getOperand(0)->getType())
+            ->getElementType()->isSized(),
+          "GEP into unsized type!", &GEP);
+  
   SmallVector<Value*, 16> Idxs(GEP.idx_begin(), GEP.idx_end());
   Type *ElTy =
-    GetElementPtrInst::getIndexedType(GEP.getOperand(0)->getType(),
-                                      Idxs.begin(), Idxs.end());
+    GetElementPtrInst::getIndexedType(GEP.getOperand(0)->getType(), Idxs);
   Assert1(ElTy, "Invalid indices for GEP pointer type!", &GEP);
   Assert2(GEP.getType()->isPointerTy() &&
           cast<PointerType>(GEP.getType())->getElementType() == ElTy,
@@ -1291,6 +1315,15 @@ void Verifier::visitLoadInst(LoadInst &LI) {
   Type *ElTy = PTy->getElementType();
   Assert2(ElTy == LI.getType(),
           "Load result type does not match pointer operand type!", &LI, ElTy);
+  if (LI.isAtomic()) {
+    Assert1(LI.getOrdering() != Release && LI.getOrdering() != AcquireRelease,
+            "Load cannot have Release ordering", &LI);
+    Assert1(LI.getAlignment() != 0,
+            "Atomic load must specify explicit alignment", &LI);
+  } else {
+    Assert1(LI.getSynchScope() == CrossThread,
+            "Non-atomic load cannot have SynchronizationScope specified", &LI);
+  }
   visitInstruction(LI);
 }
 
@@ -1301,6 +1334,15 @@ void Verifier::visitStoreInst(StoreInst &SI) {
   Assert2(ElTy == SI.getOperand(0)->getType(),
           "Stored value type does not match pointer operand type!",
           &SI, ElTy);
+  if (SI.isAtomic()) {
+    Assert1(SI.getOrdering() != Acquire && SI.getOrdering() != AcquireRelease,
+            "Store cannot have Acquire ordering", &SI);
+    Assert1(SI.getAlignment() != 0,
+            "Atomic store must specify explicit alignment", &SI);
+  } else {
+    Assert1(SI.getSynchScope() == CrossThread,
+            "Non-atomic store cannot have SynchronizationScope specified", &SI);
+  }
   visitInstruction(SI);
 }
 
@@ -1314,6 +1356,49 @@ void Verifier::visitAllocaInst(AllocaInst &AI) {
   Assert1(AI.getArraySize()->getType()->isIntegerTy(),
           "Alloca array size must have integer type", &AI);
   visitInstruction(AI);
+}
+
+void Verifier::visitAtomicCmpXchgInst(AtomicCmpXchgInst &CXI) {
+  Assert1(CXI.getOrdering() != NotAtomic,
+          "cmpxchg instructions must be atomic.", &CXI);
+  Assert1(CXI.getOrdering() != Unordered,
+          "cmpxchg instructions cannot be unordered.", &CXI);
+  PointerType *PTy = dyn_cast<PointerType>(CXI.getOperand(0)->getType());
+  Assert1(PTy, "First cmpxchg operand must be a pointer.", &CXI);
+  Type *ElTy = PTy->getElementType();
+  Assert2(ElTy == CXI.getOperand(1)->getType(),
+          "Expected value type does not match pointer operand type!",
+          &CXI, ElTy);
+  Assert2(ElTy == CXI.getOperand(2)->getType(),
+          "Stored value type does not match pointer operand type!",
+          &CXI, ElTy);
+  visitInstruction(CXI);
+}
+
+void Verifier::visitAtomicRMWInst(AtomicRMWInst &RMWI) {
+  Assert1(RMWI.getOrdering() != NotAtomic,
+          "atomicrmw instructions must be atomic.", &RMWI);
+  Assert1(RMWI.getOrdering() != Unordered,
+          "atomicrmw instructions cannot be unordered.", &RMWI);
+  PointerType *PTy = dyn_cast<PointerType>(RMWI.getOperand(0)->getType());
+  Assert1(PTy, "First atomicrmw operand must be a pointer.", &RMWI);
+  Type *ElTy = PTy->getElementType();
+  Assert2(ElTy == RMWI.getOperand(1)->getType(),
+          "Argument value type does not match pointer operand type!",
+          &RMWI, ElTy);
+  Assert1(AtomicRMWInst::FIRST_BINOP <= RMWI.getOperation() &&
+          RMWI.getOperation() <= AtomicRMWInst::LAST_BINOP,
+          "Invalid binary operation!", &RMWI);
+  visitInstruction(RMWI);
+}
+
+void Verifier::visitFenceInst(FenceInst &FI) {
+  const AtomicOrdering Ordering = FI.getOrdering();
+  Assert1(Ordering == Acquire || Ordering == Release ||
+          Ordering == AcquireRelease || Ordering == SequentiallyConsistent,
+          "fence instructions may only have "
+          "acquire, release, acq_rel, or seq_cst ordering.", &FI);
+  visitInstruction(FI);
 }
 
 void Verifier::visitExtractValueInst(ExtractValueInst &EVI) {
@@ -1332,6 +1417,55 @@ void Verifier::visitInsertValueInst(InsertValueInst &IVI) {
           "Invalid InsertValueInst operands!", &IVI);
   
   visitInstruction(IVI);
+}
+
+void Verifier::visitLandingPadInst(LandingPadInst &LPI) {
+  BasicBlock *BB = LPI.getParent();
+
+  // The landingpad instruction is ill-formed if it doesn't have any clauses and
+  // isn't a cleanup.
+  Assert1(LPI.getNumClauses() > 0 || LPI.isCleanup(),
+          "LandingPadInst needs at least one clause or to be a cleanup.", &LPI);
+
+  // The landingpad instruction defines its parent as a landing pad block. The
+  // landing pad block may be branched to only by the unwind edge of an invoke.
+  for (pred_iterator I = pred_begin(BB), E = pred_end(BB); I != E; ++I) {
+    const InvokeInst *II = dyn_cast<InvokeInst>((*I)->getTerminator());
+    Assert1(II && II->getUnwindDest() == BB,
+            "Block containing LandingPadInst must be jumped to "
+            "only by the unwind edge of an invoke.", &LPI);
+  }
+
+  // The landingpad instruction must be the first non-PHI instruction in the
+  // block.
+  Assert1(LPI.getParent()->getLandingPadInst() == &LPI,
+          "LandingPadInst not the first non-PHI instruction in the block.",
+          &LPI);
+
+  // The personality functions for all landingpad instructions within the same
+  // function should match.
+  if (PersonalityFn)
+    Assert1(LPI.getPersonalityFn() == PersonalityFn,
+            "Personality function doesn't match others in function", &LPI);
+  PersonalityFn = LPI.getPersonalityFn();
+
+  // All operands must be constants.
+  Assert1(isa<Constant>(PersonalityFn), "Personality function is not constant!",
+          &LPI);
+  for (unsigned i = 0, e = LPI.getNumClauses(); i < e; ++i) {
+    Value *Clause = LPI.getClause(i);
+    Assert1(isa<Constant>(Clause), "Clause is not constant!", &LPI);
+    if (LPI.isCatch(i)) {
+      Assert1(isa<PointerType>(Clause->getType()),
+              "Catch operand does not have pointer type!", &LPI);
+    } else {
+      Assert1(LPI.isFilter(i), "Clause is neither catch nor filter!", &LPI);
+      Assert1(isa<ConstantArray>(Clause) || isa<ConstantAggregateZero>(Clause),
+              "Filter operand is not an array of constants!", &LPI);
+    }
+  }
+
+  visitInstruction(LPI);
 }
 
 /// verifyInstruction - Verify that an instruction is well formed.

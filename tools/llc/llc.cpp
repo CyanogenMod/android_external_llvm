@@ -32,10 +32,10 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/Host.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetSelect.h"
 #include <memory>
 using namespace llvm;
 
@@ -91,6 +91,22 @@ RelocModel("relocation-model",
                        "Relocatable external references, non-relocatable code"),
             clEnumValEnd));
 
+static cl::opt<llvm::CodeModel::Model>
+CMModel("code-model",
+        cl::desc("Choose code model"),
+        cl::init(CodeModel::Default),
+        cl::values(clEnumValN(CodeModel::Default, "default",
+                              "Target default code model"),
+                   clEnumValN(CodeModel::Small, "small",
+                              "Small code model"),
+                   clEnumValN(CodeModel::Kernel, "kernel",
+                              "Kernel code model"),
+                   clEnumValN(CodeModel::Medium, "medium",
+                              "Medium code model"),
+                   clEnumValN(CodeModel::Large, "large",
+                              "Large code model"),
+                   clEnumValEnd));
+
 static cl::opt<bool>
 RelaxAll("mc-relax-all",
   cl::desc("When used with filetype=obj, "
@@ -116,6 +132,9 @@ cl::opt<bool> DisableDotLoc("disable-dot-loc", cl::Hidden,
 
 cl::opt<bool> DisableCFI("disable-cfi", cl::Hidden,
                          cl::desc("Do not use .cfi_* directives"));
+
+cl::opt<bool> DisableDwarfDirectory("disable-dwarf-directory", cl::Hidden,
+    cl::desc("Do not use file directives with an explicit directory."));
 
 static cl::opt<bool>
 DisableRedZone("disable-red-zone",
@@ -216,11 +235,12 @@ int main(int argc, char **argv) {
 
   // Initialize targets first, so that --version shows registered targets.
   InitializeAllTargets();
-  InitializeAllMCAsmInfos();
-  InitializeAllMCCodeGenInfos();
-  InitializeAllMCSubtargetInfos();
+  InitializeAllTargetMCs();
   InitializeAllAsmPrinters();
   InitializeAllAsmParsers();
+
+  // Register the target printer for --version.
+  cl::AddExtraVersionPrinter(TargetRegistry::printRegisteredTargetsForVersion);
 
   cl::ParseCommandLineOptions(argc, argv, "llvm system compiler\n");
 
@@ -230,7 +250,7 @@ int main(int argc, char **argv) {
 
   M.reset(ParseIRFile(InputFilename, Err, Context));
   if (M.get() == 0) {
-    Err.Print(argv[0], errs());
+    Err.print(argv[0], errs());
     return 1;
   }
   Module &mod = *M.get();
@@ -287,8 +307,9 @@ int main(int argc, char **argv) {
   }
 
   std::auto_ptr<TargetMachine>
-    target(TheTarget->createTargetMachine(TheTriple.getTriple(), MCPU,
-                                          FeaturesStr, RelocModel));
+    target(TheTarget->createTargetMachine(TheTriple.getTriple(),
+                                          MCPU, FeaturesStr,
+                                          RelocModel, CMModel));
   assert(target.get() && "Could not allocate target machine!");
   TargetMachine &Target = *target.get();
 
@@ -297,6 +318,9 @@ int main(int argc, char **argv) {
 
   if (DisableCFI)
     Target.setMCUseCFI(false);
+
+  if (DisableDwarfDirectory)
+    Target.setMCUseDwarfDirectory(false);
 
   // Disable .loc support for older OS X versions.
   if (TheTriple.isMacOSX() &&

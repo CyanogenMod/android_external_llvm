@@ -14,13 +14,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "ARM.h"
-#include "ARMAddressingModes.h"
 #include "ARMBaseInstrInfo.h"
 #include "ARMCallingConv.h"
 #include "ARMRegisterInfo.h"
 #include "ARMTargetMachine.h"
 #include "ARMSubtarget.h"
 #include "ARMConstantPoolValue.h"
+#include "MCTargetDesc/ARMAddressingModes.h"
 #include "llvm/CallingConv.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/GlobalVariable.h"
@@ -502,11 +502,19 @@ unsigned ARMFastISel::ARMMaterializeFP(const ConstantFP *CFP, EVT VT) {
   // This checks to see if we can use VFP3 instructions to materialize
   // a constant, otherwise we have to go through the constant pool.
   if (TLI.isFPImmLegal(Val, VT)) {
-    unsigned Opc = is64bit ? ARM::FCONSTD : ARM::FCONSTS;
+    int Imm;
+    unsigned Opc;
+    if (is64bit) {
+      Imm = ARM_AM::getFP64Imm(Val);
+      Opc = ARM::FCONSTD;
+    } else {
+      Imm = ARM_AM::getFP32Imm(Val);
+      Opc = ARM::FCONSTS;
+    }
     unsigned DestReg = createResultReg(TLI.getRegClassFor(VT));
     AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(Opc),
                             DestReg)
-                    .addFPImm(CFP));
+                    .addImm(Imm));
     return DestReg;
   }
 
@@ -590,8 +598,9 @@ unsigned ARMFastISel::ARMMaterializeGV(const GlobalValue *GV, EVT VT) {
   // Grab index.
   unsigned PCAdj = (RelocM != Reloc::PIC_) ? 0 : (Subtarget->isThumb() ? 4 : 8);
   unsigned Id = AFI->createPICLabelUId();
-  ARMConstantPoolValue *CPV = new ARMConstantPoolValue(GV, Id,
-                                                       ARMCP::CPValue, PCAdj);
+  ARMConstantPoolValue *CPV = ARMConstantPoolConstant::Create(GV, Id,
+                                                              ARMCP::CPValue,
+                                                              PCAdj);
   unsigned Idx = MCP.getConstantPoolIndex(CPV, Align);
 
   // Load value.
@@ -615,8 +624,8 @@ unsigned ARMFastISel::ARMMaterializeGV(const GlobalValue *GV, EVT VT) {
   if (Subtarget->GVIsIndirectSymbol(GV, RelocM)) {
     unsigned NewDestReg = createResultReg(TLI.getRegClassFor(VT));
     if (isThumb)
-      MIB = BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(ARM::t2LDRi12),
-                    NewDestReg)
+      MIB = BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
+                    TII.get(ARM::t2LDRi12), NewDestReg)
             .addReg(DestReg)
             .addImm(0);
     else
@@ -946,6 +955,10 @@ bool ARMFastISel::ARMEmitLoad(EVT VT, unsigned &ResultReg, Address &Addr) {
 }
 
 bool ARMFastISel::SelectLoad(const Instruction *I) {
+  // Atomic loads need special handling.
+  if (cast<LoadInst>(I)->isAtomic())
+    return false;
+
   // Verify we have a legal type before going any further.
   MVT VT;
   if (!isLoadTypeLegal(I->getType(), VT))
@@ -1007,6 +1020,10 @@ bool ARMFastISel::ARMEmitStore(EVT VT, unsigned SrcReg, Address &Addr) {
 bool ARMFastISel::SelectStore(const Instruction *I) {
   Value *Op0 = I->getOperand(0);
   unsigned SrcReg = 0;
+
+  // Atomic stores need special handling.
+  if (cast<StoreInst>(I)->isAtomic())
+    return false;
 
   // Verify we have a legal type before going any further.
   MVT VT;
@@ -1328,7 +1345,7 @@ bool ARMFastISel::SelectSIToFP(const Instruction *I) {
   unsigned Opc;
   if (Ty->isFloatTy()) Opc = ARM::VSITOS;
   else if (Ty->isDoubleTy()) Opc = ARM::VSITOD;
-  else return 0;
+  else return false;
 
   unsigned ResultReg = createResultReg(TLI.getRegClassFor(DstVT));
   AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(Opc),
@@ -1354,7 +1371,7 @@ bool ARMFastISel::SelectFPToSI(const Instruction *I) {
   Type *OpTy = I->getOperand(0)->getType();
   if (OpTy->isFloatTy()) Opc = ARM::VTOSIZS;
   else if (OpTy->isDoubleTy()) Opc = ARM::VTOSIZD;
-  else return 0;
+  else return false;
 
   // f64->s32 or f32->s32 both need an intermediate f32 reg.
   unsigned ResultReg = createResultReg(TLI.getRegClassFor(MVT::f32));
@@ -1711,7 +1728,7 @@ bool ARMFastISel::SelectRet(const Instruction *I) {
 
     // Analyze operands of the call, assigning locations to each operand.
     SmallVector<CCValAssign, 16> ValLocs;
-    CCState CCInfo(CC, F.isVarArg(), *FuncInfo.MF, TM, ValLocs, I->getContext());
+    CCState CCInfo(CC, F.isVarArg(), *FuncInfo.MF, TM, ValLocs,I->getContext());
     CCInfo.AnalyzeReturn(Outs, CCAssignFnForCall(CC, true /* is Ret */));
 
     const Value *RV = Ret->getOperand(0);
@@ -1726,6 +1743,7 @@ bool ARMFastISel::SelectRet(const Instruction *I) {
     CCValAssign &VA = ValLocs[0];
 
     // Don't bother handling odd stuff for now.
+    // FIXME: Should be able to handle i1, i8, and/or i16 return types.
     if (VA.getLocInfo() != CCValAssign::Full)
       return false;
     // Only handle register returns for now.
@@ -1917,6 +1935,7 @@ bool ARMFastISel::SelectCall(const Instruction *I) {
 
     Type *ArgTy = (*i)->getType();
     MVT ArgVT;
+    // FIXME: Should be able to handle i1, i8, and/or i16 parameters.
     if (!isTypeLegal(ArgTy, ArgVT))
       return false;
     unsigned OriginalAlignment = TD.getABITypeAlignment(ArgTy);
@@ -2002,16 +2021,18 @@ bool ARMFastISel::SelectIntCast(const Instruction *I) {
   switch (SrcVT.getSimpleVT().SimpleTy) {
   default: return false;
   case MVT::i16:
+    if (!Subtarget->hasV6Ops()) return false;
     if (isZext)
-      Opc = isThumb ? ARM::t2UXTHr : ARM::UXTHr;
+      Opc = isThumb ? ARM::t2UXTH : ARM::UXTH;
     else
-      Opc = isThumb ? ARM::t2SXTHr : ARM::SXTHr;
+      Opc = isThumb ? ARM::t2SXTH : ARM::SXTH;
     break;
   case MVT::i8:
+    if (!Subtarget->hasV6Ops()) return false;
     if (isZext)
-      Opc = isThumb ? ARM::t2UXTBr : ARM::UXTBr;
+      Opc = isThumb ? ARM::t2UXTB : ARM::UXTB;
     else
-      Opc = isThumb ? ARM::t2SXTBr : ARM::SXTBr;
+      Opc = isThumb ? ARM::t2SXTB : ARM::SXTB;
     break;
   case MVT::i1:
     if (isZext) {
@@ -2033,6 +2054,8 @@ bool ARMFastISel::SelectIntCast(const Instruction *I) {
         .addReg(SrcReg);
   if (isBoolZext)
     MIB.addImm(1);
+  else
+    MIB.addImm(0);
   AddOptionalDefs(MIB);
   UpdateValueMap(I, DestReg);
   return true;

@@ -475,8 +475,8 @@ public:
                   Name);
   }
 
-  UnwindInst *CreateUnwind() {
-    return Insert(new UnwindInst(Context));
+  ResumeInst *CreateResume(Value *Exn) {
+    return Insert(ResumeInst::Create(Exn));
   }
 
   UnreachableInst *CreateUnreachable() {
@@ -762,71 +762,74 @@ public:
   StoreInst *CreateStore(Value *Val, Value *Ptr, bool isVolatile = false) {
     return Insert(new StoreInst(Val, Ptr, isVolatile));
   }
-  template<typename RandomAccessIterator>
-  Value *CreateGEP(Value *Ptr,
-                   RandomAccessIterator IdxBegin,
-                   RandomAccessIterator IdxEnd,
+  FenceInst *CreateFence(AtomicOrdering Ordering,
+                         SynchronizationScope SynchScope = CrossThread) {
+    return Insert(new FenceInst(Context, Ordering, SynchScope));
+  }
+  AtomicCmpXchgInst *CreateAtomicCmpXchg(Value *Ptr, Value *Cmp, Value *New,
+                                         AtomicOrdering Ordering,
+                               SynchronizationScope SynchScope = CrossThread) {
+    return Insert(new AtomicCmpXchgInst(Ptr, Cmp, New, Ordering, SynchScope));
+  }
+  AtomicRMWInst *CreateAtomicRMW(AtomicRMWInst::BinOp Op, Value *Ptr, Value *Val,
+                                 AtomicOrdering Ordering,
+                               SynchronizationScope SynchScope = CrossThread) {
+    return Insert(new AtomicRMWInst(Op, Ptr, Val, Ordering, SynchScope));
+  }
+  Value *CreateGEP(Value *Ptr, ArrayRef<Value *> IdxList,
                    const Twine &Name = "") {
     if (Constant *PC = dyn_cast<Constant>(Ptr)) {
       // Every index must be constant.
-      RandomAccessIterator i;
-      for (i = IdxBegin; i < IdxEnd; ++i)
-        if (!isa<Constant>(*i))
+      size_t i, e;
+      for (i = 0, e = IdxList.size(); i != e; ++i)
+        if (!isa<Constant>(IdxList[i]))
           break;
-      if (i == IdxEnd)
-        return Insert(Folder.CreateGetElementPtr(PC, &IdxBegin[0],
-                                                 IdxEnd - IdxBegin),
-                      Name);
+      if (i == e)
+        return Insert(Folder.CreateGetElementPtr(PC, IdxList), Name);
     }
-    return Insert(GetElementPtrInst::Create(Ptr, IdxBegin, IdxEnd), Name);
+    return Insert(GetElementPtrInst::Create(Ptr, IdxList), Name);
   }
-  template<typename RandomAccessIterator>
-  Value *CreateInBoundsGEP(Value *Ptr, RandomAccessIterator IdxBegin,
-                           RandomAccessIterator IdxEnd,
+  Value *CreateInBoundsGEP(Value *Ptr, ArrayRef<Value *> IdxList,
                            const Twine &Name = "") {
     if (Constant *PC = dyn_cast<Constant>(Ptr)) {
       // Every index must be constant.
-      RandomAccessIterator i;
-      for (i = IdxBegin; i < IdxEnd; ++i)
-        if (!isa<Constant>(*i))
+      size_t i, e;
+      for (i = 0, e = IdxList.size(); i != e; ++i)
+        if (!isa<Constant>(IdxList[i]))
           break;
-      if (i == IdxEnd)
-        return Insert(Folder.CreateInBoundsGetElementPtr(PC,
-                                                         &IdxBegin[0],
-                                                         IdxEnd - IdxBegin),
-                      Name);
+      if (i == e)
+        return Insert(Folder.CreateInBoundsGetElementPtr(PC, IdxList), Name);
     }
-    return Insert(GetElementPtrInst::CreateInBounds(Ptr, IdxBegin, IdxEnd),
-                  Name);
+    return Insert(GetElementPtrInst::CreateInBounds(Ptr, IdxList), Name);
   }
   Value *CreateGEP(Value *Ptr, Value *Idx, const Twine &Name = "") {
     if (Constant *PC = dyn_cast<Constant>(Ptr))
       if (Constant *IC = dyn_cast<Constant>(Idx))
-        return Insert(Folder.CreateGetElementPtr(PC, &IC, 1), Name);
+        return Insert(Folder.CreateGetElementPtr(PC, IC), Name);
     return Insert(GetElementPtrInst::Create(Ptr, Idx), Name);
   }
   Value *CreateInBoundsGEP(Value *Ptr, Value *Idx, const Twine &Name = "") {
     if (Constant *PC = dyn_cast<Constant>(Ptr))
       if (Constant *IC = dyn_cast<Constant>(Idx))
-        return Insert(Folder.CreateInBoundsGetElementPtr(PC, &IC, 1), Name);
+        return Insert(Folder.CreateInBoundsGetElementPtr(PC, IC), Name);
     return Insert(GetElementPtrInst::CreateInBounds(Ptr, Idx), Name);
   }
   Value *CreateConstGEP1_32(Value *Ptr, unsigned Idx0, const Twine &Name = "") {
     Value *Idx = ConstantInt::get(Type::getInt32Ty(Context), Idx0);
 
     if (Constant *PC = dyn_cast<Constant>(Ptr))
-      return Insert(Folder.CreateGetElementPtr(PC, &Idx, 1), Name);
+      return Insert(Folder.CreateGetElementPtr(PC, Idx), Name);
 
-    return Insert(GetElementPtrInst::Create(Ptr, &Idx, &Idx+1), Name);
+    return Insert(GetElementPtrInst::Create(Ptr, Idx), Name);
   }
   Value *CreateConstInBoundsGEP1_32(Value *Ptr, unsigned Idx0,
                                     const Twine &Name = "") {
     Value *Idx = ConstantInt::get(Type::getInt32Ty(Context), Idx0);
 
     if (Constant *PC = dyn_cast<Constant>(Ptr))
-      return Insert(Folder.CreateInBoundsGetElementPtr(PC, &Idx, 1), Name);
+      return Insert(Folder.CreateInBoundsGetElementPtr(PC, Idx), Name);
 
-    return Insert(GetElementPtrInst::CreateInBounds(Ptr, &Idx, &Idx+1), Name);
+    return Insert(GetElementPtrInst::CreateInBounds(Ptr, Idx), Name);
   }
   Value *CreateConstGEP2_32(Value *Ptr, unsigned Idx0, unsigned Idx1,
                     const Twine &Name = "") {
@@ -836,9 +839,9 @@ public:
     };
 
     if (Constant *PC = dyn_cast<Constant>(Ptr))
-      return Insert(Folder.CreateGetElementPtr(PC, Idxs, 2), Name);
+      return Insert(Folder.CreateGetElementPtr(PC, Idxs), Name);
 
-    return Insert(GetElementPtrInst::Create(Ptr, Idxs, Idxs+2), Name);
+    return Insert(GetElementPtrInst::Create(Ptr, Idxs), Name);
   }
   Value *CreateConstInBoundsGEP2_32(Value *Ptr, unsigned Idx0, unsigned Idx1,
                                     const Twine &Name = "") {
@@ -848,26 +851,26 @@ public:
     };
 
     if (Constant *PC = dyn_cast<Constant>(Ptr))
-      return Insert(Folder.CreateInBoundsGetElementPtr(PC, Idxs, 2), Name);
+      return Insert(Folder.CreateInBoundsGetElementPtr(PC, Idxs), Name);
 
-    return Insert(GetElementPtrInst::CreateInBounds(Ptr, Idxs, Idxs+2), Name);
+    return Insert(GetElementPtrInst::CreateInBounds(Ptr, Idxs), Name);
   }
   Value *CreateConstGEP1_64(Value *Ptr, uint64_t Idx0, const Twine &Name = "") {
     Value *Idx = ConstantInt::get(Type::getInt64Ty(Context), Idx0);
 
     if (Constant *PC = dyn_cast<Constant>(Ptr))
-      return Insert(Folder.CreateGetElementPtr(PC, &Idx, 1), Name);
+      return Insert(Folder.CreateGetElementPtr(PC, Idx), Name);
 
-    return Insert(GetElementPtrInst::Create(Ptr, &Idx, &Idx+1), Name);
+    return Insert(GetElementPtrInst::Create(Ptr, Idx), Name);
   }
   Value *CreateConstInBoundsGEP1_64(Value *Ptr, uint64_t Idx0,
                                     const Twine &Name = "") {
     Value *Idx = ConstantInt::get(Type::getInt64Ty(Context), Idx0);
 
     if (Constant *PC = dyn_cast<Constant>(Ptr))
-      return Insert(Folder.CreateInBoundsGetElementPtr(PC, &Idx, 1), Name);
+      return Insert(Folder.CreateInBoundsGetElementPtr(PC, Idx), Name);
 
-    return Insert(GetElementPtrInst::CreateInBounds(Ptr, &Idx, &Idx+1), Name);
+    return Insert(GetElementPtrInst::CreateInBounds(Ptr, Idx), Name);
   }
   Value *CreateConstGEP2_64(Value *Ptr, uint64_t Idx0, uint64_t Idx1,
                     const Twine &Name = "") {
@@ -877,9 +880,9 @@ public:
     };
 
     if (Constant *PC = dyn_cast<Constant>(Ptr))
-      return Insert(Folder.CreateGetElementPtr(PC, Idxs, 2), Name);
+      return Insert(Folder.CreateGetElementPtr(PC, Idxs), Name);
 
-    return Insert(GetElementPtrInst::Create(Ptr, Idxs, Idxs+2), Name);
+    return Insert(GetElementPtrInst::Create(Ptr, Idxs), Name);
   }
   Value *CreateConstInBoundsGEP2_64(Value *Ptr, uint64_t Idx0, uint64_t Idx1,
                                     const Twine &Name = "") {
@@ -889,9 +892,9 @@ public:
     };
 
     if (Constant *PC = dyn_cast<Constant>(Ptr))
-      return Insert(Folder.CreateInBoundsGetElementPtr(PC, Idxs, 2), Name);
+      return Insert(Folder.CreateInBoundsGetElementPtr(PC, Idxs), Name);
 
-    return Insert(GetElementPtrInst::CreateInBounds(Ptr, Idxs, Idxs+2), Name);
+    return Insert(GetElementPtrInst::CreateInBounds(Ptr, Idxs), Name);
   }
   Value *CreateStructGEP(Value *Ptr, unsigned Idx, const Twine &Name = "") {
     return CreateConstInBoundsGEP2_32(Ptr, 0, Idx, Name);
@@ -903,7 +906,7 @@ public:
     Value *gv = CreateGlobalString(Str, Name);
     Value *zero = ConstantInt::get(Type::getInt32Ty(Context), 0);
     Value *Args[] = { zero, zero };
-    return CreateInBoundsGEP(gv, Args, Args+2, Name);
+    return CreateInBoundsGEP(gv, Args, Name);
   }
 
   //===--------------------------------------------------------------------===//
@@ -1142,7 +1145,7 @@ public:
 
   CallInst *CreateCall(Value *Callee, ArrayRef<Value *> Args,
                        const Twine &Name = "") {
-    return Insert(CallInst::Create(Callee, Args, Name));
+    return Insert(CallInst::Create(Callee, Args), Name);
   }
 
   Value *CreateSelect(Value *C, Value *True, Value *False,
@@ -1199,6 +1202,11 @@ public:
       if (Constant *ValC = dyn_cast<Constant>(Val))
         return Insert(Folder.CreateInsertValue(AggC, ValC, Idxs), Name);
     return Insert(InsertValueInst::Create(Agg, Val, Idxs), Name);
+  }
+
+  LandingPadInst *CreateLandingPad(Type *Ty, Value *PersFn, unsigned NumClauses,
+                                   const Twine &Name = "") {
+    return Insert(LandingPadInst::Create(Ty, PersFn, NumClauses, Name));
   }
 
   //===--------------------------------------------------------------------===//

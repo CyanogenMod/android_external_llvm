@@ -15,7 +15,7 @@
 #include "PPC.h"
 #include "llvm/GlobalValue.h"
 #include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegistry.h"
+#include "llvm/Support/TargetRegistry.h"
 #include <cstdlib>
 
 #define GET_SUBTARGETINFO_TARGET_DESC
@@ -74,6 +74,7 @@ PPCSubtarget::PPCSubtarget(const std::string &TT, const std::string &CPU,
   , HasAltivec(false)
   , HasFSQRT(false)
   , HasSTFIWX(false)
+  , IsBookE(false)
   , HasLazyResolverStubs(false)
   , IsJITCodeModel(false)
   , TargetTriple(TT) {

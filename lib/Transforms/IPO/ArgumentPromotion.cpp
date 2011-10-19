@@ -382,7 +382,8 @@ bool ArgPromotion::isSafeToPromoteArgument(Argument *Arg, bool isByVal) const {
     User *U = *UI;
     Operands.clear();
     if (LoadInst *LI = dyn_cast<LoadInst>(U)) {
-      if (LI->isVolatile()) return false;  // Don't hack volatile loads
+      // Don't hack volatile/atomic loads
+      if (!LI->isSimple()) return false;
       Loads.push_back(LI);
       // Direct loads are equivalent to a GEP with a zero index and then a load.
       Operands.push_back(0);
@@ -410,7 +411,8 @@ bool ArgPromotion::isSafeToPromoteArgument(Argument *Arg, bool isByVal) const {
       for (Value::use_iterator UI = GEP->use_begin(), E = GEP->use_end();
            UI != E; ++UI)
         if (LoadInst *LI = dyn_cast<LoadInst>(*UI)) {
-          if (LI->isVolatile()) return false;  // Don't hack volatile loads
+          // Don't hack volatile/atomic loads
+          if (!LI->isSimple()) return false;
           Loads.push_back(LI);
         } else {
           // Other uses than load?
@@ -576,9 +578,7 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
       for (ScalarizeTable::iterator SI = ArgIndices.begin(),
              E = ArgIndices.end(); SI != E; ++SI) {
         // not allowed to dereference ->begin() if size() is 0
-        Params.push_back(GetElementPtrInst::getIndexedType(I->getType(),
-                                                           SI->begin(),
-                                                           SI->end()));
+        Params.push_back(GetElementPtrInst::getIndexedType(I->getType(), *SI));
         assert(Params.back());
       }
 
@@ -668,7 +668,7 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
               ConstantInt::get(Type::getInt32Ty(F->getContext()), 0), 0 };
         for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i) {
           Idxs[1] = ConstantInt::get(Type::getInt32Ty(F->getContext()), i);
-          Value *Idx = GetElementPtrInst::Create(*AI, Idxs, Idxs+2,
+          Value *Idx = GetElementPtrInst::Create(*AI, Idxs,
                                                  (*AI)->getName()+"."+utostr(i),
                                                  Call);
           // TODO: Tell AA about the new values?
@@ -699,8 +699,7 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
               ElTy = cast<CompositeType>(ElTy)->getTypeAtIndex(*II);
             }
             // And create a GEP to extract those indices.
-            V = GetElementPtrInst::Create(V, Ops.begin(), Ops.end(),
-                                          V->getName()+".idx", Call);
+            V = GetElementPtrInst::Create(V, Ops, V->getName()+".idx", Call);
             Ops.clear();
             AA.copyValue(OrigLoad->getOperand(0), V);
           }
@@ -801,7 +800,7 @@ CallGraphNode *ArgPromotion::DoPromotion(Function *F,
       for (unsigned i = 0, e = STy->getNumElements(); i != e; ++i) {
         Idxs[1] = ConstantInt::get(Type::getInt32Ty(F->getContext()), i);
         Value *Idx = 
-          GetElementPtrInst::Create(TheAlloca, Idxs, Idxs+2,
+          GetElementPtrInst::Create(TheAlloca, Idxs,
                                     TheAlloca->getName()+"."+Twine(i), 
                                     InsertPt);
         I2->setName(I->getName()+"."+Twine(i));

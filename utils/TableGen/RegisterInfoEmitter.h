@@ -16,7 +16,7 @@
 #ifndef REGISTER_INFO_EMITTER_H
 #define REGISTER_INFO_EMITTER_H
 
-#include "TableGenBackend.h"
+#include "llvm/TableGen/TableGenBackend.h"
 #include <vector>
 
 namespace llvm {
@@ -50,6 +50,7 @@ public:
 private:
   void EmitRegMapping(raw_ostream &o,
                       const std::vector<CodeGenRegister*> &Regs, bool isCtor);
+  void EmitRegClasses(raw_ostream &OS, CodeGenTarget &Target);
 };
 
 } // End llvm namespace

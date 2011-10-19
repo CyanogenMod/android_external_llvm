@@ -13,8 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "CodeGenDAGPatterns.h"
-#include "Error.h"
-#include "Record.h"
+#include "llvm/TableGen/Error.h"
+#include "llvm/TableGen/Record.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
@@ -1747,9 +1747,10 @@ TreePatternNode *TreePattern::ParseTreePattern(Init *TheInit, StringRef OpName){
     // TreePatternNode of its own.  For example:
     ///   (foo GPR, imm) -> (foo GPR, (imm))
     if (R->isSubClassOf("SDNode") || R->isSubClassOf("PatFrag"))
-      return ParseTreePattern(new DagInit(DI, "",
-                          std::vector<std::pair<Init*, std::string> >()),
-                              OpName);
+      return ParseTreePattern(
+        DagInit::get(DI, "",
+                     std::vector<std::pair<Init*, std::string> >()),
+        OpName);
 
     // Input argument?
     TreePatternNode *Res = new TreePatternNode(DI, 1);
@@ -1860,7 +1861,7 @@ TreePatternNode *TreePattern::ParseTreePattern(Init *TheInit, StringRef OpName){
     else // Otherwise, no chain.
       Operator = getDAGPatterns().get_intrinsic_wo_chain_sdnode();
 
-    TreePatternNode *IIDNode = new TreePatternNode(new IntInit(IID), 1);
+    TreePatternNode *IIDNode = new TreePatternNode(IntInit::get(IID), 1);
     Children.insert(Children.begin(), IIDNode);
   }
 
@@ -2192,7 +2193,7 @@ void CodeGenDAGPatterns::ParseDefaultOperands() {
       for (unsigned op = 0, e = DefaultInfo->getNumArgs(); op != e; ++op)
         Ops.push_back(std::make_pair(DefaultInfo->getArg(op),
                                      DefaultInfo->getArgName(op)));
-      DagInit *DI = new DagInit(SomeSDNode, "", Ops);
+      DagInit *DI = DagInit::get(SomeSDNode, "", Ops);
 
       // Create a TreePattern to parse this.
       TreePattern P(DefaultOps[iter][i], DI, false, *this);
@@ -2828,6 +2829,12 @@ void CodeGenDAGPatterns::InferInstructionFlags() {
     InstInfo.isBitcast = IsBitcast;
     InstInfo.hasSideEffects = HasSideEffects;
     InstInfo.Operands.isVariadic = IsVariadic;
+
+    // Sanity checks.
+    if (InstInfo.isReMaterializable && InstInfo.hasSideEffects)
+      throw TGError(InstInfo.TheDef->getLoc(), "The instruction " +
+                    InstInfo.TheDef->getName() +
+                    " is rematerializable AND has unmodeled side effects?");
   }
 }
 

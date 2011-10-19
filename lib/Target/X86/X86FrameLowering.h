@@ -41,6 +41,8 @@ public:
   void emitPrologue(MachineFunction &MF) const;
   void emitEpilogue(MachineFunction &MF, MachineBasicBlock &MBB) const;
 
+  void adjustForSegmentedStacks(MachineFunction &MF) const;
+
   void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
                                             RegScavenger *RS = NULL) const;
 
@@ -58,9 +60,7 @@ public:
   bool hasReservedCallFrame(const MachineFunction &MF) const;
 
   int getFrameIndexOffset(const MachineFunction &MF, int FI) const;
-
-  uint32_t getCompactUnwindEncoding(ArrayRef<MCCFIInstruction> Instrs,
-                                    int DataAlignmentFactor, bool IsEH) const;
+  uint32_t getCompactUnwindEncoding(MachineFunction &MF) const;
 };
 
 } // End llvm namespace

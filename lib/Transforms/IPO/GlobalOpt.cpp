@@ -195,12 +195,14 @@ static bool AnalyzeGlobal(const Value *V, GlobalStatus &GS,
       }
       if (const LoadInst *LI = dyn_cast<LoadInst>(I)) {
         GS.isLoaded = true;
-        if (LI->isVolatile()) return true;  // Don't hack on volatile loads.
+        // Don't hack on volatile/atomic loads.
+        if (!LI->isSimple()) return true;
       } else if (const StoreInst *SI = dyn_cast<StoreInst>(I)) {
         // Don't allow a store OF the address, only stores TO the address.
         if (SI->getOperand(0) == V) return true;
 
-        if (SI->isVolatile()) return true;  // Don't hack on volatile stores.
+        // Don't hack on volatile/atomic stores.
+        if (!SI->isSimple()) return true;
 
         // If this is a direct store to the global (i.e., the global is a scalar
         // value, not an aggregate), keep more specific information about
@@ -596,15 +598,14 @@ static GlobalVariable *SRAGlobal(GlobalVariable *GV, const TargetData &TD) {
         Idxs.push_back(NullInt);
         for (unsigned i = 3, e = CE->getNumOperands(); i != e; ++i)
           Idxs.push_back(CE->getOperand(i));
-        NewPtr = ConstantExpr::getGetElementPtr(cast<Constant>(NewPtr),
-                                                &Idxs[0], Idxs.size());
+        NewPtr = ConstantExpr::getGetElementPtr(cast<Constant>(NewPtr), Idxs);
       } else {
         GetElementPtrInst *GEPI = cast<GetElementPtrInst>(GEP);
         SmallVector<Value*, 8> Idxs;
         Idxs.push_back(NullInt);
         for (unsigned i = 3, e = GEPI->getNumOperands(); i != e; ++i)
           Idxs.push_back(GEPI->getOperand(i));
-        NewPtr = GetElementPtrInst::Create(NewPtr, Idxs.begin(), Idxs.end(),
+        NewPtr = GetElementPtrInst::Create(NewPtr, Idxs,
                                            GEPI->getName()+"."+Twine(Val),GEPI);
       }
     }
@@ -753,8 +754,7 @@ static bool OptimizeAwayTrappingUsesOfValue(Value *V, Constant *NewV) {
           break;
       if (Idxs.size() == GEPI->getNumOperands()-1)
         Changed |= OptimizeAwayTrappingUsesOfValue(GEPI,
-                          ConstantExpr::getGetElementPtr(NewV, &Idxs[0],
-                                                        Idxs.size()));
+                          ConstantExpr::getGetElementPtr(NewV, Idxs));
       if (GEPI->use_empty()) {
         Changed = true;
         GEPI->eraseFromParent();
@@ -1245,8 +1245,7 @@ static void RewriteHeapSROALoadUser(Instruction *LoadUser,
     GEPIdx.push_back(GEPI->getOperand(1));
     GEPIdx.append(GEPI->op_begin()+3, GEPI->op_end());
 
-    Value *NGEPI = GetElementPtrInst::Create(NewPtr,
-                                             GEPIdx.begin(), GEPIdx.end(),
+    Value *NGEPI = GetElementPtrInst::Create(NewPtr, GEPIdx,
                                              GEPI->getName(), GEPI);
     GEPI->replaceAllUsesWith(NGEPI);
     GEPI->eraseFromParent();
@@ -1260,11 +1259,9 @@ static void RewriteHeapSROALoadUser(Instruction *LoadUser,
   // already been seen first by another load, so its uses have already been
   // processed.
   PHINode *PN = cast<PHINode>(LoadUser);
-  bool Inserted;
-  DenseMap<Value*, std::vector<Value*> >::iterator InsertPos;
-  tie(InsertPos, Inserted) =
-    InsertedScalarizedValues.insert(std::make_pair(PN, std::vector<Value*>()));
-  if (!Inserted) return;
+  if (!InsertedScalarizedValues.insert(std::make_pair(PN,
+                                              std::vector<Value*>())).second)
+    return;
 
   // If this is the first time we've seen this PHI, recursively process all
   // users.
@@ -1379,8 +1376,7 @@ static GlobalVariable *PerformHeapAllocSRoA(GlobalVariable *GV, CallInst *CI,
   for (unsigned i = 0, e = FieldGlobals.size(); i != e; ++i) {
     Value *GVVal = new LoadInst(FieldGlobals[i], "tmp", NullPtrBlock);
     Value *Cmp = new ICmpInst(*NullPtrBlock, ICmpInst::ICMP_NE, GVVal,
-                              Constant::getNullValue(GVVal->getType()),
-                              "tmp");
+                              Constant::getNullValue(GVVal->getType()));
     BasicBlock *FreeBlock = BasicBlock::Create(Cmp->getContext(), "free_it",
                                                OrigBB->getParent());
     BasicBlock *NextBlock = BasicBlock::Create(Cmp->getContext(), "next",
@@ -2338,7 +2334,7 @@ static bool EvaluateFunction(Function *F, Constant *&RetVal,
     Constant *InstResult = 0;
 
     if (StoreInst *SI = dyn_cast<StoreInst>(CurInst)) {
-      if (SI->isVolatile()) return false;  // no volatile accesses.
+      if (!SI->isSimple()) return false;  // no volatile/atomic accesses.
       Constant *Ptr = getVal(Values, SI->getOperand(1));
       if (!isSimpleEnoughPointerToCommit(Ptr))
         // If this is too complex for us to commit, reject it.
@@ -2374,7 +2370,7 @@ static bool EvaluateFunction(Function *F, Constant *&RetVal,
               Constant *IdxZero = ConstantInt::get(IdxTy, 0, false);
               Constant * const IdxList[] = {IdxZero, IdxZero};
 
-              Ptr = ConstantExpr::getGetElementPtr(Ptr, IdxList, 2);
+              Ptr = ConstantExpr::getGetElementPtr(Ptr, IdxList);
             
             // If we can't improve the situation by introspecting NewTy,
             // we have to give up.
@@ -2411,11 +2407,11 @@ static bool EvaluateFunction(Function *F, Constant *&RetVal,
       for (User::op_iterator i = GEP->op_begin() + 1, e = GEP->op_end();
            i != e; ++i)
         GEPOps.push_back(getVal(Values, *i));
-      InstResult = cast<GEPOperator>(GEP)->isInBounds() ?
-          ConstantExpr::getInBoundsGetElementPtr(P, &GEPOps[0], GEPOps.size()) :
-          ConstantExpr::getGetElementPtr(P, &GEPOps[0], GEPOps.size());
+      InstResult =
+        ConstantExpr::getGetElementPtr(P, GEPOps,
+                                       cast<GEPOperator>(GEP)->isInBounds());
     } else if (LoadInst *LI = dyn_cast<LoadInst>(CurInst)) {
-      if (LI->isVolatile()) return false;  // no volatile accesses.
+      if (!LI->isSimple()) return false;  // no volatile/atomic accesses.
       InstResult = ComputeLoadResult(getVal(Values, LI->getOperand(0)),
                                      MutatedMemory);
       if (InstResult == 0) return false; // Could not evaluate load.
@@ -2511,7 +2507,7 @@ static bool EvaluateFunction(Function *F, Constant *&RetVal,
         CallStack.pop_back();  // return from fn.
         return true;  // We succeeded at evaluating this ctor!
       } else {
-        // invoke, unwind, unreachable.
+        // invoke, unwind, resume, unreachable.
         return false;  // Cannot handle this terminator.
       }
 

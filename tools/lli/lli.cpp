@@ -33,7 +33,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Signals.h"
-#include "llvm/Target/TargetSelect.h"
+#include "llvm/Support/TargetSelect.h"
 #include <cerrno>
 
 #ifdef __CYGWIN__
@@ -123,6 +123,23 @@ namespace {
             clEnumValN(Reloc::DynamicNoPIC, "dynamic-no-pic",
                        "Relocatable external references, non-relocatable code"),
             clEnumValEnd));
+
+  cl::opt<llvm::CodeModel::Model>
+  CMModel("code-model",
+          cl::desc("Choose code model"),
+          cl::init(CodeModel::JITDefault),
+          cl::values(clEnumValN(CodeModel::JITDefault, "default",
+                                "Target default JIT code model"),
+                     clEnumValN(CodeModel::Small, "small",
+                                "Small code model"),
+                     clEnumValN(CodeModel::Kernel, "kernel",
+                                "Kernel code model"),
+                     clEnumValN(CodeModel::Medium, "medium",
+                                "Medium code model"),
+                     clEnumValN(CodeModel::Large, "large",
+                                "Large code model"),
+                     clEnumValEnd));
+
 }
 
 static ExecutionEngine *EE = 0;
@@ -161,7 +178,7 @@ int main(int argc, char **argv, char * const *envp) {
   SMDiagnostic Err;
   Module *Mod = ParseIRFile(InputFile, Err, Context);
   if (!Mod) {
-    Err.Print(argv[0], errs());
+    Err.print(argv[0], errs());
     return 1;
   }
 
@@ -180,6 +197,7 @@ int main(int argc, char **argv, char * const *envp) {
   builder.setMCPU(MCPU);
   builder.setMAttrs(MAttrs);
   builder.setRelocationModel(RelocModel);
+  builder.setCodeModel(CMModel);
   builder.setErrorStr(&ErrorMsg);
   builder.setEngineKind(ForceInterpreter
                         ? EngineKind::Interpreter

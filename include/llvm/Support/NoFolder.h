@@ -177,22 +177,22 @@ public:
   // Memory Instructions
   //===--------------------------------------------------------------------===//
 
-  Constant *CreateGetElementPtr(Constant *C, Constant* const *IdxList,
-                                unsigned NumIdx) const {
-    return ConstantExpr::getGetElementPtr(C, IdxList, NumIdx);
+  Constant *CreateGetElementPtr(Constant *C,
+                                ArrayRef<Constant *> IdxList) const {
+    return ConstantExpr::getGetElementPtr(C, IdxList);
   }
-  Instruction *CreateGetElementPtr(Constant *C, Value* const *IdxList,
-                                   unsigned NumIdx) const {
-    return GetElementPtrInst::Create(C, IdxList, IdxList+NumIdx);
+  Instruction *CreateGetElementPtr(Constant *C,
+                                   ArrayRef<Value *> IdxList) const {
+    return GetElementPtrInst::Create(C, IdxList);
   }
 
-  Constant *CreateInBoundsGetElementPtr(Constant *C, Constant* const *IdxList,
-                                        unsigned NumIdx) const {
-    return ConstantExpr::getInBoundsGetElementPtr(C, IdxList, NumIdx);
+  Constant *CreateInBoundsGetElementPtr(Constant *C,
+                                        ArrayRef<Constant *> IdxList) const {
+    return ConstantExpr::getInBoundsGetElementPtr(C, IdxList);
   }
-  Instruction *CreateInBoundsGetElementPtr(Constant *C, Value* const *IdxList,
-                                           unsigned NumIdx) const {
-    return GetElementPtrInst::CreateInBounds(C, IdxList, IdxList+NumIdx);
+  Instruction *CreateInBoundsGetElementPtr(Constant *C,
+                                           ArrayRef<Value *> IdxList) const {
+    return GetElementPtrInst::CreateInBounds(C, IdxList);
   }
 
   //===--------------------------------------------------------------------===//

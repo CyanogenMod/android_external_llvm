@@ -103,6 +103,21 @@ production-quality compiler for C, Objective-C, C++ and Objective-C++ on x86
 (32- and 64-bit), and for darwin/arm targets.</p>
 
 <p>In the LLVM 3.0 time-frame, the Clang team has made many improvements:</p>
+
+<ul>
+  <li>Greatly improved support for building C++ applications, with greater stability and better diagnostics.</li>
+  
+  <li><a href="http://clang.llvm.org/cxx_status.html">Improved support</a> for the <a href="http://www.iso.org/iso/iso_catalogue/catalogue_tc/catalogue_detail.htm?csnumber=50372 ">C++ 2011</a> standard, including implementations of non-static data member initializers, alias templates, delegating constructors, the range-based for loop, and implicitly-generated move constructors and move assignment operators, among others.</li>
+
+  <li>Implemented support for some features of the upcoming C1x standard, including static assertions and generic selections.</li>
+  
+  <li>Better detection of include and linking paths for system headers and libraries, especially for Linux distributions.</li>
+
+  <li>Implemented support for <a href="http://clang.llvm.org/docs/AutomaticReferenceCounting.html">Automatic Reference Counting</a> for Objective-C.</li>
+
+  <li>Implemented a number of optimizations in <tt>libclang</tt>, the Clang C interface, to improve the performance of code completion and the mapping from source locations to abstract syntax tree nodes.</li>
+</ul>
+
   
 <p>If Clang rejects your code but another compiler accepts it, please take a
 look at the <a href="http://clang.llvm.org/compatibility.html">language
@@ -576,15 +591,30 @@ it run faster:</p>
 
 <div>
 
-<p>If you're already an LLVM user or developer with out-of-tree changes based
-on LLVM 2.9, this section lists some "gotchas" that you may run into upgrading
-from the previous release.</p>
+<p>If you're already an LLVM user or developer with out-of-tree changes based on
+   LLVM 2.9, this section lists some "gotchas" that you may run into upgrading
+   from the previous release.</p>
 
 <ul>
-<!--
-<li></li>
--->
+  <li>The <code>LLVMC</code> front end code was removed while separating
+      out language independence.</li>
+  <li>The <code>LowerSetJmp</code> pass wasn't used effectively by any
+      target and has been removed.</li>
+  <li>The old <code>TailDup</code> pass was not used in the standard pipeline
+      and was unable to update ssa form, so it has been removed.
+  <li>The syntax of volatile loads and stores in IR has been changed to
+      "<code>load volatile</code>"/"<code>store volatile</code>".  The old
+      syntax ("<code>volatile load</code>"/"<code>volatile store</code>")
+      is still accepted, but is now considered deprecated.</li>
 </ul>
+
+<h4>Windows (32-bit)</h4>
+<div>
+<ul>
+  <li>On Win32(MinGW32 and MSVC), Windows 2000 will not be supported.
+      Windows XP or higher is required.</li>
+</ul>
+</div>
 
 </div>
 
@@ -596,7 +626,7 @@ from the previous release.</p>
 <div>
 
 <p>In addition, many APIs have changed in this release.  Some of the major
-  LLVM API changes are:</p>
+   LLVM API changes are:</p>
 
 <ul>
 <li>The biggest and most pervasive change is that llvm::Type's are no longer
@@ -623,6 +653,8 @@ from the previous release.</p>
 <li><code>ComputeLinearIndex</code> (in <code>llvm/CodeGen/Analysis.h</code>)</li>
 <li><code>ConstantArray::get</code></li>
 <li><code>ConstantExpr::getExtractElement</code></li>
+<li><code>ConstantExpr::getGetElementPtr</code></li>
+<li><code>ConstantExpr::getInBoundsGetElementPtr</code></li>
 <li><code>ConstantExpr::getIndices</code></li>
 <li><code>ConstantExpr::getInsertElement</code></li>
 <li><code>ConstantExpr::getWithOperands</code></li>
@@ -637,13 +669,18 @@ from the previous release.</p>
 <li><code>FindInsertedValue</code> (in <code>llvm/Analysis/ValueTracking.h</code>)</li>
 <li><code>gep_type_begin</code> (in <code>llvm/Support/GetElementPtrTypeIterator.h</code>)</li>
 <li><code>gep_type_end</code> (in <code>llvm/Support/GetElementPtrTypeIterator.h</code>)</li>
-<li><code>IRBuilder::CreateCall</code></li>
-<li><code>IRBuilder::CreateExtractValue</code></li>
-<li><code>IRBuilder::CreateInsertValue</code></li>
-<li><code>IRBuilder::CreateInvoke</code></li>
+<li><code>GetElementPtrInst::Create</code></li>
+<li><code>GetElementPtrInst::CreateInBounds</code></li>
+<li><code>GetElementPtrInst::getIndexedType</code></li>
 <li><code>InsertValueInst::Create</code></li>
 <li><code>InsertValueInst::getIndices</code></li>
 <li><code>InvokeInst::Create</code></li>
+<li><code>IRBuilder::CreateCall</code></li>
+<li><code>IRBuilder::CreateExtractValue</code></li>
+<li><code>IRBuilder::CreateGEP</code></li>
+<li><code>IRBuilder::CreateInBoundsGEP</code></li>
+<li><code>IRBuilder::CreateInsertValue</code></li>
+<li><code>IRBuilder::CreateInvoke</code></li>
 <li><code>MDNode::get</code></li>
 <li><code>MDNode::getIfExists</code></li>
 <li><code>MDNode::getTemporary</code></li>
@@ -654,6 +691,40 @@ from the previous release.</p>
 
 <li>All forms of <code>StringMap::getOrCreateValue</code> have been remove
   except for the one which takes a <code>StringRef</code>.</li>
+
+<li>The <code>LLVMBuildUnwind</code> function from the C API was removed. The
+    LLVM <code>unwind</code> instruction has been deprecated for a long time and
+    isn't used by the current front-ends. So this was removed during the
+    exception handling rewrite.</li>
+
+<li>The <code>LLVMAddLowerSetJmpPass</code> function from the C API was removed
+    because the <code>LowerSetJmp</code> pass was removed.</li>
+
+<li>The <code>DIBuilder</code> interface used by front ends to encode debugging 
+    information in the LLVM IR now expects clients to use <code>DIBuilder::finalize()</code>
+    at the end of translation unit to complete debugging information encoding.</li>
+
+<li>The way the type system works has been rewritten: <code>PATypeHolder</code>
+and <code>OpaqueType</code> are gone, and all APIs deal with <code>Type*</code>
+instead of <code>const Type*</code>.
+If you need to create recursive structures, then create a named structure,
+and use <code>setBody()</code> when all its elements are built.
+Type merging and refining is gone too: named structures are not
+merged with other structures, even if their layout is identical.
+(of course anonymous structures are still uniqued by layout).
+</li>
+
+<li>TargetSelect.h moved to Support/ from Target/</li>
+
+<li>UpgradeIntrinsicCall no longer upgrades pre-2.9 intrinsic calls
+(for example <code>llvm.memset.i32</code>).</li>
+
+<li>It is mandatory to initialize all out-of-tree passes too and their dependencies now with
+<code>INITIALIZE_PASS{BEGIN,END,}</code> and <code>INITIALIZE_{PASS,AG}_DEPENDENCY</code>.</li>
+
+<li>The interface for MemDepResult in MemoryDependenceAnalysis has been enhanced
+    with new return types Unknown and NonFuncLocal, in addition to the existing
+    types Clobber, Def, and NonLocal.</li>
 
 </ul>
 </div>

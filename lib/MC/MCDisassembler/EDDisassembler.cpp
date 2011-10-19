@@ -28,15 +28,13 @@
 #include "llvm/MC/MCParser/AsmLexer.h"
 #include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/MC/MCParser/MCParsedAsmOperand.h"
+#include "llvm/MC/MCTargetAsmLexer.h"
+#include "llvm/MC/MCTargetAsmParser.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MemoryObject.h"
 #include "llvm/Support/SourceMgr.h"
-#include "llvm/Target/TargetAsmLexer.h"
-#include "llvm/Target/TargetAsmParser.h"
-#include "llvm/Target/TargetRegistry.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetSelect.h"
+#include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/TargetSelect.h"
 using namespace llvm;
 
 bool EDDisassembler::sInitialized = false;
@@ -107,12 +105,7 @@ void EDDisassembler::initialize() {
   sInitialized = true;
   
   InitializeAllTargetInfos();
-  InitializeAllTargets();
-  InitializeAllMCCodeGenInfos();
-  InitializeAllMCAsmInfos();
-  InitializeAllMCRegisterInfos();
-  InitializeAllMCSubtargetInfos();
-  InitializeAllAsmPrinters();
+  InitializeAllTargetMCs();
   InitializeAllAsmParsers();
   InitializeAllDisassemblers();
 }
@@ -173,29 +166,24 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   if (!Tgt)
     return;
   
-  std::string CPU;
-  std::string featureString;
-  TargetMachine.reset(Tgt->createTargetMachine(tripleString, CPU,
-                                               featureString));
+  MRI.reset(Tgt->createMCRegInfo(tripleString));
 
-  const TargetRegisterInfo *registerInfo = TargetMachine->getRegisterInfo();
-  
-  if (!registerInfo)
+  if (!MRI)
     return;
-    
-  initMaps(*registerInfo);
+
+  initMaps(*MRI);
   
   AsmInfo.reset(Tgt->createMCAsmInfo(tripleString));
   
   if (!AsmInfo)
     return;
 
-  MRI.reset(Tgt->createMCRegInfo(tripleString));
-
-  if (!MRI)
+  STI.reset(Tgt->createMCSubtargetInfo(tripleString, "", ""));
+  
+  if (!STI)
     return;
 
-  Disassembler.reset(Tgt->createMCDisassembler());
+  Disassembler.reset(Tgt->createMCDisassembler(*STI));
   
   if (!Disassembler)
     return;
@@ -204,16 +192,16 @@ EDDisassembler::EDDisassembler(CPUKey &key) :
   
   InstString.reset(new std::string);
   InstStream.reset(new raw_string_ostream(*InstString));
-  InstPrinter.reset(Tgt->createMCInstPrinter(LLVMSyntaxVariant, *AsmInfo));
+  InstPrinter.reset(Tgt->createMCInstPrinter(LLVMSyntaxVariant, *AsmInfo, *STI));
   
   if (!InstPrinter)
     return;
     
   GenericAsmLexer.reset(new AsmLexer(*AsmInfo));
-  SpecificAsmLexer.reset(Tgt->createAsmLexer(*AsmInfo));
+  SpecificAsmLexer.reset(Tgt->createMCAsmLexer(*MRI, *AsmInfo));
   SpecificAsmLexer->InstallLexer(*GenericAsmLexer);
   
-  initMaps(*TargetMachine->getRegisterInfo());
+  initMaps(*MRI);
     
   Valid = true;
 }
@@ -256,14 +244,17 @@ EDInst *EDDisassembler::createInst(EDByteReaderCallback byteReader,
   MCInst* inst = new MCInst;
   uint64_t byteSize;
   
-  if (!Disassembler->getInstruction(*inst,
-                                    byteSize,
-                                    memoryObject,
-                                    address,
-                                    ErrorStream)) {
+  MCDisassembler::DecodeStatus S;
+  S = Disassembler->getInstruction(*inst, byteSize, memoryObject, address,
+                                   ErrorStream, nulls());
+  switch (S) {
+  case MCDisassembler::Fail:
+  case MCDisassembler::SoftFail:
+    // FIXME: Do something different on soft failure mode?
     delete inst;
     return NULL;
-  } else {
+    
+  case MCDisassembler::Success: {
     const llvm::EDInstInfo *thisInstInfo = NULL;
 
     if (InstInfos) {
@@ -273,9 +264,11 @@ EDInst *EDDisassembler::createInst(EDByteReaderCallback byteReader,
     EDInst* sdInst = new EDInst(inst, byteSize, *this, thisInstInfo);
     return sdInst;
   }
+  }
+  return NULL;
 }
 
-void EDDisassembler::initMaps(const TargetRegisterInfo &registerInfo) {
+void EDDisassembler::initMaps(const MCRegisterInfo &registerInfo) {
   unsigned numRegisters = registerInfo.getNumRegs();
   unsigned registerIndex;
   
@@ -334,7 +327,7 @@ bool EDDisassembler::registerIsProgramCounter(unsigned registerID) {
 int EDDisassembler::printInst(std::string &str, MCInst &inst) {
   PrinterMutex.acquire();
   
-  InstPrinter->printInst(&inst, *InstStream);
+  InstPrinter->printInst(&inst, *InstStream, "");
   InstStream->flush();
   str = *InstString;
   InstString->clear();
@@ -344,13 +337,9 @@ int EDDisassembler::printInst(std::string &str, MCInst &inst) {
   return 0;
 }
 
-static void diag_handler(const SMDiagnostic &diag,
-                         void *context)
-{
-  if (context) {
-    EDDisassembler *disassembler = static_cast<EDDisassembler*>(context);
-    diag.Print("", disassembler->ErrorStream);
-  }
+static void diag_handler(const SMDiagnostic &diag, void *context) {
+  if (context)
+    diag.print("", static_cast<EDDisassembler*>(context)->ErrorStream);
 }
 
 int EDDisassembler::parseInst(SmallVectorImpl<MCParsedAsmOperand*> &operands,
@@ -377,16 +366,16 @@ int EDDisassembler::parseInst(SmallVectorImpl<MCParsedAsmOperand*> &operands,
   SourceMgr sourceMgr;
   sourceMgr.setDiagHandler(diag_handler, static_cast<void*>(this));
   sourceMgr.AddNewSourceBuffer(buf, SMLoc()); // ownership of buf handed over
-  MCContext context(*AsmInfo, *MRI, NULL, NULL);
+  MCContext context(*AsmInfo, *MRI, NULL);
   OwningPtr<MCStreamer> streamer(createNullStreamer(context));
-  OwningPtr<MCAsmParser> genericParser(createMCAsmParser(*Tgt, sourceMgr,
+  OwningPtr<MCAsmParser> genericParser(createMCAsmParser(sourceMgr,
                                                          context, *streamer,
                                                          *AsmInfo));
 
   StringRef triple = tripleFromArch(Key.Arch);
   OwningPtr<MCSubtargetInfo> STI(Tgt->createMCSubtargetInfo(triple, "", ""));
-  OwningPtr<TargetAsmParser> TargetParser(Tgt->createAsmParser(*STI,
-                                                               *genericParser));
+  OwningPtr<MCTargetAsmParser>
+    TargetParser(Tgt->createMCAsmParser(*STI, *genericParser));
   
   AsmToken OpcodeToken = genericParser->Lex();
   AsmToken NextToken = genericParser->Lex();  // consume next token, because specificParser expects us to
