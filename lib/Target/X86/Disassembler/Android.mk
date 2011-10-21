@@ -1,13 +1,14 @@
 LOCAL_PATH := $(call my-dir)
 
 x86_disassembler_TBLGEN_TABLES := \
-	X86GenDisassemblerTables.inc	\
-	X86GenEDInfo.inc	\
-	X86GenRegisterInfo.inc
+  X86GenDisassemblerTables.inc \
+  X86GenEDInfo.inc \
+  X86GenInstrInfo.inc \
+  X86GenRegisterInfo.inc
 
 x86_disassembler_SRC_FILES := \
-	X86Disassembler.cpp	\
-	X86DisassemblerDecoder.c
+  X86Disassembler.cpp \
+  X86DisassemblerDecoder.c
 
 # For the device
 # =====================================================

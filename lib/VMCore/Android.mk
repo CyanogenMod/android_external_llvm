@@ -1,40 +1,40 @@
 LOCAL_PATH:= $(call my-dir)
 
-vmcore_SRC_FILES :=	\
-	AsmWriter.cpp	\
-	Attributes.cpp	\
-	AutoUpgrade.cpp	\
-	BasicBlock.cpp	\
-	ConstantFold.cpp	\
-	Constants.cpp	\
-	Core.cpp	\
-	DebugLoc.cpp	\
-	DebugInfoProbe.cpp \
-	Dominators.cpp	\
-	Function.cpp	\
-	GVMaterializer.cpp	\
-	Globals.cpp	\
-	IRBuilder.cpp	\
-	InlineAsm.cpp	\
-	Instruction.cpp	\
-	Instructions.cpp	\
-	IntrinsicInst.cpp	\
-	LLVMContext.cpp	\
-	LLVMContextImpl.cpp	\
-	LeakDetector.cpp	\
-	Metadata.cpp	\
-	Module.cpp	\
-	Pass.cpp	\
-	PassManager.cpp	\
-	PassRegistry.cpp	\
-	PrintModulePass.cpp	\
-	Type.cpp	\
-	Use.cpp	\
-	User.cpp\
-	Value.cpp	\
-	ValueSymbolTable.cpp	\
-	ValueTypes.cpp	\
-	Verifier.cpp
+vmcore_SRC_FILES := \
+  AsmWriter.cpp \
+  Attributes.cpp \
+  AutoUpgrade.cpp \
+  BasicBlock.cpp \
+  ConstantFold.cpp \
+  Constants.cpp \
+  Core.cpp \
+  DebugLoc.cpp \
+  DebugInfoProbe.cpp \
+  Dominators.cpp \
+  Function.cpp \
+  GVMaterializer.cpp \
+  Globals.cpp \
+  IRBuilder.cpp \
+  InlineAsm.cpp \
+  Instruction.cpp \
+  Instructions.cpp \
+  IntrinsicInst.cpp \
+  LLVMContext.cpp \
+  LLVMContextImpl.cpp \
+  LeakDetector.cpp \
+  Metadata.cpp \
+  Module.cpp \
+  Pass.cpp \
+  PassManager.cpp \
+  PassRegistry.cpp \
+  PrintModulePass.cpp \
+  Type.cpp \
+  Use.cpp \
+  User.cpp \
+  Value.cpp \
+  ValueSymbolTable.cpp \
+  ValueTypes.cpp \
+  Verifier.cpp
 
 # For the host
 # =====================================================

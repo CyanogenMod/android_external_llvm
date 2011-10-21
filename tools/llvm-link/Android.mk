@@ -7,10 +7,12 @@ llvm_link_STATIC_LIBRARIES := \
   libLLVMLinker \
   libLLVMBitReader \
   libLLVMBitWriter \
-  libLLVMCore \
-  libLLVMSupport \
   libLLVMAsmParser \
-  libLLVMTransformUtils
+  libLLVMTransformUtils \
+  libLLVMAnalysis \
+  libLLVMTarget \
+  libLLVMCore \
+  libLLVMSupport
 
 #===---------------------------------------------------------------===
 # llvm-link command line tool (host)

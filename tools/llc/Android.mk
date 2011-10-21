@@ -54,8 +54,8 @@ LOCAL_STATIC_LIBRARIES := \
   libLLVMX86AsmParser \
   libLLVMX86CodeGen \
   libLLVMX86Disassembler \
-  libLLVMX86AsmPrinter \
   libLLVMX86Desc \
+  libLLVMX86AsmPrinter \
   libLLVMX86Utils \
   $(llvm_llc_STATIC_LIBRARIES)
 LOCAL_LDLIBS += -lpthread -lm -ldl

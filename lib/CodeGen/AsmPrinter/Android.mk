@@ -1,7 +1,7 @@
 LOCAL_PATH := $(call my-dir)
 
-codegen_asmprinter_SRC_FILES :=	\
-	AsmPrinter.cpp
+codegen_asmprinter_SRC_FILES := \
+  AsmPrinter.cpp
 
 # For the host
 # =====================================================

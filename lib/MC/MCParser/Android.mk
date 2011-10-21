@@ -1,15 +1,15 @@
 LOCAL_PATH:= $(call my-dir)
 
-mc_parser_SRC_FILES :=	\
-	AsmLexer.cpp	\
-	AsmParser.cpp	\
-	COFFAsmParser.cpp \
-        DarwinAsmParser.cpp	\
-        ELFAsmParser.cpp	\
-	MCAsmLexer.cpp	\
-	MCAsmParser.cpp	\
-        MCAsmParserExtension.cpp	\
-	TargetAsmParser.cpp
+mc_parser_SRC_FILES := \
+  AsmLexer.cpp \
+  AsmParser.cpp \
+  COFFAsmParser.cpp \
+  DarwinAsmParser.cpp \
+  ELFAsmParser.cpp \
+  MCAsmLexer.cpp \
+  MCAsmParser.cpp \
+  MCAsmParserExtension.cpp \
+  MCTargetAsmParser.cpp
 
 # For the host
 # =====================================================

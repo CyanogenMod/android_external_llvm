@@ -8,7 +8,7 @@ analysis_SRC_FILES := \
   AliasSetTracker.cpp \
   Analysis.cpp \
   BasicAliasAnalysis.cpp \
-  BlockFrequency.cpp \
+  BlockFrequencyInfo.cpp \
   BranchProbabilityInfo.cpp \
   CFGPrinter.cpp \
   CaptureTracking.cpp \
@@ -16,8 +16,8 @@ analysis_SRC_FILES := \
   DIBuilder.cpp \
   DbgInfoPrinter.cpp \
   DebugInfo.cpp \
-  DominanceFrontier.cpp \
   DomPrinter.cpp \
+  DominanceFrontier.cpp \
   IVUsers.cpp \
   InlineCost.cpp \
   InstCount.cpp \
@@ -27,29 +27,29 @@ analysis_SRC_FILES := \
   LazyValueInfo.cpp \
   LibCallAliasAnalysis.cpp \
   LibCallSemantics.cpp \
-  Loads.cpp \
-  NoAliasAnalysis.cpp \
-  MemDepPrinter.cpp \
-  MemoryBuiltins.cpp \
-  MemoryDependenceAnalysis.cpp \
-  RegionInfo.cpp \
-  RegionPass.cpp \
-  RegionPrinter.cpp \
   Lint.cpp \
+  Loads.cpp \
   LoopDependenceAnalysis.cpp \
   LoopInfo.cpp \
   LoopPass.cpp \
+  MemDepPrinter.cpp \
+  MemoryBuiltins.cpp \
+  MemoryDependenceAnalysis.cpp \
   ModuleDebugInfoPrinter.cpp \
+  NoAliasAnalysis.cpp \
+  PHITransAddr.cpp \
   PathNumbering.cpp \
   PathProfileInfo.cpp \
   PathProfileVerifier.cpp \
-  PHITransAddr.cpp \
   PostDominators.cpp \
   ProfileEstimatorPass.cpp \
   ProfileInfo.cpp \
   ProfileInfoLoader.cpp \
   ProfileInfoLoaderPass.cpp \
   ProfileVerifierPass.cpp \
+  RegionInfo.cpp \
+  RegionPass.cpp \
+  RegionPrinter.cpp \
   ScalarEvolution.cpp \
   ScalarEvolutionAliasAnalysis.cpp \
   ScalarEvolutionExpander.cpp \

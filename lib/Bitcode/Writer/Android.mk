@@ -1,6 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 
-bitcode_writer_SRC_FILES :=	\
+bitcode_writer_SRC_FILES := \
 	BitWriter.cpp	\
 	BitcodeWriter.cpp	\
 	BitcodeWriterPass.cpp	\

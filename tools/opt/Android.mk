@@ -14,18 +14,19 @@ llvm_opt_SRC_FILES := \
   opt.cpp
 
 llvm_opt_STATIC_LIBRARIES := \
-  libLLVMipo \
   libLLVMScalarOpts \
   libLLVMInstCombine \
   libLLVMInstrumentation \
-  libLLVMTransformUtils \
-  libLLVMipa \
-  libLLVMAnalysis \
-  libLLVMTarget \
+  libLLVMMCParser \
   libLLVMMC \
   libLLVMAsmParser \
   libLLVMBitWriter \
   libLLVMBitReader \
+  libLLVMipa \
+  libLLVMipo \
+  libLLVMTransformUtils \
+  libLLVMAnalysis \
+  libLLVMTarget \
   libLLVMCore \
   libLLVMSupport
 

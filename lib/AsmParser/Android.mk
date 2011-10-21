@@ -1,9 +1,9 @@
 LOCAL_PATH:= $(call my-dir)
 
-asm_parser_SRC_FILES :=	\
-	LLLexer.cpp	\
-	LLParser.cpp	\
-	Parser.cpp
+asm_parser_SRC_FILES := \
+  LLLexer.cpp \
+  LLParser.cpp \
+  Parser.cpp
 
 # For the host
 # =====================================================

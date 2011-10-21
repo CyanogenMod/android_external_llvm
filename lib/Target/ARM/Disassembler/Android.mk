@@ -1,15 +1,14 @@
 LOCAL_PATH := $(call my-dir)
 
 arm_disassembler_TBLGEN_TABLES := \
-    ARMGenDecoderTables.inc \
-    ARMGenEDInfo.inc \
-    ARMGenInstrInfo.inc \
-    ARMGenSubtargetInfo.inc \
-    ARMGenRegisterInfo.inc
+  ARMGenDisassemblerTables.inc \
+  ARMGenEDInfo.inc \
+  ARMGenInstrInfo.inc \
+  ARMGenSubtargetInfo.inc \
+  ARMGenRegisterInfo.inc
 
 arm_disassembler_SRC_FILES := \
-    ARMDisassembler.cpp \
-    ARMDisassemblerCore.cpp
+  ARMDisassembler.cpp
 
 # For the device
 # =====================================================

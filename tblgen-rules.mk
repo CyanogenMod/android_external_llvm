@@ -70,6 +70,16 @@ $(intermediates)/%GenCodeEmitter.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,emitter)
 endif
 
+ifneq ($(filter %GenMCCodeEmitter.inc,$(tblgen_gen_tables)),)
+$(intermediates)/%GenMCCodeEmitter.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
+	$(call transform-td-to-out,emitter -mc-emitter)
+endif
+
+ifneq ($(filter %GenMCPseudoLowering.inc,$(tblgen_gen_tables)),)
+$(intermediates)/%GenMCPseudoLowering.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
+	$(call transform-td-to-out,pseudo-lowering)
+endif
+
 ifneq ($(filter %GenDAGISel.inc,$(tblgen_gen_tables)),)
 $(intermediates)/%GenDAGISel.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,dag-isel)
@@ -90,8 +100,8 @@ $(intermediates)/%GenFastISel.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,fast-isel)
 endif
 
-ifneq ($(filter %GenSubtarget.inc,$(tblgen_gen_tables)),)
-$(intermediates)/%GenSubtarget.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
+ifneq ($(filter %GenSubtargetInfo.inc,$(tblgen_gen_tables)),)
+$(intermediates)/%GenSubtargetInfo.inc: $(tblgen_source_dir)/%.td $(TBLGEN)
 	$(call transform-td-to-out,subtarget)
 endif
 

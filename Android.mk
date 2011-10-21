@@ -18,6 +18,7 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
   lib/MC \
   lib/MC/MCParser \
   lib/Support \
+  lib/TableGen \
   lib/Target \
   lib/Target/ARM \
   lib/Target/ARM/AsmParser \

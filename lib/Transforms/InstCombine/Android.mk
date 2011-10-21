@@ -1,19 +1,19 @@
 LOCAL_PATH:= $(call my-dir)
 
-transforms_inst_combine_SRC_FILES :=	\
-	InstCombineAddSub.cpp	\
-	InstCombineAndOrXor.cpp	\
-	InstCombineCalls.cpp	\
-	InstCombineCasts.cpp	\
-	InstCombineCompares.cpp	\
-	InstCombineLoadStoreAlloca.cpp	\
-	InstCombineMulDivRem.cpp	\
-	InstCombinePHI.cpp	\
-	InstCombineSelect.cpp	\
-	InstCombineShifts.cpp	\
-	InstCombineSimplifyDemanded.cpp	\
-	InstCombineVectorOps.cpp	\
-	InstructionCombining.cpp
+transforms_inst_combine_SRC_FILES := \
+  InstCombineAddSub.cpp \
+  InstCombineAndOrXor.cpp \
+  InstCombineCalls.cpp \
+  InstCombineCasts.cpp \
+  InstCombineCompares.cpp \
+  InstCombineLoadStoreAlloca.cpp \
+  InstCombineMulDivRem.cpp \
+  InstCombinePHI.cpp \
+  InstCombineSelect.cpp \
+  InstCombineShifts.cpp \
+  InstCombineSimplifyDemanded.cpp \
+  InstCombineVectorOps.cpp \
+  InstructionCombining.cpp
 
 # For the host
 # =====================================================
