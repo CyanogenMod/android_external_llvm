@@ -13,7 +13,6 @@ codegen_selectiondag_SRC_FILES := \
   LegalizeVectorOps.cpp \
   LegalizeVectorTypes.cpp \
   ScheduleDAGFast.cpp \
-  ScheduleDAGList.cpp \
   ScheduleDAGRRList.cpp \
   ScheduleDAGSDNodes.cpp \
   SelectionDAG.cpp \

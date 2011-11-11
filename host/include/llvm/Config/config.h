@@ -473,7 +473,7 @@
 #define LLVM_ETCDIR "/usr/local/google/llvm/etc/llvm"
 
 /* Host triple we were built on */
-#define LLVM_HOSTTRIPLE "i386-unknown-linux"
+#define LLVM_DEFAULT_TARGET_TRIPLE "i386-unknown-linux"
 
 /* Installation directory for include files */
 #define LLVM_INCLUDEDIR "/usr/local/google/llvm/include"

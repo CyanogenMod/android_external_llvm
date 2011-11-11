@@ -1,7 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 
 tablegen_SRC_FILES := \
-  ARMDecoderEmitter.cpp \
   AsmMatcherEmitter.cpp \
   AsmWriterEmitter.cpp \
   AsmWriterInst.cpp \

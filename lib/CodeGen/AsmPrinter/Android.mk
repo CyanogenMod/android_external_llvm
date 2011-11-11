@@ -13,6 +13,7 @@ LOCAL_SRC_FILES :=	\
 	AsmPrinterInlineAsm.cpp	\
 	ARMException.cpp	\
 	DIE.cpp	\
+	DwarfAccelTable.cpp \
 	DwarfCFIException.cpp \
 	DwarfCompileUnit.cpp \
 	DwarfDebug.cpp	\

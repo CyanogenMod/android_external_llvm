@@ -39,6 +39,7 @@ codegen_SRC_FILES := \
   LocalStackSlotAllocation.cpp \
   MachineBasicBlock.cpp \
   MachineBlockFrequencyInfo.cpp \
+  MachineBlockPlacement.cpp \
   MachineBranchProbabilityInfo.cpp \
   MachineCSE.cpp \
   MachineDominators.cpp \
