@@ -81,6 +81,11 @@ LLVMBuildMakeFrag := $(PROJ_OBJ_ROOT)/Makefile.llvmbuild
 LLVMConfigLibraryDependenciesInc := \
 	$(PROJ_OBJ_ROOT)/tools/llvm-config-2/LibraryDependencies.inc
 
+# This is for temporary backwards compatibility.
+ifndef TARGET_NATIVE_ARCH
+TARGET_NATIVE_ARCH := $(ARCH)
+endif
+
 # The rule to create the LLVMBuild Makefile fragment as well as the llvm-config
 # library table.
 #
@@ -92,7 +97,7 @@ LLVMConfigLibraryDependenciesInc := \
 $(LLVMBuildMakeFrag): $(PROJ_SRC_ROOT)/Makefile.rules
 	$(Echo) Constructing LLVMBuild project information.
 	$(Verb) $(LLVMBuildTool) \
-	  --native-target "$(ARCH)" \
+	  --native-target "$(TARGET_NATIVE_ARCH)" \
 	  --enable-targets "$(TARGETS_TO_BUILD)" \
 	  --write-library-table $(LLVMConfigLibraryDependenciesInc) \
 	  --write-make-fragment $(LLVMBuildMakeFrag)
@@ -301,8 +306,10 @@ else
   endif
 endif
 
-#CXX.Flags +=  -stdlib=libc++
-#LD.Flags +=  -stdlib=libc++
+ifeq ($(ENABLE_LIBCPP),1)
+  CXX.Flags +=  -stdlib=libc++
+  LD.Flags +=  -stdlib=libc++
+endif
 
 ifeq ($(ENABLE_PROFILING),1)
   BuildMode := $(BuildMode)+Profile
@@ -504,8 +511,12 @@ endif
 #--------------------------------------------------------------------
 # Full Paths To Compiled Tools and Utilities
 #--------------------------------------------------------------------
-EchoCmd  = $(ECHO) llvm[$(MAKELEVEL)]:
-Echo     = @$(EchoCmd)
+EchoCmd  := $(ECHO) llvm[$(MAKELEVEL)]:
+ifdef BUILD_DIRS_ONLY
+EchoCmd  := $(EchoCmd) "(build tools)":
+endif
+
+Echo     := @$(EchoCmd)
 ifndef LLVMAS
 LLVMAS   := $(LLVMToolDir)/llvm-as$(EXEEXT)
 endif
@@ -516,7 +527,11 @@ ifndef LLVM_TBLGEN
     LLVM_TBLGEN   := $(LLVMToolDir)/llvm-tblgen$(EXEEXT)
   endif
 endif
-LLVM_CONFIG := $(LLVMToolDir)/llvm-config-2$(EXEEXT)
+ifeq ($(LLVM_CROSS_COMPILING),1)
+  LLVM_CONFIG := $(BuildLLVMToolDir)/llvm-config-2$(BUILD_EXEEXT)
+else
+  LLVM_CONFIG := $(LLVMToolDir)/llvm-config-2$(EXEEXT)
+endif
 ifndef LLVMLD
 LLVMLD    := $(LLVMToolDir)/llvm-ld$(EXEEXT)
 endif
@@ -702,35 +717,18 @@ else
   Compile.Wrapper :=
 endif
 
-ifeq ($(BUILD_COMPONENT), 1)
-  Compile.C     = $(Compile.Wrapper) \
-	          $(BUILD_CC) $(CPP.Flags) $(C.Flags) $(CFLAGS) $(CPPFLAGS) \
-                  $(TargetCommonOpts) $(CompileCommonOpts) -c
-  Compile.CXX   = $(Compile.Wrapper) \
-	          $(BUILD_CXX) $(CPP.Flags) $(CXX.Flags) $(CXXFLAGS) \
-		  $(CPPFLAGS) \
-                  $(TargetCommonOpts) $(CompileCommonOpts) -c
-  Preprocess.CXX= $(Compile.Wrapper) \
-	          $(BUILD_CXX) $(CPP.Flags) $(CPPFLAGS) $(TargetCommonOpts) \
-                  $(CompileCommonOpts) $(CXX.Flags) -E
-  Link          = $(Compile.Wrapper) \
-	          $(BUILD_CXX) $(CPP.Flags) $(CXX.Flags) $(CXXFLAGS) \
-		  $(LD.Flags) $(LDFLAGS) \
-                  $(TargetCommonOpts) $(CompileCommonOpts) $(Strip)
-else
-  Compile.C     = $(Compile.Wrapper) \
+Compile.C     = $(Compile.Wrapper) \
 	          $(CC) $(CPP.Flags) $(C.Flags) $(CFLAGS) $(CPPFLAGS) \
-                  $(TargetCommonOpts) $(CompileCommonOpts) -c
-  Compile.CXX   = $(Compile.Wrapper) \
+                $(TargetCommonOpts) $(CompileCommonOpts) -c
+Compile.CXX   = $(Compile.Wrapper) \
 	          $(CXX) $(CPP.Flags) $(CXX.Flags) $(CXXFLAGS) $(CPPFLAGS) \
-                  $(TargetCommonOpts) $(CompileCommonOpts) -c
-  Preprocess.CXX= $(Compile.Wrapper) \
+                $(TargetCommonOpts) $(CompileCommonOpts) -c
+Preprocess.CXX= $(Compile.Wrapper) \
 	          $(CXX) $(CPP.Flags) $(TargetCommonOpts) $(CPPFLAGS) \
-                  $(CompileCommonOpts) $(CXX.Flags) -E
-  Link          = $(Compile.Wrapper) \
+                $(CompileCommonOpts) $(CXX.Flags) -E
+Link          = $(Compile.Wrapper) \
 	          $(CXX) $(CPP.Flags) $(CXX.Flags) $(CXXFLAGS) $(LD.Flags) \
-                  $(LDFLAGS) $(TargetCommonOpts)  $(CompileCommonOpts) $(Strip)
-endif
+                $(LDFLAGS) $(TargetCommonOpts)  $(CompileCommonOpts) $(Strip)
 
 BCCompile.C   = $(LLVMCC) $(CPP.Flags) $(C.Flags) $(CFLAGS) $(CPPFLAGS) \
                 $(TargetCommonOpts) $(CompileCommonOpts)

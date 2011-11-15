@@ -172,52 +172,62 @@
 @ CHECK: vmov r0, r1, d16            @ encoding: [0x30,0x0b,0x51,0xec]
         vmov    r0, r1, d16
 
-@ CHECK: vldr.64 d17, [r0]           @ encoding: [0x00,0x1b,0xd0,0xed]
+@ CHECK: vldr d17, [r0]           @ encoding: [0x00,0x1b,0xd0,0xed]
+@ CHECK: vldr s0, [lr]            @ encoding: [0x00,0x0a,0x9e,0xed]
+@ CHECK: vldr d0, [lr]            @ encoding: [0x00,0x0b,0x9e,0xed]
+
         vldr.64	d17, [r0]
+	vldr.i32 s0, [lr]
+	vldr.d d0, [lr]
 
-@ CHECK: vldr.64 d1, [r2, #32]       @ encoding: [0x08,0x1b,0x92,0xed]
-@ CHECK: vldr.64 d1, [r2, #-32]      @ encoding: [0x08,0x1b,0x12,0xed]
+@ CHECK: vldr d1, [r2, #32]       @ encoding: [0x08,0x1b,0x92,0xed]
+@ CHECK: vldr d1, [r2, #-32]      @ encoding: [0x08,0x1b,0x12,0xed]
         vldr.64	d1, [r2, #32]
-        vldr.64	d1, [r2, #-32]
+        vldr.f64	d1, [r2, #-32]
 
-@ CHECK: vldr.64 d2, [r3]            @ encoding: [0x00,0x2b,0x93,0xed]
+@ CHECK: vldr d2, [r3]            @ encoding: [0x00,0x2b,0x93,0xed]
         vldr.64 d2, [r3]
 
-@ CHECK: vldr.64 d3, [pc]            @ encoding: [0x00,0x3b,0x9f,0xed]
-@ CHECK: vldr.64 d3, [pc]            @ encoding: [0x00,0x3b,0x9f,0xed]
-@ CHECK: vldr.64 d3, [pc, #-0]            @ encoding: [0x00,0x3b,0x1f,0xed]
+@ CHECK: vldr d3, [pc]            @ encoding: [0x00,0x3b,0x9f,0xed]
+@ CHECK: vldr d3, [pc]            @ encoding: [0x00,0x3b,0x9f,0xed]
+@ CHECK: vldr d3, [pc, #-0]            @ encoding: [0x00,0x3b,0x1f,0xed]
         vldr.64 d3, [pc]
         vldr.64 d3, [pc,#0]
         vldr.64 d3, [pc,#-0]
 
-@ CHECK: vldr.32 s13, [r0]           @ encoding: [0x00,0x6a,0xd0,0xed]
+@ CHECK: vldr s13, [r0]           @ encoding: [0x00,0x6a,0xd0,0xed]
         vldr.32	s13, [r0]
 
-@ CHECK: vldr.32 s1, [r2, #32]       @ encoding: [0x08,0x0a,0xd2,0xed]
-@ CHECK: vldr.32 s1, [r2, #-32]      @ encoding: [0x08,0x0a,0x52,0xed]
+@ CHECK: vldr s1, [r2, #32]       @ encoding: [0x08,0x0a,0xd2,0xed]
+@ CHECK: vldr s1, [r2, #-32]      @ encoding: [0x08,0x0a,0x52,0xed]
         vldr.32	s1, [r2, #32]
         vldr.32	s1, [r2, #-32]
 
-@ CHECK: vldr.32 s2, [r3]            @ encoding: [0x00,0x1a,0x93,0xed]
+@ CHECK: vldr s2, [r3]            @ encoding: [0x00,0x1a,0x93,0xed]
         vldr.32 s2, [r3]
 
-@ CHECK: vldr.32 s5, [pc]            @ encoding: [0x00,0x2a,0xdf,0xed]
-@ CHECK: vldr.32 s5, [pc]            @ encoding: [0x00,0x2a,0xdf,0xed]
-@ CHECK: vldr.32 s5, [pc, #-0]            @ encoding: [0x00,0x2a,0x5f,0xed]
+@ CHECK: vldr s5, [pc]            @ encoding: [0x00,0x2a,0xdf,0xed]
+@ CHECK: vldr s5, [pc]            @ encoding: [0x00,0x2a,0xdf,0xed]
+@ CHECK: vldr s5, [pc, #-0]            @ encoding: [0x00,0x2a,0x5f,0xed]
         vldr.32 s5, [pc]
         vldr.32 s5, [pc,#0]
         vldr.32 s5, [pc,#-0]
 
-@ CHECK: vstr.64 d4, [r1]            @ encoding: [0x00,0x4b,0x81,0xed]
-@ CHECK: vstr.64 d4, [r1, #24]       @ encoding: [0x06,0x4b,0x81,0xed]
-@ CHECK: vstr.64 d4, [r1, #-24]      @ encoding: [0x06,0x4b,0x01,0xed]
+@ CHECK: vstr d4, [r1]            @ encoding: [0x00,0x4b,0x81,0xed]
+@ CHECK: vstr d4, [r1, #24]       @ encoding: [0x06,0x4b,0x81,0xed]
+@ CHECK: vstr d4, [r1, #-24]      @ encoding: [0x06,0x4b,0x01,0xed]
+@ CHECK: vstr s0, [lr]            @ encoding: [0x00,0x0a,0x8e,0xed]
+@ CHECK: vstr d0, [lr]            @ encoding: [0x00,0x0b,0x8e,0xed]
+
         vstr.64 d4, [r1]
         vstr.64 d4, [r1, #24]
         vstr.64 d4, [r1, #-24]
+	vstr s0, [lr]
+	vstr d0, [lr]
 
-@ CHECK: vstr.32 s4, [r1]            @ encoding: [0x00,0x2a,0x81,0xed]
-@ CHECK: vstr.32 s4, [r1, #24]       @ encoding: [0x06,0x2a,0x81,0xed]
-@ CHECK: vstr.32 s4, [r1, #-24]      @ encoding: [0x06,0x2a,0x01,0xed]
+@ CHECK: vstr s4, [r1]            @ encoding: [0x00,0x2a,0x81,0xed]
+@ CHECK: vstr s4, [r1, #24]       @ encoding: [0x06,0x2a,0x81,0xed]
+@ CHECK: vstr s4, [r1, #-24]      @ encoding: [0x06,0x2a,0x01,0xed]
         vstr.32 s4, [r1]
         vstr.32 s4, [r1, #24]
         vstr.32 s4, [r1, #-24]
@@ -229,8 +239,10 @@
 
 @ CHECK: vstmia r1, {d2, d3, d4, d5, d6, d7} @ encoding: [0x0c,0x2b,0x81,0xec]
 @ CHECK: vstmia	r1, {s2, s3, s4, s5, s6, s7} @ encoding: [0x06,0x1a,0x81,0xec]
+@ CHECK: vpush	{d8, d9, d10, d11, d12, d13, d14, d15} @ encoding: [0x10,0x8b,0x2d,0xed]
         vstmia  r1, {d2,d3-d6,d7}
         vstmia  r1, {s2,s3-s6,s7}
+        vstmdb sp!, {q4-q7}
 
 @ CHECK: vcvtr.s32.f64  s0, d0 @ encoding: [0x40,0x0b,0xbd,0xee]
 @ CHECK: vcvtr.s32.f32  s0, s1 @ encoding: [0x60,0x0a,0xbd,0xee]

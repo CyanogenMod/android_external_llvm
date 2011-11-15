@@ -714,7 +714,7 @@ public:
   bool isBitfield() const { return Kind == k_BitfieldDescriptor; }
   bool isPostIdxRegShifted() const { return Kind == k_PostIndexRegister; }
   bool isPostIdxReg() const {
-    return Kind == k_PostIndexRegister && PostIdxReg.ShiftTy == ARM_AM::no_shift;
+    return Kind == k_PostIndexRegister && PostIdxReg.ShiftTy ==ARM_AM::no_shift;
   }
   bool isMemNoOffset(bool alignOK = false) const {
     if (!isMemory())
@@ -1101,7 +1101,8 @@ public:
 
   void addRegShiftedRegOperands(MCInst &Inst, unsigned N) const {
     assert(N == 3 && "Invalid number of operands!");
-    assert(isRegShiftedReg() && "addRegShiftedRegOperands() on non RegShiftedReg!");
+    assert(isRegShiftedReg() &&
+           "addRegShiftedRegOperands() on non RegShiftedReg!");
     Inst.addOperand(MCOperand::CreateReg(RegShiftedReg.SrcReg));
     Inst.addOperand(MCOperand::CreateReg(RegShiftedReg.ShiftReg));
     Inst.addOperand(MCOperand::CreateImm(
@@ -1110,7 +1111,8 @@ public:
 
   void addRegShiftedImmOperands(MCInst &Inst, unsigned N) const {
     assert(N == 2 && "Invalid number of operands!");
-    assert(isRegShiftedImm() && "addRegShiftedImmOperands() on non RegShiftedImm!");
+    assert(isRegShiftedImm() &&
+           "addRegShiftedImmOperands() on non RegShiftedImm!");
     Inst.addOperand(MCOperand::CreateReg(RegShiftedImm.SrcReg));
     Inst.addOperand(MCOperand::CreateImm(
       ARM_AM::getSORegOpc(RegShiftedImm.ShiftTy, RegShiftedImm.ShiftImm)));
@@ -1189,26 +1191,6 @@ public:
     Inst.addOperand(MCOperand::CreateImm(CE->getValue() / 4));
   }
 
-  void addImm0_255Operands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
-  void addImm0_7Operands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
-  void addImm0_15Operands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
-  void addImm0_31Operands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
   void addImm1_16Operands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     // The constant encodes as the immediate-1, and we store in the instruction
@@ -1225,26 +1207,6 @@ public:
     Inst.addOperand(MCOperand::CreateImm(CE->getValue() - 1));
   }
 
-  void addImm0_32Operands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
-  void addImm0_65535Operands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
-  void addImm0_65535ExprOperands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
-  void addImm24bitOperands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
   void addImmThumbSROperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     // The constant encodes as the immediate, except for 32, which encodes as
@@ -1254,11 +1216,6 @@ public:
     Inst.addOperand(MCOperand::CreateImm((Imm == 32 ? 0 : Imm)));
   }
 
-  void addPKHLSLImmOperands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
   void addPKHASRImmOperands(MCInst &Inst, unsigned N) const {
     assert(N == 1 && "Invalid number of operands!");
     // An ASR value of 32 encodes as 0, so that's how we want to add it to
@@ -1266,16 +1223,6 @@ public:
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     int Val = CE->getValue();
     Inst.addOperand(MCOperand::CreateImm(Val == 32 ? 0 : Val));
-  }
-
-  void addARMSOImmOperands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
-  }
-
-  void addT2SOImmOperands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
   }
 
   void addT2SOImmNotOperands(MCInst &Inst, unsigned N) const {
@@ -1292,11 +1239,6 @@ public:
     // negation in the assembly source, so twiddle it here.
     const MCConstantExpr *CE = dyn_cast<MCConstantExpr>(getImm());
     Inst.addOperand(MCOperand::CreateImm(~CE->getValue()));
-  }
-
-  void addSetEndImmOperands(MCInst &Inst, unsigned N) const {
-    assert(N == 1 && "Invalid number of operands!");
-    addExpr(Inst, getImm());
   }
 
   void addMemBarrierOptOperands(MCInst &Inst, unsigned N) const {
@@ -1486,8 +1428,9 @@ public:
 
   void addMemRegOffsetOperands(MCInst &Inst, unsigned N) const {
     assert(N == 3 && "Invalid number of operands!");
-    unsigned Val = ARM_AM::getAM2Opc(Memory.isNegative ? ARM_AM::sub : ARM_AM::add,
-                                     Memory.ShiftImm, Memory.ShiftType);
+    unsigned Val =
+      ARM_AM::getAM2Opc(Memory.isNegative ? ARM_AM::sub : ARM_AM::add,
+                        Memory.ShiftImm, Memory.ShiftType);
     Inst.addOperand(MCOperand::CreateReg(Memory.BaseRegNum));
     Inst.addOperand(MCOperand::CreateReg(Memory.OffsetRegNum));
     Inst.addOperand(MCOperand::CreateImm(Val));
@@ -2410,6 +2353,29 @@ static unsigned getNextRegister(unsigned Reg) {
   }
 }
 
+// Return the low-subreg of a given Q register.
+static unsigned getDRegFromQReg(unsigned QReg) {
+  switch (QReg) {
+  default: llvm_unreachable("expected a Q register!");
+  case ARM::Q0:  return ARM::D0;
+  case ARM::Q1:  return ARM::D2;
+  case ARM::Q2:  return ARM::D4;
+  case ARM::Q3:  return ARM::D6;
+  case ARM::Q4:  return ARM::D8;
+  case ARM::Q5:  return ARM::D10;
+  case ARM::Q6:  return ARM::D12;
+  case ARM::Q7:  return ARM::D14;
+  case ARM::Q8:  return ARM::D16;
+  case ARM::Q9:  return ARM::D19;
+  case ARM::Q10: return ARM::D20;
+  case ARM::Q11: return ARM::D22;
+  case ARM::Q12: return ARM::D24;
+  case ARM::Q13: return ARM::D26;
+  case ARM::Q14: return ARM::D28;
+  case ARM::Q15: return ARM::D30;
+  }
+}
+
 /// Parse a register list.
 bool ARMAsmParser::
 parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
@@ -2425,6 +2391,16 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   if (Reg == -1)
     return Error(RegLoc, "register expected");
 
+  // The reglist instructions have at most 16 registers, so reserve
+  // space for that many.
+  SmallVector<std::pair<unsigned, SMLoc>, 16> Registers;
+
+  // Allow Q regs and just interpret them as the two D sub-registers.
+  if (ARMMCRegisterClasses[ARM::QPRRegClassID].contains(Reg)) {
+    Reg = getDRegFromQReg(Reg);
+    Registers.push_back(std::pair<unsigned, SMLoc>(Reg, RegLoc));
+    ++Reg;
+  }
   const MCRegisterClass *RC;
   if (ARMMCRegisterClasses[ARM::GPRRegClassID].contains(Reg))
     RC = &ARMMCRegisterClasses[ARM::GPRRegClassID];
@@ -2435,10 +2411,7 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   else
     return Error(RegLoc, "invalid register in register list");
 
-  // The reglist instructions have at most 16 registers, so reserve
-  // space for that many.
-  SmallVector<std::pair<unsigned, SMLoc>, 16> Registers;
-  // Store the first register.
+  // Store the register.
   Registers.push_back(std::pair<unsigned, SMLoc>(Reg, RegLoc));
 
   // This starts immediately after the first register token in the list,
@@ -2452,6 +2425,9 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
       int EndReg = tryParseRegister();
       if (EndReg == -1)
         return Error(EndLoc, "register expected");
+      // Allow Q regs and just interpret them as the two D sub-registers.
+      if (ARMMCRegisterClasses[ARM::QPRRegClassID].contains(EndReg))
+        EndReg = getDRegFromQReg(EndReg) + 1;
       // If the register is the same as the start reg, there's nothing
       // more to do.
       if (Reg == EndReg)
@@ -2476,6 +2452,12 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
     Reg = tryParseRegister();
     if (Reg == -1)
       return Error(RegLoc, "register expected");
+    // Allow Q regs and just interpret them as the two D sub-registers.
+    bool isQReg = false;
+    if (ARMMCRegisterClasses[ARM::QPRRegClassID].contains(Reg)) {
+      Reg = getDRegFromQReg(Reg);
+      isQReg = true;
+    }
     // The register must be in the same register class as the first.
     if (!RC->contains(Reg))
       return Error(RegLoc, "invalid register in register list");
@@ -2489,6 +2471,8 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
         Reg != OldReg + 1)
       return Error(RegLoc, "non-contiguous register range");
     Registers.push_back(std::pair<unsigned, SMLoc>(Reg, RegLoc));
+    if (isQReg)
+      Registers.push_back(std::pair<unsigned, SMLoc>(++Reg, RegLoc));
   }
 
   SMLoc E = Parser.getTok().getLoc();
@@ -2498,29 +2482,6 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
 
   Operands.push_back(ARMOperand::CreateRegList(Registers, S, E));
   return false;
-}
-
-// Return the low-subreg of a given Q register.
-static unsigned getDRegFromQReg(unsigned QReg) {
-  switch (QReg) {
-  default: llvm_unreachable("expected a Q register!");
-  case ARM::Q0:  return ARM::D0;
-  case ARM::Q1:  return ARM::D2;
-  case ARM::Q2:  return ARM::D4;
-  case ARM::Q3:  return ARM::D6;
-  case ARM::Q4:  return ARM::D8;
-  case ARM::Q5:  return ARM::D10;
-  case ARM::Q6:  return ARM::D12;
-  case ARM::Q7:  return ARM::D14;
-  case ARM::Q8:  return ARM::D16;
-  case ARM::Q9:  return ARM::D19;
-  case ARM::Q10: return ARM::D20;
-  case ARM::Q11: return ARM::D22;
-  case ARM::Q12: return ARM::D24;
-  case ARM::Q13: return ARM::D26;
-  case ARM::Q14: return ARM::D28;
-  case ARM::Q15: return ARM::D30;
-  }
 }
 
 // parse a vector register list
@@ -4161,6 +4122,22 @@ bool ARMAsmParser::shouldOmitCCOutOperand(StringRef Mnemonic,
   return false;
 }
 
+static bool isDataTypeToken(StringRef Tok) {
+  return Tok == ".8" || Tok == ".16" || Tok == ".32" || Tok == ".64" ||
+    Tok == ".i8" || Tok == ".i16" || Tok == ".i32" || Tok == ".i64" ||
+    Tok == ".u8" || Tok == ".u16" || Tok == ".u32" || Tok == ".u64" ||
+    Tok == ".s8" || Tok == ".s16" || Tok == ".s32" || Tok == ".s64" ||
+    Tok == ".p8" || Tok == ".p16" || Tok == ".f32" || Tok == ".f64" ||
+    Tok == ".f" || Tok == ".d";
+}
+
+// FIXME: This bit should probably be handled via an explicit match class
+// in the .td files that matches the suffix instead of having it be
+// a literal string token the way it is now.
+static bool doesIgnoreDataTypeSuffix(StringRef Mnemonic, StringRef DT) {
+  return Mnemonic.startswith("vldm") || Mnemonic.startswith("vstm");
+}
+
 /// Parse an arm instruction mnemonic followed by its operands.
 bool ARMAsmParser::ParseInstruction(StringRef Name, SMLoc NameLoc,
                                SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
@@ -4265,9 +4242,12 @@ bool ARMAsmParser::ParseInstruction(StringRef Name, SMLoc NameLoc,
     Next = Name.find('.', Start + 1);
     StringRef ExtraToken = Name.slice(Start, Next);
 
-    // For now, we're only parsing Thumb1 (for the most part), so
-    // just ignore ".n" qualifiers. We'll use them to restrict
-    // matching when we do Thumb2.
+    // Some NEON instructions have an optional datatype suffix that is
+    // completely ignored. Check for that.
+    if (isDataTypeToken(ExtraToken) &&
+        doesIgnoreDataTypeSuffix(Mnemonic, ExtraToken))
+      continue;
+
     if (ExtraToken != ".n") {
       SMLoc Loc = SMLoc::getFromPointer(NameLoc.getPointer() + Start);
       Operands.push_back(ARMOperand::CreateToken(ExtraToken, Loc));

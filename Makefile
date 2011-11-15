@@ -27,7 +27,7 @@ LEVEL := .
 ifneq ($(findstring llvmCore, $(RC_ProjectName)),llvmCore)  # Normal build (not "Apple-style").
 
 ifeq ($(BUILD_DIRS_ONLY),1)
-  DIRS := lib/Support lib/TableGen utils
+  DIRS := lib/Support lib/TableGen utils tools/llvm-config-2
   OPTIONAL_DIRS := tools/clang/utils/TableGen
 else
   DIRS := lib/Support lib/TableGen utils lib/VMCore lib tools/llvm-shlib \
@@ -126,11 +126,14 @@ cross-compile-build-tools:
 	 $(MAKE) -C BuildTools \
 	  BUILD_DIRS_ONLY=1 \
 	  UNIVERSAL= \
+	  TARGET_NATIVE_ARCH="$(TARGET_NATIVE_ARCH)" \
+	  TARGETS_TO_BUILD="$(TARGETS_TO_BUILD)" \
 	  ENABLE_OPTIMIZED=$(ENABLE_OPTIMIZED) \
 	  ENABLE_PROFILING=$(ENABLE_PROFILING) \
 	  ENABLE_COVERAGE=$(ENABLE_COVERAGE) \
 	  DISABLE_ASSERTIONS=$(DISABLE_ASSERTIONS) \
 	  ENABLE_EXPENSIVE_CHECKS=$(ENABLE_EXPENSIVE_CHECKS) \
+	  ENABLE_LIBCPP=$(ENABLE_LIBCPP) \
 	  CFLAGS= \
 	  CXXFLAGS= \
 	) || exit 1;

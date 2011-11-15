@@ -10,13 +10,13 @@
 #define DEBUG_TYPE "arm-disassembler"
 
 #include "ARM.h"
-#include "ARMRegisterInfo.h"
 #include "ARMSubtarget.h"
 #include "MCTargetDesc/ARMAddressingModes.h"
 #include "MCTargetDesc/ARMMCExpr.h"
 #include "MCTargetDesc/ARMBaseInfo.h"
 #include "llvm/MC/EDInstInfo.h"
 #include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstrDesc.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler.h"
@@ -2267,10 +2267,6 @@ static DecodeStatus DecodeVSTInstruction(llvm::MCInst &Inst, unsigned Insn,
 
   // Second input register
   switch (Inst.getOpcode()) {
-    case ARM::VST1q8:
-    case ARM::VST1q16:
-    case ARM::VST1q32:
-    case ARM::VST1q64:
     case ARM::VST1d8T:
     case ARM::VST1d16T:
     case ARM::VST1d32T:
