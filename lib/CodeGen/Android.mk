@@ -72,10 +72,9 @@ codegen_SRC_FILES := \
   RegAllocBasic.cpp \
   RegAllocFast.cpp \
   RegAllocGreedy.cpp \
-  RegAllocLinearScan.cpp \
   RegAllocPBQP.cpp \
-  RegisterCoalescer.cpp \
   RegisterClassInfo.cpp \
+  RegisterCoalescer.cpp \
   RegisterScavenging.cpp \
   RenderMachineFunction.cpp \
   ScheduleDAG.cpp \
@@ -99,8 +98,7 @@ codegen_SRC_FILES := \
   TargetLoweringObjectFileImpl.cpp \
   TwoAddressInstructionPass.cpp \
   UnreachableBlockElim.cpp \
-  VirtRegMap.cpp \
-  VirtRegRewriter.cpp
+  VirtRegMap.cpp
 
 # For the host
 # =====================================================
