@@ -20,6 +20,7 @@ transforms_utils_SRC_FILES := \
   LowerInvoke.cpp \
   LowerSwitch.cpp \
   Mem2Reg.cpp \
+  ModuleUtils.cpp \
   PromoteMemoryToRegister.cpp \
   SSAUpdater.cpp \
   SimplifyCFG.cpp \

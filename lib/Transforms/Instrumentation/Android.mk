@@ -1,12 +1,13 @@
 LOCAL_PATH:= $(call my-dir)
 
 instrumentation_SRC_FILES := \
+  AddressSanitizer.cpp \
   EdgeProfiling.cpp \
   GCOVProfiling.cpp \
   Instrumentation.cpp \
-  ProfilingUtils.cpp \
+  OptimalEdgeProfiling.cpp \
   PathProfiling.cpp \
-  OptimalEdgeProfiling.cpp
+  ProfilingUtils.cpp
 
 # For the host
 # =====================================================
@@ -17,6 +18,7 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(instrumentation_SRC_FILES)
 
 include $(LLVM_HOST_BUILD_MK)
+include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the target
@@ -28,4 +30,5 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(instrumentation_SRC_FILES)
 
 include $(LLVM_DEVICE_BUILD_MK)
+include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
