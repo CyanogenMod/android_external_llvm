@@ -37,7 +37,6 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineMemOperand.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -197,8 +196,6 @@ class ARMFastISel : public FastISel {
 
     // Call handling routines.
   private:
-    bool FastEmitExtend(ISD::NodeType Opc, EVT DstVT, unsigned Src, EVT SrcVT,
-                        unsigned &ResultReg);
     CCAssignFn *CCAssignFnForCall(CallingConv::ID CC, bool Return);
     bool ProcessCallArgs(SmallVectorImpl<Value*> &Args,
                          SmallVectorImpl<unsigned> &ArgRegs,
@@ -687,6 +684,8 @@ unsigned ARMFastISel::TargetMaterializeConstant(const Constant *C) {
   return 0;
 }
 
+// TODO: unsigned ARMFastISel::TargetMaterializeFloatZero(const ConstantFP *CF);
+
 unsigned ARMFastISel::TargetMaterializeAlloca(const AllocaInst *AI) {
   // Don't handle dynamic allocas.
   if (!FuncInfo.StaticAllocaMap.count(AI)) return 0;
@@ -1115,7 +1114,7 @@ bool ARMFastISel::ARMEmitStore(EVT VT, unsigned SrcReg, Address &Addr) {
   // Create the base instruction, then add the operands.
   MachineInstrBuilder MIB = BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                                     TII.get(StrOpc))
-                            .addReg(SrcReg, getKillRegState(true));
+                            .addReg(SrcReg);
   AddLoadStoreOperands(VT, Addr, MIB, MachineMemOperand::MOStore, useAM3);
   return true;
 }
@@ -1304,6 +1303,8 @@ bool ARMFastISel::ARMEmitCmp(const Value *Src1Value, const Value *Src2Value,
   int Imm = 0;
   bool UseImm = false;
   bool isNegativeImm = false;
+  // FIXME: At -O0 we don't have anything that canonicalizes operand order.
+  // Thus, Src1Value may be a ConstantInt, but we're missing it.
   if (const ConstantInt *ConstInt = dyn_cast<ConstantInt>(Src2Value)) {
     if (SrcVT == MVT::i32 || SrcVT == MVT::i16 || SrcVT == MVT::i8 ||
         SrcVT == MVT::i1) {
@@ -1669,12 +1670,6 @@ bool ARMFastISel::SelectBinaryOp(const Instruction *I, unsigned ISDOpcode) {
   if (isFloat && !Subtarget->hasVFP2())
     return false;
 
-  unsigned Op1 = getRegForValue(I->getOperand(0));
-  if (Op1 == 0) return false;
-
-  unsigned Op2 = getRegForValue(I->getOperand(1));
-  if (Op2 == 0) return false;
-
   unsigned Opc;
   bool is64bit = VT == MVT::f64 || VT == MVT::i64;
   switch (ISDOpcode) {
@@ -1689,6 +1684,12 @@ bool ARMFastISel::SelectBinaryOp(const Instruction *I, unsigned ISDOpcode) {
       Opc = is64bit ? ARM::VMULD : ARM::VMULS;
       break;
   }
+  unsigned Op1 = getRegForValue(I->getOperand(0));
+  if (Op1 == 0) return false;
+
+  unsigned Op2 = getRegForValue(I->getOperand(1));
+  if (Op2 == 0) return false;
+
   unsigned ResultReg = createResultReg(TLI.getRegClassFor(VT));
   AddOptionalDefs(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                           TII.get(Opc), ResultReg)
@@ -1698,18 +1699,6 @@ bool ARMFastISel::SelectBinaryOp(const Instruction *I, unsigned ISDOpcode) {
 }
 
 // Call Handling Code
-
-bool ARMFastISel::FastEmitExtend(ISD::NodeType Opc, EVT DstVT, unsigned Src,
-                                 EVT SrcVT, unsigned &ResultReg) {
-  unsigned RR = FastEmit_r(SrcVT.getSimpleVT(), DstVT.getSimpleVT(), Opc,
-                           Src, /*TODO: Kill=*/false);
-
-  if (RR != 0) {
-    ResultReg = RR;
-    return true;
-  } else
-    return false;
-}
 
 // This is largely taken directly from CCAssignFnForNode - we don't support
 // varargs in FastISel so that part has been removed.
@@ -2119,9 +2108,6 @@ bool ARMFastISel::SelectCall(const Instruction *I,
     if (IntrMemName && e-i <= 2)
       break;
 
-    unsigned Arg = getRegForValue(*i);
-    if (Arg == 0)
-      return false;
     ISD::ArgFlagsTy Flags;
     unsigned AttrInd = i - CS.arg_begin() + 1;
     if (CS.paramHasAttr(AttrInd, Attribute::SExt))
@@ -2141,6 +2127,11 @@ bool ARMFastISel::SelectCall(const Instruction *I,
     if (!isTypeLegal(ArgTy, ArgVT) && ArgVT != MVT::i16 && ArgVT != MVT::i8 &&
         ArgVT != MVT::i1)
       return false;
+
+    unsigned Arg = getRegForValue(*i);
+    if (Arg == 0)
+      return false;
+
     unsigned OriginalAlignment = TD.getABITypeAlignment(ArgTy);
     Flags.setOrigAlign(OriginalAlignment);
 

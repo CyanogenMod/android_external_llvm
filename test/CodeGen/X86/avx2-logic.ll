@@ -53,3 +53,44 @@ define <32 x i8> @vpblendvb(<32 x i8> %x, <32 x i8> %y) {
   %min = select <32 x i1> %min_is_x, <32 x i8> %x, <32 x i8> %y
   ret <32 x i8> %min
 }
+
+define <8 x i32> @signd(<8 x i32> %a, <8 x i32> %b) nounwind {
+entry:
+; CHECK: signd:
+; CHECK: psignd
+; CHECK-NOT: sub
+; CHECK: ret
+  %b.lobit = ashr <8 x i32> %b, <i32 31, i32 31, i32 31, i32 31, i32 31, i32 31, i32 31, i32 31>
+  %sub = sub nsw <8 x i32> zeroinitializer, %a
+  %0 = xor <8 x i32> %b.lobit, <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
+  %1 = and <8 x i32> %a, %0
+  %2 = and <8 x i32> %b.lobit, %sub
+  %cond = or <8 x i32> %1, %2
+  ret <8 x i32> %cond
+}
+
+define <8 x i32> @blendvb(<8 x i32> %b, <8 x i32> %a, <8 x i32> %c) nounwind {
+entry:
+; CHECK: blendvb:
+; CHECK: pblendvb
+; CHECK: ret
+  %b.lobit = ashr <8 x i32> %b, <i32 31, i32 31, i32 31, i32 31, i32 31, i32 31, i32 31, i32 31>
+  %sub = sub nsw <8 x i32> zeroinitializer, %a
+  %0 = xor <8 x i32> %b.lobit, <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
+  %1 = and <8 x i32> %c, %0
+  %2 = and <8 x i32> %a, %b.lobit
+  %cond = or <8 x i32> %1, %2
+  ret <8 x i32> %cond
+}
+
+define <8 x i32> @allOnes() nounwind {
+; CHECK: vpcmpeqd
+; CHECK-NOT: vinsert
+        ret <8 x i32> <i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1, i32 -1>
+}
+
+define <16 x i16> @allOnes2() nounwind {
+; CHECK: vpcmpeqd
+; CHECK-NOT: vinsert
+        ret <16 x i16> <i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1, i16 -1>
+}

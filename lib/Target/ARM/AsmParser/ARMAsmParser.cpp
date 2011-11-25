@@ -1946,18 +1946,15 @@ void ARMOperand::print(raw_ostream &OS) const {
     break;
   case k_ShiftedRegister:
     OS << "<so_reg_reg "
-       << RegShiftedReg.SrcReg
-       << ARM_AM::getShiftOpcStr(ARM_AM::getSORegShOp(RegShiftedReg.ShiftImm))
-       << ", " << RegShiftedReg.ShiftReg << ", "
-       << ARM_AM::getSORegOffset(RegShiftedReg.ShiftImm)
-       << ">";
+       << RegShiftedReg.SrcReg << " "
+       << ARM_AM::getShiftOpcStr(RegShiftedReg.ShiftTy)
+       << " " << RegShiftedReg.ShiftReg << ">";
     break;
   case k_ShiftedImmediate:
     OS << "<so_reg_imm "
-       << RegShiftedImm.SrcReg
-       << ARM_AM::getShiftOpcStr(ARM_AM::getSORegShOp(RegShiftedImm.ShiftImm))
-       << ", " << ARM_AM::getSORegOffset(RegShiftedImm.ShiftImm)
-       << ">";
+       << RegShiftedImm.SrcReg << " "
+       << ARM_AM::getShiftOpcStr(RegShiftedImm.ShiftTy)
+       << " #" << RegShiftedImm.ShiftImm << ">";
     break;
   case k_RotateImmediate:
     OS << "<ror " << " #" << (RotImm.Imm * 8) << ">";
@@ -2366,7 +2363,7 @@ static unsigned getDRegFromQReg(unsigned QReg) {
   case ARM::Q6:  return ARM::D12;
   case ARM::Q7:  return ARM::D14;
   case ARM::Q8:  return ARM::D16;
-  case ARM::Q9:  return ARM::D19;
+  case ARM::Q9:  return ARM::D18;
   case ARM::Q10: return ARM::D20;
   case ARM::Q11: return ARM::D22;
   case ARM::Q12: return ARM::D24;
@@ -2420,7 +2417,7 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   while (Parser.getTok().is(AsmToken::Comma) ||
          Parser.getTok().is(AsmToken::Minus)) {
     if (Parser.getTok().is(AsmToken::Minus)) {
-      Parser.Lex(); // Eat the comma.
+      Parser.Lex(); // Eat the minus.
       SMLoc EndLoc = Parser.getTok().getLoc();
       int EndReg = tryParseRegister();
       if (EndReg == -1)
@@ -2487,10 +2484,31 @@ parseRegisterList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
 // parse a vector register list
 ARMAsmParser::OperandMatchResultTy ARMAsmParser::
 parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
-  if(Parser.getTok().isNot(AsmToken::LCurly))
+  SMLoc S = Parser.getTok().getLoc();
+  // As an extension (to match gas), support a plain D register or Q register
+  // (without encosing curly braces) as a single or double entry list,
+  // respectively.
+  if (Parser.getTok().is(AsmToken::Identifier)) {
+    int Reg = tryParseRegister();
+    if (Reg == -1)
+      return MatchOperand_NoMatch;
+    SMLoc E = Parser.getTok().getLoc();
+    if (ARMMCRegisterClasses[ARM::DPRRegClassID].contains(Reg)) {
+      Operands.push_back(ARMOperand::CreateVectorList(Reg, 1, S, E));
+      return MatchOperand_Success;
+    }
+    if (ARMMCRegisterClasses[ARM::QPRRegClassID].contains(Reg)) {
+      Reg = getDRegFromQReg(Reg);
+      Operands.push_back(ARMOperand::CreateVectorList(Reg, 2, S, E));
+      return MatchOperand_Success;
+    }
+    Error(S, "vector register expected");
+    return MatchOperand_ParseFail;
+  }
+
+  if (Parser.getTok().isNot(AsmToken::LCurly))
     return MatchOperand_NoMatch;
 
-  SMLoc S = Parser.getTok().getLoc();
   Parser.Lex(); // Eat '{' token.
   SMLoc RegLoc = Parser.getTok().getLoc();
 
@@ -2509,7 +2527,39 @@ parseVectorList(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
     ++Count;
   }
 
-  while (Parser.getTok().is(AsmToken::Comma)) {
+  while (Parser.getTok().is(AsmToken::Comma) ||
+         Parser.getTok().is(AsmToken::Minus)) {
+    if (Parser.getTok().is(AsmToken::Minus)) {
+      Parser.Lex(); // Eat the minus.
+      SMLoc EndLoc = Parser.getTok().getLoc();
+      int EndReg = tryParseRegister();
+      if (EndReg == -1) {
+        Error(EndLoc, "register expected");
+        return MatchOperand_ParseFail;
+      }
+      // Allow Q regs and just interpret them as the two D sub-registers.
+      if (ARMMCRegisterClasses[ARM::QPRRegClassID].contains(EndReg))
+        EndReg = getDRegFromQReg(EndReg) + 1;
+      // If the register is the same as the start reg, there's nothing
+      // more to do.
+      if (Reg == EndReg)
+        continue;
+      // The register must be in the same register class as the first.
+      if (!ARMMCRegisterClasses[ARM::DPRRegClassID].contains(EndReg)) {
+        Error(EndLoc, "invalid register in register list");
+        return MatchOperand_ParseFail;
+      }
+      // Ranges must go from low to high.
+      if (Reg > EndReg) {
+        Error(EndLoc, "bad range in register list");
+        return MatchOperand_ParseFail;
+      }
+
+      // Add all the registers in the range to the register list.
+      Count += EndReg - Reg;
+      Reg = EndReg;
+      continue;
+    }
     Parser.Lex(); // Eat the comma.
     RegLoc = Parser.getTok().getLoc();
     int OldReg = Reg;
@@ -3538,9 +3588,12 @@ parseMemory(SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   }
 
   // If we have a '#', it's an immediate offset, else assume it's a register
-  // offset.
-  if (Parser.getTok().is(AsmToken::Hash)) {
-    Parser.Lex(); // Eat the '#'.
+  // offset. Be friendly and also accept a plain integer (without a leading
+  // hash) for gas compatibility.
+  if (Parser.getTok().is(AsmToken::Hash) ||
+      Parser.getTok().is(AsmToken::Integer)) {
+    if (Parser.getTok().is(AsmToken::Hash))
+      Parser.Lex(); // Eat the '#'.
     E = Parser.getTok().getLoc();
 
     bool isNegative = getParser().getTok().is(AsmToken::Minus);
@@ -4098,11 +4151,26 @@ bool ARMAsmParser::shouldOmitCCOutOperand(StringRef Mnemonic,
       // remove the cc_out operand.
       (!isARMLowRegister(static_cast<ARMOperand*>(Operands[3])->getReg()) ||
        !isARMLowRegister(static_cast<ARMOperand*>(Operands[4])->getReg()) ||
+       !isARMLowRegister(static_cast<ARMOperand*>(Operands[5])->getReg()) ||
        !inITBlock() ||
        (static_cast<ARMOperand*>(Operands[3])->getReg() !=
         static_cast<ARMOperand*>(Operands[5])->getReg() &&
         static_cast<ARMOperand*>(Operands[3])->getReg() !=
         static_cast<ARMOperand*>(Operands[4])->getReg())))
+    return true;
+
+  // Also check the 'mul' syntax variant that doesn't specify an explicit
+  // destination register.
+  if (isThumbTwo() && Mnemonic == "mul" && Operands.size() == 5 &&
+      static_cast<ARMOperand*>(Operands[1])->getReg() == 0 &&
+      static_cast<ARMOperand*>(Operands[3])->isReg() &&
+      static_cast<ARMOperand*>(Operands[4])->isReg() &&
+      // If the registers aren't low regs  or the cc_out operand is zero
+      // outside of an IT block, we have to use the 32-bit encoding, so
+      // remove the cc_out operand.
+      (!isARMLowRegister(static_cast<ARMOperand*>(Operands[3])->getReg()) ||
+       !isARMLowRegister(static_cast<ARMOperand*>(Operands[4])->getReg()) ||
+       !inITBlock()))
     return true;
 
 
@@ -4542,12 +4610,37 @@ processInstruction(MCInst &Inst,
                    const SmallVectorImpl<MCParsedAsmOperand*> &Operands) {
   switch (Inst.getOpcode()) {
   // Handle the MOV complex aliases.
+  case ARM::ASRr:
+  case ARM::LSRr:
+  case ARM::LSLr:
+  case ARM::RORr: {
+    ARM_AM::ShiftOpc ShiftTy;
+    switch(Inst.getOpcode()) {
+    default: llvm_unreachable("unexpected opcode!");
+    case ARM::ASRr: ShiftTy = ARM_AM::asr; break;
+    case ARM::LSRr: ShiftTy = ARM_AM::lsr; break;
+    case ARM::LSLr: ShiftTy = ARM_AM::lsl; break;
+    case ARM::RORr: ShiftTy = ARM_AM::ror; break;
+    }
+    // A shift by zero is a plain MOVr, not a MOVsi.
+    unsigned Shifter = ARM_AM::getSORegOpc(ShiftTy, 0);
+    MCInst TmpInst;
+    TmpInst.setOpcode(ARM::MOVsr);
+    TmpInst.addOperand(Inst.getOperand(0)); // Rd
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(Inst.getOperand(2)); // Rm
+    TmpInst.addOperand(MCOperand::CreateImm(Shifter)); // Shift value and ty
+    TmpInst.addOperand(Inst.getOperand(3)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(4));
+    TmpInst.addOperand(Inst.getOperand(5)); // cc_out
+    Inst = TmpInst;
+    return true;
+  }
   case ARM::ASRi:
   case ARM::LSRi:
   case ARM::LSLi:
   case ARM::RORi: {
     ARM_AM::ShiftOpc ShiftTy;
-    unsigned Amt = Inst.getOperand(2).getImm();
     switch(Inst.getOpcode()) {
     default: llvm_unreachable("unexpected opcode!");
     case ARM::ASRi: ShiftTy = ARM_AM::asr; break;
@@ -4556,6 +4649,7 @@ processInstruction(MCInst &Inst,
     case ARM::RORi: ShiftTy = ARM_AM::ror; break;
     }
     // A shift by zero is a plain MOVr, not a MOVsi.
+    unsigned Amt = Inst.getOperand(2).getImm();
     unsigned Opc = Amt == 0 ? ARM::MOVr : ARM::MOVsi;
     unsigned Shifter = ARM_AM::getSORegOpc(ShiftTy, Amt);
     MCInst TmpInst;
@@ -4567,6 +4661,19 @@ processInstruction(MCInst &Inst,
     TmpInst.addOperand(Inst.getOperand(3)); // CondCode
     TmpInst.addOperand(Inst.getOperand(4));
     TmpInst.addOperand(Inst.getOperand(5)); // cc_out
+    Inst = TmpInst;
+    return true;
+  }
+  case ARM::RRXi: {
+    unsigned Shifter = ARM_AM::getSORegOpc(ARM_AM::rrx, 0);
+    MCInst TmpInst;
+    TmpInst.setOpcode(ARM::MOVsi);
+    TmpInst.addOperand(Inst.getOperand(0)); // Rd
+    TmpInst.addOperand(Inst.getOperand(1)); // Rn
+    TmpInst.addOperand(MCOperand::CreateImm(Shifter)); // Shift value and ty
+    TmpInst.addOperand(Inst.getOperand(2)); // CondCode
+    TmpInst.addOperand(Inst.getOperand(3));
+    TmpInst.addOperand(Inst.getOperand(4)); // cc_out
     Inst = TmpInst;
     return true;
   }

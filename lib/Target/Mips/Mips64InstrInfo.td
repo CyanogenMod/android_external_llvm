@@ -175,6 +175,7 @@ def SCD    : SCBase<0x3c, "scd", CPU64Regs, mem>, Requires<[NotN64]>;
 def SCD_P8 : SCBase<0x3c, "scd", CPU64Regs, mem64>, Requires<[IsN64]>;
 
 /// Jump and Branch Instructions
+def JR64   : JumpFR<0x00, 0x08, "jr", CPU64Regs>;
 def JAL64  : JumpLink64<0x03, "jal">;
 def JALR64 : JumpLinkReg64<0x00, 0x09, "jalr">;
 def BEQ64  : CBranch<0x04, "beq", seteq, CPU64Regs>;
@@ -231,7 +232,24 @@ let Predicates = [IsN64] in {
 }
 
 // hi/lo relocs
-def : Pat<(i64 (MipsLo tglobaladdr:$in)), (DADDiu ZERO_64, tglobaladdr:$in)>;
+def : Pat<(MipsHi tglobaladdr:$in), (LUi64 tglobaladdr:$in)>;
+def : Pat<(MipsHi tblockaddress:$in), (LUi64 tblockaddress:$in)>;
+def : Pat<(MipsHi tjumptable:$in), (LUi64 tjumptable:$in)>;
+def : Pat<(MipsHi tconstpool:$in), (LUi64 tconstpool:$in)>;
+
+def : Pat<(MipsLo tglobaladdr:$in), (DADDiu ZERO_64, tglobaladdr:$in)>;
+def : Pat<(MipsLo tblockaddress:$in), (DADDiu ZERO_64, tblockaddress:$in)>;
+def : Pat<(MipsLo tjumptable:$in), (DADDiu ZERO_64, tjumptable:$in)>;
+def : Pat<(MipsLo tconstpool:$in), (DADDiu ZERO_64, tconstpool:$in)>;
+
+def : Pat<(add CPU64Regs:$hi, (MipsLo tglobaladdr:$lo)),
+          (DADDiu CPU64Regs:$hi, tglobaladdr:$lo)>;
+def : Pat<(add CPU64Regs:$hi, (MipsLo tblockaddress:$lo)),
+          (DADDiu CPU64Regs:$hi, tblockaddress:$lo)>;
+def : Pat<(add CPU64Regs:$hi, (MipsLo tjumptable:$lo)),
+          (DADDiu CPU64Regs:$hi, tjumptable:$lo)>;
+def : Pat<(add CPU64Regs:$hi, (MipsLo tconstpool:$lo)),
+          (DADDiu CPU64Regs:$hi, tconstpool:$lo)>;
 
 defm : BrcondPats<CPU64Regs, BEQ64, BNE64, SLT64, SLTu64, SLTi64, SLTiu64,
                   ZERO_64>;

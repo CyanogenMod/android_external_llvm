@@ -25,7 +25,6 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/LiveVariables.h"
-#include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
@@ -2903,6 +2902,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     switch (LoadMI->getOpcode()) {
     case X86::AVX_SET0PSY:
     case X86::AVX_SET0PDY:
+    case X86::AVX2_SETALLONES:
       Alignment = 32;
       break;
     case X86::V_SET0:
@@ -2948,6 +2948,7 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
   case X86::AVX_SET0PSY:
   case X86::AVX_SET0PDY:
   case X86::AVX_SETALLONES:
+  case X86::AVX2_SETALLONES:
   case X86::FsFLD0SD:
   case X86::FsFLD0SS:
   case X86::VFsFLD0SD:
@@ -2986,7 +2987,8 @@ MachineInstr* X86InstrInfo::foldMemoryOperandImpl(MachineFunction &MF,
     else
       Ty = VectorType::get(Type::getInt32Ty(MF.getFunction()->getContext()), 4);
 
-    bool IsAllOnes = (Opc == X86::V_SETALLONES || Opc == X86::AVX_SETALLONES);
+    bool IsAllOnes = (Opc == X86::V_SETALLONES || Opc == X86::AVX_SETALLONES ||
+                      Opc == X86::AVX2_SETALLONES);
     const Constant *C = IsAllOnes ? Constant::getAllOnesValue(Ty) :
                                     Constant::getNullValue(Ty);
     unsigned CPI = MCP.getConstantPoolIndex(C, Alignment);
@@ -3555,7 +3557,11 @@ static const unsigned ReplaceableInstrs[][3] = {
   { X86::VMOVAPSYrr,   X86::VMOVAPDYrr,   X86::VMOVDQAYrr  },
   { X86::VMOVUPSYmr,   X86::VMOVUPDYmr,   X86::VMOVDQUYmr  },
   { X86::VMOVUPSYrm,   X86::VMOVUPDYrm,   X86::VMOVDQUYrm  },
-  { X86::VMOVNTPSYmr,  X86::VMOVNTPDYmr,  X86::VMOVNTDQYmr },
+  { X86::VMOVNTPSYmr,  X86::VMOVNTPDYmr,  X86::VMOVNTDQYmr }
+};
+
+static const unsigned ReplaceableInstrsAVX2[][3] = {
+  //PackedSingle       PackedDouble       PackedInt
   { X86::VANDNPSYrm,   X86::VANDNPDYrm,   X86::VPANDNYrm   },
   { X86::VANDNPSYrr,   X86::VANDNPDYrr,   X86::VPANDNYrr   },
   { X86::VANDPSYrm,    X86::VANDPDYrm,    X86::VPANDYrm    },
@@ -3563,7 +3569,7 @@ static const unsigned ReplaceableInstrs[][3] = {
   { X86::VORPSYrm,     X86::VORPDYrm,     X86::VPORYrm     },
   { X86::VORPSYrr,     X86::VORPDYrr,     X86::VPORYrr     },
   { X86::VXORPSYrm,    X86::VXORPDYrm,    X86::VPXORYrm    },
-  { X86::VXORPSYrr,    X86::VXORPDYrr,    X86::VPXORYrr    },
+  { X86::VXORPSYrr,    X86::VXORPDYrr,    X86::VPXORYrr    }
 };
 
 // FIXME: Some shuffle and unpack instructions have equivalents in different
@@ -3576,11 +3582,23 @@ static const unsigned *lookup(unsigned opcode, unsigned domain) {
   return 0;
 }
 
+static const unsigned *lookupAVX2(unsigned opcode, unsigned domain) {
+  for (unsigned i = 0, e = array_lengthof(ReplaceableInstrsAVX2); i != e; ++i)
+    if (ReplaceableInstrsAVX2[i][domain-1] == opcode)
+      return ReplaceableInstrsAVX2[i];
+  return 0;
+}
+
 std::pair<uint16_t, uint16_t>
 X86InstrInfo::getExecutionDomain(const MachineInstr *MI) const {
   uint16_t domain = (MI->getDesc().TSFlags >> X86II::SSEDomainShift) & 3;
-  return std::make_pair(domain,
-                        domain && lookup(MI->getOpcode(), domain) ? 0xe : 0);
+  bool hasAVX2 = TM.getSubtarget<X86Subtarget>().hasAVX2();
+  uint16_t validDomains = 0;
+  if (domain && lookup(MI->getOpcode(), domain))
+    validDomains = 0xe;
+  else if (domain && lookupAVX2(MI->getOpcode(), domain))
+    validDomains = hasAVX2 ? 0xe : 0x6;
+  return std::make_pair(domain, validDomains);
 }
 
 void X86InstrInfo::setExecutionDomain(MachineInstr *MI, unsigned Domain) const {
@@ -3588,6 +3606,11 @@ void X86InstrInfo::setExecutionDomain(MachineInstr *MI, unsigned Domain) const {
   uint16_t dom = (MI->getDesc().TSFlags >> X86II::SSEDomainShift) & 3;
   assert(dom && "Not an SSE instruction");
   const unsigned *table = lookup(MI->getOpcode(), dom);
+  if (!table) { // try the other table
+    assert((TM.getSubtarget<X86Subtarget>().hasAVX2() || Domain < 3) &&
+           "256-bit vector operations only available in AVX2");
+    table = lookupAVX2(MI->getOpcode(), dom);
+  }
   assert(table && "Cannot change domain");
   MI->setDesc(get(table[Domain-1]));
 }

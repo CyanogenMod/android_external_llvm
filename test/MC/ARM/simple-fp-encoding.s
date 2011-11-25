@@ -21,8 +21,14 @@
 @ CHECK: vmul.f64 d16, d17, d16      @ encoding: [0xa0,0x0b,0x61,0xee]
         vmul.f64        d16, d17, d16
 
+@ CHECK: vmul.f64	d20, d20, d17   @ encoding: [0xa1,0x4b,0x64,0xee]
+	vmul.f64  d20, d17
+
 @ CHECK: vmul.f32 s0, s1, s0         @ encoding: [0x80,0x0a,0x20,0xee]
         vmul.f32        s0, s1, s0
+
+@ CHECK: vmul.f32	s11, s11, s21   @ encoding: [0xaa,0x5a,0x65,0xee]
+	vmul.f32  s11, s21
 
 @ CHECK: vnmul.f64 d16, d17, d16     @ encoding: [0xe0,0x0b,0x61,0xee]
         vnmul.f64       d16, d17, d16
@@ -126,6 +132,16 @@
 @ CHECK: vmoveq s0, r1               @ encoding: [0x10,0x1a,0x00,0x0e]
         vmovne  s0, r0
         vmoveq  s0, r1
+
+        vmov.f32 r1, s2
+        vmov.f32 s4, r3
+        vmov.f64 r1, r5, d2
+        vmov.f64 d4, r3, r9
+
+@ CHECK: vmov	r1, s2                  @ encoding: [0x10,0x1a,0x11,0xee]
+@ CHECK: vmov	s4, r3                  @ encoding: [0x10,0x3a,0x02,0xee]
+@ CHECK: vmov	r1, r5, d2              @ encoding: [0x12,0x1b,0x55,0xec]
+@ CHECK: vmov	d4, r3, r9              @ encoding: [0x14,0x3b,0x49,0xec]
 
 @ CHECK: vmrs r0, fpscr              @ encoding: [0x10,0x0a,0xf1,0xee]
         vmrs    r0, fpscr

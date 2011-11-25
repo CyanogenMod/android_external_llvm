@@ -127,9 +127,11 @@ MipsTargetLowering(MipsTargetMachine &TM)
   setOperationAction(ISD::GlobalAddress,      MVT::i32,   Custom);
   setOperationAction(ISD::GlobalAddress,      MVT::i64,   Custom);
   setOperationAction(ISD::BlockAddress,       MVT::i32,   Custom);
+  setOperationAction(ISD::BlockAddress,       MVT::i64,   Custom);
   setOperationAction(ISD::GlobalTLSAddress,   MVT::i32,   Custom);
   setOperationAction(ISD::JumpTable,          MVT::i32,   Custom);
   setOperationAction(ISD::ConstantPool,       MVT::i32,   Custom);
+  setOperationAction(ISD::ConstantPool,       MVT::i64,   Custom);
   setOperationAction(ISD::SELECT,             MVT::f32,   Custom);
   setOperationAction(ISD::SELECT,             MVT::f64,   Custom);
   setOperationAction(ISD::SELECT,             MVT::i32,   Custom);
@@ -1506,7 +1508,7 @@ SDValue MipsTargetLowering::LowerBlockAddress(SDValue Op,
   // FIXME there isn't actually debug info here
   DebugLoc dl = Op.getDebugLoc();
 
-  if (getTargetMachine().getRelocationModel() != Reloc::PIC_) {
+  if (getTargetMachine().getRelocationModel() != Reloc::PIC_ && !IsN64) {
     // %hi/%lo relocation
     SDValue BAHi = DAG.getBlockAddress(BA, MVT::i32, true,
                                        MipsII::MO_ABS_HI);
@@ -1517,16 +1519,17 @@ SDValue MipsTargetLowering::LowerBlockAddress(SDValue Op,
     return DAG.getNode(ISD::ADD, dl, MVT::i32, Hi, Lo);
   }
 
-  SDValue BAGOTOffset = DAG.getBlockAddress(BA, MVT::i32, true,
-                                            MipsII::MO_GOT);
-  BAGOTOffset = DAG.getNode(MipsISD::WrapperPIC, dl, MVT::i32, BAGOTOffset);
-  SDValue BALOOffset = DAG.getBlockAddress(BA, MVT::i32, true,
-                                           MipsII::MO_ABS_LO);
-  SDValue Load = DAG.getLoad(MVT::i32, dl,
+  EVT ValTy = Op.getValueType();
+  unsigned GOTFlag = IsN64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
+  unsigned OFSTFlag = IsN64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
+  SDValue BAGOTOffset = DAG.getBlockAddress(BA, ValTy, true, GOTFlag);
+  BAGOTOffset = DAG.getNode(MipsISD::WrapperPIC, dl, ValTy, BAGOTOffset);
+  SDValue BALOOffset = DAG.getBlockAddress(BA, ValTy, true, OFSTFlag);
+  SDValue Load = DAG.getLoad(ValTy, dl,
                              DAG.getEntryNode(), BAGOTOffset,
                              MachinePointerInfo(), false, false, false, 0);
-  SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, BALOOffset);
-  return DAG.getNode(ISD::ADD, dl, MVT::i32, Load, Lo);
+  SDValue Lo = DAG.getNode(MipsISD::Lo, dl, ValTy, BALOOffset);
+  return DAG.getNode(ISD::ADD, dl, ValTy, Load, Lo);
 }
 
 SDValue MipsTargetLowering::
@@ -1649,16 +1652,19 @@ LowerConstantPool(SDValue Op, SelectionDAG &DAG) const
     SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, CPLo);
     ResNode = DAG.getNode(ISD::ADD, dl, MVT::i32, HiPart, Lo);
   } else {
-    SDValue CP = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
-                                           N->getOffset(), MipsII::MO_GOT);
-    CP = DAG.getNode(MipsISD::WrapperPIC, dl, MVT::i32, CP);
-    SDValue Load = DAG.getLoad(MVT::i32, dl, DAG.getEntryNode(),
+    EVT ValTy = Op.getValueType();
+    unsigned GOTFlag = IsN64 ? MipsII::MO_GOT_PAGE : MipsII::MO_GOT;
+    unsigned OFSTFlag = IsN64 ? MipsII::MO_GOT_OFST : MipsII::MO_ABS_LO;
+    SDValue CP = DAG.getTargetConstantPool(C, ValTy, N->getAlignment(),
+                                           N->getOffset(), GOTFlag);
+    CP = DAG.getNode(MipsISD::WrapperPIC, dl, ValTy, CP);
+    SDValue Load = DAG.getLoad(ValTy, dl, DAG.getEntryNode(),
                                CP, MachinePointerInfo::getConstantPool(),
                                false, false, false, 0);
-    SDValue CPLo = DAG.getTargetConstantPool(C, MVT::i32, N->getAlignment(),
-                                             N->getOffset(), MipsII::MO_ABS_LO);
-    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, MVT::i32, CPLo);
-    ResNode = DAG.getNode(ISD::ADD, dl, MVT::i32, Load, Lo);
+    SDValue CPLo = DAG.getTargetConstantPool(C, ValTy, N->getAlignment(),
+                                             N->getOffset(), OFSTFlag);
+    SDValue Lo = DAG.getNode(MipsISD::Lo, dl, ValTy, CPLo);
+    ResNode = DAG.getNode(ISD::ADD, dl, ValTy, Load, Lo);
   }
 
   return ResNode;
@@ -2063,6 +2069,7 @@ PassByValArg64(SDValue& ByValChain, SDValue Chain, DebugLoc dl,
   bool IsRegLoc = VA.isRegLoc();
   unsigned Offset = 0; // Offset in # of bytes from the beginning of struct.
   unsigned LocMemOffset = 0;
+  unsigned MemCpySize = ByValSize;
 
   if (!IsRegLoc)
     LocMemOffset = VA.getLocMemOffset();
@@ -2082,9 +2089,13 @@ PassByValArg64(SDValue& ByValChain, SDValue Chain, DebugLoc dl,
       RegsToPass.push_back(std::make_pair(*Reg, LoadVal));
     }
 
+    // Return if the struct has been fully copied. 
+    if (!(MemCpySize = ByValSize - Offset))
+      return;
+
     // If there is an argument register available, copy the remainder of the
     // byval argument with sub-doubleword loads and shifts.
-    if ((Reg != RegEnd) && (ByValSize != Offset)) {
+    if (Reg != RegEnd) {
       assert((ByValSize < Offset + 8) &&
              "Size of the remainder should be smaller than 8-byte.");
       SDValue Val;
@@ -2119,19 +2130,18 @@ PassByValArg64(SDValue& ByValChain, SDValue Chain, DebugLoc dl,
     }
   }
 
-  unsigned MemCpySize = ByValSize - Offset;
-  if (MemCpySize) {
-    // Create a fixed object on stack at offset LocMemOffset and copy
-    // remainder of byval arg to it with memcpy.
-    SDValue Src = DAG.getNode(ISD::ADD, dl, PtrTy, Arg,
-                              DAG.getConstant(Offset, PtrTy));
-    LastFI = MFI->CreateFixedObject(MemCpySize, LocMemOffset, true);
-    SDValue Dst = DAG.getFrameIndex(LastFI, PtrTy);
-    ByValChain = DAG.getMemcpy(ByValChain, dl, Dst, Src,
-                               DAG.getConstant(MemCpySize, PtrTy), Alignment,
-                               /*isVolatile=*/false, /*AlwaysInline=*/false,
-                               MachinePointerInfo(0), MachinePointerInfo(0));
-  }
+  assert(MemCpySize && "MemCpySize must not be zero.");
+
+  // Create a fixed object on stack at offset LocMemOffset and copy
+  // remainder of byval arg to it with memcpy.
+  SDValue Src = DAG.getNode(ISD::ADD, dl, PtrTy, Arg,
+                            DAG.getConstant(Offset, PtrTy));
+  LastFI = MFI->CreateFixedObject(MemCpySize, LocMemOffset, true);
+  SDValue Dst = DAG.getFrameIndex(LastFI, PtrTy);
+  ByValChain = DAG.getMemcpy(ByValChain, dl, Dst, Src,
+                             DAG.getConstant(MemCpySize, PtrTy), Alignment,
+                             /*isVolatile=*/false, /*AlwaysInline=*/false,
+                             MachinePointerInfo(0), MachinePointerInfo(0));
 }
 
 /// LowerCall - functions arguments are copied from virtual regs to

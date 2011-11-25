@@ -68,6 +68,7 @@ namespace {
     MachineRegisterInfo *MRI;
     LiveVariables *LV;
     AliasAnalysis *AA;
+    CodeGenOpt::Level OptLevel;
 
     // DistanceMap - Keep track the distance of a MI from the start of the
     // current basic block.
@@ -571,6 +572,9 @@ bool
 TwoAddressInstructionPass::isProfitableToCommute(unsigned regB, unsigned regC,
                                        MachineInstr *MI, MachineBasicBlock *MBB,
                                        unsigned Dist) {
+  if (OptLevel == CodeGenOpt::None)
+    return false;
+
   // Determine if it's profitable to commute this two address instruction. In
   // general, we want no uses between this instruction and the definition of
   // the two-address register.
@@ -924,7 +928,7 @@ TwoAddressInstructionPass::RescheduleMIBelowKill(MachineBasicBlock *MBB,
   if (isTwoAddrUse(*KillMI, Reg, DstReg))
     return false;
 
-  bool SeenStore;
+  bool SeenStore = true;
   if (!MI->isSafeToMove(TII, AA, SeenStore))
     return false;
 
@@ -933,6 +937,7 @@ TwoAddressInstructionPass::RescheduleMIBelowKill(MachineBasicBlock *MBB,
     return false;
 
   SmallSet<unsigned, 2> Uses;
+  SmallSet<unsigned, 2> Kills;
   SmallSet<unsigned, 2> Defs;
   for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
     const MachineOperand &MO = MI->getOperand(i);
@@ -943,8 +948,11 @@ TwoAddressInstructionPass::RescheduleMIBelowKill(MachineBasicBlock *MBB,
       continue;
     if (MO.isDef())
       Defs.insert(MOReg);
-    else
+    else {
       Uses.insert(MOReg);
+      if (MO.isKill() && MOReg != Reg)
+        Kills.insert(MOReg);
+    }
   }
 
   // Move the copies connected to MI down as well.
@@ -991,7 +999,8 @@ TwoAddressInstructionPass::RescheduleMIBelowKill(MachineBasicBlock *MBB,
       } else {
         if (Defs.count(MOReg))
           return false;
-        if (MOReg != Reg && MO.isKill() && Uses.count(MOReg))
+        if (MOReg != Reg &&
+            ((MO.isKill() && Uses.count(MOReg)) || Kills.count(MOReg)))
           // Don't want to extend other live ranges and update kills.
           return false;
       }
@@ -1071,7 +1080,7 @@ TwoAddressInstructionPass::RescheduleKillAboveMI(MachineBasicBlock *MBB,
   if (isTwoAddrUse(*KillMI, Reg, DstReg))
     return false;
 
-  bool SeenStore;
+  bool SeenStore = true;
   if (!KillMI->isSafeToMove(TII, AA, SeenStore))
     return false;
 
@@ -1115,6 +1124,7 @@ TwoAddressInstructionPass::RescheduleKillAboveMI(MachineBasicBlock *MBB,
         MCID.isTerminator())
       // Don't move pass calls, etc.
       return false;
+    SmallVector<unsigned, 2> OtherDefs;
     for (unsigned i = 0, e = OtherMI->getNumOperands(); i != e; ++i) {
       const MachineOperand &MO = OtherMI->getOperand(i);
       if (!MO.isReg())
@@ -1131,14 +1141,19 @@ TwoAddressInstructionPass::RescheduleKillAboveMI(MachineBasicBlock *MBB,
           // Don't want to extend other live ranges and update kills.
           return false;
       } else {
-        if (Uses.count(MOReg))
-          return false;
-        if (TargetRegisterInfo::isPhysicalRegister(MOReg) &&
-            LiveDefs.count(MOReg))
-          return false;
-        // Physical register def is seen.
-        Defs.erase(MOReg);
+        OtherDefs.push_back(MOReg);
       }
+    }
+
+    for (unsigned i = 0, e = OtherDefs.size(); i != e; ++i) {
+      unsigned MOReg = OtherDefs[i];
+      if (Uses.count(MOReg))
+        return false;
+      if (TargetRegisterInfo::isPhysicalRegister(MOReg) &&
+          LiveDefs.count(MOReg))
+        return false;
+      // Physical register def is seen.
+      Defs.erase(MOReg);
     }
   }
 
@@ -1152,7 +1167,7 @@ TwoAddressInstructionPass::RescheduleKillAboveMI(MachineBasicBlock *MBB,
     --From;
   MBB->splice(InsertPos, MBB, From, To);
 
-  nmi = llvm::prior(mi); // Backtrack so we process the moved instruction.
+  nmi = llvm::prior(InsertPos); // Backtrack so we process the moved instr.
   DistanceMap.erase(DI);
 
   if (LV) {
@@ -1182,6 +1197,9 @@ TryInstructionTransform(MachineBasicBlock::iterator &mi,
                         MachineFunction::iterator &mbbi,
                         unsigned SrcIdx, unsigned DstIdx, unsigned Dist,
                         SmallPtrSet<MachineInstr*, 8> &Processed) {
+  if (OptLevel == CodeGenOpt::None)
+    return false;
+
   MachineInstr &MI = *mi;
   const MCInstrDesc &MCID = MI.getDesc();
   unsigned regA = MI.getOperand(DstIdx).getReg();
@@ -1377,6 +1395,7 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
   InstrItins = TM.getInstrItineraryData();
   LV = getAnalysisIfAvailable<LiveVariables>();
   AA = &getAnalysis<AliasAnalysis>();
+  OptLevel = TM.getOptLevel();
 
   bool MadeChange = false;
 

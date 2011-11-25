@@ -267,7 +267,7 @@ private:
 
 /// GetCostForDef - Looks up the register class and cost for a given definition.
 /// Typically this just means looking up the representative register class,
-/// but for untyped values (MVT::untyped) it means inspecting the node's
+/// but for untyped values (MVT::Untyped) it means inspecting the node's
 /// opcode to determine what register class is being generated.
 static void GetCostForDef(const ScheduleDAGSDNodes::RegDefIter &RegDefPos,
                           const TargetLowering *TLI,
@@ -278,7 +278,7 @@ static void GetCostForDef(const ScheduleDAGSDNodes::RegDefIter &RegDefPos,
 
   // Special handling for untyped values.  These values can only come from
   // the expansion of custom DAG-to-DAG patterns.
-  if (VT == MVT::untyped) {
+  if (VT == MVT::Untyped) {
     const SDNode *Node = RegDefPos.GetNode();
     unsigned Opcode = Node->getMachineOpcode();
 
@@ -946,6 +946,11 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
   if (TryUnfold) {
     SmallVector<SDNode*, 2> NewNodes;
     if (!TII->unfoldMemoryOperand(*DAG, N, NewNodes))
+      return NULL;
+
+    // unfolding an x86 DEC64m operation results in store, dec, load which
+    // can't be handled here so quit
+    if (NewNodes.size() == 3)
       return NULL;
 
     DEBUG(dbgs() << "Unfolding SU #" << SU->NodeNum << "\n");

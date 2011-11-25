@@ -712,6 +712,34 @@ be used to verify some algorithms.
 
 <p>LLVM 3.0 includes several major new capabilities:</p>
   
+<!-- Near dead:
+   Analysis/RegionInfo.h + Dom Frontiers
+   SparseBitVector: used in LiveVar.
+ 
+ -->
+  
+<!--
+ Type system rewrite.
+ Better performance for Neon code in clang due to SRoA improvements.
+ New regalloc on by default. Lin scan going away in 3.1
+ PGO / builtin_expect improvements (summary needed)
+ Big EH rewrite.
+ AVX support, assembler, compiler and disassembler.
+ IndVar improvements: andy
+ PTX backend improvements: Justin
+ llvm-rtdyld & MC JIT: JimG
+ InstAliases now automatically used in the asmprinter where they are shorter.
+ Integrated assembler on by default for arm/thumb?
+ PostOrder Dominator frontiers were removed.
+ Line Profiling / gcov support
+ EH and debug information produced with CFI directives, yielding smaller executables: http://blog.mozilla.com/respindola/2011/05/12/cfi-directives/
+ X86-64 generates smaller and faster code at -O0 (fast isel improvements)
+ Better code generation for Cortex-A9
+ Many APIs take ArrayRef's now.
+ Pass manager extension API.
+ 
+ -->
+  
 <ul>
 
 <!--
@@ -902,10 +930,16 @@ Builder.CreateResume(UnwindData);
    in.</p>
 
 <ul>
-<!--
-<li></li>
--->
+  <li>The ELF object streamers are much more full featured.</li>
+  <li>Target dependent relocation handling has been refactored into the Targets.</li>
+  <li>Early stage MC-JIT infrastructure has been implemented.</li>
 </ul>
+
+<p>The MC-JIT is a major new feature for MC, and will eventually grow to replace
+the current JIT implementation. It emits object files direct to memory and
+uses a runtime dynamic linker to resolve references and drive lazy compilation.
+The MC-JIT enables much greater code reuse between the JIT and the static
+compiler and provides better integration with the platform ABI as a result.</p>
 
 <p>For more information, please see
    the <a href="http://blog.llvm.org/2010/04/intro-to-llvm-mc-project.html">Intro
@@ -942,6 +976,10 @@ Builder.CreateResume(UnwindData);
 
 <ul>
 
+  <li>The X86 backend now supports
+    all <a href="http://llvm.org/PR879">inline assembly that uses the X86
+      floating point stack</a>.</li>
+  
   <li>The CRC32 intrinsics have been renamed.  The intrinsics were previously
       <code>@llvm.x86.sse42.crc32.[8|16|32]</code>
       and <code>@llvm.x86.sse42.crc64.[8|64]</code>. They have been renamed to
@@ -962,12 +1000,57 @@ Builder.CreateResume(UnwindData);
 <p>New features of the ARM target include:</p>
 
 <ul>
-<!--
-<li></li>
--->
+  <li>Reworked Set Jump Long Jump EH Lowering,</li>
+  <li>improved support for Cortex-M series processors, and</li>
+  <li>beta quality integrated assembler support.</li>
 </ul>
 </div>
+
   
+<!--=========================================================================-->
+<h3>
+<a name="MIPS">MIPS Target Improvements</a>
+</h3>
+
+<div>
+
+<p>New features and major changes in the MIPS target include:</p>
+
+<ul>
+  <li>Most MIPS32r1 and r2 instructions are now supported.</li>
+  <li>LE/BE MIPS32r1/r2 has been tested extensively.</li>
+  <li>O32 ABI has been fully tested.</li>
+  <li>MIPS backend has migrated to using the MC infrastructure for assembly printing. Initial support for direct object code emission has been implemented too.</li>
+  <li>Delay slot filler has been updated. Now it tries to fill delay slots with useful instructions instead of always filling them with NOPs.</li> 
+  <li>Support for old-style JIT is complete.</li>
+  <li>Support for old architectures (MIPS1 and MIPS2) has been removed.</li>
+  <li>Initial support for MIPS64 has been added.</li>
+</ul>
+</div>
+
+<!--=========================================================================-->
+<h3>
+  <a name="PTX">PTX Target Improvements</a>
+</h3>
+
+<div>
+  
+  <p>
+  The PTX back-end is still experimental, but is fairly usable for compute kernels
+  in LLVM 3.0.  Most scalar arithmetic is implemented, as well as intrinsics to
+  access the special PTX registers and sync instructions.  The major missing
+  pieces are texture/sampler support and some vector operations.</p>
+  
+  <p>That said, the backend is already being used for domain-specific languages
+  and works well with the <a href="http://www.pcc.me.uk/~peter/libclc/">libclc
+    library</a> to supply OpenCL built-ins.  With it, you can use Clang to compile
+  OpenCL code into PTX and execute it by loading the resulting PTX as a binary
+  blob using the nVidia OpenCL library.  It has been tested with several OpenCL
+  programs, including some from the nVidia GPU Computing SDK, and the performance
+  is on par with the nVidia compiler.</p>
+  
+</div>
+
 <!--=========================================================================-->
 <h3>
 <a name="OtherTS">Other Target Specific Improvements</a>
@@ -1191,28 +1274,9 @@ Builder.CreateResume(UnwindData);
 <div>
 
 <ul>
-  <li>The X86 backend does not yet support
-      all <a href="http://llvm.org/PR879">inline assembly that uses the X86
-      floating point stack</a>.  It supports the 'f' and 't' constraints, but
-      not 'u'.</li>
-
-  <li>The X86-64 backend does not yet support the LLVM IR instruction
-      <tt>va_arg</tt>. Currently, front-ends support variadic argument
-      constructs on X86-64 by lowering them manually.</li>
-
-  <li>Windows x64 (aka Win64) code generator has a few issues.
-    <ul>
-      <li>On mingw-w64, you will see unresolved symbol <tt>__chkstk</tt> due
-          to <a href="http://llvm.org/bugs/show_bug.cgi?id=8919">Bug 8919</a>.
-          It is fixed
-          in <a href="http://lists.cs.uiuc.edu/pipermail/llvm-commits/Week-of-Mon-20110321/118499.html">r128206</a>.</li>
-
-      <li>Miss-aligned MOVDQA might crash your program. It is due to
-          <a href="http://llvm.org/bugs/show_bug.cgi?id=9483">Bug 9483</a>, lack
-          of handling aligned internal globals.</li>
-      </ul>
-  </li>
-
+  <li>The X86-64 backend <a href="http://llvm.org/PR1740">does not yet support
+      the <tt>va_arg</tt> LLVM IR instruction</a>. Currently, front-ends support
+      variadic argument constructs on X86-64 by lowering them manually.</li>
 </ul>
 
 </div>

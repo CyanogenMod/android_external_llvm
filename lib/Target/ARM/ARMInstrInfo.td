@@ -58,8 +58,6 @@ def SDT_ARMEH_SJLJ_Setjmp : SDTypeProfile<1, 2, [SDTCisInt<0>, SDTCisPtrTy<1>,
                                                  SDTCisInt<2>]>;
 def SDT_ARMEH_SJLJ_Longjmp: SDTypeProfile<0, 2, [SDTCisPtrTy<0>, SDTCisInt<1>]>;
 
-def SDT_ARMEH_SJLJ_DispatchSetup: SDTypeProfile<0, 1, [SDTCisInt<0>]>;
-
 def SDT_ARMMEMBARRIER     : SDTypeProfile<0, 1, [SDTCisInt<0>]>;
 
 def SDT_ARMPREFETCH : SDTypeProfile<0, 3, [SDTCisPtrTy<0>, SDTCisSameAs<1, 2>,
@@ -143,9 +141,6 @@ def ARMeh_sjlj_setjmp: SDNode<"ARMISD::EH_SJLJ_SETJMP",
                                SDT_ARMEH_SJLJ_Setjmp, [SDNPHasChain]>;
 def ARMeh_sjlj_longjmp: SDNode<"ARMISD::EH_SJLJ_LONGJMP",
                                SDT_ARMEH_SJLJ_Longjmp, [SDNPHasChain]>;
-def ARMeh_sjlj_dispatchsetup: SDNode<"ARMISD::EH_SJLJ_DISPATCHSETUP",
-                               SDT_ARMEH_SJLJ_DispatchSetup, [SDNPHasChain]>;
-
 
 def ARMMemBarrier     : SDNode<"ARMISD::MEMBARRIER", SDT_ARMMEMBARRIER,
                                [SDNPHasChain]>;
@@ -475,6 +470,7 @@ def shift_so_reg_reg : Operand<i32>,    // reg reg imm
   let EncoderMethod = "getSORegRegOpValue";
   let PrintMethod = "printSORegRegOperand";
   let DecoderMethod = "DecodeSORegRegOperand";
+  let ParserMatchClass = ShiftedRegAsmOperand;
   let MIOperandInfo = (ops GPR, GPR, i32imm);
 }
 
@@ -485,6 +481,7 @@ def shift_so_reg_imm : Operand<i32>,    // reg reg imm
   let EncoderMethod = "getSORegImmOpValue";
   let PrintMethod = "printSORegImmOperand";
   let DecoderMethod = "DecodeSORegImmOperand";
+  let ParserMatchClass = ShiftedImmAsmOperand;
   let MIOperandInfo = (ops GPR, i32imm);
 }
 
@@ -1555,7 +1552,7 @@ PseudoInst<(outs), (ins i32imm:$amt, pred:$p), NoItinerary,
 }
 
 // Atomic pseudo-insts which will be lowered to ldrexd/strexd loops.
-// (These psuedos use a hand-written selection code).
+// (These pseudos use a hand-written selection code).
 let usesCustomInserter = 1, Defs = [CPSR], mayLoad = 1, mayStore = 1 in {
 def ATOMOR6432   : PseudoInst<(outs GPR:$dst1, GPR:$dst2),
                               (ins GPR:$addr, GPR:$src1, GPR:$src2),
@@ -4673,11 +4670,8 @@ def Int_eh_sjlj_longjmp : PseudoInst<(outs), (ins GPR:$src, GPR:$scratch),
 // This pseudo is used for ARM, Thumb1 and Thumb2. Any differences are
 // handled when the pseudo is expanded (which happens before any passes
 // that need the instruction size).
-let isBarrier = 1, hasSideEffects = 1 in
-def Int_eh_sjlj_dispatchsetup :
- PseudoInst<(outs), (ins GPR:$src), NoItinerary,
-            [(ARMeh_sjlj_dispatchsetup GPR:$src)]>,
-              Requires<[IsDarwin]>;
+let isBarrier = 1 in
+def eh_sjlj_dispatchsetup : PseudoInst<(outs), (ins), NoItinerary, []>;
 
 //===----------------------------------------------------------------------===//
 // Non-Instruction Patterns
@@ -5023,3 +5017,43 @@ def LSLi : ARMAsmPseudo<"lsl${s}${p} $Rd, $Rm, $imm",
 def RORi : ARMAsmPseudo<"ror${s}${p} $Rd, $Rm, $imm",
                         (ins GPR:$Rd, GPR:$Rm, imm0_31:$imm, pred:$p,
                              cc_out:$s)>;
+def RRXi : ARMAsmPseudo<"rrx${s}${p} $Rd, $Rm",
+                        (ins GPRnopc:$Rd, GPRnopc:$Rm, pred:$p, cc_out:$s)>;
+def ASRr : ARMAsmPseudo<"asr${s}${p} $Rd, $Rn, $Rm",
+                        (ins GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p,
+                             cc_out:$s)>;
+def LSRr : ARMAsmPseudo<"lsr${s}${p} $Rd, $Rn, $Rm",
+                        (ins GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p,
+                             cc_out:$s)>;
+def LSLr : ARMAsmPseudo<"lsl${s}${p} $Rd, $Rn, $Rm",
+                        (ins GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p,
+                             cc_out:$s)>;
+def RORr : ARMAsmPseudo<"ror${s}${p} $Rd, $Rn, $Rm",
+                        (ins GPRnopc:$Rd, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p,
+                             cc_out:$s)>;
+// shifter instructions also support a two-operand form.
+def : ARMInstAlias<"asr${s}${p} $Rm, $imm",
+                   (ASRi GPR:$Rm, GPR:$Rm, imm0_32:$imm, pred:$p, cc_out:$s)>;
+def : ARMInstAlias<"lsr${s}${p} $Rm, $imm",
+                   (LSRi GPR:$Rm, GPR:$Rm, imm0_32:$imm, pred:$p, cc_out:$s)>;
+def : ARMInstAlias<"lsl${s}${p} $Rm, $imm",
+                   (LSLi GPR:$Rm, GPR:$Rm, imm0_31:$imm, pred:$p, cc_out:$s)>;
+def : ARMInstAlias<"ror${s}${p} $Rm, $imm",
+                   (RORi GPR:$Rm, GPR:$Rm, imm0_31:$imm, pred:$p, cc_out:$s)>;
+def : ARMInstAlias<"asr${s}${p} $Rn, $Rm",
+                   (ASRr GPRnopc:$Rn, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p,
+                         cc_out:$s)>;
+def : ARMInstAlias<"lsr${s}${p} $Rn, $Rm",
+                   (LSRr GPRnopc:$Rn, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p,
+                         cc_out:$s)>;
+def : ARMInstAlias<"lsl${s}${p} $Rn, $Rm",
+                   (LSLr GPRnopc:$Rn, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p,
+                         cc_out:$s)>;
+def : ARMInstAlias<"ror${s}${p} $Rn, $Rm",
+                   (RORr GPRnopc:$Rn, GPRnopc:$Rn, GPRnopc:$Rm, pred:$p,
+                         cc_out:$s)>;
+
+
+// 'mul' instruction can be specified with only two operands.
+def : ARMInstAlias<"mul${s}${p} $Rn, $Rm",
+                   (MUL rGPR:$Rn, rGPR:$Rn, rGPR:$Rm, pred:$p, cc_out:$s)>;

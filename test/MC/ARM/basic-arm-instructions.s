@@ -133,9 +133,9 @@ Lforward:
         adr	r2, #-3
 
 @ CHECK: Lback:
-@ CHECK: adr	r2, Lback    @ encoding: [0bAAAAAAA0,0x20'A',0x0f'A',0b1110001A]
+@ CHECK: adr	r2, Lback    @ encoding: [A,0x20'A',0x0f'A',0xe2'A']
 @ CHECK:  @   fixup A - offset: 0, value: Lback, kind: fixup_arm_adr_pcrel_12
-@ CHECK: adr	r3, Lforward @ encoding: [0bAAAAAAA0,0x30'A',0x0f'A',0b1110001A]
+@ CHECK: adr	r3, Lforward @ encoding: [A,0x30'A',0x0f'A',0xe2'A']
 @ CHECK:  @   fixup A - offset: 0, value: Lforward, kind: fixup_arm_adr_pcrel_12
 @ CHECK: Lforward:
 @ CHECK: adr	r2, #3                  @ encoding: [0x03,0x20,0x8f,0xe2]
@@ -262,10 +262,12 @@ Lforward:
 	asr r2, r4, #32
 	asr r2, r4, #2
 	asr r2, r4, #0
+	asr r4, #2
 
 @ CHECK: asr	r2, r4, #32             @ encoding: [0x44,0x20,0xa0,0xe1]
 @ CHECK: asr	r2, r4, #2              @ encoding: [0x44,0x21,0xa0,0xe1]
 @ CHECK: mov	r2, r4                  @ encoding: [0x04,0x20,0xa0,0xe1]
+@ CHECK: asr	r4, r4, #2              @ encoding: [0x44,0x41,0xa0,0xe1]
 
 
 @------------------------------------------------------------------------------
@@ -794,10 +796,12 @@ Lforward:
 	lsl r2, r4, #31
 	lsl r2, r4, #1
 	lsl r2, r4, #0
+	lsl r4, #1
 
 @ CHECK: lsl	r2, r4, #31             @ encoding: [0x84,0x2f,0xa0,0xe1]
 @ CHECK: lsl	r2, r4, #1              @ encoding: [0x84,0x20,0xa0,0xe1]
 @ CHECK: mov	r2, r4                  @ encoding: [0x04,0x20,0xa0,0xe1]
+@ CHECK: lsl	r4, r4, #1              @ encoding: [0x84,0x40,0xa0,0xe1]
 
 
 @------------------------------------------------------------------------------
@@ -806,10 +810,12 @@ Lforward:
 	lsr r2, r4, #32
 	lsr r2, r4, #2
 	lsr r2, r4, #0
+	lsr r4, #2
 
 @ CHECK: lsr	r2, r4, #32             @ encoding: [0x24,0x20,0xa0,0xe1]
 @ CHECK: lsr	r2, r4, #2              @ encoding: [0x24,0x21,0xa0,0xe1]
 @ CHECK: mov	r2, r4                  @ encoding: [0x04,0x20,0xa0,0xe1]
+@ CHECK: lsr	r4, r4, #2              @ encoding: [0x24,0x41,0xa0,0xe1]
 
 
 @------------------------------------------------------------------------------
@@ -1001,11 +1007,13 @@ Lforward:
         muls r5, r6, r7
         mulgt r5, r6, r7
         mulsle r5, r6, r7
+        mul r11, r5
 
 @ CHECK: mul	r5, r6, r7              @ encoding: [0x96,0x07,0x05,0xe0]
 @ CHECK: muls	r5, r6, r7              @ encoding: [0x96,0x07,0x15,0xe0]
 @ CHECK: mulgt	r5, r6, r7              @ encoding: [0x96,0x07,0x05,0xc0]
 @ CHECK: mulsle	r5, r6, r7              @ encoding: [0x96,0x07,0x15,0xd0]
+@ CHECK: mul	r11, r11, r5            @ encoding: [0x9b,0x05,0x0b,0xe0]
 
 
 @------------------------------------------------------------------------------
@@ -1344,10 +1352,12 @@ Lforward:
 	ror r2, r4, #31
 	ror r2, r4, #1
 	ror r2, r4, #0
+	ror r4, #1
 
 @ CHECK: ror	r2, r4, #31             @ encoding: [0xe4,0x2f,0xa0,0xe1]
 @ CHECK: ror	r2, r4, #1              @ encoding: [0xe4,0x20,0xa0,0xe1]
 @ CHECK: mov	r2, r4                  @ encoding: [0x04,0x20,0xa0,0xe1]
+@ CHECK: ror	r4, r4, #1              @ encoding: [0xe4,0x40,0xa0,0xe1]
 
 
 @------------------------------------------------------------------------------

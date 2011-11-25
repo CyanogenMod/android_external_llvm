@@ -1172,3 +1172,35 @@ defm : VFPDT64InstAlias<"vldr${p}", "$Dd, $addr",
                         (VLDRD DPR:$Dd, addrmode5:$addr, pred:$p)>;
 defm : VFPDT64InstAlias<"vstr${p}", "$Dd, $addr",
                         (VSTRD DPR:$Dd, addrmode5:$addr, pred:$p)>;
+
+// VMUL has a two-operand form (implied destination operand)
+def : VFP2InstAlias<"vmul${p}.f64 $Dn, $Dm",
+                    (VMULD DPR:$Dn, DPR:$Dn, DPR:$Dm, pred:$p)>;
+def : VFP2InstAlias<"vmul${p}.f32 $Sn, $Sm",
+                    (VMULS SPR:$Sn, SPR:$Sn, SPR:$Sm, pred:$p)>;
+// VADD has a two-operand form (implied destination operand)
+def : VFP2InstAlias<"vadd${p}.f64 $Dn, $Dm",
+                    (VADDD DPR:$Dn, DPR:$Dn, DPR:$Dm, pred:$p)>;
+def : VFP2InstAlias<"vadd${p}.f32 $Sn, $Sm",
+                    (VADDS SPR:$Sn, SPR:$Sn, SPR:$Sm, pred:$p)>;
+// VSUB has a two-operand form (implied destination operand)
+def : VFP2InstAlias<"vsub${p}.f64 $Dn, $Dm",
+                    (VSUBD DPR:$Dn, DPR:$Dn, DPR:$Dm, pred:$p)>;
+def : VFP2InstAlias<"vsub${p}.f32 $Sn, $Sm",
+                    (VSUBS SPR:$Sn, SPR:$Sn, SPR:$Sm, pred:$p)>;
+
+// VMOV can accept optional .f32/.f64 suffix.
+def : VFP2InstAlias<"vmov${p}.f32 $Rt, $Sn",
+                    (VMOVRS GPR:$Rt, SPR:$Sn, pred:$p)>;
+def : VFP2InstAlias<"vmov${p}.f32 $Sn, $Rt",
+                    (VMOVSR SPR:$Sn, GPR:$Rt, pred:$p)>;
+
+def : VFP2InstAlias<"vmov${p}.f64 $Rt, $Rt2, $Dn",
+                    (VMOVRRD GPR:$Rt, GPR:$Rt2, DPR:$Dn, pred:$p)>;
+def : VFP2InstAlias<"vmov${p}.f64 $Dn, $Rt, $Rt2",
+                    (VMOVDRR DPR:$Dn, GPR:$Rt, GPR:$Rt2, pred:$p)>;
+
+// VMOVS doesn't need the .f32 to disambiguate from the NEON encoding the way
+// VMOVD does.
+def : VFP2InstAlias<"vmov${p} $Sd, $Sm",
+                    (VMOVS SPR:$Sd, SPR:$Sm, pred:$p)>;

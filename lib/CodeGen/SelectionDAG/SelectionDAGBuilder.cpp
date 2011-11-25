@@ -41,7 +41,6 @@
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/CodeGen/PseudoSourceValue.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Target/TargetData.h"
@@ -1811,8 +1810,8 @@ void SelectionDAGBuilder::visitInvoke(const InvokeInst &I) {
   CopyToExportRegsIfNeeded(&I);
 
   // Update successor info
-  InvokeMBB->addSuccessor(Return);
-  InvokeMBB->addSuccessor(LandingPad);
+  addSuccessorWithWeight(InvokeMBB, Return);
+  addSuccessorWithWeight(InvokeMBB, LandingPad);
 
   // Drop into normal successor.
   DAG.setRoot(DAG.getNode(ISD::BR, getCurDebugLoc(),

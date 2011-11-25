@@ -145,7 +145,9 @@ def brtarget    : Operand<OtherVT> {
   let EncoderMethod = "getBranchTargetOpValue";
   let OperandType = "OPERAND_PCREL";
 }
-def calltarget  : Operand<i32>;
+def calltarget  : Operand<iPTR> {
+  let EncoderMethod = "getJumpTargetOpValue";
+}
 def calltarget64: Operand<i64>;
 def simm16      : Operand<i32>;
 def simm16_64   : Operand<i64>;
@@ -378,6 +380,22 @@ class StoreM<bits<6> op, string instr_asm, PatFrag OpNode, RegisterClass RC,
   let isPseudo = Pseudo;
 }
 
+// Memory Load/Store
+let canFoldAsLoad = 1 in
+class LoadX<bits<6> op, RegisterClass RC,
+            Operand MemOpnd>:
+  FMem<op, (outs RC:$rt), (ins MemOpnd:$addr),
+     "",
+     [], IILoad> {
+}
+
+class StoreX<bits<6> op, RegisterClass RC,
+             Operand MemOpnd>:
+  FMem<op, (outs), (ins RC:$rt, MemOpnd:$addr),
+     "",
+     [], IIStore> {
+}
+
 // 32-bit load.
 multiclass LoadM32<bits<6> op, string instr_asm, PatFrag OpNode,
                    bit Pseudo = 0> {
@@ -396,6 +414,13 @@ multiclass LoadM64<bits<6> op, string instr_asm, PatFrag OpNode,
                Requires<[IsN64]>;
 } 
 
+// 32-bit load.
+multiclass LoadX32<bits<6> op> {
+  def #NAME# : LoadX<op, CPURegs, mem>,
+               Requires<[NotN64]>;
+  def _P8    : LoadX<op, CPURegs, mem64>,
+               Requires<[IsN64]>;
+}
 // 32-bit store.
 multiclass StoreM32<bits<6> op, string instr_asm, PatFrag OpNode,
                     bit Pseudo = 0> {
@@ -411,6 +436,14 @@ multiclass StoreM64<bits<6> op, string instr_asm, PatFrag OpNode,
   def #NAME# : StoreM<op, instr_asm, OpNode, CPU64Regs, mem, Pseudo>,
                Requires<[NotN64]>;
   def _P8    : StoreM<op, instr_asm, OpNode, CPU64Regs, mem64, Pseudo>,
+               Requires<[IsN64]>;
+}
+
+// 32-bit store.
+multiclass StoreX32<bits<6> op> {
+  def #NAME# : StoreX<op, CPURegs, mem>,
+               Requires<[NotN64]>;
+  def _P8    : StoreX<op, CPURegs, mem64>,
                Requires<[IsN64]>;
 }
 
@@ -458,10 +491,11 @@ class JumpFJ<bits<6> op, string instr_asm>:
   FJ<op, (outs), (ins jmptarget:$target),
      !strconcat(instr_asm, "\t$target"), [(br bb:$target)], IIBranch>;
 
-let isBranch=1, isTerminator=1, isBarrier=1, rd=0, hasDelaySlot = 1 in
-class JumpFR<bits<6> op, bits<6> func, string instr_asm>:
-  FR<op, func, (outs), (ins CPURegs:$rs),
-     !strconcat(instr_asm, "\t$rs"), [(brind CPURegs:$rs)], IIBranch> {
+let isBranch=1, isTerminator=1, isBarrier=1, rd=0, hasDelaySlot = 1,
+    isIndirectBranch = 1 in
+class JumpFR<bits<6> op, bits<6> func, string instr_asm, RegisterClass RC>:
+  FR<op, func, (outs), (ins RC:$rs),
+     !strconcat(instr_asm, "\t$rs"), [(brind RC:$rs)], IIBranch> {
   let rt = 0;
   let rd = 0;
   let shamt = 0;
@@ -760,6 +794,12 @@ defm ULW     : LoadM32<0x23, "ulw",  load_u, 1>;
 defm USH     : StoreM32<0x29, "ush", truncstorei16_u, 1>;
 defm USW     : StoreM32<0x2b, "usw", store_u, 1>;
 
+/// Primitives for unaligned
+defm LWL     : LoadX32<0x22>;
+defm LWR     : LoadX32<0x26>;
+defm SWL     : StoreX32<0x2A>;
+defm SWR     : StoreX32<0x2E>;
+
 let hasSideEffects = 1 in
 def SYNC : MipsInst<(outs), (ins i32imm:$stype), "sync $stype",
                     [(MipsSync imm:$stype)], NoItinerary, FrmOther>
@@ -779,8 +819,7 @@ def SC_P8 : SCBase<0x38, "sc", CPURegs, mem64>, Requires<[IsN64]>;
 
 /// Jump and Branch Instructions
 def J       : JumpFJ<0x02, "j">;
-let isIndirectBranch = 1 in
-  def JR      : JumpFR<0x00, 0x08, "jr">;
+def JR      : JumpFR<0x00, 0x08, "jr", CPURegs>;
 def JAL     : JumpLink<0x03, "jal">;
 def JALR    : JumpLinkReg<0x00, 0x09, "jalr">;
 def BEQ     : CBranch<0x04, "beq", seteq, CPURegs>;
@@ -898,20 +937,20 @@ def : Pat<(MipsJmpLink (i32 texternalsym:$dst)),
 // hi/lo relocs
 def : Pat<(MipsHi tglobaladdr:$in), (LUi tglobaladdr:$in)>;
 def : Pat<(MipsHi tblockaddress:$in), (LUi tblockaddress:$in)>;
+def : Pat<(MipsHi tjumptable:$in), (LUi tjumptable:$in)>;
+def : Pat<(MipsHi tconstpool:$in), (LUi tconstpool:$in)>;
+
 def : Pat<(MipsLo tglobaladdr:$in), (ADDiu ZERO, tglobaladdr:$in)>;
 def : Pat<(MipsLo tblockaddress:$in), (ADDiu ZERO, tblockaddress:$in)>;
+def : Pat<(MipsLo tjumptable:$in), (ADDiu ZERO, tjumptable:$in)>;
+def : Pat<(MipsLo tconstpool:$in), (ADDiu ZERO, tconstpool:$in)>;
+
 def : Pat<(add CPURegs:$hi, (MipsLo tglobaladdr:$lo)),
           (ADDiu CPURegs:$hi, tglobaladdr:$lo)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tblockaddress:$lo)),
           (ADDiu CPURegs:$hi, tblockaddress:$lo)>;
-
-def : Pat<(MipsHi tjumptable:$in), (LUi tjumptable:$in)>;
-def : Pat<(MipsLo tjumptable:$in), (ADDiu ZERO, tjumptable:$in)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tjumptable:$lo)),
           (ADDiu CPURegs:$hi, tjumptable:$lo)>;
-
-def : Pat<(MipsHi tconstpool:$in), (LUi tconstpool:$in)>;
-def : Pat<(MipsLo tconstpool:$in), (ADDiu ZERO, tconstpool:$in)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tconstpool:$lo)),
           (ADDiu CPURegs:$hi, tconstpool:$lo)>;
 
