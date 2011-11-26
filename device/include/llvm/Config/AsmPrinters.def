@@ -26,6 +26,8 @@
 
 #if defined(__arm__)
   LLVM_ASM_PRINTER(ARM)
+#elif defined(__mips__)
+  LLVM_ASM_PRINTER(Mips)
 #elif defined(__i386__)
   LLVM_ASM_PRINTER(X86)
 #else

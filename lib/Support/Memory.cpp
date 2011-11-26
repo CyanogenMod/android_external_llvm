@@ -71,7 +71,7 @@ void llvm::sys::Memory::InvalidateInstructionCache(const void *Addr,
   char *End = Start + Len;
   __clear_cache(Start, End);
 #  elif defined(__mips__)
-  cacheflush((char*)Addr, Len, BCACHE);
+  cacheflush((intptr_t)Addr, Len, BCACHE);
 #  endif
 
 #endif  // end apple

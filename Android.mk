@@ -4,7 +4,8 @@ LLVM_ENABLE_ASSERTION := false
 
 include $(CLEAR_VARS)
 
-subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
+# LLVM Libraries
+subdirs := \
   lib/Analysis \
   lib/Analysis/IPA \
   lib/AsmParser \
@@ -20,31 +21,46 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
   lib/Support \
   lib/TableGen \
   lib/Target \
-  lib/Target/ARM \
-  lib/Target/ARM/AsmParser \
-  lib/Target/ARM/InstPrinter \
-  lib/Target/ARM/Disassembler \
-  lib/Target/ARM/MCTargetDesc \
-  lib/Target/ARM/TargetInfo \
-  lib/Target/X86 \
-  lib/Target/X86/AsmParser \
-  lib/Target/X86/InstPrinter \
-  lib/Target/X86/Disassembler \
-  lib/Target/X86/MCTargetDesc \
-  lib/Target/X86/TargetInfo \
-  lib/Target/X86/Utils \
   lib/Transforms/IPO \
   lib/Transforms/InstCombine \
   lib/Transforms/Instrumentation \
   lib/Transforms/Scalar \
   lib/Transforms/Utils \
   lib/VMCore \
-  utils/TableGen \
-  tools/llvm-as \
-  tools/llvm-link \
-  ))
+  utils/TableGen
+
+# ARM Code Generation Libraries
+subdirs += \
+  lib/Target/ARM \
+  lib/Target/ARM/AsmParser \
+  lib/Target/ARM/InstPrinter \
+  lib/Target/ARM/Disassembler \
+  lib/Target/ARM/MCTargetDesc \
+  lib/Target/ARM/TargetInfo
+
+# MIPS Code Generation Libraries
+subdirs += \
+  lib/Target/Mips \
+  lib/Target/Mips/InstPrinter \
+  lib/Target/Mips/MCTargetDesc \
+  lib/Target/Mips/TargetInfo
+
+# X86 Code Generation Libraries
+subdirs += \
+  lib/Target/X86 \
+  lib/Target/X86/AsmParser \
+  lib/Target/X86/InstPrinter \
+  lib/Target/X86/Disassembler \
+  lib/Target/X86/MCTargetDesc \
+  lib/Target/X86/TargetInfo \
+  lib/Target/X86/Utils
+
+# LLVM Command Line Tools
+#subdirs += tools/llc
+subdirs += tools/llvm-as
+subdirs += tools/llvm-link
+#subdirs += tools/opt
+
 
 include $(LOCAL_PATH)/llvm.mk
-
-include $(subdirs)
-
+include $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, $(subdirs)))

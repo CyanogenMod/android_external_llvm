@@ -10,12 +10,29 @@ LLVM_ROOT_PATH := $(LOCAL_PATH)/../..
 llvm_llc_SRC_FILES := \
   llc.cpp
 
-llvm_llc_STATIC_LIBRARIES := \
+llvm_llc_mips_STATIC_LIBRARIES := \
+  libLLVMMipsInfo \
+  libLLVMMipsCodeGen \
+  libLLVMMipsDesc \
+  libLLVMMipsAsmPrinter \
+
+llvm_llc_x86_STATIC_LIBRARIES := \
+  libLLVMX86Info \
+  libLLVMX86AsmParser \
+  libLLVMX86CodeGen \
+  libLLVMX86Disassembler \
+  libLLVMX86Desc \
+  libLLVMX86AsmPrinter \
+  libLLVMX86Utils
+
+llvm_llc_arm_STATIC_LIBRARIES := \
   libLLVMARMCodeGen \
   libLLVMARMDisassembler \
   libLLVMARMAsmParser \
   libLLVMARMDesc \
-  libLLVMARMInfo \
+  libLLVMARMInfo
+
+llvm_llc_STATIC_LIBRARIES := \
   libLLVMAsmPrinter \
   libLLVMAsmParser \
   libLLVMBitReader \
@@ -32,9 +49,9 @@ llvm_llc_STATIC_LIBRARIES := \
   libLLVMScalarOpts \
   libLLVMTransformUtils \
   libLLVMAnalysis \
+  libLLVMTarget \
   libLLVMCore \
-  libLLVMSupport \
-  libLLVMTarget
+  libLLVMSupport
 
 
 #===---------------------------------------------------------------===
@@ -49,15 +66,13 @@ LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_IS_HOST_MODULE := true
 
 LOCAL_SRC_FILES := $(llvm_llc_SRC_FILES)
+
 LOCAL_STATIC_LIBRARIES := \
-  libLLVMX86Info \
-  libLLVMX86AsmParser \
-  libLLVMX86CodeGen \
-  libLLVMX86Disassembler \
-  libLLVMX86Desc \
-  libLLVMX86AsmPrinter \
-  libLLVMX86Utils \
+  $(llvm_llc_arm_STATIC_LIBRARIES) \
+  $(llvm_llc_mips_STATIC_LIBRARIES) \
+  $(llvm_llc_x86_STATIC_LIBRARIES) \
   $(llvm_llc_STATIC_LIBRARIES)
+
 LOCAL_LDLIBS += -lpthread -lm -ldl
 LOCAL_C_INCLUDES += external/llvm/include
 
@@ -79,11 +94,26 @@ LOCAL_MODULE_CLASS := EXECUTABLES
 
 LOCAL_SRC_FILES := $(llvm_llc_SRC_FILES)
 LOCAL_C_INCLUDES += external/llvm/include
-LOCAL_STATIC_LIBRARIES := $(llvm_llc_STATIC_LIBRARIES)
+
+ifeq ($(TARGET_ARCH),arm)
+  LOCAL_STATIC_LIBRARIES := $(llvm_llc_arm_STATIC_LIBRARIES)
+else
+  ifeq ($(TARGET_ARCH),mips)
+    LOCAL_STATIC_LIBRARIES := $(llvm_llc_mips_STATIC_LIBRARIES)
+  else
+    ifeq ($(TARGET_ARCH),x86)
+      LOCAL_STATIC_LIBRARIES := $(llvm_llc__STATIC_LIBRARIES)
+    else
+      $(error "Unsupport llc target $(TARGET_ARCH)")
+    endif
+  endif
+endif
+
+LOCAL_STATIC_LIBRARIES += $(llvm_llc_STATIC_LIBRARIES)
+
 LOCAL_SHARED_LIBRARIES := \
   libdl \
   libstlport
-
 
 include $(LLVM_ROOT_PATH)/llvm.mk
 include $(LLVM_DEVICE_BUILD_MK)

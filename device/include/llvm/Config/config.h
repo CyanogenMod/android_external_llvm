@@ -501,6 +501,8 @@
 /* LLVM architecture name for the native architecture, if available */
 #if defined(__arm__)
 #   define LLVM_NATIVE_ARCH ARMTarget
+#elif defined(__mips__)
+#   define LLVM_NATIVE_ARCH MipsTarget
 #elif defined(__i386__)
 #   define LLVM_NATIVE_ARCH X86Target
 #else
@@ -510,6 +512,8 @@
 /* Short LLVM architecture name for the native architecture, if available */
 #if defined(__arm__)
 #   define LLVM_NATIVE_ARCHNAME ARM
+#elif defined(__mips__)
+#   define LLVM_NATIVE_ARCHNAME Mips
 #elif defined(__i386__)
 #   define LLVM_NATIVE_ARCHNAME X86
 #else
