@@ -50,7 +50,7 @@ LOCAL_IS_HOST_MODULE := true
 ###########################################################
 define transform-host-td-to-out
 @mkdir -p $(dir $@)
-@echo "Host TableGen: $(LOCAL_MODULE) (gen-$(1)) <= $<"
+@echo "Host TableGen: $(TBLGEN_LOCAL_MODULE) (gen-$(1)) <= $<"
 $(hide) $(TBLGEN) \
 	-I $(dir $<)	\
 	-I $(LLVM_ROOT_PATH)/include	\
