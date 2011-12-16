@@ -86,10 +86,9 @@ private:
   // Complex Pattern.
   bool SelectAddr(SDValue N, SDValue &Base, SDValue &Offset);
 
-  // getI32Imm - Return a target constant with the specified
-  // value, of type i32.
-  inline SDValue getI32Imm(unsigned Imm) {
-    return CurDAG->getTargetConstant(Imm, MVT::i32);
+  // getImm - Return a target constant with the specified value.
+  inline SDValue getImm(const SDNode *Node, unsigned Imm) {
+    return CurDAG->getTargetConstant(Imm, Node->getValueType(0));
   }
 
   virtual bool SelectInlineAsmMemoryOperand(const SDValue &Op,
@@ -122,21 +121,16 @@ SelectAddr(SDValue Addr, SDValue &Base, SDValue &Offset) {
   }
 
   // on PIC code Load GA
-  if (TM.getRelocationModel() == Reloc::PIC_) {
-    if (Addr.getOpcode() == MipsISD::WrapperPIC) {
-      Base   = CurDAG->getRegister(GPReg, ValTy);
-      Offset = Addr.getOperand(0);
-      return true;
-    }
-  } else {
+  if (Addr.getOpcode() == MipsISD::Wrapper) {
+    Base   = CurDAG->getRegister(GPReg, ValTy);
+    Offset = Addr.getOperand(0);
+    return true;
+  }
+
+  if (TM.getRelocationModel() != Reloc::PIC_) {
     if ((Addr.getOpcode() == ISD::TargetExternalSymbol ||
         Addr.getOpcode() == ISD::TargetGlobalAddress))
       return false;
-    else if (Addr.getOpcode() == ISD::TargetGlobalTLSAddress) {
-      Base   = CurDAG->getRegister(GPReg, ValTy);
-      Offset = Addr;
-      return true;
-    }
   }
 
   // Addresses of the form FI+const or FI|const
@@ -310,13 +304,24 @@ SDNode* MipsDAGToDAGISel::Select(SDNode *Node) {
     }
 
     case MipsISD::ThreadPointer: {
-      unsigned SrcReg = Mips::HWR29;
-      unsigned DestReg = Mips::V1;
-      SDNode *Rdhwr = CurDAG->getMachineNode(Mips::RDHWR, Node->getDebugLoc(),
-          Node->getValueType(0), CurDAG->getRegister(SrcReg, MVT::i32));
+      EVT PtrVT = TLI.getPointerTy();
+      unsigned RdhwrOpc, SrcReg, DestReg;
+
+      if (PtrVT == MVT::i32) {
+        RdhwrOpc = Mips::RDHWR;
+        SrcReg = Mips::HWR29;
+        DestReg = Mips::V1;
+      } else {
+        RdhwrOpc = Mips::RDHWR64;
+        SrcReg = Mips::HWR29_64;
+        DestReg = Mips::V1_64;
+      }
+      
+      SDNode *Rdhwr = CurDAG->getMachineNode(RdhwrOpc, Node->getDebugLoc(),
+          Node->getValueType(0), CurDAG->getRegister(SrcReg, PtrVT));
       SDValue Chain = CurDAG->getCopyToReg(CurDAG->getEntryNode(), dl, DestReg,
           SDValue(Rdhwr, 0));
-      SDValue ResNode = CurDAG->getCopyFromReg(Chain, dl, DestReg, MVT::i32);
+      SDValue ResNode = CurDAG->getCopyFromReg(Chain, dl, DestReg, PtrVT);
       ReplaceUses(SDValue(Node, 0), ResNode);
       return ResNode.getNode();
     }

@@ -1308,7 +1308,7 @@ void AsmPrinter::EmitXXStructorList(const Constant *List) {
   }
 
   // Emit the function pointers in reverse priority order.
-  switch (MAI->getStructorOutputOrder()) {
+  switch (getObjFileLowering().getStructorOutputOrder()) {
   case Structors::None:
     break;
   case Structors::PriorityOrder:
@@ -1659,6 +1659,28 @@ static void EmitGlobalConstantVector(const ConstantVector *CV,
     AP.OutStreamer.EmitZeros(Padding, AddrSpace);
 }
 
+static void LowerVectorConstant(const Constant *CV, unsigned AddrSpace,
+                                AsmPrinter &AP) {
+  // Look through bitcasts
+  if (const ConstantExpr *CE = dyn_cast<ConstantExpr>(CV))
+    if (CE->getOpcode() == Instruction::BitCast)
+      CV = CE->getOperand(0);
+
+  if (const ConstantVector *V = dyn_cast<ConstantVector>(CV))
+    return EmitGlobalConstantVector(V, AddrSpace, AP);
+
+  // If we get here, we're stuck; report the problem to the user.
+  // FIXME: Are there any other useful tricks for vectors?
+  {
+    std::string S;
+    raw_string_ostream OS(S);
+    OS << "Unsupported vector expression in static initializer: ";
+    WriteAsOperand(OS, CV, /*PrintType=*/false,
+                   !AP.MF ? 0 : AP.MF->getFunction()->getParent());
+    report_fatal_error(OS.str());
+  }
+}
+
 static void EmitGlobalConstantStruct(const ConstantStruct *CS,
                                      unsigned AddrSpace, AsmPrinter &AP) {
   // Print the fields in successive locations. Pad to align if needed!
@@ -1813,8 +1835,8 @@ static void EmitGlobalConstantImpl(const Constant *CV, unsigned AddrSpace,
     return;
   }
 
-  if (const ConstantVector *V = dyn_cast<ConstantVector>(CV))
-    return EmitGlobalConstantVector(V, AddrSpace, AP);
+  if (CV->getType()->isVectorTy())
+    return LowerVectorConstant(CV, AddrSpace, AP);
 
   // Otherwise, it must be a ConstantExpr.  Lower it to an MCExpr, then emit it
   // thread the streamer with EmitValue.
@@ -1987,7 +2009,7 @@ static void EmitBasicBlockLoopComments(const MachineBasicBlock &MBB,
 void AsmPrinter::EmitBasicBlockStart(const MachineBasicBlock *MBB) const {
   // Emit an alignment directive for this block, if needed.
   if (unsigned Align = MBB->getAlignment())
-    EmitAlignment(Log2_32(Align));
+    EmitAlignment(Align);
 
   // If the block has its address taken, emit any labels that were used to
   // reference the block.  It is possible that there is more than one label
@@ -2082,7 +2104,7 @@ isBlockOnlyReachableByFallthrough(const MachineBasicBlock *MBB) const {
     MachineInstr &MI = *II;
 
     // If it is not a simple branch, we are in a table somewhere.
-    if (!MI.getDesc().isBranch() || MI.getDesc().isIndirectBranch())
+    if (!MI.isBranch() || MI.isIndirectBranch())
       return false;
 
     // If we are the operands of one of the branches, this is not

@@ -265,6 +265,8 @@ Instruction *InstCombiner::visitCallInst(CallInst &CI) {
       // Get the current byte offset into the thing. Use the original
       // operand in case we're looking through a bitcast.
       SmallVector<Value*, 8> Ops(GEP->idx_begin(), GEP->idx_end());
+      if (!GEP->getPointerOperandType()->isPointerTy())
+        return 0;
       Offset = TD->getIndexedOffset(GEP->getPointerOperandType(), Ops);
 
       Op1 = GEP->getPointerOperand()->stripPointerCasts();
@@ -960,7 +962,7 @@ Instruction *InstCombiner::visitCallSite(CallSite CS) {
   PointerType *PTy = cast<PointerType>(Callee->getType());
   FunctionType *FTy = cast<FunctionType>(PTy->getElementType());
   if (FTy->isVarArg()) {
-    int ix = FTy->getNumParams() + (isa<InvokeInst>(Callee) ? 2 : 0);
+    int ix = FTy->getNumParams();
     // See if we can optimize any arguments passed through the varargs area of
     // the call.
     for (CallSite::arg_iterator I = CS.arg_begin()+FTy->getNumParams(),

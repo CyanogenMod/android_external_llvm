@@ -3,7 +3,6 @@ add_llvm_library(LLVMTarget
   Target.cpp
   TargetData.cpp
   TargetELFWriterInfo.cpp
-  TargetFrameLowering.cpp
   TargetInstrInfo.cpp
   TargetIntrinsicInfo.cpp
   TargetLibraryInfo.cpp
@@ -11,12 +10,6 @@ add_llvm_library(LLVMTarget
   TargetMachine.cpp
   TargetRegisterInfo.cpp
   TargetSubtargetInfo.cpp
-  )
-
-add_llvm_library_dependencies(LLVMTarget
-  LLVMCore
-  LLVMMC
-  LLVMSupport
   )
 
 foreach(t ${LLVM_TARGETS_TO_BUILD})

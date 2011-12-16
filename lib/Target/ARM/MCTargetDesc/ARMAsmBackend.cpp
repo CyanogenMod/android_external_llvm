@@ -102,6 +102,11 @@ public:
 
   bool MayNeedRelaxation(const MCInst &Inst) const;
 
+  bool fixupNeedsRelaxation(const MCFixup &Fixup,
+                            uint64_t Value,
+                            const MCInstFragment *DF,
+                            const MCAsmLayout &Layout) const;
+
   void RelaxInstruction(const MCInst &Inst, MCInst &Res) const;
 
   bool WriteNopData(uint64_t Count, MCObjectWriter *OW) const;
@@ -124,14 +129,49 @@ public:
 };
 } // end anonymous namespace
 
+static unsigned getRelaxedOpcode(unsigned Op) {
+  switch (Op) {
+  default: return Op;
+  case ARM::tBcc: return ARM::t2Bcc;
+  }
+}
+
 bool ARMAsmBackend::MayNeedRelaxation(const MCInst &Inst) const {
-  // FIXME: Thumb targets, different move constant targets..
+  if (getRelaxedOpcode(Inst.getOpcode()) != Inst.getOpcode())
+    return true;
   return false;
 }
 
+bool ARMAsmBackend::fixupNeedsRelaxation(const MCFixup &Fixup,
+                                         uint64_t Value,
+                                         const MCInstFragment *DF,
+                                         const MCAsmLayout &Layout) const {
+  // Relaxing tBcc to t2Bcc. tBcc has a signed 9-bit displacement with the
+  // low bit being an implied zero. There's an implied +4 offset for the
+  // branch, so we adjust the other way here to determine what's
+  // encodable.
+  //
+  // Relax if the value is too big for a (signed) i8.
+  int64_t Offset = int64_t(Value) - 4;
+  return Offset > 254 || Offset < -256;
+}
+
 void ARMAsmBackend::RelaxInstruction(const MCInst &Inst, MCInst &Res) const {
-  assert(0 && "ARMAsmBackend::RelaxInstruction() unimplemented");
-  return;
+  unsigned RelaxedOp = getRelaxedOpcode(Inst.getOpcode());
+
+  // Sanity check w/ diagnostic if we get here w/ a bogus instruction.
+  if (RelaxedOp == Inst.getOpcode()) {
+    SmallString<256> Tmp;
+    raw_svector_ostream OS(Tmp);
+    Inst.dump_pretty(OS);
+    OS << "\n";
+    report_fatal_error("unexpected instruction to relax: " + OS.str());
+  }
+
+  // The instructions we're relaxing have (so far) the same operands.
+  // We just need to update to the proper opcode.
+  Res = Inst;
+  Res.setOpcode(RelaxedOp);
 }
 
 bool ARMAsmBackend::WriteNopData(uint64_t Count, MCObjectWriter *OW) const {

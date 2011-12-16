@@ -182,7 +182,7 @@ uint64_t ELFObjectWriter::SymbolValue(MCSymbolData &Data,
     if (const MCExpr *Value = Symbol.getVariableValue()) {
       int64_t IntValue;
       if (Value->EvaluateAsAbsolute(IntValue, Layout))
-	return (uint64_t)IntValue;
+        return (uint64_t)IntValue;
     }
   }
 
@@ -1072,7 +1072,7 @@ void ELFObjectWriter::WriteDataSectionData(MCAssembler &Asm,
       WriteBytes(cast<MCDataFragment>(F).getContents().str());
     }
   } else {
-    Asm.WriteSectionData(&SD, Layout);
+    Asm.writeSectionData(&SD, Layout);
   }
 }
 
@@ -1742,14 +1742,26 @@ unsigned X86ELFObjectWriter::GetRelocType(const MCValue &Target,
     }
   } else {
     if (IsPCRel) {
-      switch (Modifier) {
-      default:
-        llvm_unreachable("Unimplemented");
-      case MCSymbolRefExpr::VK_None:
-        Type = ELF::R_386_PC32;
+      switch ((unsigned)Fixup.getKind()) {
+      default: llvm_unreachable("invalid fixup kind!");
+
+      case X86::reloc_global_offset_table:
+        Type = ELF::R_386_GOTPC;
         break;
-      case MCSymbolRefExpr::VK_PLT:
-        Type = ELF::R_386_PLT32;
+
+      case X86::reloc_signed_4byte:
+      case FK_PCRel_4:
+      case FK_Data_4:
+        switch (Modifier) {
+        default:
+          llvm_unreachable("Unimplemented");
+        case MCSymbolRefExpr::VK_None:
+          Type = ELF::R_386_PC32;
+          break;
+        case MCSymbolRefExpr::VK_PLT:
+          Type = ELF::R_386_PLT32;
+          break;
+        }
         break;
       }
     } else {
@@ -1831,6 +1843,21 @@ void MipsELFObjectWriter::WriteEFlags() {
           ELF::EF_MIPS_ARCH_32R2);
 }
 
+const MCSymbol *MipsELFObjectWriter::ExplicitRelSym(const MCAssembler &Asm,
+                                                    const MCValue &Target,
+                                                    const MCFragment &F,
+                                                    const MCFixup &Fixup,
+                                                    bool IsPCRel) const {
+  assert(Target.getSymA() && "SymA cannot be 0.");
+  const MCSymbol &Sym = Target.getSymA()->getSymbol();
+  
+  if (Sym.getSection().getKind().isMergeableCString() ||
+      Sym.getSection().getKind().isMergeableConst())
+    return &Sym;
+
+  return NULL;
+}
+
 unsigned MipsELFObjectWriter::GetRelocType(const MCValue &Target,
                                            const MCFixup &Fixup,
                                            bool IsPCRel,
@@ -1858,7 +1885,8 @@ unsigned MipsELFObjectWriter::GetRelocType(const MCValue &Target,
   case Mips::fixup_Mips_CALL16:
     Type = ELF::R_MIPS_CALL16;
     break;
-  case Mips::fixup_Mips_GOT16:
+  case Mips::fixup_Mips_GOT_Global:
+  case Mips::fixup_Mips_GOT_Local:
     Type = ELF::R_MIPS_GOT16;
     break;
   case Mips::fixup_Mips_HI16:
@@ -1887,4 +1915,3 @@ unsigned MipsELFObjectWriter::GetRelocType(const MCValue &Target,
 
   return Type;
 }
-

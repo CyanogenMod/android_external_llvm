@@ -144,7 +144,7 @@ bool MipsCodeEmitter::runOnMachineFunction(MachineFunction &MF) {
     for (MachineFunction::iterator MBB = MF.begin(), E = MF.end();
         MBB != E; ++MBB){
       MCE.StartMachineBasicBlock(MBB);
-      for (MachineBasicBlock::const_iterator I = MBB->begin(), E = MBB->end();
+      for (MachineBasicBlock::iterator I = MBB->begin(), E = MBB->end();
           I != E; ++I)
         emitInstruction(*I);
     }
@@ -161,7 +161,7 @@ unsigned MipsCodeEmitter::getRelocation(const MachineInstr &MI,
   if (Form == MipsII::FrmJ)
     return Mips::reloc_mips_26;
   if ((Form == MipsII::FrmI || Form == MipsII::FrmFI)
-       && MI.getDesc().isBranch())
+       && MI.isBranch())
     return Mips::reloc_mips_branch;
   if (Form == MipsII::FrmI && MI.getOpcode() == Mips::LUi)
     return Mips::reloc_mips_hi;

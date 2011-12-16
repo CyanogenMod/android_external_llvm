@@ -237,8 +237,15 @@ namespace llvm {
     // Add RC to *2RC maps.
     void addToMaps(CodeGenRegisterClass*);
 
+    // Create a synthetic sub-class if it is missing.
+    CodeGenRegisterClass *getOrCreateSubClass(const CodeGenRegisterClass *RC,
+                                              const CodeGenRegister::Set *Membs,
+                                              StringRef Name);
+
     // Infer missing register classes.
     void computeInferredRegisterClasses();
+    void inferCommonSubClass(CodeGenRegisterClass *RC);
+    void inferSubClassWithSubReg(CodeGenRegisterClass *RC);
 
     // Composite SubRegIndex instances.
     // Map (SubRegIndex, SubRegIndex) -> SubRegIndex.

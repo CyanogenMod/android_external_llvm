@@ -273,23 +273,10 @@ namespace llvm {
       MOVLPD,
       MOVSD,
       MOVSS,
-      UNPCKLPS,
-      UNPCKLPD,
-      UNPCKHPS,
-      UNPCKHPD,
-      PUNPCKLBW,
-      PUNPCKLWD,
-      PUNPCKLDQ,
-      PUNPCKLQDQ,
-      PUNPCKHBW,
-      PUNPCKHWD,
-      PUNPCKHDQ,
-      PUNPCKHQDQ,
-      VPERMILPS,
-      VPERMILPSY,
-      VPERMILPD,
-      VPERMILPDY,
-      VPERM2F128,
+      UNPCKL,
+      UNPCKH,
+      VPERMILP,
+      VPERM2X128,
       VBROADCAST,
 
       // VASTART_SAVE_XMM_REGS - Save xmm argument registers to the stack,
@@ -467,10 +454,6 @@ namespace llvm {
     /// getShufflePSHUFLWImmediate - Return the appropriate immediate to shuffle
     /// the specified VECTOR_SHUFFLE mask with PSHUFLW instruction.
     unsigned getShufflePSHUFLWImmediate(SDNode *N);
-
-    /// getShufflePALIGNRImmediate - Return the appropriate immediate to shuffle
-    /// the specified VECTOR_SHUFFLE mask with the PALIGNR instruction.
-    unsigned getShufflePALIGNRImmediate(SDNode *N);
 
     /// getExtractVEXTRACTF128Immediate - Return the appropriate
     /// immediate to extract the specified EXTRACT_SUBVECTOR index

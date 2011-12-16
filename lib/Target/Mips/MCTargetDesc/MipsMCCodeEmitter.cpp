@@ -194,8 +194,11 @@ getMachineOpValue(const MCInst &MI, const MCOperand &MO,
       case MCSymbolRefExpr::VK_Mips_GOT_CALL:
         FixupKind = Mips::fixup_Mips_CALL16;
         break;
+      case MCSymbolRefExpr::VK_Mips_GOT16:
+        FixupKind = Mips::fixup_Mips_GOT_Global;
+        break;
       case MCSymbolRefExpr::VK_Mips_GOT:
-        FixupKind = Mips::fixup_Mips_GOT16;
+        FixupKind = Mips::fixup_Mips_GOT_Local;
         break;
       case MCSymbolRefExpr::VK_Mips_ABS_HI:
         FixupKind = Mips::fixup_Mips_HI16;
@@ -245,8 +248,8 @@ unsigned
 MipsMCCodeEmitter::getSizeExtEncoding(const MCInst &MI, unsigned OpNo,
                                       SmallVectorImpl<MCFixup> &Fixups) const {
   assert(MI.getOperand(OpNo).isImm());
-  unsigned szEncoding = getMachineOpValue(MI, MI.getOperand(OpNo), Fixups);
-  return szEncoding - 1;
+  unsigned SizeEncoding = getMachineOpValue(MI, MI.getOperand(OpNo), Fixups);
+  return SizeEncoding - 1;
 }
 
 // FIXME: should be called getMSBEncoding
@@ -256,10 +259,10 @@ MipsMCCodeEmitter::getSizeInsEncoding(const MCInst &MI, unsigned OpNo,
                                       SmallVectorImpl<MCFixup> &Fixups) const {
   assert(MI.getOperand(OpNo-1).isImm());
   assert(MI.getOperand(OpNo).isImm());
-  unsigned pos = getMachineOpValue(MI, MI.getOperand(OpNo-1), Fixups);
-  unsigned sz = getMachineOpValue(MI, MI.getOperand(OpNo), Fixups);
+  unsigned Position = getMachineOpValue(MI, MI.getOperand(OpNo-1), Fixups);
+  unsigned Size = getMachineOpValue(MI, MI.getOperand(OpNo), Fixups);
 
-  return pos + sz - 1;
+  return Position + Size - 1;
 }
 
 #include "MipsGenMCCodeEmitter.inc"

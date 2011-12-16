@@ -582,6 +582,23 @@ void CodeGenRegBank::addToMaps(CodeGenRegisterClass *RC) {
   Key2RC.insert(std::make_pair(K, RC));
 }
 
+// Create a synthetic sub-class if it is missing.
+CodeGenRegisterClass*
+CodeGenRegBank::getOrCreateSubClass(const CodeGenRegisterClass *RC,
+                                    const CodeGenRegister::Set *Members,
+                                    StringRef Name) {
+  // Synthetic sub-class has the same size and alignment as RC.
+  CodeGenRegisterClass::Key K(Members, RC->SpillSize, RC->SpillAlignment);
+  RCKeyMap::const_iterator FoundI = Key2RC.find(K);
+  if (FoundI != Key2RC.end())
+    return FoundI->second;
+
+  // Sub-class doesn't exist, create a new one.
+  CodeGenRegisterClass *NewRC = new CodeGenRegisterClass(Name, K);
+  addToMaps(NewRC);
+  return NewRC;
+}
+
 CodeGenRegisterClass *CodeGenRegBank::getRegClass(Record *Def) {
   if (CodeGenRegisterClass *RC = Def2RC[Def])
     return RC;
@@ -739,61 +756,102 @@ void CodeGenRegBank::computeDerivedInfo() {
   computeComposites();
 }
 
+//
+// Synthesize missing register class intersections.
+//
+// Make sure that sub-classes of RC exists such that getCommonSubClass(RC, X)
+// returns a maximal register class for all X.
+//
+void CodeGenRegBank::inferCommonSubClass(CodeGenRegisterClass *RC) {
+  for (unsigned rci = 0, rce = RegClasses.size(); rci != rce; ++rci) {
+    CodeGenRegisterClass *RC1 = RC;
+    CodeGenRegisterClass *RC2 = RegClasses[rci];
+    if (RC1 == RC2)
+      continue;
+
+    // Compute the set intersection of RC1 and RC2.
+    const CodeGenRegister::Set &Memb1 = RC1->getMembers();
+    const CodeGenRegister::Set &Memb2 = RC2->getMembers();
+    CodeGenRegister::Set Intersection;
+    std::set_intersection(Memb1.begin(), Memb1.end(),
+                          Memb2.begin(), Memb2.end(),
+                          std::inserter(Intersection, Intersection.begin()),
+                          CodeGenRegister::Less());
+
+    // Skip disjoint class pairs.
+    if (Intersection.empty())
+      continue;
+
+    // If RC1 and RC2 have different spill sizes or alignments, use the
+    // larger size for sub-classing.  If they are equal, prefer RC1.
+    if (RC2->SpillSize > RC1->SpillSize ||
+        (RC2->SpillSize == RC1->SpillSize &&
+         RC2->SpillAlignment > RC1->SpillAlignment))
+      std::swap(RC1, RC2);
+
+    getOrCreateSubClass(RC1, &Intersection,
+                        RC1->getName() + "_and_" + RC2->getName());
+  }
+}
+
+//
+// Synthesize missing sub-classes for getSubClassWithSubReg().
+//
+// Make sure that the set of registers in RC with a given SubIdx sub-register
+// form a register class.  Update RC->SubClassWithSubReg.
+//
+void CodeGenRegBank::inferSubClassWithSubReg(CodeGenRegisterClass *RC) {
+  // Map SubRegIndex to set of registers in RC supporting that SubRegIndex.
+  typedef std::map<Record*, CodeGenRegister::Set, LessRecord> SubReg2SetMap;
+
+  // Compute the set of registers supporting each SubRegIndex.
+  SubReg2SetMap SRSets;
+  for (CodeGenRegister::Set::const_iterator RI = RC->getMembers().begin(),
+       RE = RC->getMembers().end(); RI != RE; ++RI) {
+    const CodeGenRegister::SubRegMap &SRM = (*RI)->getSubRegs();
+    for (CodeGenRegister::SubRegMap::const_iterator I = SRM.begin(),
+         E = SRM.end(); I != E; ++I)
+      SRSets[I->first].insert(*RI);
+  }
+
+  // Find matching classes for all SRSets entries.  Iterate in SubRegIndex
+  // numerical order to visit synthetic indices last.
+  for (unsigned sri = 0, sre = SubRegIndices.size(); sri != sre; ++sri) {
+    Record *SubIdx = SubRegIndices[sri];
+    SubReg2SetMap::const_iterator I = SRSets.find(SubIdx);
+    // Unsupported SubRegIndex. Skip it.
+    if (I == SRSets.end())
+      continue;
+    // In most cases, all RC registers support the SubRegIndex.
+    if (I->second.size() == RC->getMembers().size()) {
+      RC->setSubClassWithSubReg(SubIdx, RC);
+      continue;
+    }
+    // This is a real subset.  See if we have a matching class.
+    CodeGenRegisterClass *SubRC =
+      getOrCreateSubClass(RC, &I->second,
+                          RC->getName() + "_with_" + I->first->getName());
+    RC->setSubClassWithSubReg(SubIdx, SubRC);
+  }
+}
+
+//
 // Infer missing register classes.
 //
-// For every register class RC, make sure that the set of registers in RC with
-// a given SubIxx sub-register form a register class.
 void CodeGenRegBank::computeInferredRegisterClasses() {
   // When this function is called, the register classes have not been sorted
   // and assigned EnumValues yet.  That means getSubClasses(),
   // getSuperClasses(), and hasSubClass() functions are defunct.
 
-  // Map SubRegIndex to register set.
-  typedef std::map<Record*, CodeGenRegister::Set, LessRecord> SubReg2SetMap;
-
   // Visit all register classes, including the ones being added by the loop.
   for (unsigned rci = 0; rci != RegClasses.size(); ++rci) {
-    CodeGenRegisterClass &RC = *RegClasses[rci];
+    CodeGenRegisterClass *RC = RegClasses[rci];
 
-    // Compute the set of registers supporting each SubRegIndex.
-    SubReg2SetMap SRSets;
-    for (CodeGenRegister::Set::const_iterator RI = RC.getMembers().begin(),
-         RE = RC.getMembers().end(); RI != RE; ++RI) {
-      const CodeGenRegister::SubRegMap &SRM = (*RI)->getSubRegs();
-      for (CodeGenRegister::SubRegMap::const_iterator I = SRM.begin(),
-           E = SRM.end(); I != E; ++I)
-        SRSets[I->first].insert(*RI);
-    }
+    // Synthesize answers for getSubClassWithSubReg().
+    inferSubClassWithSubReg(RC);
 
-    // Find matching classes for all SRSets entries.  Iterate in SubRegIndex
-    // numerical order to visit synthetic indices last.
-    for (unsigned sri = 0, sre = SubRegIndices.size(); sri != sre; ++sri) {
-      Record *SubIdx = SubRegIndices[sri];
-      SubReg2SetMap::const_iterator I = SRSets.find(SubIdx);
-      // Unsupported SubRegIndex. Skip it.
-      if (I == SRSets.end())
-        continue;
-      // In most cases, all RC registers support the SubRegIndex.
-      if (I->second.size() == RC.getMembers().size()) {
-        RC.setSubClassWithSubReg(SubIdx, &RC);
-        continue;
-      }
-
-      // This is a real subset.  See if we have a matching class.
-      CodeGenRegisterClass::Key K(&I->second, RC.SpillSize, RC.SpillAlignment);
-      RCKeyMap::const_iterator FoundI = Key2RC.find(K);
-      if (FoundI != Key2RC.end()) {
-        RC.setSubClassWithSubReg(SubIdx, FoundI->second);
-        continue;
-      }
-
-      // Class doesn't exist.
-      CodeGenRegisterClass *NewRC =
-        new CodeGenRegisterClass(RC.getName() + "_with_" +
-                                 I->first->getName(), K);
-      addToMaps(NewRC);
-      RC.setSubClassWithSubReg(SubIdx, NewRC);
-    }
+    // Synthesize answers for getCommonSubClass().
+    inferCommonSubClass(RC);
   }
 }
 

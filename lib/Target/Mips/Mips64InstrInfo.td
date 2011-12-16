@@ -25,7 +25,7 @@ def uimm16_64      : Operand<i64> {
 
 // Transformation Function - get Imm - 32.
 def Subtract32 : SDNodeXForm<imm, [{
-  return getI32Imm((unsigned)N->getZExtValue() - 32);
+  return getImm(N, (unsigned)N->getZExtValue() - 32);
 }]>;
 
 // shamt field must fit in 5 bits.
@@ -35,6 +35,19 @@ def immZExt5_64 : ImmLeaf<i64, [{return Imm == (Imm & 0x1f);}]>;
 def imm32_63 : ImmLeaf<i32,
                        [{return (int32_t)Imm >= 32 && (int32_t)Imm < 64;}],
                        Subtract32>;
+
+// Is a 32-bit int.
+def immSExt32 : ImmLeaf<i64, [{return isInt<32>(Imm);}]>;
+
+// Transformation Function - get the higher 16 bits.
+def HIGHER : SDNodeXForm<imm, [{
+  return getImm(N, (N->getZExtValue() >> 32) & 0xFFFF);
+}]>;
+
+// Transformation Function - get the highest 16 bits.
+def HIGHEST : SDNodeXForm<imm, [{
+  return getImm(N, (N->getZExtValue() >> 48) & 0xFFFF);
+}]>;
 
 //===----------------------------------------------------------------------===//
 // Instructions specific format
@@ -206,6 +219,17 @@ let Uses = [SP_64] in
 def DynAlloc64 : EffectiveAddress<"daddiu\t$rt, $addr", CPU64Regs, mem_ea_64>,
                  Requires<[IsN64]>;
 
+def RDHWR64 : ReadHardware<CPU64Regs, HWRegs64>;
+
+def DEXT : ExtBase<3, "dext", CPU64Regs>;
+def DINS : InsBase<7, "dins", CPU64Regs>;
+
+def DSLL64_32 : FR<0x3c, 0x00, (outs CPU64Regs:$rd), (ins CPURegs:$rt),
+                   "dsll32\t$rd, $rt, 0", [], IIAlu>;
+
+def SLL64_32 : FR<0x0, 0x00, (outs CPU64Regs:$rd), (ins CPURegs:$rt),
+                  "sll\t$rd, $rt, 0", [], IIAlu>;
+
 //===----------------------------------------------------------------------===//
 //  Arbitrary patterns that map to one or more instructions
 //===----------------------------------------------------------------------===//
@@ -216,9 +240,15 @@ def : Pat<(i64 immSExt16:$in),
 def : Pat<(i64 immZExt16:$in),
           (ORi64 ZERO_64, imm:$in)>;
 
+// 32-bit immediates
+def : Pat<(i64 immSExt32:$imm),
+          (ORi64 (LUi64 (HI16 imm:$imm)), (LO16 imm:$imm))>;
+
 // Arbitrary immediates
 def : Pat<(i64 imm:$imm),
-          (ORi64 (LUi64 (HI16 imm:$imm)), (LO16 imm:$imm))>;
+          (ORi64 (DSLL (ORi64 (DSLL (ORi64 (LUi64 (HIGHEST imm:$imm)),
+           (HIGHER imm:$imm)), 16), (HI16 imm:$imm)), 16),
+           (LO16 imm:$imm))>;
 
 // extended loads
 let Predicates = [NotN64] in {
@@ -236,11 +266,13 @@ def : Pat<(MipsHi tglobaladdr:$in), (LUi64 tglobaladdr:$in)>;
 def : Pat<(MipsHi tblockaddress:$in), (LUi64 tblockaddress:$in)>;
 def : Pat<(MipsHi tjumptable:$in), (LUi64 tjumptable:$in)>;
 def : Pat<(MipsHi tconstpool:$in), (LUi64 tconstpool:$in)>;
+def : Pat<(MipsHi tglobaltlsaddr:$in), (LUi64 tglobaltlsaddr:$in)>;
 
 def : Pat<(MipsLo tglobaladdr:$in), (DADDiu ZERO_64, tglobaladdr:$in)>;
 def : Pat<(MipsLo tblockaddress:$in), (DADDiu ZERO_64, tblockaddress:$in)>;
 def : Pat<(MipsLo tjumptable:$in), (DADDiu ZERO_64, tjumptable:$in)>;
 def : Pat<(MipsLo tconstpool:$in), (DADDiu ZERO_64, tconstpool:$in)>;
+def : Pat<(MipsLo tglobaltlsaddr:$in), (DADDiu ZERO_64, tglobaltlsaddr:$in)>;
 
 def : Pat<(add CPU64Regs:$hi, (MipsLo tglobaladdr:$lo)),
           (DADDiu CPU64Regs:$hi, tglobaladdr:$lo)>;
@@ -250,6 +282,15 @@ def : Pat<(add CPU64Regs:$hi, (MipsLo tjumptable:$lo)),
           (DADDiu CPU64Regs:$hi, tjumptable:$lo)>;
 def : Pat<(add CPU64Regs:$hi, (MipsLo tconstpool:$lo)),
           (DADDiu CPU64Regs:$hi, tconstpool:$lo)>;
+def : Pat<(add CPU64Regs:$hi, (MipsLo tglobaltlsaddr:$lo)),
+          (DADDiu CPU64Regs:$hi, tglobaltlsaddr:$lo)>;
+
+def : WrapperPat<tglobaladdr, DADDiu, GP_64>;
+def : WrapperPat<tconstpool, DADDiu, GP_64>;
+def : WrapperPat<texternalsym, DADDiu, GP_64>;
+def : WrapperPat<tblockaddress, DADDiu, GP_64>;
+def : WrapperPat<tjumptable, DADDiu, GP_64>;
+def : WrapperPat<tglobaltlsaddr, DADDiu, GP_64>;
 
 defm : BrcondPats<CPU64Regs, BEQ64, BNE64, SLT64, SLTu64, SLTi64, SLTiu64,
                   ZERO_64>;
@@ -268,3 +309,6 @@ def : Pat<(MipsDynAlloc addr:$f), (DynAlloc64 addr:$f)>, Requires<[IsN64]>;
 def : Pat<(i32 (trunc CPU64Regs:$src)),
           (SLL (EXTRACT_SUBREG CPU64Regs:$src, sub_32), 0)>, Requires<[IsN64]>;
  
+// 32-to-64-bit extension
+def : Pat<(i64 (anyext CPURegs:$src)), (SLL64_32 CPURegs:$src)>;
+def : Pat<(i64 (zext CPURegs:$src)), (DSRL32 (DSLL64_32 CPURegs:$src), 0)>;

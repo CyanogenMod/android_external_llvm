@@ -332,6 +332,11 @@ else ()
   set(LLVM_NATIVE_TARGETINFO LLVMInitialize${LLVM_NATIVE_ARCH}TargetInfo)
   set(LLVM_NATIVE_TARGETMC LLVMInitialize${LLVM_NATIVE_ARCH}TargetMC)
   set(LLVM_NATIVE_ASMPRINTER LLVMInitialize${LLVM_NATIVE_ARCH}AsmPrinter)
+
+  # We don't have an ASM parser for all architectures yet.
+  if (EXISTS ${CMAKE_SOURCE_DIR}/lib/Target/${LLVM_NATIVE_ARCH}/AsmParser/CMakeLists.txt)
+    set(LLVM_NATIVE_ASMPARSER LLVMInitialize${LLVM_NATIVE_ARCH}AsmParser)
+  endif ()
 endif ()
 
 if( MINGW )
@@ -379,14 +384,15 @@ endif( PURE_WINDOWS )
 set(RETSIGTYPE void)
 
 if( LLVM_ENABLE_THREADS )
-  if( HAVE_PTHREAD_H OR WIN32 )
-    set(ENABLE_THREADS 1)
+  # Check if threading primitives aren't supported on this platform
+  if( NOT HAVE_PTHREAD_H AND NOT WIN32 )
+    set(LLVM_ENABLE_THREADS 0)
   endif()
 endif()
 
-if( ENABLE_THREADS )
+if( LLVM_ENABLE_THREADS )
   message(STATUS "Threads enabled.")
-else( ENABLE_THREADS )
+else( LLVM_ENABLE_THREADS )
   message(STATUS "Threads disabled.")
 endif()
 

@@ -55,8 +55,11 @@ static const uintptr_t kCurrentStackFrameMagic = 0x41B58AB3;
 static const uintptr_t kRetiredStackFrameMagic = 0x45E0360E;
 
 static const char *kAsanModuleCtorName = "asan.module_ctor";
+static const char *kAsanModuleDtorName = "asan.module_dtor";
+static const int   kAsanCtorAndCtorPriority = 1;
 static const char *kAsanReportErrorTemplate = "__asan_report_";
 static const char *kAsanRegisterGlobalsName = "__asan_register_globals";
+static const char *kAsanUnregisterGlobalsName = "__asan_unregister_globals";
 static const char *kAsanInitName = "__asan_init";
 static const char *kAsanMappingOffsetName = "__asan_mapping_offset";
 static const char *kAsanMappingScaleName = "__asan_mapping_scale";
@@ -434,6 +437,7 @@ void AddressSanitizer::instrumentAddress(Instruction *OrigIns,
   IRBuilder<> IRB1(CheckTerm);
   Instruction *Crash = generateCrashCode(IRB1, AddrLong, IsWrite, TypeSize);
   Crash->setDebugLoc(OrigIns->getDebugLoc());
+  ReplaceInstWithInst(CheckTerm, new UnreachableInst(*C));
 }
 
 // This function replaces all global variables with new variables that have
@@ -517,7 +521,11 @@ bool AddressSanitizer::insertGlobalRedzones(Module &M) {
         NewTy, G->getInitializer(),
         Constant::getNullValue(RightRedZoneTy), NULL);
 
-    GlobalVariable *Name = createPrivateGlobalForString(M, G->getName());
+    SmallString<2048> DescriptionOfGlobal = G->getName();
+    DescriptionOfGlobal += " (";
+    DescriptionOfGlobal += M.getModuleIdentifier();
+    DescriptionOfGlobal += ")";
+    GlobalVariable *Name = createPrivateGlobalForString(M, DescriptionOfGlobal);
 
     // Create a new global variable with enough space for a redzone.
     GlobalVariable *NewGlobal = new GlobalVariable(
@@ -557,6 +565,22 @@ bool AddressSanitizer::insertGlobalRedzones(Module &M) {
   IRB.CreateCall2(AsanRegisterGlobals,
                   IRB.CreatePointerCast(AllGlobals, IntptrTy),
                   ConstantInt::get(IntptrTy, n));
+
+  // We also need to unregister globals at the end, e.g. when a shared library
+  // gets closed.
+  Function *AsanDtorFunction = Function::Create(
+      FunctionType::get(Type::getVoidTy(*C), false),
+      GlobalValue::InternalLinkage, kAsanModuleDtorName, &M);
+  BasicBlock *AsanDtorBB = BasicBlock::Create(*C, "", AsanDtorFunction);
+  IRBuilder<> IRB_Dtor(ReturnInst::Create(*C, AsanDtorBB));
+  Function *AsanUnregisterGlobals = cast<Function>(M.getOrInsertFunction(
+      kAsanUnregisterGlobalsName, IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+  AsanUnregisterGlobals->setLinkage(Function::ExternalLinkage);
+
+  IRB_Dtor.CreateCall2(AsanUnregisterGlobals,
+                       IRB.CreatePointerCast(AllGlobals, IntptrTy),
+                       ConstantInt::get(IntptrTy, n));
+  appendToGlobalDtors(M, AsanDtorFunction, kAsanCtorAndCtorPriority);
 
   DEBUG(dbgs() << M);
   return true;
@@ -631,7 +655,7 @@ bool AddressSanitizer::runOnModule(Module &M) {
     Res |= handleFunction(M, *F);
   }
 
-  appendToGlobalCtors(M, AsanCtorFunction, 1 /*high priority*/);
+  appendToGlobalCtors(M, AsanCtorFunction, kAsanCtorAndCtorPriority);
 
   return Res;
 }
@@ -951,8 +975,8 @@ BlackList::BlackList(const std::string &Path) {
 
   OwningPtr<MemoryBuffer> File;
   if (error_code EC = MemoryBuffer::getFile(ClBlackListFile.c_str(), File)) {
-    errs() << EC.message();
-    exit(1);
+    report_fatal_error("Can't open blacklist file " + ClBlackListFile + ": " +
+                       EC.message());
   }
   MemoryBuffer *Buff = File.take();
   const char *Data = Buff->getBufferStart();
@@ -962,15 +986,23 @@ BlackList::BlackList(const std::string &Path) {
   for (size_t i = 0, numLines = Lines.size(); i < numLines; i++) {
     if (Lines[i].startswith(kFunPrefix)) {
       std::string ThisFunc = Lines[i].substr(strlen(kFunPrefix));
-      if (Fun.size()) {
-        Fun += "|";
-      }
+      std::string ThisFuncRE;
       // add ThisFunc replacing * with .*
       for (size_t j = 0, n = ThisFunc.size(); j < n; j++) {
         if (ThisFunc[j] == '*')
-          Fun += '.';
-        Fun += ThisFunc[j];
+          ThisFuncRE += '.';
+        ThisFuncRE += ThisFunc[j];
       }
+      // Check that the regexp is valid.
+      Regex CheckRE(ThisFuncRE);
+      std::string Error;
+      if (!CheckRE.isValid(Error))
+        report_fatal_error("malformed blacklist regex: " + ThisFunc +
+                           ": " + Error);
+      // Append to the final regexp.
+      if (Fun.size())
+        Fun += "|";
+      Fun += ThisFuncRE;
     }
   }
   if (Fun.size()) {

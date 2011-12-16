@@ -535,7 +535,7 @@ public:
 
   /// isUnpredicatedTerminator - Returns true if the instruction is a
   /// terminator instruction that has not been predicated.
-  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const;
+  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const = 0;
 
   /// PredicateInstruction - Convert the instruction into a predicated
   /// instruction. It returns true if the operation was successful.
@@ -647,6 +647,15 @@ public:
   virtual int getOperandLatency(const InstrItineraryData *ItinData,
                                 SDNode *DefNode, unsigned DefIdx,
                                 SDNode *UseNode, unsigned UseIdx) const;
+
+  /// getOutputLatency - Compute and return the output dependency latency of a
+  /// a given pair of defs which both target the same register. This is usually
+  /// one.
+  virtual unsigned getOutputLatency(const InstrItineraryData *ItinData,
+                                    const MachineInstr *DefMI, unsigned DefIdx,
+                                    const MachineInstr *DepMI) const {
+    return 1;
+  }
 
   /// getInstrLatency - Compute the instruction latency of a given instruction.
   /// If the instruction has higher cost when predicated, it's returned via
@@ -814,6 +823,7 @@ public:
   virtual bool hasStoreToStackSlot(const MachineInstr *MI,
                                    const MachineMemOperand *&MMO,
                                    int &FrameIndex) const;
+  virtual bool isUnpredicatedTerminator(const MachineInstr *MI) const;
   virtual bool PredicateInstruction(MachineInstr *MI,
                             const SmallVectorImpl<MachineOperand> &Pred) const;
   virtual void reMaterialize(MachineBasicBlock &MBB,

@@ -63,13 +63,14 @@ void llvm::ComputeMaskedBits(Value *V, const APInt &Mask,
   assert(V && "No Value?");
   assert(Depth <= MaxDepth && "Limit Search Depth");
   unsigned BitWidth = Mask.getBitWidth();
-  assert((V->getType()->isIntOrIntVectorTy() || V->getType()->isPointerTy())
-         && "Not integer or pointer type!");
+  assert((V->getType()->isIntOrIntVectorTy() ||
+          V->getType()->getScalarType()->isPointerTy()) &&
+         "Not integer or pointer type!");
   assert((!TD ||
           TD->getTypeSizeInBits(V->getType()->getScalarType()) == BitWidth) &&
          (!V->getType()->isIntOrIntVectorTy() ||
           V->getType()->getScalarSizeInBits() == BitWidth) &&
-         KnownZero.getBitWidth() == BitWidth && 
+         KnownZero.getBitWidth() == BitWidth &&
          KnownOne.getBitWidth() == BitWidth &&
          "V, Mask, KnownOne and KnownZero should have same BitWidth");
 
@@ -103,14 +104,16 @@ void llvm::ComputeMaskedBits(Value *V, const APInt &Mask,
   if (GlobalValue *GV = dyn_cast<GlobalValue>(V)) {
     unsigned Align = GV->getAlignment();
     if (Align == 0 && TD && GV->getType()->getElementType()->isSized()) {
-      Type *ObjectType = GV->getType()->getElementType();
-      // If the object is defined in the current Module, we'll be giving
-      // it the preferred alignment. Otherwise, we have to assume that it
-      // may only have the minimum ABI alignment.
-      if (!GV->isDeclaration() && !GV->mayBeOverridden())
-        Align = TD->getPrefTypeAlignment(ObjectType);
-      else
-        Align = TD->getABITypeAlignment(ObjectType);
+      if (GlobalVariable *GVar = dyn_cast<GlobalVariable>(GV)) {
+        Type *ObjectType = GVar->getType()->getElementType();
+        // If the object is defined in the current Module, we'll be giving
+        // it the preferred alignment. Otherwise, we have to assume that it
+        // may only have the minimum ABI alignment.
+        if (!GVar->isDeclaration() && !GVar->isWeakForLinker())
+          Align = TD->getPreferredAlignment(GVar);
+        else
+          Align = TD->getABITypeAlignment(ObjectType);
+      }
     }
     if (Align > 0)
       KnownZero = Mask & APInt::getLowBitsSet(BitWidth,
@@ -1367,6 +1370,8 @@ Value *llvm::isBytewiseValue(Value *V) {
     
     return Val;
   }
+
+  // FIXME: Vector types (e.g., <4 x i32> <i32 -1, i32 -1, i32 -1, i32 -1>).
   
   // Conceptually, we could handle things like:
   //   %a = zext i8 %X to i16
@@ -1555,7 +1560,8 @@ Value *llvm::FindInsertedValue(Value *V, ArrayRef<unsigned> idx_range,
 Value *llvm::GetPointerBaseWithConstantOffset(Value *Ptr, int64_t &Offset,
                                               const TargetData &TD) {
   Operator *PtrOp = dyn_cast<Operator>(Ptr);
-  if (PtrOp == 0) return Ptr;
+  if (PtrOp == 0 || Ptr->getType()->isVectorTy())
+    return Ptr;
   
   // Just look through bitcasts.
   if (PtrOp->getOpcode() == Instruction::BitCast)
@@ -1868,4 +1874,65 @@ bool llvm::onlyUsedByLifetimeMarkers(const Value *V) {
       return false;
   }
   return true;
+}
+
+bool llvm::isSafeToSpeculativelyExecute(const Instruction *Inst,
+                                        const TargetData *TD) {
+  for (unsigned i = 0, e = Inst->getNumOperands(); i != e; ++i)
+    if (Constant *C = dyn_cast<Constant>(Inst->getOperand(i)))
+      if (C->canTrap())
+        return false;
+
+  switch (Inst->getOpcode()) {
+  default:
+    return true;
+  case Instruction::UDiv:
+  case Instruction::URem:
+    // x / y is undefined if y == 0, but calcuations like x / 3 are safe.
+    return isKnownNonZero(Inst->getOperand(1), TD);
+  case Instruction::SDiv:
+  case Instruction::SRem: {
+    Value *Op = Inst->getOperand(1);
+    // x / y is undefined if y == 0
+    if (!isKnownNonZero(Op, TD))
+      return false;
+    // x / y might be undefined if y == -1
+    unsigned BitWidth = getBitWidth(Op->getType(), TD);
+    if (BitWidth == 0)
+      return false;
+    APInt KnownZero(BitWidth, 0);
+    APInt KnownOne(BitWidth, 0);
+    ComputeMaskedBits(Op, APInt::getAllOnesValue(BitWidth),
+                      KnownZero, KnownOne, TD);
+    return !!KnownZero;
+  }
+  case Instruction::Load: {
+    const LoadInst *LI = cast<LoadInst>(Inst);
+    if (!LI->isUnordered())
+      return false;
+    return LI->getPointerOperand()->isDereferenceablePointer();
+  }
+  case Instruction::Call:
+    return false; // The called function could have undefined behavior or
+                  // side-effects.
+                  // FIXME: We should special-case some intrinsics (bswap,
+                  // overflow-checking arithmetic, etc.)
+  case Instruction::VAArg:
+  case Instruction::Alloca:
+  case Instruction::Invoke:
+  case Instruction::PHI:
+  case Instruction::Store:
+  case Instruction::Ret:
+  case Instruction::Br:
+  case Instruction::IndirectBr:
+  case Instruction::Switch:
+  case Instruction::Unwind:
+  case Instruction::Unreachable:
+  case Instruction::Fence:
+  case Instruction::LandingPad:
+  case Instruction::AtomicRMW:
+  case Instruction::AtomicCmpXchg:
+  case Instruction::Resume:
+    return false; // Misc instructions which have effects
+  }
 }

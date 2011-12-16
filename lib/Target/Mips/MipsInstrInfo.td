@@ -107,7 +107,7 @@ def MipsDivRemU   : SDNode<"MipsISD::DivRemU", SDT_MipsDivRem,
 //  movn  %got(d)($gp), %got(c)($gp), $4
 // This instruction is illegal since movn can take only register operands.
 
-def MipsWrapperPIC    : SDNode<"MipsISD::WrapperPIC",  SDTIntUnaryOp>;
+def MipsWrapper    : SDNode<"MipsISD::Wrapper",  SDTIntUnaryOp>;
 
 // Pointer to dynamically allocated stack area.
 def MipsDynAlloc  : SDNode<"MipsISD::DynAlloc", SDT_MipsDynAlloc,
@@ -132,6 +132,8 @@ def NotMips64    : Predicate<"!Subtarget.hasMips64()">;
 def HasMips64r2  : Predicate<"Subtarget.hasMips64r2()">;
 def IsN64       : Predicate<"Subtarget.isABI_N64()">;
 def NotN64      : Predicate<"!Subtarget.isABI_N64()">;
+def RelocStatic : Predicate<"TM.getRelocationModel() == Reloc::Static">;
+def RelocPIC    : Predicate<"TM.getRelocationModel() == Reloc::PIC_">;
 
 //===----------------------------------------------------------------------===//
 // Mips Operand, Complex Patterns and Transformations Definitions.
@@ -194,12 +196,12 @@ def size_ins : Operand<i32> {
 
 // Transformation Function - get the lower 16 bits.
 def LO16 : SDNodeXForm<imm, [{
-  return getI32Imm((unsigned)N->getZExtValue() & 0xFFFF);
+  return getImm(N, N->getZExtValue() & 0xFFFF);
 }]>;
 
 // Transformation Function - get the higher 16 bits.
 def HI16 : SDNodeXForm<imm, [{
-  return getI32Imm((unsigned)N->getZExtValue() >> 16);
+  return getImm(N, (N->getZExtValue() >> 16) & 0xFFFF);
 }]>;
 
 // Node immediate fits as 16-bit sign extended on target immediate.
@@ -380,21 +382,13 @@ class StoreM<bits<6> op, string instr_asm, PatFrag OpNode, RegisterClass RC,
   let isPseudo = Pseudo;
 }
 
-// Memory Load/Store
+// Unaligned Memory Load/Store
 let canFoldAsLoad = 1 in
-class LoadX<bits<6> op, RegisterClass RC,
-            Operand MemOpnd>:
-  FMem<op, (outs RC:$rt), (ins MemOpnd:$addr),
-     "",
-     [], IILoad> {
-}
+class LoadUnAlign<bits<6> op, RegisterClass RC, Operand MemOpnd>:
+  FMem<op, (outs RC:$rt), (ins MemOpnd:$addr), "", [], IILoad> {}
 
-class StoreX<bits<6> op, RegisterClass RC,
-             Operand MemOpnd>:
-  FMem<op, (outs), (ins RC:$rt, MemOpnd:$addr),
-     "",
-     [], IIStore> {
-}
+class StoreUnAlign<bits<6> op, RegisterClass RC, Operand MemOpnd>:
+  FMem<op, (outs), (ins RC:$rt, MemOpnd:$addr), "", [], IIStore> {}
 
 // 32-bit load.
 multiclass LoadM32<bits<6> op, string instr_asm, PatFrag OpNode,
@@ -415,10 +409,10 @@ multiclass LoadM64<bits<6> op, string instr_asm, PatFrag OpNode,
 } 
 
 // 32-bit load.
-multiclass LoadX32<bits<6> op> {
-  def #NAME# : LoadX<op, CPURegs, mem>,
+multiclass LoadUnAlign32<bits<6> op> {
+  def #NAME# : LoadUnAlign<op, CPURegs, mem>,
                Requires<[NotN64]>;
-  def _P8    : LoadX<op, CPURegs, mem64>,
+  def _P8    : LoadUnAlign<op, CPURegs, mem64>,
                Requires<[IsN64]>;
 }
 // 32-bit store.
@@ -440,18 +434,18 @@ multiclass StoreM64<bits<6> op, string instr_asm, PatFrag OpNode,
 }
 
 // 32-bit store.
-multiclass StoreX32<bits<6> op> {
-  def #NAME# : StoreX<op, CPURegs, mem>,
+multiclass StoreUnAlign32<bits<6> op> {
+  def #NAME# : StoreUnAlign<op, CPURegs, mem>,
                Requires<[NotN64]>;
-  def _P8    : StoreX<op, CPURegs, mem64>,
+  def _P8    : StoreUnAlign<op, CPURegs, mem64>,
                Requires<[IsN64]>;
 }
 
 // Conditional Branch
 class CBranch<bits<6> op, string instr_asm, PatFrag cond_op, RegisterClass RC>:
-  CBranchBase<op, (outs), (ins RC:$rs, RC:$rt, brtarget:$imm16),
-              !strconcat(instr_asm, "\t$rs, $rt, $imm16"),
-              [(brcond (i32 (cond_op RC:$rs, RC:$rt)), bb:$imm16)], IIBranch> {
+  BranchBase<op, (outs), (ins RC:$rs, RC:$rt, brtarget:$imm16),
+             !strconcat(instr_asm, "\t$rs, $rt, $imm16"),
+             [(brcond (i32 (cond_op RC:$rs, RC:$rt)), bb:$imm16)], IIBranch> {
   let isBranch = 1;
   let isTerminator = 1;
   let hasDelaySlot = 1;
@@ -459,9 +453,9 @@ class CBranch<bits<6> op, string instr_asm, PatFrag cond_op, RegisterClass RC>:
 
 class CBranchZero<bits<6> op, bits<5> _rt, string instr_asm, PatFrag cond_op,
                   RegisterClass RC>:
-  CBranchBase<op, (outs), (ins RC:$rs, brtarget:$imm16),
-              !strconcat(instr_asm, "\t$rs, $imm16"),
-              [(brcond (i32 (cond_op RC:$rs, 0)), bb:$imm16)], IIBranch> {
+  BranchBase<op, (outs), (ins RC:$rs, brtarget:$imm16),
+             !strconcat(instr_asm, "\t$rs, $imm16"),
+             [(brcond (i32 (cond_op RC:$rs, 0)), bb:$imm16)], IIBranch> {
   let rt = _rt;
   let isBranch = 1;
   let isTerminator = 1;
@@ -485,11 +479,29 @@ class SetCC_I<bits<6> op, string instr_asm, PatFrag cond_op, Operand Od,
      [(set CPURegs:$rt, (cond_op RC:$rs, imm_type:$imm16))],
      IIAlu>;
 
-// Unconditional branch
-let isBranch=1, isTerminator=1, isBarrier=1, hasDelaySlot = 1 in
+// Jump
 class JumpFJ<bits<6> op, string instr_asm>:
   FJ<op, (outs), (ins jmptarget:$target),
-     !strconcat(instr_asm, "\t$target"), [(br bb:$target)], IIBranch>;
+     !strconcat(instr_asm, "\t$target"), [(br bb:$target)], IIBranch> {
+  let isBranch=1;
+  let isTerminator=1;
+  let isBarrier=1;
+  let hasDelaySlot = 1;
+  let Predicates = [RelocStatic];  
+}
+
+// Unconditional branch
+class UncondBranch<bits<6> op, string instr_asm>:
+  BranchBase<op, (outs), (ins brtarget:$imm16),
+             !strconcat(instr_asm, "\t$imm16"), [(br bb:$imm16)], IIBranch> {
+  let rs = 0;
+  let rt = 0;
+  let isBranch = 1;
+  let isTerminator = 1;
+  let isBarrier = 1;
+  let hasDelaySlot = 1;
+  let Predicates = [RelocPIC];  
+}
 
 let isBranch=1, isTerminator=1, isBarrier=1, rd=0, hasDelaySlot = 1,
     isIndirectBranch = 1 in
@@ -616,21 +628,37 @@ class ByteSwap<bits<6> func, bits<5> sa, string instr_asm>:
 }
 
 // Read Hardware
-class ReadHardware: FR<0x1f, 0x3b, (outs CPURegs:$rt), (ins HWRegs:$rd),
-    "rdhwr\t$rt, $rd", [], IIAlu> {
+class ReadHardware<RegisterClass CPURegClass, RegisterClass HWRegClass>
+  : FR<0x1f, 0x3b, (outs CPURegClass:$rt), (ins HWRegClass:$rd),
+       "rdhwr\t$rt, $rd", [], IIAlu> {
   let rs = 0;
   let shamt = 0;
 }
 
 // Ext and Ins
-class ExtIns<bits<6> _funct, string instr_asm, dag outs, dag ins,
-             list<dag> pattern, InstrItinClass itin>:
-  FR<0x1f, _funct, outs, ins, !strconcat(instr_asm, " $rt, $rs, $pos, $sz"),
-     pattern, itin>, Requires<[HasMips32r2]> {
+class ExtBase<bits<6> _funct, string instr_asm, RegisterClass RC>:
+  FR<0x1f, _funct, (outs RC:$rt), (ins RC:$rs, uimm16:$pos, size_ext:$sz), 
+     !strconcat(instr_asm, " $rt, $rs, $pos, $sz"),
+     [(set RC:$rt, (MipsExt RC:$rs, imm:$pos, imm:$sz))], NoItinerary> {
   bits<5> pos;
   bits<5> sz;
   let rd = sz;
   let shamt = pos;
+  let Predicates = [HasMips32r2];
+}
+
+class InsBase<bits<6> _funct, string instr_asm, RegisterClass RC>:
+  FR<0x1f, _funct, (outs RC:$rt),
+     (ins RC:$rs, uimm16:$pos, size_ins:$sz, RC:$src),
+     !strconcat(instr_asm, " $rt, $rs, $pos, $sz"),
+     [(set RC:$rt, (MipsIns RC:$rs, imm:$pos, imm:$sz, RC:$src))],
+     NoItinerary> {
+  bits<5> pos;
+  bits<5> sz;
+  let rd = sz;
+  let shamt = pos;
+  let Predicates = [HasMips32r2];
+  let Constraints = "$src = $rt";
 }
 
 // Atomic instructions with 2 source operands (ATOMIC_SWAP & ATOMIC_LOAD_*).
@@ -795,10 +823,10 @@ defm USH     : StoreM32<0x29, "ush", truncstorei16_u, 1>;
 defm USW     : StoreM32<0x2b, "usw", store_u, 1>;
 
 /// Primitives for unaligned
-defm LWL     : LoadX32<0x22>;
-defm LWR     : LoadX32<0x26>;
-defm SWL     : StoreX32<0x2A>;
-defm SWR     : StoreX32<0x2E>;
+defm LWL     : LoadUnAlign32<0x22>;
+defm LWR     : LoadUnAlign32<0x26>;
+defm SWL     : StoreUnAlign32<0x2A>;
+defm SWR     : StoreUnAlign32<0x2E>;
 
 let hasSideEffects = 1 in
 def SYNC : MipsInst<(outs), (ins i32imm:$stype), "sync $stype",
@@ -822,6 +850,7 @@ def J       : JumpFJ<0x02, "j">;
 def JR      : JumpFR<0x00, 0x08, "jr", CPURegs>;
 def JAL     : JumpLink<0x03, "jal">;
 def JALR    : JumpLinkReg<0x00, 0x09, "jalr">;
+def B       : UncondBranch<0x04, "b">;
 def BEQ     : CBranch<0x04, "beq", seteq, CPURegs>;
 def BNE     : CBranch<0x05, "bne", setne, CPURegs>;
 def BGEZ    : CBranchZero<0x01, 1, "bgez", setge, CPURegs>;
@@ -888,21 +917,10 @@ def MSUBU : MArithR<5, "msubu", MipsMSubu>;
 def MUL   : ArithLogicR<0x1c, 0x02, "mul", mul, IIImul, CPURegs, 1>,
             Requires<[HasMips32]>;
 
-def RDHWR : ReadHardware;
+def RDHWR : ReadHardware<CPURegs, HWRegs>;
 
-def EXT : ExtIns<0, "ext", (outs CPURegs:$rt),
-                 (ins CPURegs:$rs, uimm16:$pos, size_ext:$sz),
-                 [(set CPURegs:$rt,
-                   (MipsExt CPURegs:$rs, immZExt5:$pos, immZExt5:$sz))],
-                 NoItinerary>;
-
-let Constraints = "$src = $rt" in
-def INS : ExtIns<4, "ins", (outs CPURegs:$rt),
-                 (ins CPURegs:$rs, uimm16:$pos, size_ins:$sz, CPURegs:$src),
-                 [(set CPURegs:$rt,
-                   (MipsIns CPURegs:$rs, immZExt5:$pos, immZExt5:$sz,
-                    CPURegs:$src))],
-                 NoItinerary>;
+def EXT : ExtBase<0, "ext", CPURegs>;
+def INS : InsBase<4, "ins", CPURegs>;
 
 //===----------------------------------------------------------------------===//
 //  Arbitrary patterns that map to one or more instructions
@@ -939,11 +957,13 @@ def : Pat<(MipsHi tglobaladdr:$in), (LUi tglobaladdr:$in)>;
 def : Pat<(MipsHi tblockaddress:$in), (LUi tblockaddress:$in)>;
 def : Pat<(MipsHi tjumptable:$in), (LUi tjumptable:$in)>;
 def : Pat<(MipsHi tconstpool:$in), (LUi tconstpool:$in)>;
+def : Pat<(MipsHi tglobaltlsaddr:$in), (LUi tglobaltlsaddr:$in)>;
 
 def : Pat<(MipsLo tglobaladdr:$in), (ADDiu ZERO, tglobaladdr:$in)>;
 def : Pat<(MipsLo tblockaddress:$in), (ADDiu ZERO, tblockaddress:$in)>;
 def : Pat<(MipsLo tjumptable:$in), (ADDiu ZERO, tjumptable:$in)>;
 def : Pat<(MipsLo tconstpool:$in), (ADDiu ZERO, tconstpool:$in)>;
+def : Pat<(MipsLo tglobaltlsaddr:$in), (ADDiu ZERO, tglobaltlsaddr:$in)>;
 
 def : Pat<(add CPURegs:$hi, (MipsLo tglobaladdr:$lo)),
           (ADDiu CPURegs:$hi, tglobaladdr:$lo)>;
@@ -953,6 +973,8 @@ def : Pat<(add CPURegs:$hi, (MipsLo tjumptable:$lo)),
           (ADDiu CPURegs:$hi, tjumptable:$lo)>;
 def : Pat<(add CPURegs:$hi, (MipsLo tconstpool:$lo)),
           (ADDiu CPURegs:$hi, tconstpool:$lo)>;
+def : Pat<(add CPURegs:$hi, (MipsLo tglobaltlsaddr:$lo)),
+          (ADDiu CPURegs:$hi, tglobaltlsaddr:$lo)>;
 
 // gp_rel relocs
 def : Pat<(add CPURegs:$gp, (MipsGPRel tglobaladdr:$in)),
@@ -960,26 +982,17 @@ def : Pat<(add CPURegs:$gp, (MipsGPRel tglobaladdr:$in)),
 def : Pat<(add CPURegs:$gp, (MipsGPRel tconstpool:$in)),
           (ADDiu CPURegs:$gp, tconstpool:$in)>;
 
-// tlsgd
-def : Pat<(add CPURegs:$gp, (MipsTlsGd tglobaltlsaddr:$in)),
-          (ADDiu CPURegs:$gp, tglobaltlsaddr:$in)>;
-
-// tprel hi/lo
-def : Pat<(MipsTprelHi tglobaltlsaddr:$in), (LUi tglobaltlsaddr:$in)>;
-def : Pat<(MipsTprelLo tglobaltlsaddr:$in), (ADDiu ZERO, tglobaltlsaddr:$in)>;
-def : Pat<(add CPURegs:$hi, (MipsTprelLo tglobaltlsaddr:$lo)),
-          (ADDiu CPURegs:$hi, tglobaltlsaddr:$lo)>;
-
 // wrapper_pic
-class WrapperPICPat<SDNode node>:
-      Pat<(MipsWrapperPIC node:$in),
-          (ADDiu GP, node:$in)>;
+class WrapperPat<SDNode node, Instruction ADDiuOp, Register GPReg>:
+      Pat<(MipsWrapper node:$in),
+          (ADDiuOp GPReg, node:$in)>;
 
-def : WrapperPICPat<tglobaladdr>;
-def : WrapperPICPat<tconstpool>;
-def : WrapperPICPat<texternalsym>;
-def : WrapperPICPat<tblockaddress>;
-def : WrapperPICPat<tjumptable>;
+def : WrapperPat<tglobaladdr, ADDiu, GP>;
+def : WrapperPat<tconstpool, ADDiu, GP>;
+def : WrapperPat<texternalsym, ADDiu, GP>;
+def : WrapperPat<tblockaddress, ADDiu, GP>;
+def : WrapperPat<tjumptable, ADDiu, GP>;
+def : WrapperPat<tglobaltlsaddr, ADDiu, GP>;
 
 // Mips does not have "not", so we expand our way
 def : Pat<(not CPURegs:$in),

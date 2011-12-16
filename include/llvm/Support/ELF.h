@@ -627,6 +627,7 @@ enum {
   R_MIPS_GPREL16           =  7,
   R_MIPS_LITERAL           =  8,
   R_MIPS_GOT16             =  9,
+  R_MIPS_GOT               =  9,
   R_MIPS_PC16              = 10,
   R_MIPS_CALL16            = 11,
   R_MIPS_GPREL32           = 12,
@@ -887,6 +888,7 @@ enum {
   STT_TLS     = 6,   // Thread local data object
   STT_LOOS    = 7,   // Lowest operating system-specific symbol type
   STT_HIOS    = 8,   // Highest operating system-specific symbol type
+  STT_GNU_IFUNC = 10, // GNU indirect function
   STT_LOPROC  = 13,  // Lowest processor-specific symbol type
   STT_HIPROC  = 15   // Highest processor-specific symbol type
 };
