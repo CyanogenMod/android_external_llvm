@@ -15,6 +15,7 @@ tablegen_SRC_FILES := \
   DAGISelMatcherGen.cpp \
   DAGISelMatcherOpt.cpp \
   DAGISelMatcher.cpp \
+  DFAPacketizerEmitter.cpp \
   DisassemblerEmitter.cpp \
   EDEmitter.cpp \
   FastISelEmitter.cpp \

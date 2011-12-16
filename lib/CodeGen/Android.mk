@@ -10,11 +10,12 @@ codegen_SRC_FILES := \
   CodeGen.cpp \
   CodePlacementOpt.cpp \
   CriticalAntiDepBreaker.cpp \
+  DFAPacketizer.cpp \
   DeadMachineInstructionElim.cpp \
   DwarfEHPrepare.cpp \
-  EdgeBundles.cpp \
   ELFCodeEmitter.cpp \
   ELFWriter.cpp \
+  EdgeBundles.cpp \
   ExecutionDepsFix.cpp \
   ExpandISelPseudos.cpp \
   ExpandPostRAPseudos.cpp \
@@ -32,10 +33,10 @@ codegen_SRC_FILES := \
   LiveInterval.cpp \
   LiveIntervalAnalysis.cpp \
   LiveIntervalUnion.cpp \
-  LiveStackAnalysis.cpp \
-  LiveVariables.cpp \
   LiveRangeCalc.cpp \
   LiveRangeEdit.cpp \
+  LiveStackAnalysis.cpp \
+  LiveVariables.cpp \
   LocalStackSlotAllocation.cpp \
   MachineBasicBlock.cpp \
   MachineBlockFrequencyInfo.cpp \
@@ -48,6 +49,7 @@ codegen_SRC_FILES := \
   MachineFunctionPass.cpp \
   MachineFunctionPrinterPass.cpp \
   MachineInstr.cpp \
+  MachineInstrBundle.cpp \
   MachineLICM.cpp \
   MachineLoopInfo.cpp \
   MachineLoopRanges.cpp \
@@ -86,16 +88,17 @@ codegen_SRC_FILES := \
   ShrinkWrapping.cpp \
   SjLjEHPrepare.cpp \
   SlotIndexes.cpp \
-  Spiller.cpp \
   SpillPlacement.cpp \
+  Spiller.cpp \
   SplitKit.cpp \
-  Splitter.cpp \
   StackProtector.cpp \
   StackSlotColoring.cpp \
   StrongPHIElimination.cpp \
   TailDuplication.cpp \
+  TargetFrameLoweringImpl.cpp \
   TargetInstrInfoImpl.cpp \
   TargetLoweringObjectFileImpl.cpp \
+  TargetOptionsImpl.cpp \
   TwoAddressInstructionPass.cpp \
   UnreachableBlockElim.cpp \
   VirtRegMap.cpp

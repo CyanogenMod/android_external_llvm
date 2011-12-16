@@ -5,11 +5,10 @@ target_SRC_FILES := \
   Target.cpp \
   TargetData.cpp \
   TargetELFWriterInfo.cpp \
-  TargetFrameLowering.cpp \
   TargetInstrInfo.cpp \
   TargetIntrinsicInfo.cpp \
-  TargetLoweringObjectFile.cpp \
   TargetLibraryInfo.cpp \
+  TargetLoweringObjectFile.cpp \
   TargetMachine.cpp \
   TargetRegisterInfo.cpp \
   TargetSubtargetInfo.cpp
