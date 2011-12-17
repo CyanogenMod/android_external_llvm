@@ -19,15 +19,15 @@
 * For Ice Cream Sandwich MR1: Synced to upstream r142530
 * For Ice Cream Sandwich MR2: Synced to upstream r146714
 
-* Recent downstreaming on 2011/12/17: From r145126 to 146714 (Contact loganchien & sliao for merge questions.)
-* Recent downstreaming on 2011/11/26: From r144606 to 145126 (Contact loganchien & sliao for merge questions.)
-* Recent downstreaming on 2011/11/17: From r144354 to 144606 (Contact loganchien & sliao for merge questions.)
-* Recent downstreaming on 2011/11/14: From r142530 to 144354 (Contact srhines for merge questions.)
-* Recent downstreaming on 2011/10/22: From r135569 to 142530 (Contact sliao & logan for merge questions.)
-* Recent downstreaming on 2011/7/21: From r135360 to 135569 (Contact sliao & logan for merge questions.)
-* Recent downstreaming on 2011/7/19: From r134306 to 135360 (Contact sliao for merge questions.)
-* Recent downstreaming on 2011/7/2: From r133718 to 134306 (Contact sliao for merge questions.)
-* Recent downstreaming on 2011/6/30: From r133240 to 133718 (Contact sliao for merge questions.)
+* Recent downstreaming on 2011/12/17: Synced to r146714 (Contact loganchien & sliao for merge questions.)
+* Recent downstreaming on 2011/11/26: Synced to r145126 (Contact loganchien & sliao for merge questions.)
+* Recent downstreaming on 2011/11/17: Synced to r144606 (Contact loganchien & sliao for merge questions.)
+* Recent downstreaming on 2011/11/14: Synced to r144354 (Contact srhines for merge questions.)
+* Recent downstreaming on 2011/10/22: Synced to r142530 (Contact sliao & loganchien for merge questions.)
+* Recent downstreaming on 2011/7/21:  Synced to r135569 (Contact sliao & loganchien for merge questions.)
+* Recent downstreaming on 2011/7/19:  Synced to r135360 (Contact sliao for merge questions.)
+* Recent downstreaming on 2011/7/2:   Synced to r134306 (Contact sliao for merge questions.)
+* Recent downstreaming on 2011/6/30:  Synced to r133718 (Contact sliao for merge questions.)
   * This downstreaming could have broken bitcode compatibility
     * Upstream was migrating from 2.7 bitcode to 3.0 bitcode.
     * See the 4 commits on 2011/6/17:
@@ -40,9 +40,9 @@
     ==> * 020a5a4 - remove bitcode reader support for LLVM 2.7 metadata encoding. (13 days ago) <Chris Lattner>
   * We maintain compatibility because Honeycomb SDK is out there.
     * Our bitcode reader can read both 2.7 and 3.0 versions. Writer is tracking upstream.
-* Recent downstreaming on 2011/6/22: From r129128 to 133240 (Contact sliao@ for merge questions.)
-* Recent downstreaming on 2011/4/8: From r127116 to 129128 (Contact sliao@ for merge questions.)
-* Recent downstreaming on 2011/3/11: From r119309 to 127116 (Contact sliao@ for merge questions.)
+* Recent downstreaming on 2011/6/22:  Synced to r133240 (Contact sliao@ for merge questions.)
+* Recent downstreaming on 2011/4/8:   Synced to r129128 (Contact sliao@ for merge questions.)
+* Recent downstreaming on 2011/3/11:  Synced from r119309 to r127116 (Contact sliao@ for merge questions.)
 
 * We add 40+ Android's *.mk files that are specific to Android's build system.
 
