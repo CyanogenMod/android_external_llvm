@@ -8,6 +8,7 @@ include $(CLEAR_VARS)
 subdirs := \
   lib/Analysis \
   lib/Analysis/IPA \
+  lib/Archive \
   lib/AsmParser \
   lib/Bitcode/Reader \
   lib/Bitcode/Writer \
@@ -59,6 +60,7 @@ subdirs += \
 #subdirs += tools/llc
 subdirs += tools/llvm-as
 subdirs += tools/llvm-link
+subdirs += tools/llvm-ld
 #subdirs += tools/opt
 
 
