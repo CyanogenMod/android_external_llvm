@@ -19,6 +19,11 @@ LOCAL_CFLAGS := -DANDROID_TARGET_BUILD \
 		-fno-inline-functions-called-once \
 		$(LOCAL_CFLAGS)
 
+ifeq ($(TARGET_BUILD_VARIANT),eng)
+LOCAL_CFLAGS := -DANDROID_ENGINEERING_BUILD \
+                $(LOCAL_CFLAGS)
+endif
+
 ifeq ($(LLVM_ENABLE_ASSERTION),true)
 LOCAL_CFLAGS :=	\
 	-D_DEBUG	\
@@ -43,7 +48,7 @@ endif
 LOCAL_CPPFLAGS :=	\
 	$(LOCAL_CPPFLAGS)	\
 	-Woverloaded-virtual	\
-	-Wno-sign-promo   
+	-Wno-sign-promo
 
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\
