@@ -13,10 +13,10 @@
 
 #define DEBUG_TYPE "asm-printer"
 #include "llvm/CodeGen/AsmPrinter.h"
-#ifndef ANDROID_TARGET_BUILD
+#if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
 #   include "DwarfDebug.h"
 #   include "DwarfException.h"
-#endif // ANDROID_TARGET_BUILD
+#endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
 #include "llvm/Module.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
@@ -189,7 +189,7 @@ bool AsmPrinter::doInitialization(Module &M) {
     OutStreamer.AddBlankLine();
   }
 
-#ifndef ANDROID_TARGET_BUILD
+#if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
   if (MAI->doesSupportDebugInformation())
     DD = new DwarfDebug(this, &M);
 
@@ -209,7 +209,7 @@ bool AsmPrinter::doInitialization(Module &M) {
   }
 #else
   return false;
-#endif // ANDROID_TARGET_BUILD
+#endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
 
   llvm_unreachable("Unknown exception type.");
 }
@@ -466,7 +466,7 @@ void AsmPrinter::EmitFunctionHeader() {
   }
 
   // Emit pre-function debug and/or EH information.
-#ifndef ANDROID_TARGET_BUILD
+#if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
   if (DE) {
     NamedRegionTimer T(EHTimerName, DWARFGroupName, TimePassesIsEnabled);
     DE->BeginFunction(MF);
@@ -475,7 +475,7 @@ void AsmPrinter::EmitFunctionHeader() {
     NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
     DD->beginFunction(MF);
   }
-#endif // ANDROID_TARGET_BUILD
+#endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
 }
 
 /// EmitFunctionEntryLabel - Emit the label that is the entrypoint for the
@@ -675,16 +675,16 @@ void AsmPrinter::EmitFunctionBody() {
       if (!II->isLabel() && !II->isImplicitDef() && !II->isKill() &&
           !II->isDebugValue()) {
         HasAnyRealCode = true;
-      
+
         ++EmittedInsts;
       }
-#ifndef ANDROID_TARGET_BUILD
+#if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
       if (ShouldPrintDebugScopes) {
         NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
         DD->beginInstruction(II);
       }
-#endif // ANDROID_TARGET_BUILD
-      
+#endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
+
       if (isVerbose())
         EmitComments(*II, OutStreamer.GetCommentOS());
 
@@ -719,13 +719,13 @@ void AsmPrinter::EmitFunctionBody() {
         EmitInstruction(II);
         break;
       }
-      
-#ifndef ANDROID_TARGET_BUILD
+
+#if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
       if (ShouldPrintDebugScopes) {
         NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
         DD->endInstruction(II);
       }
-#endif // ANDROID_TARGET_BUILD
+#endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
     }
   }
 
@@ -780,7 +780,7 @@ void AsmPrinter::EmitFunctionBody() {
   }
 
   // Emit post-function debug information.
-#ifndef ANDROID_TARGET_BUILD
+#if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
   if (DD) {
     NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
     DD->endFunction(MF);
@@ -789,7 +789,7 @@ void AsmPrinter::EmitFunctionBody() {
     NamedRegionTimer T(EHTimerName, DWARFGroupName, TimePassesIsEnabled);
     DE->EndFunction();
   }
-#endif // ANDROID_TARGET_BUILD
+#endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
   MMI->EndFunction();
 
   // Print out jump tables referenced by the function.
@@ -873,7 +873,7 @@ bool AsmPrinter::doFinalization(Module &M) {
   }
 
   // Finalize debug and EH information.
-#ifndef ANDROID_TARGET_BUILD
+#if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
   if (DE) {
     {
       NamedRegionTimer T(EHTimerName, DWARFGroupName, TimePassesIsEnabled);
@@ -888,8 +888,8 @@ bool AsmPrinter::doFinalization(Module &M) {
     }
     delete DD; DD = 0;
   }
-#endif // ANDROID_TARGET_BUILD
-  
+#endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
+
   // If the target wants to know about weak references, print them all.
   if (MAI->getWeakRefDirective()) {
     // FIXME: This is not lazy, it would be nice to only print weak references

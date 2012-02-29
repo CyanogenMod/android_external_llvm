@@ -33,9 +33,22 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES :=	\
-	AsmPrinter.cpp	\
-	AsmPrinterDwarf.cpp	\
+	AsmPrinter.cpp \
+	AsmPrinterDwarf.cpp \
 	AsmPrinterInlineAsm.cpp
+
+ifeq ($(TARGET_BUILD_VARIANT),eng)
+LOCAL_SRC_FILES :=      \
+	ARMException.cpp        \
+	DIE.cpp \
+	DwarfAccelTable.cpp \
+	DwarfCFIException.cpp \
+	DwarfCompileUnit.cpp \
+	DwarfDebug.cpp  \
+	DwarfException.cpp      \
+	Win64Exception.cpp \
+	$(LOCAL_SRC_FILES)
+endif
 
 LOCAL_MODULE:= libLLVMAsmPrinter
 

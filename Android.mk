@@ -28,6 +28,7 @@ subdirs := \
   lib/Transforms/Scalar \
   lib/Transforms/Utils \
   lib/VMCore \
+  utils/FileCheck \
   utils/TableGen
 
 # ARM Code Generation Libraries
