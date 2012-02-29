@@ -39,6 +39,7 @@ subdirs := $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, \
   lib/Transforms/Scalar \
   lib/Transforms/Utils \
   lib/VMCore \
+  utils/FileCheck \
   utils/TableGen \
   tools/llvm-as \
   tools/llvm-link \
