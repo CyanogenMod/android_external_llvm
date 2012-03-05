@@ -1,5 +1,5 @@
-; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=armv7-apple-darwin | FileCheck %s
-; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=thumbv7-apple-darwin | FileCheck %s
+; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=armv7-apple-ios | FileCheck %s
+; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=thumbv7-apple-ios | FileCheck %s
 
 ; Sign-extend of i1 currently not supported by fast-isel
 ;define signext i1 @ret0(i1 signext %a) nounwind uwtable ssp {
@@ -43,6 +43,15 @@ define zeroext i16 @ret5(i16 signext %a) nounwind uwtable ssp {
 entry:
 ; CHECK: ret5
 ; CHECK: uxth r0, r0
+; CHECK: bx lr
+  ret i16 %a
+}
+
+define i16 @ret6(i16 %a) nounwind uwtable ssp {
+entry:
+; CHECK: ret6
+; CHECK-NOT: uxth
+; CHECK-NOT: sxth
 ; CHECK: bx lr
   ret i16 %a
 }

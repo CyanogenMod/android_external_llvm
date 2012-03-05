@@ -388,9 +388,9 @@ Lforward:
         blx	#16212288
 
 @ CHECK: bl  _bar @ encoding: [A,A,A,0xeb]
-@ CHECK:   @   fixup A - offset: 0, value: _bar, kind: fixup_arm_uncondbranch
+@ CHECK:   @   fixup A - offset: 0, value: _bar, kind: fixup_arm_bl
 @ CHECK: blx	_bar @ encoding: [A,A,A,0xfa]
-           @   fixup A - offset: 0, value: _bar, kind: fixup_arm_uncondbranch
+           @   fixup A - offset: 0, value: _bar, kind: fixup_arm_blx
 @ CHECK: blls	#28634268               @ encoding: [0x27,0x3b,0x6d,0x9b]
 @ CHECK: blx	#32424576               @ encoding: [0xa0,0xb0,0x7b,0xfa]
 @ CHECK: blx	#16212288               @ encoding: [0x50,0xd8,0x3d,0xfa]
@@ -904,11 +904,28 @@ Lforward:
         movs r2, r3
         moveq r2, r3
         movseq r2, r3
+        mov r12, r8, lsl #(2 - 2)
+        lsl r2, r3, #(2 - 2)
+        mov r12, r8, lsr #(2 - 2)
+        lsr r2, r3, #(2 - 2)
+        mov r12, r8, asr #(2 - 2)
+        asr r2, r3, #(2 - 2)
+        mov r12, r8, ror #(2 - 2)
+        ror r2, r3, #(2 - 2)
 
 @ CHECK: mov	r2, r3                  @ encoding: [0x03,0x20,0xa0,0xe1]
 @ CHECK: movs	r2, r3                  @ encoding: [0x03,0x20,0xb0,0xe1]
 @ CHECK: moveq	r2, r3                  @ encoding: [0x03,0x20,0xa0,0x01]
 @ CHECK: movseq	r2, r3                  @ encoding: [0x03,0x20,0xb0,0x01]
+@ CHECK: mov	r12, r8                 @ encoding: [0x08,0xc0,0xa0,0xe1]
+@ CHECK: mov	r2, r3                  @ encoding: [0x03,0x20,0xa0,0xe1]
+@ CHECK: mov	r12, r8                 @ encoding: [0x08,0xc0,0xa0,0xe1]
+@ CHECK: mov	r2, r3                  @ encoding: [0x03,0x20,0xa0,0xe1]
+@ CHECK: mov	r12, r8                 @ encoding: [0x08,0xc0,0xa0,0xe1]
+@ CHECK: mov	r2, r3                  @ encoding: [0x03,0x20,0xa0,0xe1]
+@ CHECK: mov	r12, r8                 @ encoding: [0x08,0xc0,0xa0,0xe1]
+@ CHECK: mov	r2, r3                  @ encoding: [0x03,0x20,0xa0,0xe1]
+
 
 @------------------------------------------------------------------------------
 @ MOVT

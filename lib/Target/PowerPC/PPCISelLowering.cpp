@@ -17,7 +17,6 @@
 #include "PPCTargetMachine.h"
 #include "MCTargetDesc/PPCPredicates.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/VectorExtras.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -1428,8 +1427,9 @@ SDValue PPCTargetLowering::LowerINIT_TRAMPOLINE(SDValue Op,
   // Lower to a call to __trampoline_setup(Trmp, TrampSize, FPtr, ctx_reg)
   std::pair<SDValue, SDValue> CallResult =
     LowerCallTo(Chain, Type::getVoidTy(*DAG.getContext()),
-                false, false, false, false, 0, CallingConv::C, false,
-                /*isReturnValueUsed=*/true,
+                false, false, false, false, 0, CallingConv::C,
+                /*isTailCall=*/false,
+                /*doesNotRet=*/false, /*isReturnValueUsed=*/true,
                 DAG.getExternalSymbol("__trampoline_setup", PtrVT),
                 Args, DAG, dl);
 
@@ -1699,7 +1699,7 @@ PPCTargetLowering::LowerFormalArguments_SVR4(
 
     // Arguments stored in registers.
     if (VA.isRegLoc()) {
-      TargetRegisterClass *RC;
+      const TargetRegisterClass *RC;
       EVT ValVT = VA.getValVT();
 
       switch (ValVT.getSimpleVT().SimpleTy) {
@@ -1915,12 +1915,11 @@ PPCTargetLowering::LowerFormalArguments_Darwin(
     for (unsigned ArgNo = 0, e = Ins.size(); ArgNo != e;
          ++ArgNo) {
       EVT ObjectVT = Ins[ArgNo].VT;
-      unsigned ObjSize = ObjectVT.getSizeInBits()/8;
       ISD::ArgFlagsTy Flags = Ins[ArgNo].Flags;
 
       if (Flags.isByVal()) {
         // ObjSize is the true size, ArgSize rounded up to multiple of regs.
-        ObjSize = Flags.getByValSize();
+        unsigned ObjSize = Flags.getByValSize();
         unsigned ArgSize =
                 ((ObjSize + PtrByteSize - 1)/PtrByteSize) * PtrByteSize;
         VecArgOffset += ArgSize;
@@ -2840,7 +2839,7 @@ PPCTargetLowering::FinishCall(CallingConv::ID CallConv, DebugLoc dl,
 SDValue
 PPCTargetLowering::LowerCall(SDValue Chain, SDValue Callee,
                              CallingConv::ID CallConv, bool isVarArg,
-                             bool &isTailCall,
+                             bool doesNotRet, bool &isTailCall,
                              const SmallVectorImpl<ISD::OutputArg> &Outs,
                              const SmallVectorImpl<SDValue> &OutVals,
                              const SmallVectorImpl<ISD::InputArg> &Ins,
@@ -4259,8 +4258,7 @@ SDValue PPCTargetLowering::LowerVECTOR_SHUFFLE(SDValue Op,
 
   // Check to see if this is a shuffle of 4-byte values.  If so, we can use our
   // perfect shuffle table to emit an optimal matching sequence.
-  SmallVector<int, 16> PermMask;
-  SVOp->getMask(PermMask);
+  ArrayRef<int> PermMask = SVOp->getMask();
 
   unsigned PFIndexes[4];
   bool isFourElementShuffle = true;
@@ -4572,7 +4570,6 @@ SDValue PPCTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::RETURNADDR:         return LowerRETURNADDR(Op, DAG);
   case ISD::FRAMEADDR:          return LowerFRAMEADDR(Op, DAG);
   }
-  return SDValue();
 }
 
 void PPCTargetLowering::ReplaceNodeResults(SDNode *N,
@@ -4582,8 +4579,7 @@ void PPCTargetLowering::ReplaceNodeResults(SDNode *N,
   DebugLoc dl = N->getDebugLoc();
   switch (N->getOpcode()) {
   default:
-    assert(false && "Do not know how to custom type legalize this operation!");
-    return;
+    llvm_unreachable("Do not know how to custom type legalize this operation!");
   case ISD::VAARG: {
     if (!TM.getSubtarget<PPCSubtarget>().isSVR4ABI()
         || TM.getSubtarget<PPCSubtarget>().isPPC64())

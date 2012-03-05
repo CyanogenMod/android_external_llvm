@@ -544,7 +544,7 @@ void AsmWriterEmitter::EmitGetRegisterName(raw_ostream &O) {
     O << "  const unsigned *RegAsmOffset;\n"
       << "  const char *AsmStrs;\n"
       << "  switch(AltIdx) {\n"
-      << "  default: assert(0 && \"Invalid register alt name index!\");\n";
+      << "  default: llvm_unreachable(\"Invalid register alt name index!\");\n";
     for (unsigned i = 0, e = AltNameIndices.size(); i < e; ++i) {
       StringRef Namespace = AltNameIndices[1]->getValueAsString("Namespace");
       StringRef AltName(AltNameIndices[i]->getName());
@@ -858,7 +858,6 @@ void AsmWriterEmitter::EmitPrintAliasInstruction(raw_ostream &O) {
         const CodeGenInstAlias::ResultOperand &RO = CGA->ResultOperands[i];
 
         switch (RO.Kind) {
-        default: assert(0 && "unexpected InstAlias operand kind");
         case CodeGenInstAlias::ResultOperand::K_Record: {
           const Record *Rec = RO.getRecord();
           StringRef ROName = RO.getName();

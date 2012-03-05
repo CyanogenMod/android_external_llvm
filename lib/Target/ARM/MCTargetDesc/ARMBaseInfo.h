@@ -67,7 +67,6 @@ namespace ARMCC {
 
 inline static const char *ARMCondCodeToString(ARMCC::CondCodes CC) {
   switch (CC) {
-  default: llvm_unreachable("Unknown condition code");
   case ARMCC::EQ:  return "eq";
   case ARMCC::NE:  return "ne";
   case ARMCC::HS:  return "hs";
@@ -84,6 +83,7 @@ inline static const char *ARMCondCodeToString(ARMCC::CondCodes CC) {
   case ARMCC::LE:  return "le";
   case ARMCC::AL:  return "al";
   }
+  llvm_unreachable("Unknown condition code");
 }
 
 namespace ARM_PROC {
@@ -185,6 +185,23 @@ inline static unsigned getARMRegisterNumbering(unsigned Reg) {
   case S29: case D29: return 29;
   case S30: case D30: return 30;
   case S31: case D31: return 31;
+
+  // Composite registers use the regnum of the first register in the list.
+  case D1_D2:   return 1;
+  case D3_D5:   return 3;
+  case D5_D7:   return 5;
+  case D7_D9:   return 7;
+  case D9_D10:  return 9;
+  case D11_D12: return 11;
+  case D13_D14: return 13;
+  case D15_D16: return 15;
+  case D17_D18: return 17;
+  case D19_D20: return 19;
+  case D21_D22: return 21;
+  case D23_D24: return 23;
+  case D25_D26: return 25;
+  case D27_D28: return 27;
+  case D29_D30: return 29;
   }
 }
 
@@ -237,7 +254,6 @@ namespace ARMII {
 
   inline static const char *AddrModeToString(AddrMode addrmode) {
     switch (addrmode) {
-    default: llvm_unreachable("Unknown memory operation");
     case AddrModeNone:    return "AddrModeNone";
     case AddrMode1:       return "AddrMode1";
     case AddrMode2:       return "AddrMode2";

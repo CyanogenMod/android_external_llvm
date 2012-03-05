@@ -1,5 +1,5 @@
-; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=armv7-apple-darwin | FileCheck %s --check-prefix=ARM
-; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=thumbv7-apple-darwin | FileCheck %s --check-prefix=THUMB
+; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=armv7-apple-ios | FileCheck %s --check-prefix=ARM
+; RUN: llc < %s -O0 -fast-isel-abort -relocation-model=dynamic-no-pic -mtriple=thumbv7-apple-ios | FileCheck %s --check-prefix=THUMB
 
 ; Very basic fast-isel functionality.
 define i32 @add(i32 %a, i32 %b) nounwind {
@@ -142,21 +142,19 @@ define void @test4() {
   store i32 %b, i32* @test4g
   ret void
 
-; THUMB: ldr.n r0, LCPI4_1
+; THUMB: movw r0, :lower16:L_test4g$non_lazy_ptr
+; THUMB: movt r0, :upper16:L_test4g$non_lazy_ptr
 ; THUMB: ldr r0, [r0]
-; THUMB: ldr r0, [r0]
-; THUMB: adds r0, #1
-; THUMB: ldr.n r1, LCPI4_0
-; THUMB: ldr r1, [r1]
-; THUMB: str r0, [r1]
+; THUMB: ldr r1, [r0]
+; THUMB: adds r1, #1
+; THUMB: str r1, [r0]
 
-; ARM: ldr r0, LCPI4_1
+; ARM: movw r0, :lower16:L_test4g$non_lazy_ptr
+; ARM: movt r0, :upper16:L_test4g$non_lazy_ptr
 ; ARM: ldr r0, [r0]
-; ARM: ldr r0, [r0]
-; ARM: add r0, r0, #1
-; ARM: ldr r1, LCPI4_0
-; ARM: ldr r1, [r1]
-; ARM: str r0, [r1]
+; ARM: ldr r1, [r0]
+; ARM: add r1, r1, #1
+; ARM: str r1, [r0]
 }
 
 ; Check unaligned stores

@@ -68,7 +68,6 @@ add_custom_target(check
               ${LIT_ARGS}
               ${CMAKE_CURRENT_BINARY_DIR}
               COMMENT "Running LLVM regression tests")
-set_target_properties(check PROPERTIES FOLDER "Tests")
 
 add_custom_target(check.deps)
 add_dependencies(check check.deps)
@@ -76,6 +75,7 @@ add_dependencies(check.deps
               UnitTests
               BugpointPasses LLVMHello
               llc lli llvm-ar llvm-as llvm-dis llvm-extract llvm-dwarfdump
-              llvm-ld llvm-link llvm-mc llvm-nm llvm-objdump macho-dump opt
-              FileCheck count not)
+              llvm-ld llvm-link llvm-mc llvm-nm llvm-objdump llvm-readobj
+              macho-dump opt
+              FileCheck count not json-bench)
 set_target_properties(check.deps PROPERTIES FOLDER "Tests")

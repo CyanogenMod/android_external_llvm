@@ -1,4 +1,4 @@
-//===- HexagonSubtarget.cpp - Hexagon Subtarget Information ---------------===//
+//===-- HexagonSubtarget.cpp - Hexagon Subtarget Information --------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -51,6 +51,9 @@ HexagonSubtarget::HexagonSubtarget(StringRef TT, StringRef CPU, StringRef FS):
 
   // Initialize scheduling itinerary for the specified CPU.
   InstrItins = getInstrItineraryForCPU(CPUString);
+
+  // Max issue per cycle == bundle width.
+  InstrItins.IssueWidth = 4;
 
   if (EnableMemOps)
     UseMemOps = true;
