@@ -22,6 +22,7 @@ x86_codegen_SRC_FILES := \
   X86ISelLowering.cpp \
   X86InstrInfo.cpp \
   X86JITInfo.cpp \
+  X86MachineFunctionInfo.cpp \
   X86MCInstLower.cpp \
   X86RegisterInfo.cpp \
   X86SelectionDAGInfo.cpp \

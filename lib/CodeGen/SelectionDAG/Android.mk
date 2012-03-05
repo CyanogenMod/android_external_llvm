@@ -12,9 +12,11 @@ codegen_selectiondag_SRC_FILES := \
   LegalizeTypesGeneric.cpp \
   LegalizeVectorOps.cpp \
   LegalizeVectorTypes.cpp \
+  ResourcePriorityQueue.cpp \
   ScheduleDAGFast.cpp \
   ScheduleDAGRRList.cpp \
   ScheduleDAGSDNodes.cpp \
+  ScheduleDAGVLIW.cpp \
   SelectionDAG.cpp \
   SelectionDAGBuilder.cpp \
   SelectionDAGISel.cpp \

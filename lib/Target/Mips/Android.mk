@@ -11,6 +11,7 @@ mips_codegen_TBLGEN_TABLES := \
   MipsGenSubtargetInfo.inc
 
 mips_codegen_SRC_FILES := \
+  MipsAnalyzeImmediate.cpp \
   MipsAsmPrinter.cpp \
   MipsCodeEmitter.cpp \
   MipsDelaySlotFiller.cpp \
@@ -21,6 +22,7 @@ mips_codegen_SRC_FILES := \
   MipsISelDAGToDAG.cpp \
   MipsISelLowering.cpp \
   MipsFrameLowering.cpp \
+  MipsMachineFunction.cpp \
   MipsMCInstLower.cpp \
   MipsRegisterInfo.cpp \
   MipsSubtarget.cpp \

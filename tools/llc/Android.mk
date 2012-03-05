@@ -48,6 +48,7 @@ llvm_llc_STATIC_LIBRARIES := \
   libLLVMMCParser \
   libLLVMScalarOpts \
   libLLVMTransformUtils \
+  libLLVMVectorize \
   libLLVMAnalysis \
   libLLVMTarget \
   libLLVMCore \

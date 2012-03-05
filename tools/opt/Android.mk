@@ -25,6 +25,7 @@ llvm_opt_STATIC_LIBRARIES := \
   libLLVMipa \
   libLLVMipo \
   libLLVMTransformUtils \
+  libLLVMVectorize \
   libLLVMAnalysis \
   libLLVMTarget \
   libLLVMCore \

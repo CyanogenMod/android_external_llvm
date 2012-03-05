@@ -20,7 +20,6 @@ tablegen_SRC_FILES := \
   EDEmitter.cpp \
   FastISelEmitter.cpp \
   FixedLenDecoderEmitter.cpp \
-  InstrEnumEmitter.cpp \
   InstrInfoEmitter.cpp \
   IntrinsicEmitter.cpp \
   PseudoLoweringEmitter.cpp \
@@ -31,6 +30,7 @@ tablegen_SRC_FILES := \
   TGValueTypes.cpp \
   TableGen.cpp \
   X86DisassemblerTables.cpp \
+  X86ModRMFilters.cpp \
   X86RecognizableInstr.cpp
 
 include $(CLEAR_VARS)

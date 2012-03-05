@@ -7,7 +7,6 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES :=	\
 	Intercept.cpp	\
 	JIT.cpp	\
-	JITDebugRegisterer.cpp	\
 	JITDwarfEmitter.cpp	\
 	JITEmitter.cpp	\
 	JITMemoryManager.cpp	\

@@ -13,8 +13,6 @@ codegen_SRC_FILES := \
   DFAPacketizer.cpp \
   DeadMachineInstructionElim.cpp \
   DwarfEHPrepare.cpp \
-  ELFCodeEmitter.cpp \
-  ELFWriter.cpp \
   EdgeBundles.cpp \
   ExecutionDepsFix.cpp \
   ExpandISelPseudos.cpp \
@@ -43,6 +41,7 @@ codegen_SRC_FILES := \
   MachineBlockPlacement.cpp \
   MachineBranchProbabilityInfo.cpp \
   MachineCSE.cpp \
+  MachineCopyPropagation.cpp \
   MachineDominators.cpp \
   MachineFunction.cpp \
   MachineFunctionAnalysis.cpp \
@@ -58,9 +57,9 @@ codegen_SRC_FILES := \
   MachinePassRegistry.cpp \
   MachineRegisterInfo.cpp \
   MachineSSAUpdater.cpp \
+  MachineScheduler.cpp \
   MachineSink.cpp \
   MachineVerifier.cpp \
-  ObjectCodeEmitter.cpp \
   OcamlGC.cpp \
   OptimizePHIs.cpp \
   PHIElimination.cpp \
@@ -71,6 +70,7 @@ codegen_SRC_FILES := \
   ProcessImplicitDefs.cpp \
   PrologEpilogInserter.cpp \
   PseudoSourceValue.cpp \
+  RegAllocBase.cpp \
   RegAllocBasic.cpp \
   RegAllocFast.cpp \
   RegAllocGreedy.cpp \

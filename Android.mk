@@ -27,6 +27,7 @@ subdirs := \
   lib/Transforms/Instrumentation \
   lib/Transforms/Scalar \
   lib/Transforms/Utils \
+  lib/Transforms/Vectorize \
   lib/VMCore \
   utils/FileCheck \
   utils/TableGen

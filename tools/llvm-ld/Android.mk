@@ -13,6 +13,7 @@ llvm_ld_STATIC_LIBRARIES := \
   libLLVMScalarOpts \
   libLLVMInstCombine \
   libLLVMTransformUtils \
+  libLLVMVectorize \
   libLLVMipa \
   libLLVMAnalysis \
   libLLVMTarget \

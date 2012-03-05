@@ -8,6 +8,7 @@ transforms_utils_SRC_FILES := \
   BuildLibCalls.cpp \
   CloneFunction.cpp \
   CloneModule.cpp \
+  CmpInstAnalysis.cpp \
   CodeExtractor.cpp \
   DemoteRegToStack.cpp \
   InlineFunction.cpp \

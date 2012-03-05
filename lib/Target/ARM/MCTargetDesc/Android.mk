@@ -8,6 +8,7 @@ arm_mc_desc_TBLGEN_TABLES := \
 
 arm_mc_desc_SRC_FILES := \
   ARMAsmBackend.cpp \
+  ARMELFObjectWriter.cpp \
   ARMMCAsmInfo.cpp \
   ARMMCCodeEmitter.cpp \
   ARMMCExpr.cpp \

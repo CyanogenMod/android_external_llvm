@@ -8,6 +8,7 @@ mips_mc_desc_TBLGEN_TABLES := \
 
 mips_mc_desc_SRC_FILES := \
   MipsAsmBackend.cpp \
+  MipsELFObjectWriter.cpp \
   MipsMCAsmInfo.cpp \
   MipsMCCodeEmitter.cpp \
   MipsMCTargetDesc.cpp

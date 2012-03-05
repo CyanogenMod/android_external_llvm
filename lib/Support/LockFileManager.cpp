@@ -49,7 +49,8 @@ LockFileManager::readLockFile(StringRef LockFileName) {
 }
 
 bool LockFileManager::processStillExecuting(StringRef Hostname, int PID) {
-#if LLVM_ON_UNIX
+// getsid not supported in Android bionic library
+#if LLVM_ON_UNIX && !defined(ANDROID_TARGET_BUILD)
   char MyHostname[256];
   MyHostname[255] = 0;
   MyHostname[0] = 0;

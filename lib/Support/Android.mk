@@ -12,6 +12,7 @@ support_SRC_FILES := \
   ConstantRange.cpp \
   CrashRecoveryContext.cpp \
   DAGDeltaAlgorithm.cpp \
+  DataStream.cpp \
   Debug.cpp \
   DeltaAlgorithm.cpp \
   Dwarf.cpp \
@@ -22,11 +23,14 @@ support_SRC_FILES := \
   FoldingSet.cpp \
   FormattedStream.cpp \
   GraphWriter.cpp \
+  Hashing.cpp \
   Host.cpp \
   IntervalMap.cpp \
   IntEqClasses.cpp \
+  IntrusiveRefCntPtr.cpp \
   IsInf.cpp \
   IsNAN.cpp \
+  LockFileManager.cpp \
   ManagedStatic.cpp \
   Memory.cpp \
   MemoryBuffer.cpp \
@@ -46,6 +50,7 @@ support_SRC_FILES := \
   SmallVector.cpp \
   SourceMgr.cpp \
   Statistic.cpp \
+  StreamableMemoryObject.cpp \
   StringExtras.cpp \
   StringMap.cpp \
   StringPool.cpp \

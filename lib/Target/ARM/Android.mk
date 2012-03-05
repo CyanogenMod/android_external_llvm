@@ -33,6 +33,7 @@ arm_codegen_SRC_FILES := \
   ARMJITInfo.cpp \
   ARMLoadStoreOptimizer.cpp \
   ARMMCInstLower.cpp \
+  ARMMachineFunctionInfo.cpp \
   ARMRegisterInfo.cpp \
   ARMSelectionDAGInfo.cpp \
   ARMSubtarget.cpp \

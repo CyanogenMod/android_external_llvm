@@ -22,7 +22,6 @@ mc_SRC_FILES := \
   MCInstPrinter.cpp \
   MCInstrAnalysis.cpp \
   MCLabel.cpp \
-  MCLoggingStreamer.cpp	\
   MCMachObjectTargetWriter.cpp \
   MCMachOStreamer.cpp \
   MCNullStreamer.cpp \
