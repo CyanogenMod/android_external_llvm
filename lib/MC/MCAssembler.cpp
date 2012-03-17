@@ -157,7 +157,8 @@ MCFragment::~MCFragment() {
 }
 
 MCFragment::MCFragment(FragmentType _Kind, MCSectionData *_Parent)
-  : Kind(_Kind), Parent(_Parent), Atom(0), Offset(~UINT64_C(0))
+  : Kind(_Kind), Parent(_Parent), Atom(0), Offset(~UINT64_C(0)),
+    LayoutOrder(~(0U))
 {
   if (Parent)
     Parent->getFragmentList().push_back(this);
@@ -197,12 +198,17 @@ MCSymbolData::MCSymbolData(const MCSymbol &_Symbol, MCFragment *_Fragment,
 MCAssembler::MCAssembler(MCContext &Context_, MCAsmBackend &Backend_,
                          MCCodeEmitter &Emitter_, MCObjectWriter &Writer_,
                          raw_ostream &OS_)
-  : Context(Context_), Backend(Backend_), Emitter(Emitter_), Writer(Writer_),
+  : Context(Context_), Backend(Backend_), Emitter(Emitter_), m_pWriter(&Writer_),
     OS(OS_), RelaxAll(false), NoExecStack(false), SubsectionsViaSymbols(false)
 {
 }
 
 MCAssembler::~MCAssembler() {
+}
+
+void MCAssembler::setWriter(MCObjectWriter &pObjectWriter) {
+  delete m_pWriter;
+  m_pWriter = &pObjectWriter;
 }
 
 bool MCAssembler::isSymbolLinkerVisible(const MCSymbol &Symbol) const {

@@ -337,7 +337,11 @@ struct OptionValueBase : public GenericOptionValue {
 
   bool hasValue() const { return false; }
 
-  const DataType &getValue() const { llvm_unreachable("no default value"); }
+  const DataType &getValue() const {
+    assert(false && "no default value");
+    DataType *p = 0;
+    return *p;
+  }
 
   // Some options may take their value from a different data type.
   template<class DT>

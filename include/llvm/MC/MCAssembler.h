@@ -21,6 +21,10 @@
 #include "llvm/Support/DataTypes.h"
 #include <vector> // FIXME: Shouldn't be needed.
 
+namespace mcld {
+class Layout;
+}
+
 namespace llvm {
 class raw_ostream;
 class MCAsmLayout;
@@ -40,6 +44,7 @@ class MCAsmBackend;
 
 class MCFragment : public ilist_node<MCFragment> {
   friend class MCAsmLayout;
+  friend class mcld::Layout;
 
   MCFragment(const MCFragment&);     // DO NOT IMPLEMENT
   void operator=(const MCFragment&); // DO NOT IMPLEMENT
@@ -53,10 +58,13 @@ public:
     FT_Org,
     FT_Dwarf,
     FT_DwarfFrame,
-    FT_LEB
+    FT_LEB,
+    FT_Region,
+    FT_Reloc,
+    FT_Target
   };
 
-private:
+protected:
   FragmentType Kind;
 
   /// Parent - The data for the section this fragment is in.
@@ -453,7 +461,7 @@ public:
   typedef FragmentListType::const_reverse_iterator const_reverse_iterator;
   typedef FragmentListType::reverse_iterator reverse_iterator;
 
-private:
+protected:
   FragmentListType Fragments;
   const MCSection *Section;
 
@@ -481,6 +489,7 @@ public:
   // Only for use as sentinel.
   MCSectionData();
   MCSectionData(const MCSection &Section, MCAssembler *A = 0);
+  virtual ~MCSectionData() {}
 
   const MCSection &getSection() const { return *Section; }
 
@@ -679,7 +688,7 @@ private:
 
   MCCodeEmitter &Emitter;
 
-  MCObjectWriter &Writer;
+  MCObjectWriter *m_pWriter;
 
   raw_ostream &OS;
 
@@ -807,7 +816,9 @@ public:
 
   MCCodeEmitter &getEmitter() const { return Emitter; }
 
-  MCObjectWriter &getWriter() const { return Writer; }
+  MCObjectWriter &getWriter() const { return *m_pWriter; }
+
+  void setWriter(MCObjectWriter &pObjectWriter);
 
   /// Finish - Do final processing and write the object to the output stream.
   /// \arg Writer is used for custom object writer (as the MCJIT does),
