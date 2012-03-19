@@ -198,7 +198,7 @@ MCSymbolData::MCSymbolData(const MCSymbol &_Symbol, MCFragment *_Fragment,
 MCAssembler::MCAssembler(MCContext &Context_, MCAsmBackend &Backend_,
                          MCCodeEmitter &Emitter_, MCObjectWriter &Writer_,
                          raw_ostream &OS_)
-  : Context(Context_), Backend(Backend_), Emitter(Emitter_), m_pWriter(&Writer_),
+  : Context(Context_), Backend(Backend_), Emitter(Emitter_), Writer(&Writer_),
     OS(OS_), RelaxAll(false), NoExecStack(false), SubsectionsViaSymbols(false)
 {
 }
@@ -206,9 +206,9 @@ MCAssembler::MCAssembler(MCContext &Context_, MCAsmBackend &Backend_,
 MCAssembler::~MCAssembler() {
 }
 
-void MCAssembler::setWriter(MCObjectWriter &pObjectWriter) {
-  delete m_pWriter;
-  m_pWriter = &pObjectWriter;
+void MCAssembler::setWriter(MCObjectWriter &ObjectWriter) {
+  delete Writer;
+  Writer = &ObjectWriter;
 }
 
 bool MCAssembler::isSymbolLinkerVisible(const MCSymbol &Symbol) const {

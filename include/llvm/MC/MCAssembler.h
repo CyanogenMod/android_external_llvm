@@ -64,7 +64,7 @@ public:
     FT_Target
   };
 
-protected:
+private:
   FragmentType Kind;
 
   /// Parent - The data for the section this fragment is in.
@@ -461,7 +461,7 @@ public:
   typedef FragmentListType::const_reverse_iterator const_reverse_iterator;
   typedef FragmentListType::reverse_iterator reverse_iterator;
 
-protected:
+private:
   FragmentListType Fragments;
   const MCSection *Section;
 
@@ -489,7 +489,6 @@ public:
   // Only for use as sentinel.
   MCSectionData();
   MCSectionData(const MCSection &Section, MCAssembler *A = 0);
-  virtual ~MCSectionData() {}
 
   const MCSection &getSection() const { return *Section; }
 
@@ -688,7 +687,7 @@ private:
 
   MCCodeEmitter &Emitter;
 
-  MCObjectWriter *m_pWriter;
+  MCObjectWriter *Writer;
 
   raw_ostream &OS;
 
@@ -816,9 +815,9 @@ public:
 
   MCCodeEmitter &getEmitter() const { return Emitter; }
 
-  MCObjectWriter &getWriter() const { return *m_pWriter; }
+  MCObjectWriter &getWriter() const { return *Writer; }
 
-  void setWriter(MCObjectWriter &pObjectWriter);
+  void setWriter(MCObjectWriter &ObjectWriter);
 
   /// Finish - Do final processing and write the object to the output stream.
   /// \arg Writer is used for custom object writer (as the MCJIT does),
