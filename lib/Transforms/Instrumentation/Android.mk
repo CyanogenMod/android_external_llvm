@@ -3,6 +3,7 @@ LOCAL_PATH:= $(call my-dir)
 instrumentation_SRC_FILES := \
   AddressSanitizer.cpp \
   EdgeProfiling.cpp \
+  FunctionBlackList.cpp \
   GCOVProfiling.cpp \
   Instrumentation.cpp \
   OptimalEdgeProfiling.cpp \

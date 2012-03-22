@@ -80,7 +80,6 @@ codegen_SRC_FILES := \
   RegisterScavenging.cpp \
   RenderMachineFunction.cpp \
   ScheduleDAG.cpp \
-  ScheduleDAGEmit.cpp \
   ScheduleDAGInstrs.cpp \
   ScheduleDAGPrinter.cpp \
   ScoreboardHazardRecognizer.cpp \

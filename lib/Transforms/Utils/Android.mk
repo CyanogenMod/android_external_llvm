@@ -3,7 +3,6 @@ LOCAL_PATH:= $(call my-dir)
 transforms_utils_SRC_FILES := \
   AddrModeMatcher.cpp \
   BasicBlockUtils.cpp \
-  BasicInliner.cpp \
   BreakCriticalEdges.cpp \
   BuildLibCalls.cpp \
   CloneFunction.cpp \

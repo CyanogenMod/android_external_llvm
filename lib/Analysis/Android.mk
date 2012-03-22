@@ -12,6 +12,7 @@ analysis_SRC_FILES := \
   BranchProbabilityInfo.cpp \
   CFGPrinter.cpp \
   CaptureTracking.cpp \
+  CodeMetrics.cpp \
   ConstantFolding.cpp \
   DIBuilder.cpp \
   DbgInfoPrinter.cpp \

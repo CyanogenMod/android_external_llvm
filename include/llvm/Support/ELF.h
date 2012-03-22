@@ -734,17 +734,13 @@ enum {
   SHT_GROUP         = 17, // Section group.
   SHT_SYMTAB_SHNDX  = 18, // Indices for SHN_XINDEX entries.
   SHT_LOOS          = 0x60000000, // Lowest operating system-specific type.
+  SHT_GNU_ATTRIBUTES= 0x6ffffff5, // Object attributes.
+  SHT_GNU_HASH      = 0x6ffffff6, // GNU style dynamic hash table.
   SHT_GNU_verdef    = 0x6ffffffd, // GNU version definitions.
   SHT_GNU_verneed   = 0x6ffffffe, // GNU version references.
   SHT_GNU_versym    = 0x6fffffff, // GNU symbol versions table.
   SHT_HIOS          = 0x6fffffff, // Highest operating system-specific type.
   SHT_LOPROC        = 0x70000000, // Lowest processor architecture-specific type.
-
-  SHT_GNU_ATTRIBUTES = 0x6ffffff5, // Object attributes.
-  SHT_GNU_HASH       = 0x6ffffff6, // GNU style dynamic hash table.
-  SHT_GNU_verdef     = 0x6ffffffd, // Versions defined by file.
-  SHT_GNU_verneed    = 0x6ffffffe, // Versions needed by file.
-  SHT_GNU_versym     = 0x6fffffff, // Symbol versions.
 
   // Fixme: All this is duplicated in MCSectionELF. Why??
   // Exception Index table

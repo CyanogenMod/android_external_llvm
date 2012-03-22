@@ -19,6 +19,7 @@ codegen_selectiondag_SRC_FILES := \
   ScheduleDAGVLIW.cpp \
   SelectionDAG.cpp \
   SelectionDAGBuilder.cpp \
+  SelectionDAGDumper.cpp \
   SelectionDAGISel.cpp \
   SelectionDAGPrinter.cpp \
   TargetLowering.cpp \
