@@ -561,7 +561,15 @@ public:
   /// Performs logical negation operation on this APInt.
   /// @returns true if *this is zero, false otherwise.
   /// @brief Logical negation operator.
-  bool operator!() const;
+  bool operator!() const {
+    if (isSingleWord())
+      return !VAL;
+
+    for (unsigned i = 0; i != getNumWords(); ++i)
+      if (pVal[i])
+        return false;
+    return true;
+  }
 
   /// @}
   /// @name Assignment Operators
@@ -834,7 +842,11 @@ public:
 
   /// @returns the bit value at bitPosition
   /// @brief Array-indexing support.
-  bool operator[](unsigned bitPosition) const;
+  bool operator[](unsigned bitPosition) const {
+    assert(bitPosition < getBitWidth() && "Bit position out of bounds!");
+    return (maskBit(bitPosition) &
+            (isSingleWord() ? VAL : pVal[whichWord(bitPosition)])) != 0;
+  }
 
   /// @}
   /// @name Comparison Operators

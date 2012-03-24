@@ -31,10 +31,10 @@ public:
   const char *Name;
   const iterator RegsBegin;
   const uint8_t *const RegSet;
-  const uint8_t RegsSize;
-  const uint8_t RegSetSize;
-  const uint8_t ID;
-  const uint8_t RegSize, Alignment; // Size & Alignment of register in bytes
+  const uint16_t RegsSize;
+  const uint16_t RegSetSize;
+  const uint16_t ID;
+  const uint16_t RegSize, Alignment; // Size & Alignment of register in bytes
   const int8_t CopyCost;
   const bool Allocatable;
 
@@ -107,9 +107,9 @@ public:
 ///
 struct MCRegisterDesc {
   const char *Name;         // Printable name for the reg (for debugging)
-  uint16_t   Overlaps;      // Overlapping registers, described above
-  uint16_t   SubRegs;       // Sub-register set, described above
-  uint16_t   SuperRegs;     // Super-register set, described above
+  uint32_t   Overlaps;      // Overlapping registers, described above
+  uint32_t   SubRegs;       // Sub-register set, described above
+  uint32_t   SuperRegs;     // Super-register set, described above
 };
 
 /// MCRegisterInfo base class - We assume that the target defines a static

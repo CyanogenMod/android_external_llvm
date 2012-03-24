@@ -13,10 +13,10 @@
 
 #define DEBUG_TYPE "mips-reg-info"
 
+#include "MipsRegisterInfo.h"
 #include "Mips.h"
 #include "MipsAnalyzeImmediate.h"
 #include "MipsSubtarget.h"
-#include "MipsRegisterInfo.h"
 #include "MipsMachineFunction.h"
 #include "llvm/Constants.h"
 #include "llvm/Type.h"
@@ -83,12 +83,12 @@ MipsRegisterInfo::getCallPreservedMask(CallingConv::ID) const
 
 BitVector MipsRegisterInfo::
 getReservedRegs(const MachineFunction &MF) const {
-  static const unsigned ReservedCPURegs[] = {
+  static const uint16_t ReservedCPURegs[] = {
     Mips::ZERO, Mips::AT, Mips::K0, Mips::K1,
     Mips::SP, Mips::FP, Mips::RA
   };
 
-  static const unsigned ReservedCPU64Regs[] = {
+  static const uint16_t ReservedCPU64Regs[] = {
     Mips::ZERO_64, Mips::AT_64, Mips::K0_64, Mips::K1_64,
     Mips::SP_64, Mips::FP_64, Mips::RA_64
   };

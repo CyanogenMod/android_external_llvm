@@ -3032,6 +3032,16 @@ void SelectionDAGLegalize::ExpandNode(SDNode *Node) {
     Results.push_back(Results[0].getValue(1));
     break;
   }
+  case ISD::FSUB: {
+    EVT VT = Node->getValueType(0);
+    assert(TLI.isOperationLegalOrCustom(ISD::FADD, VT) &&
+           TLI.isOperationLegalOrCustom(ISD::FNEG, VT) &&
+           "Don't know how to expand this FP subtraction!");
+    Tmp1 = DAG.getNode(ISD::FNEG, dl, VT, Node->getOperand(1));
+    Tmp1 = DAG.getNode(ISD::FADD, dl, VT, Node->getOperand(0), Tmp1);
+    Results.push_back(Tmp1);
+    break;
+  }
   case ISD::SUB: {
     EVT VT = Node->getValueType(0);
     assert(TLI.isOperationLegalOrCustom(ISD::ADD, VT) &&
@@ -3590,10 +3600,11 @@ void SelectionDAGLegalize::PromoteNode(SDNode *Node) {
                                   Tmp1, Tmp2, Node->getOperand(2)));
     break;
   }
+  case ISD::FDIV:
   case ISD::FPOW: {
     Tmp1 = DAG.getNode(ISD::FP_EXTEND, dl, NVT, Node->getOperand(0));
     Tmp2 = DAG.getNode(ISD::FP_EXTEND, dl, NVT, Node->getOperand(1));
-    Tmp3 = DAG.getNode(ISD::FPOW, dl, NVT, Tmp1, Tmp2);
+    Tmp3 = DAG.getNode(Node->getOpcode(), dl, NVT, Tmp1, Tmp2);
     Results.push_back(DAG.getNode(ISD::FP_ROUND, dl, OVT,
                                   Tmp3, DAG.getIntPtrConstant(0)));
     break;

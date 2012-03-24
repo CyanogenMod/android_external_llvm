@@ -13,10 +13,10 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "arm-isel"
+#include "ARMISelLowering.h"
 #include "ARM.h"
 #include "ARMCallingConv.h"
 #include "ARMConstantPoolValue.h"
-#include "ARMISelLowering.h"
 #include "ARMMachineFunctionInfo.h"
 #include "ARMPerfectShuffle.h"
 #include "ARMRegisterInfo.h"
@@ -49,7 +49,6 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
-#include <sstream>
 using namespace llvm;
 
 STATISTIC(NumTailCalls, "Number of tail calls");
@@ -87,7 +86,7 @@ namespace {
 }
 
 // The APCS parameter registers.
-static const unsigned GPRArgRegs[] = {
+static const uint16_t GPRArgRegs[] = {
   ARM::R0, ARM::R1, ARM::R2, ARM::R3
 };
 
@@ -455,6 +454,8 @@ ARMTargetLowering::ARMTargetLowering(TargetMachine &TM)
     setLoadExtAction(ISD::ZEXTLOAD, (MVT::SimpleValueType)VT, Expand);
     setLoadExtAction(ISD::EXTLOAD, (MVT::SimpleValueType)VT, Expand);
   }
+
+  setOperationAction(ISD::ConstantFP, MVT::f32, Custom);
 
   if (Subtarget->hasNEON()) {
     addDRTypeForNEON(MVT::v2f32);
@@ -3673,6 +3674,27 @@ static SDValue LowerVSETCC(SDValue Op, SelectionDAG &DAG) {
   return Result;
 }
 
+SDValue ARMTargetLowering::LowerConstantFP(SDValue Op, SelectionDAG &DAG,
+                                           const ARMSubtarget *ST) const {
+  if (!ST->useNEONForSinglePrecisionFP() || !ST->hasVFP3() || ST->hasD16())
+    return SDValue();
+
+  ConstantFPSDNode *CFP = cast<ConstantFPSDNode>(Op);
+  assert(Op.getValueType() == MVT::f32 &&
+         "ConstantFP custom lowering should only occur for f32.");
+
+  APFloat FPVal = CFP->getValueAPF();
+  int ImmVal = ARM_AM::getFP32Imm(FPVal);
+  if (ImmVal == -1)
+    return SDValue();
+
+  DebugLoc DL = Op.getDebugLoc();
+  SDValue NewVal = DAG.getTargetConstant(ImmVal, MVT::i32);
+  SDValue VecConstant = DAG.getNode(ARMISD::VMOVFPIMM, DL, MVT::v2f32, NewVal);
+  return DAG.getNode(ISD::EXTRACT_VECTOR_ELT, DL, MVT::f32, VecConstant,
+                     DAG.getConstant(0, MVT::i32));
+}
+
 /// isNEONModifiedImm - Check if the specified splat value corresponds to a
 /// valid vector constant for a NEON instruction with a "modified immediate"
 /// operand (e.g., VMOV).  If so, return the encoded value.
@@ -5109,6 +5131,7 @@ SDValue ARMTargetLowering::LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::SRA_PARTS:     return LowerShiftRightParts(Op, DAG);
   case ISD::CTTZ:          return LowerCTTZ(Op.getNode(), DAG, Subtarget);
   case ISD::SETCC:         return LowerVSETCC(Op, DAG);
+  case ISD::ConstantFP:    return LowerConstantFP(Op, DAG, Subtarget);
   case ISD::BUILD_VECTOR:  return LowerBUILD_VECTOR(Op, DAG, Subtarget);
   case ISD::VECTOR_SHUFFLE: return LowerVECTOR_SHUFFLE(Op, DAG);
   case ISD::INSERT_VECTOR_ELT: return LowerINSERT_VECTOR_ELT(Op, DAG);
@@ -6842,33 +6865,63 @@ static SDValue PerformMULCombine(SDNode *N,
   if (!C)
     return SDValue();
 
-  uint64_t MulAmt = C->getZExtValue();
+  int64_t MulAmt = C->getSExtValue();
   unsigned ShiftAmt = CountTrailingZeros_64(MulAmt);
+
   ShiftAmt = ShiftAmt & (32 - 1);
   SDValue V = N->getOperand(0);
   DebugLoc DL = N->getDebugLoc();
 
   SDValue Res;
   MulAmt >>= ShiftAmt;
-  if (isPowerOf2_32(MulAmt - 1)) {
-    // (mul x, 2^N + 1) => (add (shl x, N), x)
-    Res = DAG.getNode(ISD::ADD, DL, VT,
-                      V, DAG.getNode(ISD::SHL, DL, VT,
-                                     V, DAG.getConstant(Log2_32(MulAmt-1),
-                                                        MVT::i32)));
-  } else if (isPowerOf2_32(MulAmt + 1)) {
-    // (mul x, 2^N - 1) => (sub (shl x, N), x)
-    Res = DAG.getNode(ISD::SUB, DL, VT,
-                      DAG.getNode(ISD::SHL, DL, VT,
-                                  V, DAG.getConstant(Log2_32(MulAmt+1),
-                                                     MVT::i32)),
-                                                     V);
-  } else
-    return SDValue();
+
+  if (MulAmt >= 0) {
+    if (isPowerOf2_32(MulAmt - 1)) {
+      // (mul x, 2^N + 1) => (add (shl x, N), x)
+      Res = DAG.getNode(ISD::ADD, DL, VT,
+                        V,
+                        DAG.getNode(ISD::SHL, DL, VT,
+                                    V,
+                                    DAG.getConstant(Log2_32(MulAmt - 1),
+                                                    MVT::i32)));
+    } else if (isPowerOf2_32(MulAmt + 1)) {
+      // (mul x, 2^N - 1) => (sub (shl x, N), x)
+      Res = DAG.getNode(ISD::SUB, DL, VT,
+                        DAG.getNode(ISD::SHL, DL, VT,
+                                    V,
+                                    DAG.getConstant(Log2_32(MulAmt + 1),
+                                                    MVT::i32)),
+                        V);
+    } else
+      return SDValue();
+  } else {
+    uint64_t MulAmtAbs = -MulAmt;
+    if (isPowerOf2_32(MulAmtAbs + 1)) {
+      // (mul x, -(2^N - 1)) => (sub x, (shl x, N))
+      Res = DAG.getNode(ISD::SUB, DL, VT,
+                        V,
+                        DAG.getNode(ISD::SHL, DL, VT,
+                                    V,
+                                    DAG.getConstant(Log2_32(MulAmtAbs + 1),
+                                                    MVT::i32)));
+    } else if (isPowerOf2_32(MulAmtAbs - 1)) {
+      // (mul x, -(2^N + 1)) => - (add (shl x, N), x)
+      Res = DAG.getNode(ISD::ADD, DL, VT,
+                        V,
+                        DAG.getNode(ISD::SHL, DL, VT,
+                                    V,
+                                    DAG.getConstant(Log2_32(MulAmtAbs-1),
+                                                    MVT::i32)));
+      Res = DAG.getNode(ISD::SUB, DL, VT,
+                        DAG.getConstant(0, MVT::i32),Res);
+
+    } else
+      return SDValue();
+  }
 
   if (ShiftAmt != 0)
-    Res = DAG.getNode(ISD::SHL, DL, VT, Res,
-                      DAG.getConstant(ShiftAmt, MVT::i32));
+    Res = DAG.getNode(ISD::SHL, DL, VT,
+                      Res, DAG.getConstant(ShiftAmt, MVT::i32));
 
   // Do not add new nodes to DAG combiner worklist.
   DCI.CombineTo(N, Res, false);

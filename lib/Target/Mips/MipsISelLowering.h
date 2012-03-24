@@ -15,10 +15,10 @@
 #ifndef MipsISELLOWERING_H
 #define MipsISELLOWERING_H
 
-#include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/Target/TargetLowering.h"
 #include "Mips.h"
 #include "MipsSubtarget.h"
+#include "llvm/CodeGen/SelectionDAG.h"
+#include "llvm/Target/TargetLowering.h"
 
 namespace llvm {
   namespace MipsISD {
@@ -128,6 +128,7 @@ namespace llvm {
     SDValue LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerJumpTable(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSELECT(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSETCC(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerVASTART(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFCOPYSIGN(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;

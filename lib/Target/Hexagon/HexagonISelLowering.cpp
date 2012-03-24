@@ -28,17 +28,16 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/CodeGen/MachineJumpTableInfo.h"
-#include "HexagonMachineFunctionInfo.h"
 #include "llvm/Support/CommandLine.h"
+using namespace llvm;
 
 const unsigned Hexagon_MAX_RET_SIZE = 64;
-using namespace llvm;
 
 static cl::opt<bool>
 EmitJumpTables("hexagon-emit-jump-tables", cl::init(true), cl::Hidden,
@@ -159,7 +158,7 @@ static bool CC_Hexagon32(unsigned ValNo, MVT ValVT,
                          MVT LocVT, CCValAssign::LocInfo LocInfo,
                          ISD::ArgFlagsTy ArgFlags, CCState &State) {
 
-  static const unsigned RegList[] = {
+  static const uint16_t RegList[] = {
     Hexagon::R0, Hexagon::R1, Hexagon::R2, Hexagon::R3, Hexagon::R4,
     Hexagon::R5
   };
@@ -182,10 +181,10 @@ static bool CC_Hexagon64(unsigned ValNo, MVT ValVT,
     return false;
   }
 
-  static const unsigned RegList1[] = {
+  static const uint16_t RegList1[] = {
     Hexagon::D1, Hexagon::D2
   };
-  static const unsigned RegList2[] = {
+  static const uint16_t RegList2[] = {
     Hexagon::R1, Hexagon::R3
   };
   if (unsigned Reg = State.AllocateReg(RegList1, RegList2, 2)) {

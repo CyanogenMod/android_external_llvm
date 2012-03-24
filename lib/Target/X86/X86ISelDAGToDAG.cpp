@@ -21,7 +21,6 @@
 #include "X86TargetMachine.h"
 #include "llvm/Instructions.h"
 #include "llvm/Intrinsics.h"
-#include "llvm/Support/CFG.h"
 #include "llvm/Type.h"
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
@@ -32,6 +31,7 @@
 #include "llvm/CodeGen/SelectionDAGISel.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
+#include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
@@ -1654,7 +1654,7 @@ enum AtomicSz {
   AtomicSzEnd
 };
 
-static const unsigned int AtomicOpcTbl[AtomicOpcEnd][AtomicSzEnd] = {
+static const uint16_t AtomicOpcTbl[AtomicOpcEnd][AtomicSzEnd] = {
   {
     X86::LOCK_OR8mi,
     X86::LOCK_OR8mr,

@@ -313,8 +313,8 @@ void PruningFunctionCloner::CloneBlock(const BasicBlock *BB,
       Cond = dyn_cast_or_null<ConstantInt>(V);
     }
     if (Cond) {     // Constant fold to uncond branch!
-      unsigned CaseIndex = SI->findCaseValue(Cond);
-      BasicBlock *Dest = SI->getSuccessor(SI->resolveSuccessorIndex(CaseIndex));
+      SwitchInst::ConstCaseIt Case = SI->findCaseValue(Cond);
+      BasicBlock *Dest = const_cast<BasicBlock*>(Case.getCaseSuccessor());
       VMap[OldTI] = BranchInst::Create(Dest, NewBB);
       ToClone.push_back(Dest);
       TerminatorDone = true;
@@ -424,10 +424,6 @@ void llvm::CloneAndPruneFunctionInto(Function *NewFunc, const Function *OldFunc,
     //
     BasicBlock::iterator I = NewBB->begin();
 
-    DebugLoc TheCallDL;
-    if (TheCall) 
-      TheCallDL = TheCall->getDebugLoc();
-    
     // Handle PHI nodes specially, as we have to remove references to dead
     // blocks.
     if (PHINode *PN = dyn_cast<PHINode>(I)) {

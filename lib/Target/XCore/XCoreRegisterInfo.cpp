@@ -14,6 +14,8 @@
 #include "XCoreRegisterInfo.h"
 #include "XCoreMachineFunctionInfo.h"
 #include "XCore.h"
+#include "llvm/Type.h"
+#include "llvm/Function.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -24,8 +26,6 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 #include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Type.h"
-#include "llvm/Function.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Debug.h"
@@ -52,20 +52,6 @@ static inline bool isImmU6(unsigned val) {
 
 static inline bool isImmU16(unsigned val) {
   return val < (1 << 16);
-}
-
-static const unsigned XCore_ArgRegs[] = {
-  XCore::R0, XCore::R1, XCore::R2, XCore::R3
-};
-
-const unsigned * XCoreRegisterInfo::getArgRegs(const MachineFunction *MF)
-{
-  return XCore_ArgRegs;
-}
-
-unsigned XCoreRegisterInfo::getNumArgRegs(const MachineFunction *MF)
-{
-  return array_lengthof(XCore_ArgRegs);
 }
 
 bool XCoreRegisterInfo::needsFrameMoves(const MachineFunction &MF) {

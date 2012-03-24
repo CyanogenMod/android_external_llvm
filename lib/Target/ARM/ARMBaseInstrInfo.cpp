@@ -935,6 +935,8 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
         MIB = AddDReg(MIB, DestReg, ARM::dsub_1, RegState::DefineNoRead, TRI);
         MIB = AddDReg(MIB, DestReg, ARM::dsub_2, RegState::DefineNoRead, TRI);
         MIB = AddDReg(MIB, DestReg, ARM::dsub_3, RegState::DefineNoRead, TRI);
+        if (TargetRegisterInfo::isPhysicalRegister(DestReg))
+          MIB.addReg(DestReg, RegState::ImplicitDefine);
       }
     } else
       llvm_unreachable("Unknown reg class!");
@@ -953,6 +955,8 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
       MIB = AddDReg(MIB, DestReg, ARM::dsub_5, RegState::DefineNoRead, TRI);
       MIB = AddDReg(MIB, DestReg, ARM::dsub_6, RegState::DefineNoRead, TRI);
       MIB = AddDReg(MIB, DestReg, ARM::dsub_7, RegState::DefineNoRead, TRI);
+      if (TargetRegisterInfo::isPhysicalRegister(DestReg))
+        MIB.addReg(DestReg, RegState::ImplicitDefine);
     } else
       llvm_unreachable("Unknown reg class!");
     break;
@@ -2756,24 +2760,24 @@ ARMBaseInstrInfo::getOperandLatency(const InstrItineraryData *ItinData,
     case ARM::VLD4q8oddPseudo_UPD:
     case ARM::VLD4q16oddPseudo_UPD:
     case ARM::VLD4q32oddPseudo_UPD:
-    case ARM::VLD1DUPq8Pseudo:
-    case ARM::VLD1DUPq16Pseudo:
-    case ARM::VLD1DUPq32Pseudo:
-    case ARM::VLD1DUPq8PseudoWB_fixed:
-    case ARM::VLD1DUPq16PseudoWB_fixed:
-    case ARM::VLD1DUPq32PseudoWB_fixed:
-    case ARM::VLD1DUPq8PseudoWB_register:
-    case ARM::VLD1DUPq16PseudoWB_register:
-    case ARM::VLD1DUPq32PseudoWB_register:
-    case ARM::VLD2DUPd8Pseudo:
-    case ARM::VLD2DUPd16Pseudo:
-    case ARM::VLD2DUPd32Pseudo:
-    case ARM::VLD2DUPd8PseudoWB_fixed:
-    case ARM::VLD2DUPd16PseudoWB_fixed:
-    case ARM::VLD2DUPd32PseudoWB_fixed:
-    case ARM::VLD2DUPd8PseudoWB_register:
-    case ARM::VLD2DUPd16PseudoWB_register:
-    case ARM::VLD2DUPd32PseudoWB_register:
+    case ARM::VLD1DUPq8:
+    case ARM::VLD1DUPq16:
+    case ARM::VLD1DUPq32:
+    case ARM::VLD1DUPq8wb_fixed:
+    case ARM::VLD1DUPq16wb_fixed:
+    case ARM::VLD1DUPq32wb_fixed:
+    case ARM::VLD1DUPq8wb_register:
+    case ARM::VLD1DUPq16wb_register:
+    case ARM::VLD1DUPq32wb_register:
+    case ARM::VLD2DUPd8:
+    case ARM::VLD2DUPd16:
+    case ARM::VLD2DUPd32:
+    case ARM::VLD2DUPd8wb_fixed:
+    case ARM::VLD2DUPd16wb_fixed:
+    case ARM::VLD2DUPd32wb_fixed:
+    case ARM::VLD2DUPd8wb_register:
+    case ARM::VLD2DUPd16wb_register:
+    case ARM::VLD2DUPd32wb_register:
     case ARM::VLD4DUPd8Pseudo:
     case ARM::VLD4DUPd16Pseudo:
     case ARM::VLD4DUPd32Pseudo:

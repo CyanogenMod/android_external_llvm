@@ -136,15 +136,8 @@ unsigned FastISel::getRegForValue(const Value *V) {
       return 0;
   }
 
-  // Look up the value to see if we already have a register for it. We
-  // cache values defined by Instructions across blocks, and other values
-  // only locally. This is because Instructions already have the SSA
-  // def-dominates-use requirement enforced.
-  DenseMap<const Value *, unsigned>::iterator I = FuncInfo.ValueMap.find(V);
-  if (I != FuncInfo.ValueMap.end())
-    return I->second;
-
-  unsigned Reg = LocalValueMap[V];
+  // Look up the value to see if we already have a register for it.
+  unsigned Reg = lookUpRegForValue(V);
   if (Reg != 0)
     return Reg;
 
@@ -199,7 +192,7 @@ unsigned FastISel::materializeRegForValue(const Value *V, MVT VT) {
       uint32_t IntBitWidth = IntVT.getSizeInBits();
       bool isExact;
       (void) Flt.convertToInteger(x, IntBitWidth, /*isSigned=*/true,
-                                APFloat::rmTowardZero, &isExact);
+                                  APFloat::rmTowardZero, &isExact);
       if (isExact) {
         APInt IntVal(IntBitWidth, x);
 
@@ -577,12 +570,16 @@ bool FastISel::SelectCall(const User *I) {
   case Intrinsic::dbg_declare: {
     const DbgDeclareInst *DI = cast<DbgDeclareInst>(Call);
     if (!DIVariable(DI->getVariable()).Verify() ||
-        !FuncInfo.MF->getMMI().hasDebugInfo())
+        !FuncInfo.MF->getMMI().hasDebugInfo()) {
+      DEBUG(dbgs() << "Dropping debug info for " << *DI << "\n");
       return true;
+    }
 
     const Value *Address = DI->getAddress();
-    if (!Address || isa<UndefValue>(Address) || isa<AllocaInst>(Address))
+    if (!Address || isa<UndefValue>(Address)) {
+      DEBUG(dbgs() << "Dropping debug info for " << *DI << "\n");
       return true;
+    }
 
     unsigned Reg = 0;
     unsigned Offset = 0;
@@ -590,16 +587,25 @@ bool FastISel::SelectCall(const User *I) {
       // Some arguments' frame index is recorded during argument lowering.
       Offset = FuncInfo.getArgumentFrameIndex(Arg);
       if (Offset)
-	Reg = TRI.getFrameRegister(*FuncInfo.MF);
+        Reg = TRI.getFrameRegister(*FuncInfo.MF);
     }
     if (!Reg)
-      Reg = getRegForValue(Address);
+      Reg = lookUpRegForValue(Address);
+
+    if (!Reg && isa<Instruction>(Address) &&
+        (!isa<AllocaInst>(Address) ||
+         !FuncInfo.StaticAllocaMap.count(cast<AllocaInst>(Address))))
+      Reg = FuncInfo.InitializeRegForValue(Address);
 
     if (Reg)
       BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
               TII.get(TargetOpcode::DBG_VALUE))
         .addReg(Reg, RegState::Debug).addImm(Offset)
         .addMetadata(DI->getVariable());
+    else
+      // We can't yet handle anything else here because it would require
+      // generating code, thus altering codegen because of debug info.
+      DEBUG(dbgs() << "Dropping debug info for " << DI);
     return true;
   }
   case Intrinsic::dbg_value: {
