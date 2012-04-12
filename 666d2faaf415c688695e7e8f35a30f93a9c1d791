@@ -1,0 +1,10 @@
+Change-Id: I666d2faaf415c688695e7e8f35a30f93a9c1d791
+Code-Review+2: Jef Oliver <jgoliver@jeago.com>
+Verified+1: Jef Oliver <jgoliver@jeago.com>
+Code-Review+1: Daniel Hillenbrand <daniel.hillenbrand@codeworkx.de>
+Code-Review+1: Takazumi Matsumoto <tdr@taksmon.com>
+Submitted-by: Jef Oliver <jgoliver@jeago.com>
+Submitted-at: Thu, 12 Apr 2012 05:50:58 +0400
+Reviewed-on: http://review.cyanogenmod.com/14668
+Project: CyanogenMod/android_external_llvm
+Branch: refs/heads/ics
