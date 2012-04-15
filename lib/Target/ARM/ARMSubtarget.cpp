@@ -24,7 +24,7 @@
 
 using namespace llvm;
 
-static cl::opt<bool>
+cl::opt<bool>
 ReserveR9("arm-reserve-r9", cl::Hidden,
           cl::desc("Reserve R9, making it unavailable as GPR"));
 
