@@ -2115,18 +2115,10 @@ unsigned ARMFastISel::ARMSelectCallOp(const GlobalValue *GV) {
 
   // iOS needs the r9 versions of the opcodes.
   bool isiOS = Subtarget->isTargetIOS();
-  if (EnableARMLongCalls) {
-    if (isThumb2) {
-      return isiOS ? ARM::tBLXr_r9 : ARM::tBLXr;
-    } else {
-      return isiOS ? ARM::BLXr9 : ARM::BLX;
-    }
-  } else {
-    if (isThumb2) {
-      return isiOS ? ARM::tBLr9 : ARM::tBL;
-    } else  {
-      return isiOS ? ARM::BLr9 : ARM::BL;
-    }
+  if (isThumb2) {
+    return isiOS ? ARM::tBLr9 : ARM::tBL;
+  } else  {
+    return isiOS ? ARM::BLr9 : ARM::BL;
   }
 }
 
@@ -2252,16 +2244,8 @@ bool ARMFastISel::SelectCall(const Instruction *I,
            RetVT != MVT::i8  && RetVT != MVT::i1)
     return false;
 
-  // Handle the long call.
-  unsigned CalleeReg = 0;
-  if (EnableARMLongCalls) {
-    if (IntrMemName != NULL) {
-      return false;
-    }
-    // Create a constant pool entry for the callee address
-    EVT CalleeVT = TLI.getValueType(GV->getType());
-    CalleeReg = ARMMaterializeGV(GV, CalleeVT);
-  }
+  // TODO: For now if we have long calls specified we don't handle the call.
+  if (EnableARMLongCalls) return false;
 
   // Set up the argument vectors.
   SmallVector<Value*, 8> Args;
@@ -2324,31 +2308,24 @@ bool ARMFastISel::SelectCall(const Instruction *I,
   MachineInstrBuilder MIB;
   unsigned CallOpc = ARMSelectCallOp(GV);
   // Explicitly adding the predicate here.
-  if (EnableARMLongCalls) {
+  if(isThumb2) {
+    // Explicitly adding the predicate here.
+    MIB = AddDefaultPred(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
+                                 TII.get(CallOpc)));
+    if (!IntrMemName)
+      MIB.addGlobalAddress(GV, 0, 0);
+    else 
+      MIB.addExternalSymbol(IntrMemName, 0);
+  } else {
+    if (!IntrMemName)
       // Explicitly adding the predicate here.
       MIB = AddDefaultPred(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
                                    TII.get(CallOpc))
-              .addReg(CalleeReg, RegState::Kill, 0));
-  } else {
-    if(isThumb2) {
-      // Explicitly adding the predicate here.
+            .addGlobalAddress(GV, 0, 0));
+    else
       MIB = AddDefaultPred(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
-                                   TII.get(CallOpc)));
-      if (!IntrMemName)
-        MIB.addGlobalAddress(GV, 0, 0);
-      else
-        MIB.addExternalSymbol(IntrMemName, 0);
-    } else {
-      if (!IntrMemName)
-        // Explicitly adding the predicate here.
-        MIB = AddDefaultPred(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
-                                     TII.get(CallOpc))
-              .addGlobalAddress(GV, 0, 0));
-      else
-        MIB = AddDefaultPred(BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL,
-                                     TII.get(CallOpc))
-              .addExternalSymbol(IntrMemName, 0));
-    }
+                                   TII.get(CallOpc))
+            .addExternalSymbol(IntrMemName, 0));
   }
   
   // Add implicit physical register uses to the call.
