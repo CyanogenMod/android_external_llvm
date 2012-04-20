@@ -13,6 +13,8 @@
 
 #include "llvm/Object/ELF.h"
 
+#include <ctype.h>
+
 namespace llvm {
 
 using namespace object;
