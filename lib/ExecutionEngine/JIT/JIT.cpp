@@ -269,7 +269,8 @@ extern "C" {
 
 JIT::JIT(Module *M, TargetMachine &tm, TargetJITInfo &tji,
          JITMemoryManager *jmm, bool GVsWithCode)
-  : ExecutionEngine(M), TM(tm), TJI(tji), JMM(jmm),
+  : ExecutionEngine(M), TM(tm), TJI(tji),
+    JMM(jmm ? jmm : JITMemoryManager::CreateDefaultMemManager()),
     AllocateGVsWithCode(GVsWithCode), isAlreadyCodeGenerating(false) {
   setTargetData(TM.getTargetData());
 
@@ -323,6 +324,7 @@ JIT::~JIT() {
   AllJits->Remove(this);
   delete jitstate;
   delete JCE;
+  // JMM is a ownership of JCE, so we no need delete JMM here.
   delete &TM;
 }
 

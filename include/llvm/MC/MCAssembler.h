@@ -29,7 +29,6 @@ namespace llvm {
 class raw_ostream;
 class MCAsmLayout;
 class MCAssembler;
-class MCBinaryExpr;
 class MCContext;
 class MCCodeEmitter;
 class MCExpr;

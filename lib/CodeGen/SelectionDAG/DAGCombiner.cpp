@@ -1080,6 +1080,7 @@ void DAGCombiner::Run(CombineLevel AtLevel) {
 
   // If the root changed (e.g. it was a dead load, update the root).
   DAG.setRoot(Dummy.getValue());
+  DAG.RemoveDeadNodes();
 }
 
 SDValue DAGCombiner::visit(SDNode *N) {
@@ -1452,16 +1453,14 @@ SDValue DAGCombiner::visitADD(SDNode *N) {
   if (VT.isInteger() && !VT.isVector()) {
     APInt LHSZero, LHSOne;
     APInt RHSZero, RHSOne;
-    APInt Mask = APInt::getAllOnesValue(VT.getScalarType().getSizeInBits());
-    DAG.ComputeMaskedBits(N0, Mask, LHSZero, LHSOne);
+    DAG.ComputeMaskedBits(N0, LHSZero, LHSOne);
 
     if (LHSZero.getBoolValue()) {
-      DAG.ComputeMaskedBits(N1, Mask, RHSZero, RHSOne);
+      DAG.ComputeMaskedBits(N1, RHSZero, RHSOne);
 
       // If all possibly-set bits on the LHS are clear on the RHS, return an OR.
       // If all possibly-set bits on the RHS are clear on the LHS, return an OR.
-      if ((RHSZero & (~LHSZero & Mask)) == (~LHSZero & Mask) ||
-          (LHSZero & (~RHSZero & Mask)) == (~RHSZero & Mask))
+      if ((RHSZero & ~LHSZero) == ~LHSZero || (LHSZero & ~RHSZero) == ~RHSZero)
         return DAG.getNode(ISD::OR, N->getDebugLoc(), VT, N0, N1);
     }
   }
@@ -1547,16 +1546,14 @@ SDValue DAGCombiner::visitADDC(SDNode *N) {
   // fold (addc a, b) -> (or a, b), CARRY_FALSE iff a and b share no bits.
   APInt LHSZero, LHSOne;
   APInt RHSZero, RHSOne;
-  APInt Mask = APInt::getAllOnesValue(VT.getScalarType().getSizeInBits());
-  DAG.ComputeMaskedBits(N0, Mask, LHSZero, LHSOne);
+  DAG.ComputeMaskedBits(N0, LHSZero, LHSOne);
 
   if (LHSZero.getBoolValue()) {
-    DAG.ComputeMaskedBits(N1, Mask, RHSZero, RHSOne);
+    DAG.ComputeMaskedBits(N1, RHSZero, RHSOne);
 
     // If all possibly-set bits on the LHS are clear on the RHS, return an OR.
     // If all possibly-set bits on the RHS are clear on the LHS, return an OR.
-    if ((RHSZero & (~LHSZero & Mask)) == (~LHSZero & Mask) ||
-        (LHSZero & (~RHSZero & Mask)) == (~RHSZero & Mask))
+    if ((RHSZero & ~LHSZero) == ~LHSZero || (LHSZero & ~RHSZero) == ~RHSZero)
       return CombineTo(N, DAG.getNode(ISD::OR, N->getDebugLoc(), VT, N0, N1),
                        DAG.getNode(ISD::CARRY_FALSE,
                                    N->getDebugLoc(), MVT::Glue));
@@ -2334,6 +2331,67 @@ SDValue DAGCombiner::SimplifyBinOpWithSameOpcodeHands(SDNode *N) {
     AddToWorkList(ORNode.getNode());
     return DAG.getNode(N0.getOpcode(), N->getDebugLoc(), VT,
                        ORNode, N0.getOperand(1));
+  }
+
+  // Simplify xor/and/or (bitcast(A), bitcast(B)) -> bitcast(op (A,B))
+  // Only perform this optimization after type legalization and before
+  // LegalizeVectorOprs. LegalizeVectorOprs promotes vector operations by
+  // adding bitcasts. For example (xor v4i32) is promoted to (v2i64), and
+  // we don't want to undo this promotion.
+  // We also handle SCALAR_TO_VECTOR because xor/or/and operations are cheaper
+  // on scalars.
+  if ((N0.getOpcode() == ISD::BITCAST || N0.getOpcode() == ISD::SCALAR_TO_VECTOR)
+      && Level == AfterLegalizeVectorOps) {
+    SDValue In0 = N0.getOperand(0);
+    SDValue In1 = N1.getOperand(0);
+    EVT In0Ty = In0.getValueType();
+    EVT In1Ty = In1.getValueType();
+    // If both incoming values are integers, and the original types are the same.
+    if (In0Ty.isInteger() && In1Ty.isInteger() && In0Ty == In1Ty) {
+      SDValue Op = DAG.getNode(N->getOpcode(), N->getDebugLoc(), In0Ty, In0, In1);
+      SDValue BC = DAG.getNode(N0.getOpcode(), N->getDebugLoc(), VT, Op);
+      AddToWorkList(Op.getNode());
+      return BC;
+    }
+  }
+
+  // Xor/and/or are indifferent to the swizzle operation (shuffle of one value).
+  // Simplify xor/and/or (shuff(A), shuff(B)) -> shuff(op (A,B))
+  // If both shuffles use the same mask, and both shuffle within a single
+  // vector, then it is worthwhile to move the swizzle after the operation.
+  // The type-legalizer generates this pattern when loading illegal
+  // vector types from memory. In many cases this allows additional shuffle
+  // optimizations.
+  if (N0.getOpcode() == ISD::VECTOR_SHUFFLE && Level < AfterLegalizeDAG &&
+      N0.getOperand(1).getOpcode() == ISD::UNDEF &&
+      N1.getOperand(1).getOpcode() == ISD::UNDEF) {
+    ShuffleVectorSDNode *SVN0 = cast<ShuffleVectorSDNode>(N0);
+    ShuffleVectorSDNode *SVN1 = cast<ShuffleVectorSDNode>(N1);
+
+    assert(N0.getOperand(0).getValueType() == N1.getOperand(1).getValueType() &&
+           "Inputs to shuffles are not the same type");
+
+    unsigned NumElts = VT.getVectorNumElements();
+
+    // Check that both shuffles use the same mask. The masks are known to be of
+    // the same length because the result vector type is the same.
+    bool SameMask = true;
+    for (unsigned i = 0; i != NumElts; ++i) {
+      int Idx0 = SVN0->getMaskElt(i);
+      int Idx1 = SVN1->getMaskElt(i);
+      if (Idx0 != Idx1) {
+        SameMask = false;
+        break;
+      }
+    }
+
+    if (SameMask) {
+      SDValue Op = DAG.getNode(N->getOpcode(), N->getDebugLoc(), VT,
+                               N0.getOperand(0), N1.getOperand(0));
+      AddToWorkList(Op.getNode());
+      return DAG.getVectorShuffle(VT, N->getDebugLoc(), Op,
+                                  DAG.getUNDEF(VT), &SVN0->getMask()[0]);
+    }
   }
 
   return SDValue();
@@ -3773,8 +3831,7 @@ SDValue DAGCombiner::visitSRL(SDNode *N) {
   if (N1C && N0.getOpcode() == ISD::CTLZ &&
       N1C->getAPIntValue() == Log2_32(VT.getSizeInBits())) {
     APInt KnownZero, KnownOne;
-    APInt Mask = APInt::getAllOnesValue(VT.getScalarType().getSizeInBits());
-    DAG.ComputeMaskedBits(N0.getOperand(0), Mask, KnownZero, KnownOne);
+    DAG.ComputeMaskedBits(N0.getOperand(0), KnownZero, KnownOne);
 
     // If any of the input bits are KnownOne, then the input couldn't be all
     // zeros, thus the result of the srl will always be zero.
@@ -3782,7 +3839,7 @@ SDValue DAGCombiner::visitSRL(SDNode *N) {
 
     // If all of the bits input the to ctlz node are known to be zero, then
     // the result of the ctlz is "32" and the result of the shift is one.
-    APInt UnknownBits = ~KnownZero & Mask;
+    APInt UnknownBits = ~KnownZero;
     if (UnknownBits == 0) return DAG.getConstant(1, VT);
 
     // Otherwise, check to see if there is exactly one bit input to the ctlz.
@@ -4298,12 +4355,17 @@ SDValue DAGCombiner::visitSIGN_EXTEND(SDNode *N) {
     // Only do this before legalize for now.
     if (VT.isVector() && !LegalOperations) {
       EVT N0VT = N0.getOperand(0).getValueType();
-        // We know that the # elements of the results is the same as the
-        // # elements of the compare (and the # elements of the compare result
-        // for that matter).  Check to see that they are the same size.  If so,
-        // we know that the element size of the sext'd result matches the
-        // element size of the compare operands.
-      if (VT.getSizeInBits() == N0VT.getSizeInBits())
+      // On some architectures (such as SSE/NEON/etc) the SETCC result type is
+      // of the same size as the compared operands. Only optimize sext(setcc())
+      // if this is the case.
+      EVT SVT = TLI.getSetCCResultType(N0VT);
+
+      // We know that the # elements of the results is the same as the
+      // # elements of the compare (and the # elements of the compare result
+      // for that matter).  Check to see that they are the same size.  If so,
+      // we know that the element size of the sext'd result matches the
+      // element size of the compare operands.
+      if (VT.getSizeInBits() == SVT.getSizeInBits())
         return DAG.getSetCC(N->getDebugLoc(), VT, N0.getOperand(0),
                              N0.getOperand(1),
                              cast<CondCodeSDNode>(N0.getOperand(2))->get());
@@ -4317,11 +4379,13 @@ SDValue DAGCombiner::visitSIGN_EXTEND(SDNode *N) {
         EVT MatchingVectorType =
           EVT::getVectorVT(*DAG.getContext(), MatchingElementType,
                            N0VT.getVectorNumElements());
-        SDValue VsetCC =
-          DAG.getSetCC(N->getDebugLoc(), MatchingVectorType, N0.getOperand(0),
-                        N0.getOperand(1),
-                        cast<CondCodeSDNode>(N0.getOperand(2))->get());
-        return DAG.getSExtOrTrunc(VsetCC, N->getDebugLoc(), VT);
+
+        if (SVT == MatchingVectorType) {
+          SDValue VsetCC = DAG.getSetCC(N->getDebugLoc(), MatchingVectorType,
+                                 N0.getOperand(0), N0.getOperand(1),
+                                 cast<CondCodeSDNode>(N0.getOperand(2))->get());
+          return DAG.getSExtOrTrunc(VsetCC, N->getDebugLoc(), VT);
+        }
       }
     }
 
@@ -4352,6 +4416,44 @@ SDValue DAGCombiner::visitSIGN_EXTEND(SDNode *N) {
   return SDValue();
 }
 
+// isTruncateOf - If N is a truncate of some other value, return true, record
+// the value being truncated in Op and which of Op's bits are zero in KnownZero.
+// This function computes KnownZero to avoid a duplicated call to
+// ComputeMaskedBits in the caller.
+static bool isTruncateOf(SelectionDAG &DAG, SDValue N, SDValue &Op,
+                         APInt &KnownZero) {
+  APInt KnownOne;
+  if (N->getOpcode() == ISD::TRUNCATE) {
+    Op = N->getOperand(0);
+    DAG.ComputeMaskedBits(Op, KnownZero, KnownOne);
+    return true;
+  }
+
+  if (N->getOpcode() != ISD::SETCC || N->getValueType(0) != MVT::i1 ||
+      cast<CondCodeSDNode>(N->getOperand(2))->get() != ISD::SETNE)
+    return false;
+
+  SDValue Op0 = N->getOperand(0);
+  SDValue Op1 = N->getOperand(1);
+  assert(Op0.getValueType() == Op1.getValueType());
+
+  ConstantSDNode *COp0 = dyn_cast<ConstantSDNode>(Op0);
+  ConstantSDNode *COp1 = dyn_cast<ConstantSDNode>(Op1);
+  if (COp0 && COp0->isNullValue())
+    Op = Op1;
+  else if (COp1 && COp1->isNullValue())
+    Op = Op0;
+  else
+    return false;
+
+  DAG.ComputeMaskedBits(Op, KnownZero, KnownOne);
+
+  if (!(KnownZero | APInt(Op.getValueSizeInBits(), 1)).isAllOnesValue())
+    return false;
+
+  return true;
+}
+
 SDValue DAGCombiner::visitZERO_EXTEND(SDNode *N) {
   SDValue N0 = N->getOperand(0);
   EVT VT = N->getValueType(0);
@@ -4369,16 +4471,17 @@ SDValue DAGCombiner::visitZERO_EXTEND(SDNode *N) {
   //      (zext (truncate x)) -> (truncate x)
   // This is valid when the truncated bits of x are already zero.
   // FIXME: We should extend this to work for vectors too.
-  if (N0.getOpcode() == ISD::TRUNCATE && !VT.isVector()) {
-    SDValue Op = N0.getOperand(0);
-    APInt TruncatedBits
-      = APInt::getBitsSet(Op.getValueSizeInBits(),
-                          N0.getValueSizeInBits(),
-                          std::min(Op.getValueSizeInBits(),
-                                   VT.getSizeInBits()));
-    APInt KnownZero, KnownOne;
-    DAG.ComputeMaskedBits(Op, TruncatedBits, KnownZero, KnownOne);
-    if (TruncatedBits == KnownZero) {
+  SDValue Op;
+  APInt KnownZero;
+  if (!VT.isVector() && isTruncateOf(DAG, N0, Op, KnownZero)) {
+    APInt TruncatedBits =
+      (Op.getValueSizeInBits() == N0.getValueSizeInBits()) ?
+      APInt(Op.getValueSizeInBits(), 0) :
+      APInt::getBitsSet(Op.getValueSizeInBits(),
+                        N0.getValueSizeInBits(),
+                        std::min(Op.getValueSizeInBits(),
+                                 VT.getSizeInBits()));
+    if (TruncatedBits == (KnownZero & TruncatedBits)) {
       if (VT.bitsGT(Op.getValueType()))
         return DAG.getNode(ISD::ZERO_EXTEND, N->getDebugLoc(), VT, Op);
       if (VT.bitsLT(Op.getValueType()))
@@ -5280,7 +5383,8 @@ SDValue DAGCombiner::visitBITCAST(SDNode *N) {
   // fold (bitconvert (fneg x)) -> (xor (bitconvert x), signbit)
   // fold (bitconvert (fabs x)) -> (and (bitconvert x), (not signbit))
   // This often reduces constant pool loads.
-  if ((N0.getOpcode() == ISD::FNEG || N0.getOpcode() == ISD::FABS) &&
+  if (((N0.getOpcode() == ISD::FNEG && !TLI.isFNegFree(VT)) ||
+       (N0.getOpcode() == ISD::FABS && !TLI.isFAbsFree(VT))) &&
       N0.getNode()->hasOneUse() && VT.isInteger() && !VT.isVector()) {
     SDValue NewConv = DAG.getNode(ISD::BITCAST, N0.getDebugLoc(), VT,
                                   N0.getOperand(0));
@@ -5667,6 +5771,24 @@ SDValue DAGCombiner::visitFDIV(SDNode *N) {
   if (N0CFP && N1CFP && VT != MVT::ppcf128)
     return DAG.getNode(ISD::FDIV, N->getDebugLoc(), VT, N0, N1);
 
+  // fold (fdiv X, c2) -> fmul X, 1/c2 if losing precision is acceptable.
+  if (N1CFP && VT != MVT::ppcf128 && DAG.getTarget().Options.UnsafeFPMath) {
+    // Compute the reciprocal 1.0 / c2.
+    APFloat N1APF = N1CFP->getValueAPF();
+    APFloat Recip(N1APF.getSemantics(), 1); // 1.0
+    APFloat::opStatus st = Recip.divide(N1APF, APFloat::rmNearestTiesToEven);
+    // Only do the transform if the reciprocal is a legal fp immediate that
+    // isn't too nasty (eg NaN, denormal, ...).
+    if ((st == APFloat::opOK || st == APFloat::opInexact) && // Not too nasty
+        (!LegalOperations ||
+         // FIXME: custom lowering of ConstantFP might fail (see e.g. ARM
+         // backend)... we should handle this gracefully after Legalize.
+         // TLI.isOperationLegalOrCustom(llvm::ISD::ConstantFP, VT) ||
+         TLI.isOperationLegal(llvm::ISD::ConstantFP, VT) ||
+         TLI.isFPImmLegal(Recip, VT)))
+      return DAG.getNode(ISD::FMUL, N->getDebugLoc(), VT, N0,
+                         DAG.getConstantFP(Recip, VT));
+  }
 
   // (fdiv (fneg X), (fneg Y)) -> (fdiv X, Y)
   if (char LHSNeg = isNegatibleForFree(N0, LegalOperations, TLI,
@@ -5931,7 +6053,7 @@ SDValue DAGCombiner::visitFNEG(SDNode *N) {
 
   // Transform fneg(bitconvert(x)) -> bitconvert(x^sign) to avoid loading
   // constant pool values.
-  if (N0.getOpcode() == ISD::BITCAST &&
+  if (!TLI.isFNegFree(VT) && N0.getOpcode() == ISD::BITCAST &&
       !VT.isVector() &&
       N0.getNode()->hasOneUse() &&
       N0.getOperand(0).getValueType().isInteger()) {
@@ -5967,7 +6089,8 @@ SDValue DAGCombiner::visitFABS(SDNode *N) {
 
   // Transform fabs(bitconvert(x)) -> bitconvert(x&~sign) to avoid loading
   // constant pool values.
-  if (N0.getOpcode() == ISD::BITCAST && N0.getNode()->hasOneUse() &&
+  if (!TLI.isFAbsFree(VT) && 
+      N0.getOpcode() == ISD::BITCAST && N0.getNode()->hasOneUse() &&
       N0.getOperand(0).getValueType().isInteger() &&
       !N0.getOperand(0).getValueType().isVector()) {
     SDValue Int = N0.getOperand(0);
@@ -7628,8 +7751,7 @@ SDValue DAGCombiner::visitVECTOR_SHUFFLE(SDNode *N) {
   SDValue N0 = N->getOperand(0);
   SDValue N1 = N->getOperand(1);
 
-  assert(N0.getValueType().getVectorNumElements() == NumElts &&
-        "Vector shuffle must be normalized in DAG");
+  assert(N0.getValueType() == VT && "Vector shuffle must be normalized in DAG");
 
   // Canonicalize shuffle undef, undef -> undef
   if (N0.getOpcode() == ISD::UNDEF && N1.getOpcode() == ISD::UNDEF)
@@ -7654,12 +7776,13 @@ SDValue DAGCombiner::visitVECTOR_SHUFFLE(SDNode *N) {
     SmallVector<int, 8> NewMask;
     for (unsigned i = 0; i != NumElts; ++i) {
       int Idx = SVN->getMaskElt(i);
-      if (Idx < 0)
-        NewMask.push_back(Idx);
-      else if (Idx < (int)NumElts)
-        NewMask.push_back(Idx + NumElts);
-      else
-        NewMask.push_back(Idx - NumElts);
+      if (Idx >= 0) {
+        if (Idx < (int)NumElts)
+          Idx += NumElts;
+        else
+          Idx -= NumElts;
+      }
+      NewMask.push_back(Idx);
     }
     return DAG.getVectorShuffle(VT, N->getDebugLoc(), N1, DAG.getUNDEF(VT),
                                 &NewMask[0]);
@@ -7721,6 +7844,40 @@ SDValue DAGCombiner::visitVECTOR_SHUFFLE(SDNode *N) {
         return N0;
     }
   }
+
+  // If this shuffle node is simply a swizzle of another shuffle node,
+  // and it reverses the swizzle of the previous shuffle then we can
+  // optimize shuffle(shuffle(x, undef), undef) -> x.
+  if (N0.getOpcode() == ISD::VECTOR_SHUFFLE && Level < AfterLegalizeDAG &&
+      N1.getOpcode() == ISD::UNDEF) {
+
+    ShuffleVectorSDNode *OtherSV = cast<ShuffleVectorSDNode>(N0);
+
+    // Shuffle nodes can only reverse shuffles with a single non-undef value.
+    if (N0.getOperand(1).getOpcode() != ISD::UNDEF)
+      return SDValue();
+
+    // The incoming shuffle must be of the same type as the result of the
+    // current shuffle.
+    assert(OtherSV->getOperand(0).getValueType() == VT &&
+           "Shuffle types don't match");
+
+    for (unsigned i = 0; i != NumElts; ++i) {
+      int Idx = SVN->getMaskElt(i);
+      assert(Idx < (int)NumElts && "Index references undef operand");
+      // Next, this index comes from the first value, which is the incoming
+      // shuffle. Adopt the incoming index.
+      if (Idx >= 0)
+        Idx = OtherSV->getMaskElt(Idx);
+
+      // The combined shuffle must map each index to itself.
+      if (Idx >= 0 && (unsigned)Idx != i)
+        return SDValue();
+    }
+
+    return OtherSV->getOperand(0);
+  }
+
   return SDValue();
 }
 
@@ -7796,7 +7953,8 @@ SDValue DAGCombiner::XformToShuffleWithZero(SDNode *N) {
         SDValue Elt = RHS.getOperand(i);
         if (!isa<ConstantSDNode>(Elt))
           return SDValue();
-        else if (cast<ConstantSDNode>(Elt)->isAllOnesValue())
+
+        if (cast<ConstantSDNode>(Elt)->isAllOnesValue())
           Indices.push_back(i);
         else if (cast<ConstantSDNode>(Elt)->isNullValue())
           Indices.push_back(NumElts);
@@ -7991,8 +8149,8 @@ bool DAGCombiner::SimplifySelectOps(SDNode *TheSelect, SDValue LHS,
 
       if ((LLD->hasAnyUseOfValue(1) &&
            (LLD->isPredecessorOf(CondLHS) || LLD->isPredecessorOf(CondRHS))) ||
-          (LLD->hasAnyUseOfValue(1) &&
-           (LLD->isPredecessorOf(CondLHS) || LLD->isPredecessorOf(CondRHS))))
+          (RLD->hasAnyUseOfValue(1) &&
+           (RLD->isPredecessorOf(CondLHS) || RLD->isPredecessorOf(CondRHS))))
         return false;
 
       Addr = DAG.getNode(ISD::SELECT_CC, TheSelect->getDebugLoc(),

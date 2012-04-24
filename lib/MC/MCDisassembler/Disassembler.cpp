@@ -15,7 +15,9 @@
 #include "llvm/MC/MCDisassembler.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCInstPrinter.h"
+#include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCRegisterInfo.h"
+#include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Support/MemoryObject.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
@@ -57,6 +59,9 @@ LLVMDisasmContextRef LLVMCreateDisasm(const char *TripleName, void *DisInfo,
   const MCAsmInfo *MAI = TheTarget->createMCAsmInfo(TripleName);
   assert(MAI && "Unable to create target asm info!");
 
+  const MCInstrInfo *MII = TheTarget->createMCInstrInfo();
+  assert(MII && "Unable to create target instruction info!");
+
   const MCRegisterInfo *MRI = TheTarget->createMCRegInfo(TripleName);
   assert(MRI && "Unable to create target register info!");
 
@@ -80,13 +85,13 @@ LLVMDisasmContextRef LLVMCreateDisasm(const char *TripleName, void *DisInfo,
   // Set up the instruction printer.
   int AsmPrinterVariant = MAI->getAssemblerDialect();
   MCInstPrinter *IP = TheTarget->createMCInstPrinter(AsmPrinterVariant,
-                                                     *MAI, *MRI, *STI);
+                                                     *MAI, *MII, *MRI, *STI);
   assert(IP && "Unable to create instruction printer!");
 
   LLVMDisasmContext *DC = new LLVMDisasmContext(TripleName, DisInfo, TagType,
                                                 GetOpInfo, SymbolLookUp,
                                                 TheTarget, MAI, MRI,
-                                                Ctx, DisAsm, IP);
+                                                STI, MII, Ctx, DisAsm, IP);
   assert(DC && "Allocation failure!");
 
   return DC;

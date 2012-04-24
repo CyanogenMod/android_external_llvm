@@ -48,8 +48,8 @@ public:
   virtual void setPoisonMemory(bool poison) = 0;
 
   /// getPointerToNamedFunction - This method returns the address of the
-  /// specified function by using the dlsym function call.  As such it is only
-  /// useful for resolving library symbols, not code generated symbols.
+  /// specified function. As such it is only useful for resolving library
+  /// symbols, not code generated symbols.
   ///
   /// If AbortOnFailure is false and no function with the given name is
   /// found, this function silently returns a null pointer. Otherwise,

@@ -15,7 +15,6 @@
 #define LLVM_VALUE_H
 
 #include "llvm/Use.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 
 namespace llvm {
@@ -31,8 +30,6 @@ class GlobalAlias;
 class InlineAsm;
 class ValueSymbolTable;
 template<typename ValueTy> class StringMapEntry;
-template <typename ValueTy = Value>
-class AssertingVH;
 typedef StringMapEntry<Value*> ValueName;
 class raw_ostream;
 class AssemblyAnnotationWriter;
@@ -41,6 +38,7 @@ class LLVMContext;
 class Twine;
 class MDNode;
 class Type;
+class StringRef;
 
 //===----------------------------------------------------------------------===//
 //                                 Value Class
@@ -109,9 +107,10 @@ public:
   /// All values hold a context through their type.
   LLVMContext &getContext() const;
 
-  // All values can potentially be named...
-  bool hasName() const { return Name != 0; }
+  // All values can potentially be named.
+  bool hasName() const { return Name != 0 && SubclassID != MDStringVal; }
   ValueName *getValueName() const { return Name; }
+  void setValueName(ValueName *VN) { Name = VN; }
   
   /// getName() - Return a constant reference to the value's name. This is cheap
   /// and guaranteed to return the same reference as long as the value is not

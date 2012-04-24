@@ -19,7 +19,6 @@
 #include "llvm/IntrinsicInst.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/InlineCost.h"
-#include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Target/TargetData.h"
 #include "llvm/Transforms/IPO/InlinerPass.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -36,6 +35,11 @@ STATISTIC(NumInlined, "Number of functions inlined");
 STATISTIC(NumCallsDeleted, "Number of call sites deleted, not inlined");
 STATISTIC(NumDeleted, "Number of functions deleted because all callers found");
 STATISTIC(NumMergedAllocas, "Number of allocas merged together");
+
+// This weirdly named statistic tracks the number of times that, when attemting
+// to inline a function A into B, we analyze the callers of B in order to see
+// if those would be more profitable and blocked inline steps.
+STATISTIC(NumCallerCallersAnalyzed, "Number of caller-callers analyzed");
 
 static cl::opt<int>
 InlineLimit("inline-threshold", cl::Hidden, cl::init(225), cl::ZeroOrMore,
@@ -232,14 +236,10 @@ bool Inliner::shouldInline(CallSite CS) {
     return false;
   }
   
-  int Cost = IC.getValue();
   Function *Caller = CS.getCaller();
-  int CurrentThreshold = getInlineThreshold(CS);
-  float FudgeFactor = getInlineFudgeFactor(CS);
-  int AdjThreshold = (int)(CurrentThreshold * FudgeFactor);
-  if (Cost >= AdjThreshold) {
-    DEBUG(dbgs() << "    NOT Inlining: cost=" << Cost
-          << ", thres=" << AdjThreshold
+  if (!IC) {
+    DEBUG(dbgs() << "    NOT Inlining: cost=" << IC.getCost()
+          << ", thres=" << (IC.getCostDelta() + IC.getCost())
           << ", Call: " << *CS.getInstruction() << "\n");
     return false;
   }
@@ -256,12 +256,17 @@ bool Inliner::shouldInline(CallSite CS) {
   // are used. Thus we will always have the opportunity to make local inlining
   // decisions. Importantly the linkonce-ODR linkage covers inline functions
   // and templates in C++.
+  //
+  // FIXME: All of this logic should be sunk into getInlineCost. It relies on
+  // the internal implementation of the inline cost metrics rather than
+  // treating them as truly abstract units etc.
   if (Caller->hasLocalLinkage() ||
       Caller->getLinkage() == GlobalValue::LinkOnceODRLinkage) {
     int TotalSecondaryCost = 0;
-    bool outerCallsFound = false;
+    // The candidate cost to be imposed upon the current function.
+    int CandidateCost = IC.getCost() - (InlineConstants::CallPenalty + 1);
     // This bool tracks what happens if we do NOT inline C into B.
-    bool callerWillBeRemoved = true;
+    bool callerWillBeRemoved = Caller->hasLocalLinkage();
     // This bool tracks what happens if we DO inline C into B.
     bool inliningPreventsSomeOuterInline = false;
     for (Value::use_iterator I = Caller->use_begin(), E =Caller->use_end(); 
@@ -277,26 +282,20 @@ bool Inliner::shouldInline(CallSite CS) {
       }
 
       InlineCost IC2 = getInlineCost(CS2);
-      if (IC2.isNever())
+      ++NumCallerCallersAnalyzed;
+      if (!IC2) {
         callerWillBeRemoved = false;
-      if (IC2.isAlways() || IC2.isNever())
+        continue;
+      }
+      if (IC2.isAlways())
         continue;
 
-      outerCallsFound = true;
-      int Cost2 = IC2.getValue();
-      int CurrentThreshold2 = getInlineThreshold(CS2);
-      float FudgeFactor2 = getInlineFudgeFactor(CS2);
-
-      if (Cost2 >= (int)(CurrentThreshold2 * FudgeFactor2))
-        callerWillBeRemoved = false;
-
-      // See if we have this case.  We subtract off the penalty
-      // for the call instruction, which we would be deleting.
-      if (Cost2 < (int)(CurrentThreshold2 * FudgeFactor2) &&
-          Cost2 + Cost - (InlineConstants::CallPenalty + 1) >= 
-                (int)(CurrentThreshold2 * FudgeFactor2)) {
+      // See if inlining or original callsite would erase the cost delta of
+      // this callsite. We subtract off the penalty for the call instruction,
+      // which we would be deleting.
+      if (IC2.getCostDelta() <= CandidateCost) {
         inliningPreventsSomeOuterInline = true;
-        TotalSecondaryCost += Cost2;
+        TotalSecondaryCost += IC2.getCost();
       }
     }
     // If all outer calls to Caller would get inlined, the cost for the last
@@ -306,17 +305,16 @@ bool Inliner::shouldInline(CallSite CS) {
     if (callerWillBeRemoved && Caller->use_begin() != Caller->use_end())
       TotalSecondaryCost += InlineConstants::LastCallToStaticBonus;
 
-    if (outerCallsFound && inliningPreventsSomeOuterInline &&
-        TotalSecondaryCost < Cost) {
-      DEBUG(dbgs() << "    NOT Inlining: " << *CS.getInstruction() << 
-           " Cost = " << Cost << 
+    if (inliningPreventsSomeOuterInline && TotalSecondaryCost < IC.getCost()) {
+      DEBUG(dbgs() << "    NOT Inlining: " << *CS.getInstruction() <<
+           " Cost = " << IC.getCost() <<
            ", outer Cost = " << TotalSecondaryCost << '\n');
       return false;
     }
   }
 
-  DEBUG(dbgs() << "    Inlining: cost=" << Cost
-        << ", thres=" << AdjThreshold
+  DEBUG(dbgs() << "    Inlining: cost=" << IC.getCost()
+        << ", thres=" << (IC.getCostDelta() + IC.getCost())
         << ", Call: " << *CS.getInstruction() << '\n');
   return true;
 }
@@ -333,38 +331,6 @@ static bool InlineHistoryIncludes(Function *F, int InlineHistoryID,
     InlineHistoryID = InlineHistory[InlineHistoryID].second;
   }
   return false;
-}
-
-/// \brief Simplify arguments going into a particular callsite.
-///
-/// This is important to do each time we add a callsite due to inlining so that
-/// constants and other entities which feed into inline cost estimation are
-/// properly recognized when analyzing the new callsite. Consider:
-///   void outer(int x) {
-///     if (x < 42)
-///       return inner(42 - x);
-///     ...
-///   }
-///   void inner(int x) {
-///     ...
-///   }
-///
-/// The inliner gives calls to 'outer' with a constant argument a bonus because
-/// it will delete one side of a branch. But the resulting call to 'inner'
-/// will, after inlining, also have a constant operand. We need to do just
-/// enough constant folding to expose this for callsite arguments. The rest
-/// will be taken care of after the inliner finishes running.
-static void simplifyCallSiteArguments(const TargetData *TD, CallSite CS) {
-  // FIXME: It would be nice to avoid this smallvector if RAUW doesn't
-  // invalidate operand iterators in any cases.
-  SmallVector<std::pair<Value *, Value*>, 4> SimplifiedArgs;
-  for (CallSite::arg_iterator I = CS.arg_begin(), E = CS.arg_end();
-       I != E; ++I)
-    if (Instruction *Inst = dyn_cast<Instruction>(*I))
-      if (Value *SimpleArg = SimplifyInstruction(Inst, TD))
-        SimplifiedArgs.push_back(std::make_pair(Inst, SimpleArg));
-  for (unsigned Idx = 0, Size = SimplifiedArgs.size(); Idx != Size; ++Idx)
-    SimplifiedArgs[Idx].first->replaceAllUsesWith(SimplifiedArgs[Idx].second);
 }
 
 bool Inliner::runOnSCC(CallGraphSCC &SCC) {
@@ -455,8 +421,6 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
         CG[Caller]->removeCallEdgeFor(CS);
         CS.getInstruction()->eraseFromParent();
         ++NumCallsDeleted;
-        // Update the cached cost info with the missing call
-        growCachedCostInfo(Caller, NULL);
       } else {
         // We can only inline direct calls to non-declarations.
         if (Callee == 0 || Callee->isDeclaration()) continue;
@@ -494,14 +458,9 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
           for (unsigned i = 0, e = InlineInfo.InlinedCalls.size();
                i != e; ++i) {
             Value *Ptr = InlineInfo.InlinedCalls[i];
-            CallSite NewCS = Ptr;
-            simplifyCallSiteArguments(TD, NewCS);
-            CallSites.push_back(std::make_pair(NewCS, NewHistoryID));
+            CallSites.push_back(std::make_pair(CallSite(Ptr), NewHistoryID));
           }
         }
-        
-        // Update the cached cost info with the inlined call.
-        growCachedCostInfo(Caller, Callee);
       }
       
       // If we inlined or deleted the last possible call site to the function,
@@ -520,8 +479,6 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
         
         // Remove any call graph edges from the callee to its callees.
         CalleeNode->removeAllCalledFunctions();
-        
-        resetCachedCostInfo(Callee);
         
         // Removing the node for callee from the call graph and delete it.
         delete CG.removeFunctionFromModule(CalleeNode);
@@ -601,14 +558,13 @@ bool Inliner::removeDeadFunctions(CallGraph &CG, bool AlwaysInlineOnly) {
   // Note that it doesn't matter that we are iterating over a non-stable order
   // here to do this, it doesn't matter which order the functions are deleted
   // in.
-  std::sort(FunctionsToRemove.begin(), FunctionsToRemove.end());
+  array_pod_sort(FunctionsToRemove.begin(), FunctionsToRemove.end());
   FunctionsToRemove.erase(std::unique(FunctionsToRemove.begin(),
                                       FunctionsToRemove.end()),
                           FunctionsToRemove.end());
   for (SmallVectorImpl<CallGraphNode *>::iterator I = FunctionsToRemove.begin(),
                                                   E = FunctionsToRemove.end();
        I != E; ++I) {
-    resetCachedCostInfo((*I)->getFunction());
     delete CG.removeFunctionFromModule(*I);
     ++NumDeleted;
   }

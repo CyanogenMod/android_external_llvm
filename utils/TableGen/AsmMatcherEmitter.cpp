@@ -288,7 +288,7 @@ struct MatchableInfo {
     Record *SingletonReg;
 
     explicit AsmOperand(StringRef T) : Token(T), Class(0), SubOpIdx(-1),
-				       SingletonReg(0) {}
+                                       SingletonReg(0) {}
   };
 
   /// ResOperand - This represents a single operand in the result instruction
@@ -421,7 +421,7 @@ struct MatchableInfo {
 
   void Initialize(const AsmMatcherInfo &Info,
                   SmallPtrSet<Record*, 16> &SingletonRegisters,
-		  int AsmVariantNo, std::string &RegisterPrefix);
+                  int AsmVariantNo, std::string &RegisterPrefix);
 
   /// Validate - Return true if this matchable is a valid thing to match against
   /// and perform a bunch of validity checking.
@@ -818,7 +818,7 @@ bool MatchableInfo::Validate(StringRef CommentDelimiter, bool Hack) const {
 void MatchableInfo::
 extractSingletonRegisterForAsmOperand(unsigned OperandNo,
                                       const AsmMatcherInfo &Info,
-				      std::string &RegisterPrefix) {
+                                      std::string &RegisterPrefix) {
   StringRef Tok = AsmOperands[OperandNo].Token;
   if (RegisterPrefix.empty()) {
     std::string LoweredTok = Tok.lower();
@@ -1127,7 +1127,7 @@ AsmMatcherInfo::AsmMatcherInfo(Record *asmParser,
 /// defined operand parsing methods.
 void AsmMatcherInfo::BuildOperandMatchInfo() {
 
-  /// Map containing a mask with all operands indicies that can be found for
+  /// Map containing a mask with all operands indices that can be found for
   /// that class inside a instruction.
   std::map<ClassInfo*, unsigned> OpClassMask;
 
@@ -1181,42 +1181,43 @@ void AsmMatcherInfo::BuildInfo() {
   unsigned VariantCount = Target.getAsmParserVariantCount();
   for (unsigned VC = 0; VC != VariantCount; ++VC) {
     Record *AsmVariant = Target.getAsmParserVariant(VC);
-    std::string CommentDelimiter = AsmVariant->getValueAsString("CommentDelimiter");
+    std::string CommentDelimiter =
+      AsmVariant->getValueAsString("CommentDelimiter");
     std::string RegisterPrefix = AsmVariant->getValueAsString("RegisterPrefix");
     int AsmVariantNo = AsmVariant->getValueAsInt("Variant");
 
     for (CodeGenTarget::inst_iterator I = Target.inst_begin(),
-	   E = Target.inst_end(); I != E; ++I) {
+           E = Target.inst_end(); I != E; ++I) {
       const CodeGenInstruction &CGI = **I;
 
       // If the tblgen -match-prefix option is specified (for tblgen hackers),
       // filter the set of instructions we consider.
       if (!StringRef(CGI.TheDef->getName()).startswith(MatchPrefix))
-	continue;
+        continue;
 
       // Ignore "codegen only" instructions.
       if (CGI.TheDef->getValueAsBit("isCodeGenOnly"))
-	continue;
+        continue;
 
       // Validate the operand list to ensure we can handle this instruction.
       for (unsigned i = 0, e = CGI.Operands.size(); i != e; ++i) {
-	const CGIOperandList::OperandInfo &OI = CGI.Operands[i];
-	
-	// Validate tied operands.
-	if (OI.getTiedRegister() != -1) {
-	  // If we have a tied operand that consists of multiple MCOperands,
-	  // reject it.  We reject aliases and ignore instructions for now.
-	  if (OI.MINumOperands != 1) {
-	    // FIXME: Should reject these.  The ARM backend hits this with $lane
-	    // in a bunch of instructions. It is unclear what the right answer is.
-	    DEBUG({
-		errs() << "warning: '" << CGI.TheDef->getName() << "': "
-		       << "ignoring instruction with multi-operand tied operand '"
-		       << OI.Name << "'\n";
-	      });
-	    continue;
-	  }
-	}
+        const CGIOperandList::OperandInfo &OI = CGI.Operands[i];
+
+        // Validate tied operands.
+        if (OI.getTiedRegister() != -1) {
+          // If we have a tied operand that consists of multiple MCOperands,
+          // reject it.  We reject aliases and ignore instructions for now.
+          if (OI.MINumOperands != 1) {
+            // FIXME: Should reject these.  The ARM backend hits this with $lane
+            // in a bunch of instructions. The right answer is unclear.
+            DEBUG({
+                errs() << "warning: '" << CGI.TheDef->getName() << "': "
+                     << "ignoring instruction with multi-operand tied operand '"
+                     << OI.Name << "'\n";
+              });
+            continue;
+          }
+        }
       }
 
       OwningPtr<MatchableInfo> II(new MatchableInfo(CGI));
@@ -1226,14 +1227,14 @@ void AsmMatcherInfo::BuildInfo() {
       // Ignore instructions which shouldn't be matched and diagnose invalid
       // instruction definitions with an error.
       if (!II->Validate(CommentDelimiter, true))
-	continue;
+        continue;
 
       // Ignore "Int_*" and "*_Int" instructions, which are internal aliases.
       //
       // FIXME: This is a total hack.
       if (StringRef(II->TheDef->getName()).startswith("Int_") ||
-	  StringRef(II->TheDef->getName()).endswith("_Int"))
-	continue;
+          StringRef(II->TheDef->getName()).endswith("_Int"))
+        continue;
 
       Matchables.push_back(II.take());
     }
@@ -1248,9 +1249,9 @@ void AsmMatcherInfo::BuildInfo() {
       // If the tblgen -match-prefix option is specified (for tblgen hackers),
       // filter the set of instruction aliases we consider, based on the target
       // instruction.
-      if (!StringRef(Alias->ResultInst->TheDef->getName()).startswith(
-								      MatchPrefix))
-	continue;
+      if (!StringRef(Alias->ResultInst->TheDef->getName())
+            .startswith( MatchPrefix))
+        continue;
 
       OwningPtr<MatchableInfo> II(new MatchableInfo(Alias));
 
@@ -1328,6 +1329,9 @@ void AsmMatcherInfo::BuildInfo() {
     Record *Rec = AllTokenAliases[i];
     ClassInfo *FromClass = getTokenClass(Rec->getValueAsString("FromToken"));
     ClassInfo *ToClass = getTokenClass(Rec->getValueAsString("ToToken"));
+    if (FromClass == ToClass)
+      throw TGError(Rec->getLoc(),
+                    "error: Destination value identical to source value.");
     FromClass->SuperClasses.push_back(ToClass);
   }
 
@@ -1868,7 +1872,8 @@ static void EmitComputeAvailableFeatures(AsmMatcherInfo &Info,
     SubtargetFeatureInfo &SFI = *it->second;
 
     OS << "  if (";
-    std::string CondStorage = SFI.TheDef->getValueAsString("AssemblerCondString");
+    std::string CondStorage =
+      SFI.TheDef->getValueAsString("AssemblerCondString");
     StringRef Conds = CondStorage;
     std::pair<StringRef,StringRef> Comma = Conds.split(',');
     bool First = true;
@@ -2024,12 +2029,12 @@ static void EmitCustomOperandParsing(raw_ostream &OS, CodeGenTarget &Target,
   OS << "namespace {\n";
   OS << "  struct OperandMatchEntry {\n";
   OS << "    static const char *const MnemonicTable;\n";
-  OS << "    unsigned OperandMask;\n";
-  OS << "    unsigned Mnemonic;\n";
-  OS << "    " << getMinimalTypeForRange(Info.Classes.size())
-               << " Class;\n";
+  OS << "    uint32_t OperandMask;\n";
+  OS << "    uint32_t Mnemonic;\n";
   OS << "    " << getMinimalTypeForRange(1ULL << Info.SubtargetFeatures.size())
-               << " RequiredFeatures;\n\n";
+               << " RequiredFeatures;\n";
+  OS << "    " << getMinimalTypeForRange(Info.Classes.size())
+               << " Class;\n\n";
   OS << "    StringRef getMnemonic() const {\n";
   OS << "      return StringRef(MnemonicTable + Mnemonic + 1,\n";
   OS << "                       MnemonicTable[Mnemonic]);\n";
@@ -2080,10 +2085,7 @@ static void EmitCustomOperandParsing(raw_ostream &OS, CodeGenTarget &Target,
     // Store a pascal-style length byte in the mnemonic.
     std::string LenMnemonic = char(II.Mnemonic.size()) + II.Mnemonic.str();
     OS << ", " << StringTable.GetOrAddStringOffset(LenMnemonic, false)
-       << " /* " << II.Mnemonic << " */";
-
-    OS << ", " << OMI.CI->Name
-       << ", ";
+       << " /* " << II.Mnemonic << " */, ";
 
     // Write the required features mask.
     if (!II.RequiredFeatures.empty()) {
@@ -2093,6 +2095,9 @@ static void EmitCustomOperandParsing(raw_ostream &OS, CodeGenTarget &Target,
       }
     } else
       OS << "0";
+
+    OS << ", " << OMI.CI->Name;
+
     OS << " },\n";
   }
   OS << "};\n\n";
@@ -2321,14 +2326,14 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
   OS << "namespace {\n";
   OS << "  struct MatchEntry {\n";
   OS << "    static const char *const MnemonicTable;\n";
+  OS << "    uint32_t Mnemonic;\n";
   OS << "    uint16_t Opcode;\n";
-  OS << "    unsigned Mnemonic;\n";
   OS << "    " << getMinimalTypeForRange(Info.Matchables.size())
                << " ConvertFn;\n";
-  OS << "    " << getMinimalTypeForRange(Info.Classes.size())
-               << " Classes[" << MaxNumOperands << "];\n";
   OS << "    " << getMinimalTypeForRange(1ULL << Info.SubtargetFeatures.size())
                << " RequiredFeatures;\n";
+  OS << "    " << getMinimalTypeForRange(Info.Classes.size())
+               << " Classes[" << MaxNumOperands << "];\n";
   OS << "    uint8_t AsmVariantID;\n\n";
   OS << "    StringRef getMnemonic() const {\n";
   OS << "      return StringRef(MnemonicTable + Mnemonic + 1,\n";
@@ -2363,18 +2368,11 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
 
     // Store a pascal-style length byte in the mnemonic.
     std::string LenMnemonic = char(II.Mnemonic.size()) + II.Mnemonic.str();
-    OS << "  { " << Target.getName() << "::"
+    OS << "  { " << StringTable.GetOrAddStringOffset(LenMnemonic, false)
+       << " /* " << II.Mnemonic << " */, "
+       << Target.getName() << "::"
        << II.getResultInst()->TheDef->getName() << ", "
-       << StringTable.GetOrAddStringOffset(LenMnemonic, false)
-       << " /* " << II.Mnemonic << " */"
-       << ", " << II.ConversionFnKind << ", { ";
-    for (unsigned i = 0, e = II.AsmOperands.size(); i != e; ++i) {
-      MatchableInfo::AsmOperand &Op = II.AsmOperands[i];
-
-      if (i) OS << ", ";
-      OS << Op.Class->Name;
-    }
-    OS << " }, ";
+       << II.ConversionFnKind << ", ";
 
     // Write the required features mask.
     if (!II.RequiredFeatures.empty()) {
@@ -2384,7 +2382,15 @@ void AsmMatcherEmitter::run(raw_ostream &OS) {
       }
     } else
       OS << "0";
-    OS << ", " << II.AsmVariantID;
+
+    OS << ", { ";
+    for (unsigned i = 0, e = II.AsmOperands.size(); i != e; ++i) {
+      MatchableInfo::AsmOperand &Op = II.AsmOperands[i];
+
+      if (i) OS << ", ";
+      OS << Op.Class->Name;
+    }
+    OS << " }, " << II.AsmVariantID;
     OS << "},\n";
   }
 

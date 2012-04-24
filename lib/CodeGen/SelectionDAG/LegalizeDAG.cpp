@@ -718,9 +718,14 @@ void SelectionDAGLegalize::LegalizeOp(SDNode *Node) {
   case ISD::INTRINSIC_W_CHAIN:
   case ISD::INTRINSIC_WO_CHAIN:
   case ISD::INTRINSIC_VOID:
-  case ISD::VAARG:
   case ISD::STACKSAVE:
     Action = TLI.getOperationAction(Node->getOpcode(), MVT::Other);
+    break;
+  case ISD::VAARG:
+    Action = TLI.getOperationAction(Node->getOpcode(),
+                                    Node->getValueType(0));
+    if (Action != TargetLowering::Promote)
+      Action = TLI.getOperationAction(Node->getOpcode(), MVT::Other);
     break;
   case ISD::SINT_TO_FP:
   case ISD::UINT_TO_FP:
@@ -1762,11 +1767,6 @@ SDValue SelectionDAGLegalize::ExpandBUILD_VECTOR(SDNode *Node) {
 // and leave the Hi part unset.
 SDValue SelectionDAGLegalize::ExpandLibCall(RTLIB::Libcall LC, SDNode *Node,
                                             bool isSigned) {
-  // The input chain to this libcall is the entry node of the function.
-  // Legalizing the call will automatically add the previous call to the
-  // dependence.
-  SDValue InChain = DAG.getEntryNode();
-
   TargetLowering::ArgListTy Args;
   TargetLowering::ArgListEntry Entry;
   for (unsigned i = 0, e = Node->getNumOperands(); i != e; ++i) {
@@ -1782,9 +1782,19 @@ SDValue SelectionDAGLegalize::ExpandLibCall(RTLIB::Libcall LC, SDNode *Node,
 
   Type *RetTy = Node->getValueType(0).getTypeForEVT(*DAG.getContext());
 
+  // By default, the input chain to this libcall is the entry node of the
+  // function. If the libcall is going to be emitted as a tail call then
+  // TLI.isUsedByReturnOnly will change it to the right chain if the return
+  // node which is being folded has a non-entry input chain.
+  SDValue InChain = DAG.getEntryNode();
+
   // isTailCall may be true since the callee does not reference caller stack
   // frame. Check if it's in the right position.
-  bool isTailCall = isInTailCallPosition(DAG, Node, TLI);
+  SDValue TCChain = InChain;
+  bool isTailCall = isInTailCallPosition(DAG, Node, TCChain, TLI);
+  if (isTailCall)
+    InChain = TCChain;
+
   std::pair<SDValue, SDValue> CallInfo =
     TLI.LowerCallTo(InChain, RetTy, isSigned, !isSigned, false, false,
                     0, TLI.getLibcallCallingConv(LC), isTailCall,
@@ -1820,7 +1830,7 @@ SDValue SelectionDAGLegalize::ExpandLibCall(RTLIB::Libcall LC, EVT RetVT,
   Type *RetTy = RetVT.getTypeForEVT(*DAG.getContext());
   std::pair<SDValue,SDValue> CallInfo =
   TLI.LowerCallTo(DAG.getEntryNode(), RetTy, isSigned, !isSigned, false,
-                  false, 0, TLI.getLibcallCallingConv(LC), false,
+                  false, 0, TLI.getLibcallCallingConv(LC), /*isTailCall=*/false,
                   /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
                   Callee, Args, DAG, dl);
 
@@ -3528,6 +3538,33 @@ void SelectionDAGLegalize::PromoteNode(SDNode *Node) {
                                  Node->getOpcode() == ISD::SINT_TO_FP, dl);
     Results.push_back(Tmp1);
     break;
+  case ISD::VAARG: {
+    SDValue Chain = Node->getOperand(0); // Get the chain.
+    SDValue Ptr = Node->getOperand(1); // Get the pointer.
+
+    unsigned TruncOp;
+    if (OVT.isVector()) {
+      TruncOp = ISD::BITCAST;
+    } else {
+      assert(OVT.isInteger()
+        && "VAARG promotion is supported only for vectors or integer types");
+      TruncOp = ISD::TRUNCATE;
+    }
+
+    // Perform the larger operation, then convert back
+    Tmp1 = DAG.getVAArg(NVT, dl, Chain, Ptr, Node->getOperand(2),
+             Node->getConstantOperandVal(3));
+    Chain = Tmp1.getValue(1);
+
+    Tmp2 = DAG.getNode(TruncOp, dl, OVT, Tmp1);
+
+    // Modified the chain result - switch anything that used the old chain to
+    // use the new one.
+    DAG.ReplaceAllUsesOfValueWith(SDValue(Node, 0), Tmp2);
+    DAG.ReplaceAllUsesOfValueWith(SDValue(Node, 1), Chain);
+    ReplacedNode(Node);
+    break;
+  }
   case ISD::AND:
   case ISD::OR:
   case ISD::XOR: {
@@ -3601,6 +3638,7 @@ void SelectionDAGLegalize::PromoteNode(SDNode *Node) {
     break;
   }
   case ISD::FDIV:
+  case ISD::FREM:
   case ISD::FPOW: {
     Tmp1 = DAG.getNode(ISD::FP_EXTEND, dl, NVT, Node->getOperand(0));
     Tmp2 = DAG.getNode(ISD::FP_EXTEND, dl, NVT, Node->getOperand(1));

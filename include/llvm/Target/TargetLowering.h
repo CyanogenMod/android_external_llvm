@@ -25,7 +25,6 @@
 #include "llvm/CallingConv.h"
 #include "llvm/InlineAsm.h"
 #include "llvm/Attributes.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/CodeGen/RuntimeLibcalls.h"
 #include "llvm/Support/DebugLoc.h"
@@ -64,17 +63,6 @@ namespace llvm {
       VLIW              // Scheduling for VLIW targets.
     };
   }
-
-  // FIXME: should this be here?
-  namespace TLSModel {
-    enum Model {
-      GeneralDynamic,
-      LocalDynamic,
-      InitialExec,
-      LocalExec
-    };
-  }
-  TLSModel::Model getTLSModel(const GlobalValue *GV, Reloc::Model reloc);
 
 
 //===----------------------------------------------------------------------===//
@@ -874,7 +862,6 @@ public:
   /// Mask are known to be either zero or one and return them in the
   /// KnownZero/KnownOne bitsets.
   virtual void computeMaskedBitsForTargetNode(const SDValue Op,
-                                              const APInt &Mask,
                                               APInt &KnownZero,
                                               APInt &KnownOne,
                                               const SelectionDAG &DAG,
@@ -1287,9 +1274,11 @@ public:
   }
 
   /// isUsedByReturnOnly - Return true if result of the specified node is used
-  /// by a return node only. This is used to determine whether it is possible
+  /// by a return node only. It also compute and return the input chain for the
+  /// tail call.
+  /// This is used to determine whether it is possible
   /// to codegen a libcall as tail call at legalization time.
-  virtual bool isUsedByReturnOnly(SDNode *) const {
+  virtual bool isUsedByReturnOnly(SDNode *, SDValue &Chain) const {
     return false;
   }
 
@@ -1598,6 +1587,18 @@ public:
   }
 
   virtual bool isZExtFree(EVT /*VT1*/, EVT /*VT2*/) const {
+    return false;
+  }
+
+  /// isFNegFree - Return true if an fneg operation is free to the point where
+  /// it is never worthwhile to replace it with a bitwise operation.
+  virtual bool isFNegFree(EVT) const {
+    return false;
+  }
+
+  /// isFAbsFree - Return true if an fneg operation is free to the point where
+  /// it is never worthwhile to replace it with a bitwise operation.
+  virtual bool isFAbsFree(EVT) const {
     return false;
   }
 

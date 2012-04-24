@@ -206,6 +206,36 @@ Release Notes</a>.</h1>
 
 </div>
 
+
+<!--=========================================================================-->
+<h3>
+<a name="Polly">Polly: Polyhedral Optimizer</a>
+</h3>
+
+<div>
+
+  <p><a href="http://polly.llvm.org/">Polly</a> is an <em>experimental</em>
+  optimizer for data locality and parallelism. It currently provides high-level
+  loop optimizations and automatic parallelisation (using the OpenMP run time).
+  Work in the area of automatic SIMD and accelerator code generation was
+  started.
+
+  <p>Within the LLVM 3.1 time-frame there were the following highlights:</p>
+
+  <ul>
+  <li>Polly became an official LLVM project</li>
+  <li>Polly can be loaded directly into clang (Enabled by '-O3 -mllvm -polly'
+  )</li>
+  <li>An automatic scheduling optimizer (derived from <a
+  href="http://pluto-compiler.sourceforge.net/">Pluto</a>) was integrated. It
+  performs loop transformations to optimize for data-locality and parallelism.
+  The transformations include, but are not limited to interchange, fusion,
+  fission, skewing and tiling.
+  </li>
+  </ul>
+
+</div>
+
 </div>
 
 <!-- *********************************************************************** -->
@@ -269,6 +299,8 @@ Release Notes</a>.</h1>
       Support to model instruction bundling / packing.</li>
   <li><a href="#armintegratedassembler">ARM Integrated Assembler</a>,
       A full featured assembler and direct-to-object support for ARM.</li>
+  <li><a href="#blockplacement">Basic Block Placement</a>
+      Probability driven basic block placement.</li>
   <li>....</li>
 </ul>
 
@@ -290,6 +322,11 @@ Release Notes</a>.</h1>
     <li>IR support for vectors of pointers, including vector GEPs.</li>
     <li>Module flags have been introduced. They convey information about the
         module as a whole to LLVM subsystems.</li>
+    <li>Loads can now have range metadata attached to them to describe the
+        possible values being loaded.</li>
+    <li>Inline cost heuristics have been completely overhauled and now closely
+        model constant propagation through call sites, disregard trivially dead
+        code costs, and can model C++ STL iterator patterns.</li>
     <li>....</li>
   </ul>
 </div>
@@ -306,6 +343,14 @@ Release Notes</a>.</h1>
    optimizers:</p>
 
 <ul>
+  <li>The loop unroll pass now is able to unroll loops with run-time trip counts.
+      This feature is turned off by default, and is enabled with the
+      <code>-unroll-runtime</code> flag.</li>
+  <li>A new basic-block autovectorization pass is available. Pass
+      <code>-vectorize</code> to run this pass along with some associated
+      post-vectorization cleanup passes. For more information, see the EuroLLVM
+      2012 slides: <a href="http://llvm.org/devmtg/2012-04-12/Slides/Hal_Finkel.pdf">
+      Autovectorization with LLVM</a>.</li>
   <li>....</li>
 </ul>
 
@@ -365,6 +410,25 @@ Release Notes</a>.</h1>
       is clobbered.</li>
 </ul>
 
+<p> We added new TableGen infrastructure to support bundling for
+    Very Long Instruction Word (VLIW) architectures. TableGen can now
+    automatically generate a deterministic finite automaton from a VLIW
+    target's schedule description which can be queried to determine
+    legal groupings of instructions in a bundle.</p>
+
+<p> We have added a new target independent VLIW packetizer based on the
+    DFA infrastructure to group machine instructions into bundles.</p>
+
+</div>
+
+<h4>
+<a name="blockplacement">Basic Block Placement</a>
+</h4>
+<div>
+<p>A probability based block placement and code layout algorithm was added to
+LLVM's code generator. This layout pass supports probabilities derived from
+static heuristics as well as source code annotations such as
+<code>__builtin_expect</code>.</p>
 </div>
 
 <!--=========================================================================-->
@@ -382,6 +446,8 @@ Release Notes</a>.</h1>
   <li>Call instructions use the new register mask operands for faster compile
   times and better support for different calling conventions.  The old WINCALL
   instructions are no longer needed.</li>
+  <li>DW2 Exception Handling is enabled on Cygwin and MinGW.</li>
+  <li>Support for implicit TLS model used with MS VC runtime</li>
 </ul>
 
 </div>
@@ -401,7 +467,6 @@ Release Notes</a>.</h1>
   <li>On Darwin, the ARM target now has a full-featured integrated assembler.
   </li>
 </ul>
-</div>
 
 <h4>
 <a name="armintegratedassembler">ARM Integrated Assembler</a>
@@ -418,6 +483,8 @@ subtarget and CPU specific extensions for VFP2, VFP3 and NEON.</p>
 <p>The assembler is Unified Syntax only (see ARM Architecural Reference Manual
 for details). While there is some, and growing, support for pre-unfied (divided)
 syntax, there are still significant gaps in that support.</p>
+</div>
+
 </div>
 <!--=========================================================================-->
 <h3>
@@ -440,6 +507,8 @@ syntax, there are still significant gaps in that support.</p>
 </h3>
 
 <div>
+
+<p>Support for Qualcomm's Hexagon VLIW processor has been added.</p>
 
 <ul>
   <li>....</li>
@@ -488,36 +557,36 @@ syntax, there are still significant gaps in that support.</p>
       <code>TargetMachine</code>. As a consequence, the associated flags will
       no longer be accepted by <tt>clang -mllvm</tt>. This includes:
 <ul>
-<li><code>llvm::PrintMachineCode</code>
-<li><code>llvm::NoFramePointerElim</code>
-<li><code>llvm::NoFramePointerElimNonLeaf</code>
-<li><code>llvm::DisableFramePointerElim(const MachineFunction &)</code>
-<li><code>llvm::LessPreciseFPMADOption</code>
-<li><code>llvm::LessPrecideFPMAD()</code>
-<li><code>llvm::NoExcessFPPrecision</code>
-<li><code>llvm::UnsafeFPMath</code>
-<li><code>llvm::NoInfsFPMath</code>
-<li><code>llvm::NoNaNsFPMath</code>
-<li><code>llvm::HonorSignDependentRoundingFPMathOption</code>
-<li><code>llvm::HonorSignDependentRoundingFPMath()</code>
-<li><code>llvm::UseSoftFloat</code>
-<li><code>llvm::FloatABIType</code>
-<li><code>llvm::NoZerosInBSS</code>
-<li><code>llvm::JITExceptionHandling</code>
-<li><code>llvm::JITEmitDebugInfo</code>
-<li><code>llvm::JITEmitDebugInfoToDisk</code>
-<li><code>llvm::GuaranteedTailCallOpt</code>
-<li><code>llvm::StackAlignmentOverride</code>
-<li><code>llvm::RealignStack</code>
-<li><code>llvm::DisableJumpTables</code>
-<li><code>llvm::EnableFastISel</code>
-<li><code>llvm::getTrapFunctionName()</code>
-<li><code>llvm::EnableSegmentedStacks</code>
+<li><code>llvm::PrintMachineCode</code></li>
+<li><code>llvm::NoFramePointerElim</code></li>
+<li><code>llvm::NoFramePointerElimNonLeaf</code></li>
+<li><code>llvm::DisableFramePointerElim(const MachineFunction &)</code></li>
+<li><code>llvm::LessPreciseFPMADOption</code></li>
+<li><code>llvm::LessPrecideFPMAD()</code></li>
+<li><code>llvm::NoExcessFPPrecision</code></li>
+<li><code>llvm::UnsafeFPMath</code></li>
+<li><code>llvm::NoInfsFPMath</code></li>
+<li><code>llvm::NoNaNsFPMath</code></li>
+<li><code>llvm::HonorSignDependentRoundingFPMathOption</code></li>
+<li><code>llvm::HonorSignDependentRoundingFPMath()</code></li>
+<li><code>llvm::UseSoftFloat</code></li>
+<li><code>llvm::FloatABIType</code></li>
+<li><code>llvm::NoZerosInBSS</code></li>
+<li><code>llvm::JITExceptionHandling</code></li>
+<li><code>llvm::JITEmitDebugInfo</code></li>
+<li><code>llvm::JITEmitDebugInfoToDisk</code></li>
+<li><code>llvm::GuaranteedTailCallOpt</code></li>
+<li><code>llvm::StackAlignmentOverride</code></li>
+<li><code>llvm::RealignStack</code></li>
+<li><code>llvm::DisableJumpTables</code></li>
+<li><code>llvm::EnableFastISel</code></li>
+<li><code>llvm::getTrapFunctionName()</code></li>
+<li><code>llvm::EnableSegmentedStacks</code></li>
 </ul></li>
+  <li>The MDBuilder class has been added to simplify the creation of
+      metadata.</li>
   <li>....</li>
 </ul>
-
-</div>
 
 </div>
 

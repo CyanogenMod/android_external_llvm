@@ -175,8 +175,13 @@ namespace llvm {
       /// PSIGN - Copy integer sign.
       PSIGN,
 
-      /// BLEND family of opcodes
+      /// BLENDV - Blend where the selector is an XMM.
       BLENDV,
+
+      /// BLENDxx - Blend where the selector is an immediate.
+      BLENDPW,
+      BLENDPS,
+      BLENDPD,
 
       /// HADD - Integer horizontal add.
       HADD,
@@ -280,6 +285,8 @@ namespace llvm {
       UNPCKL,
       UNPCKH,
       VPERMILP,
+      VPERMV,
+      VPERMI,
       VPERM2X128,
       VBROADCAST,
 
@@ -504,7 +511,6 @@ namespace llvm {
     /// in Mask are known to be either zero or one and return them in the
     /// KnownZero/KnownOne bitsets.
     virtual void computeMaskedBitsForTargetNode(const SDValue Op,
-                                                const APInt &Mask,
                                                 APInt &KnownZero,
                                                 APInt &KnownOne,
                                                 const SelectionDAG &DAG,
@@ -781,6 +787,8 @@ namespace llvm {
 
     // Utility functions to help LowerVECTOR_SHUFFLE
     SDValue LowerVECTOR_SHUFFLEv8i16(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerVectorBroadcast(SDValue &Op, SelectionDAG &DAG) const;
+    SDValue NormalizeVectorShuffle(SDValue Op, SelectionDAG &DAG) const;
 
     virtual SDValue
       LowerFormalArguments(SDValue Chain,
@@ -804,7 +812,7 @@ namespace llvm {
                   const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
 
-    virtual bool isUsedByReturnOnly(SDNode *N) const;
+    virtual bool isUsedByReturnOnly(SDNode *N, SDValue &Chain) const;
 
     virtual bool mayBeEmittedAsTailCall(CallInst *CI) const;
 
@@ -849,7 +857,7 @@ namespace llvm {
                                                     unsigned notOpc,
                                                     unsigned EAXreg,
                                               const TargetRegisterClass *RC,
-                                                    bool invSrc = false) const;
+                                                    bool Invert = false) const;
 
     MachineBasicBlock *EmitAtomicBit6432WithCustomInserter(
                                                     MachineInstr *BInstr,
@@ -858,7 +866,7 @@ namespace llvm {
                                                     unsigned regOpcH,
                                                     unsigned immOpcL,
                                                     unsigned immOpcH,
-                                                    bool invSrc = false) const;
+                                                    bool Invert = false) const;
 
     /// Utility function to emit atomic min and max.  It takes the min/max
     /// instruction to expand, the associated basic block, and the associated

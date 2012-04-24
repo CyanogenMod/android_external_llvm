@@ -1183,8 +1183,9 @@ TwoAddressInstructionPass::RescheduleKillAboveMI(MachineBasicBlock *MBB,
 /// TryInstructionTransform - For the case where an instruction has a single
 /// pair of tied register operands, attempt some transformations that may
 /// either eliminate the tied operands or improve the opportunities for
-/// coalescing away the register copy.  Returns true if the tied operands
-/// are eliminated altogether.
+/// coalescing away the register copy.  Returns true if no copy needs to be
+/// inserted to untie mi's operands (either because they were untied, or
+/// because mi was rescheduled, and will be visited again later).
 bool TwoAddressInstructionPass::
 TryInstructionTransform(MachineBasicBlock::iterator &mi,
                         MachineBasicBlock::iterator &nmi,
@@ -1380,7 +1381,6 @@ TryInstructionTransform(MachineBasicBlock::iterator &mi,
 /// runOnMachineFunction - Reduce two-address instructions to two operands.
 ///
 bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
-  DEBUG(dbgs() << "Machine Function\n");
   const TargetMachine &TM = MF.getTarget();
   MRI = &MF.getRegInfo();
   TII = TM.getInstrInfo();
@@ -1595,19 +1595,19 @@ bool TwoAddressInstructionPass::runOnMachineFunction(MachineFunction &MF) {
         MadeChange = true;
 
         DEBUG(dbgs() << "\t\trewrite to:\t" << *mi);
-      }
 
-      // Rewrite INSERT_SUBREG as COPY now that we no longer need SSA form.
-      if (mi->isInsertSubreg()) {
-        // From %reg = INSERT_SUBREG %reg, %subreg, subidx
-        // To   %reg:subidx = COPY %subreg
-        unsigned SubIdx = mi->getOperand(3).getImm();
-        mi->RemoveOperand(3);
-        assert(mi->getOperand(0).getSubReg() == 0 && "Unexpected subreg idx");
-        mi->getOperand(0).setSubReg(SubIdx);
-        mi->RemoveOperand(1);
-        mi->setDesc(TII->get(TargetOpcode::COPY));
-        DEBUG(dbgs() << "\t\tconvert to:\t" << *mi);
+        // Rewrite INSERT_SUBREG as COPY now that we no longer need SSA form.
+        if (mi->isInsertSubreg()) {
+          // From %reg = INSERT_SUBREG %reg, %subreg, subidx
+          // To   %reg:subidx = COPY %subreg
+          unsigned SubIdx = mi->getOperand(3).getImm();
+          mi->RemoveOperand(3);
+          assert(mi->getOperand(0).getSubReg() == 0 && "Unexpected subreg idx");
+          mi->getOperand(0).setSubReg(SubIdx);
+          mi->RemoveOperand(1);
+          mi->setDesc(TII->get(TargetOpcode::COPY));
+          DEBUG(dbgs() << "\t\tconvert to:\t" << *mi);
+        }
       }
 
       // Clear TiedOperands here instead of at the top of the loop
@@ -1833,6 +1833,7 @@ bool TwoAddressInstructionPass::EliminateRegSequences() {
     SmallSet<unsigned, 4> Seen;
     for (unsigned i = 1, e = MI->getNumOperands(); i < e; i += 2) {
       unsigned SrcReg = MI->getOperand(i).getReg();
+      unsigned SrcSubIdx = MI->getOperand(i).getSubReg();
       unsigned SubIdx = MI->getOperand(i+1).getImm();
       // DefMI of NULL means the value does not have a vreg in this block
       // i.e., its a physical register or a subreg.
@@ -1888,7 +1889,7 @@ bool TwoAddressInstructionPass::EliminateRegSequences() {
         MachineInstr *CopyMI = BuildMI(*MI->getParent(), InsertLoc,
                                 MI->getDebugLoc(), TII->get(TargetOpcode::COPY))
             .addReg(DstReg, RegState::Define, SubIdx)
-            .addReg(SrcReg, getKillRegState(isKill));
+            .addReg(SrcReg, getKillRegState(isKill), SrcSubIdx);
         MI->getOperand(i).setReg(0);
         if (LV && isKill && !TargetRegisterInfo::isPhysicalRegister(SrcReg))
           LV->replaceKillInstruction(SrcReg, MI, CopyMI);

@@ -11,9 +11,6 @@
 /* Relative directory for resource files */
 #define CLANG_RESOURCE_DIR "${CLANG_RESOURCE_DIR}"
 
-/* Directory wherelibstdc++ is installed. */
-#define GCC_INSTALL_PREFIX "${GCC_INSTALL_PREFIX}"
-
 /* Directories clang will search for headers */
 #define C_INCLUDE_DIRS "${C_INCLUDE_DIRS}"
 
@@ -571,6 +568,9 @@
 
 /* LLVM name for the native AsmPrinter init function, if available */
 #cmakedefine LLVM_NATIVE_ASMPRINTER LLVMInitialize${LLVM_NATIVE_ARCH}AsmPrinter
+
+/* LLVM name for the native Disassembler init function, if available */
+#cmakedefine LLVM_NATIVE_DISASSEMBLER LLVMInitialize${LLVM_NATIVE_ARCH}Disassembler
 
 /* LLVM name for the native Target init function, if available */
 #cmakedefine LLVM_NATIVE_TARGET LLVMInitialize${LLVM_NATIVE_ARCH}Target

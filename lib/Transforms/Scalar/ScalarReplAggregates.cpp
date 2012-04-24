@@ -13,7 +13,7 @@
 // each member (if possible).  Then, if possible, it transforms the individual
 // alloca instructions into nice clean scalar SSA form.
 //
-// This combines a simple SRoA algorithm with the Mem2Reg algorithm because
+// This combines a simple SRoA algorithm with the Mem2Reg algorithm because they
 // often interact, especially for C++ programs.  As such, iterating between
 // SRoA, then Mem2Reg until we run out of things to promote works well.
 //
@@ -574,8 +574,8 @@ void ConvertToScalarInfo::ConvertUsesToScalar(Value *Ptr, AllocaInst *NewAI,
     // transform it into a store of the expanded constant value.
     if (MemSetInst *MSI = dyn_cast<MemSetInst>(User)) {
       assert(MSI->getRawDest() == Ptr && "Consistency error!");
-      signed SNumBytes = cast<ConstantInt>(MSI->getLength())->getSExtValue();
-      if (SNumBytes > 0) {
+      int64_t SNumBytes = cast<ConstantInt>(MSI->getLength())->getSExtValue();
+      if (SNumBytes > 0 && (SNumBytes >> 32) == 0) {
         unsigned NumBytes = static_cast<unsigned>(SNumBytes);
         unsigned Val = cast<ConstantInt>(MSI->getValue())->getZExtValue();
 

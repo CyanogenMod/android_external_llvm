@@ -103,7 +103,8 @@
       <li><a href="#metadata">Metadata Nodes and Metadata Strings</a>
         <ol>
           <li><a href="#tbaa">'<tt>tbaa</tt>' Metadata</a></li>
-          <li><a href="#fpaccuracy">'<tt>fpaccuracy</tt>' Metadata</a></li>
+          <li><a href="#fpmath">'<tt>fpmath</tt>' Metadata</a></li>
+          <li><a href="#range">'<tt>range</tt>' Metadata</a></li>
         </ol>
       </li>
     </ol>
@@ -2999,14 +3000,16 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
 
 <!-- _______________________________________________________________________ -->
 <h4>
-  <a name="fpaccuracy">'<tt>fpaccuracy</tt>' Metadata</a>
+  <a name="fpmath">'<tt>fpmath</tt>' Metadata</a>
 </h4>
  
 <div>
 
-<p><tt>fpaccuracy</tt> metadata may be attached to any instruction of floating
-   point type.  It expresses the maximum relative error of the result of
-   that instruction, in ULPs. ULP is defined as follows:</p>
+<p><tt>fpmath</tt> metadata may be attached to any instruction of floating point
+  type.  It can be used to express the maximum acceptable error in the result of
+  that instruction, in ULPs, thus potentially allowing the compiler to use a
+  more efficient but less accurate method of computing it.  ULP is defined as
+  follows:</p>
 
 <blockquote>
 
@@ -3018,18 +3021,50 @@ call void @llvm.dbg.value(metadata !24, i64 0, metadata !25)
 
 </blockquote>
 
-<p>The maximum relative error may be any rational number.  The metadata node
-   shall consist of a pair of unsigned integers respectively representing
-   the numerator and denominator.  For example, 2.5 ULP:</p>
+<p>The metadata node shall consist of a single positive floating point number
+   representing the maximum relative error, for example:</p>
 
 <div class="doc_code">
 <pre>
-!0 = metadata !{ i32 5, i32 2 }
+!0 = metadata !{ float 2.5 } ; maximum acceptable inaccuracy is 2.5 ULPs
 </pre>
 </div>
 
 </div>
 
+<!-- _______________________________________________________________________ -->
+<h4>
+  <a name="range">'<tt>range</tt>' Metadata</a>
+</h4>
+
+<div>
+<p><tt>range</tt> metadata may be attached only to loads of integer types. It
+   expresses the possible ranges the loaded value is in. The ranges are
+   represented with a flattened list of integers. The loaded value is known to
+   be in the union of the ranges defined by each consecutive pair. Each pair
+   has the following properties:</p>
+<ul>
+   <li>The type must match the type loaded by the instruction.</li>
+   <li>The pair <tt>a,b</tt> represents the range <tt>[a,b)</tt>.</li>
+   <li>Both <tt>a</tt> and <tt>b</tt> are constants.</li>
+   <li>The range is allowed to wrap.</li>
+   <li>The range should not represent the full or empty set. That is,
+       <tt>a!=b</tt>. </li>
+</ul>
+
+<p>Examples:</p>
+<div class="doc_code">
+<pre>
+  %a = load i8* %x, align 1, !range !0 ; Can only be 0 or 1
+  %b = load i8* %y, align 1, !range !1 ; Can only be 255 (-1), 0 or 1
+  %c = load i8* %z, align 1, !range !2 ; Can only be 0, 1, 3, 4 or 5
+...
+!0 = metadata !{ i8 0, i8 2 }
+!1 = metadata !{ i8 255, i8 2 }
+!2 = metadata !{ i8 0, i8 2, i8 3, i8 6 }
+</pre>
+</div>
+</div>
 </div>
 
 </div>

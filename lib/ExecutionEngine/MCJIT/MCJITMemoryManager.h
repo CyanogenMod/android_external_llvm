@@ -27,7 +27,8 @@ class MCJITMemoryManager : public RTDyldMemoryManager {
   // FIXME: Multiple modules.
   Module *M;
 public:
-  MCJITMemoryManager(JITMemoryManager *jmm, Module *m) : JMM(jmm), M(m) {}
+  MCJITMemoryManager(JITMemoryManager *jmm, Module *m) :
+    JMM(jmm?jmm:JITMemoryManager::CreateDefaultMemManager()), M(m) {}
   // We own the JMM, so make sure to delete it.
   ~MCJITMemoryManager() { delete JMM; }
 

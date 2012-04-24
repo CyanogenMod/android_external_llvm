@@ -23,10 +23,22 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Memory.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Config/config.h"
 #include <vector>
 #include <cassert>
 #include <climits>
 #include <cstring>
+
+#if defined(__linux__)
+#if defined(HAVE_SYS_STAT_H)
+#include <sys/stat.h>
+#endif
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
 using namespace llvm;
 
 STATISTIC(NumSlabs, "Number of slabs of memory allocated by the JIT");
@@ -315,13 +327,7 @@ namespace {
     static const size_t DefaultSizeThreshold;
 
     /// getPointerToNamedFunction - This method returns the address of the
-    /// specified function by using the dlsym function call.  As such it is only
-    /// useful for resolving library symbols, not code generated symbols.
-    ///
-    /// If AbortOnFailure is false and no function with the given name is
-    /// found, this function silently returns a null pointer. Otherwise,
-    /// it prints a message to stderr and aborts.
-    ///
+    /// specified function by using the dlsym function call.
     virtual void *getPointerToNamedFunction(const std::string &Name,
                                             bool AbortOnFailure = true);
 
@@ -771,9 +777,6 @@ bool DefaultJITMemoryManager::CheckInvariants(std::string &ErrorStr) {
 //===----------------------------------------------------------------------===//
 // getPointerToNamedFunction() implementation.
 //===----------------------------------------------------------------------===//
-#include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/DynamicLibrary.h"
-#include "llvm/Config/config.h"
 
 // AtExitHandlers - List of functions to call when the program exits,
 // registered with the atexit() library function.
@@ -793,8 +796,7 @@ static void runAtExitHandlers() {
 
 //===----------------------------------------------------------------------===//
 // Function stubs that are invoked instead of certain library calls
-//===----------------------------------------------------------------------===//
-
+//
 // Force the following functions to be linked in to anything that uses the
 // JIT. This is a hack designed to work around the all-too-clever Glibc
 // strategy of making these functions work differently when inlined vs. when
@@ -802,11 +804,6 @@ static void runAtExitHandlers() {
 // that the dynamic linker can't see. For more info, search for
 // 'libc_nonshared.a' on Google, or read http://llvm.org/PR274.
 #if defined(__linux__)
-#if defined(HAVE_SYS_STAT_H)
-#include <sys/stat.h>
-#endif
-#include <fcntl.h>
-#include <unistd.h>
 /* stat functions are redirecting to __xstat with a version number.  On x86-64
  * linking with libc_nonshared.a and -Wl,--export-dynamic doesn't make 'stat'
  * available as an exported symbol, so we have to add it explicitly.

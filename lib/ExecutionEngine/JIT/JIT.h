@@ -118,7 +118,7 @@ public:
                                    const std::vector<GenericValue> &ArgValues);
 
   /// getPointerToNamedFunction - This method returns the address of the
-  /// specified function by using the dlsym function call.  As such it is only
+  /// specified function by using the MemoryManager. As such it is only
   /// useful for resolving library symbols, not code generated symbols.
   ///
   /// If AbortOnFailure is false and no function with the given name is

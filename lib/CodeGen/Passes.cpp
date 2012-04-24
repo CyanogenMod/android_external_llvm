@@ -37,8 +37,9 @@ static cl::opt<bool> DisableTailDuplicate("disable-tail-duplicate", cl::Hidden,
     cl::desc("Disable tail duplication"));
 static cl::opt<bool> DisableEarlyTailDup("disable-early-taildup", cl::Hidden,
     cl::desc("Disable pre-register allocation tail duplication"));
-static cl::opt<bool> EnableBlockPlacement("enable-block-placement",
-    cl::Hidden, cl::desc("Enable probability-driven block placement"));
+static cl::opt<bool> DisableBlockPlacement("disable-block-placement",
+    cl::Hidden, cl::desc("Disable the probability-driven block placement, and "
+                         "re-enable the old code placement pass"));
 static cl::opt<bool> EnableBlockPlacementStats("enable-block-placement-stats",
     cl::Hidden, cl::desc("Collect probability-driven block placement stats"));
 static cl::opt<bool> DisableCodePlace("disable-code-place", cl::Hidden,
@@ -272,11 +273,6 @@ AnalysisID TargetPassConfig::addPass(char &ID) {
   return FinalID;
 }
 
-void TargetPassConfig::printNoVerify(const char *Banner) const {
-  if (TM->shouldPrintMachineCode())
-    PM.add(createMachineFunctionPrinterPass(dbgs(), Banner));
-}
-
 void TargetPassConfig::printAndVerify(const char *Banner) const {
   if (TM->shouldPrintMachineCode())
     PM.add(createMachineFunctionPrinterPass(dbgs(), Banner));
@@ -394,16 +390,16 @@ void TargetPassConfig::addMachinePasses() {
 
   // Expand pseudo instructions before second scheduling pass.
   addPass(ExpandPostRAPseudosID);
-  printNoVerify("After ExpandPostRAPseudos");
+  printAndVerify("After ExpandPostRAPseudos");
 
   // Run pre-sched2 passes.
   if (addPreSched2())
-    printNoVerify("After PreSched2 passes");
+    printAndVerify("After PreSched2 passes");
 
   // Second pass scheduler.
   if (getOptLevel() != CodeGenOpt::None) {
     addPass(PostRASchedulerID);
-    printNoVerify("After PostRAScheduler");
+    printAndVerify("After PostRAScheduler");
   }
 
   // GC
@@ -416,7 +412,7 @@ void TargetPassConfig::addMachinePasses() {
     addBlockPlacement();
 
   if (addPreEmitPass())
-    printNoVerify("After PreEmit passes");
+    printAndVerify("After PreEmit passes");
 }
 
 /// Add passes that optimize machine instructions in SSA form.
@@ -601,24 +597,24 @@ void TargetPassConfig::addOptimizedRegAlloc(FunctionPass *RegAllocPass) {
 void TargetPassConfig::addMachineLateOptimization() {
   // Branch folding must be run after regalloc and prolog/epilog insertion.
   if (addPass(BranchFolderPassID) != &NoPassID)
-    printNoVerify("After BranchFolding");
+    printAndVerify("After BranchFolding");
 
   // Tail duplication.
   if (addPass(TailDuplicateID) != &NoPassID)
-    printNoVerify("After TailDuplicate");
+    printAndVerify("After TailDuplicate");
 
   // Copy propagation.
   if (addPass(MachineCopyPropagationID) != &NoPassID)
-    printNoVerify("After copy propagation pass");
+    printAndVerify("After copy propagation pass");
 }
 
 /// Add standard basic block placement passes.
 void TargetPassConfig::addBlockPlacement() {
   AnalysisID ID = &NoPassID;
-  if (EnableBlockPlacement) {
-    // MachineBlockPlacement is an experimental pass which is disabled by
-    // default currently. Eventually it should subsume CodePlacementOpt, so
-    // when enabled, the other is disabled.
+  if (!DisableBlockPlacement) {
+    // MachineBlockPlacement is a new pass which subsumes the functionality of
+    // CodPlacementOpt. The old code placement pass can be restored by
+    // disabling block placement, but eventually it will be removed.
     ID = addPass(MachineBlockPlacementID);
   } else {
     ID = addPass(CodePlacementOptID);
@@ -628,6 +624,6 @@ void TargetPassConfig::addBlockPlacement() {
     if (EnableBlockPlacementStats)
       addPass(MachineBlockPlacementStatsID);
 
-    printNoVerify("After machine block placement.");
+    printAndVerify("After machine block placement.");
   }
 }

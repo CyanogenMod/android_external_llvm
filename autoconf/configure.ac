@@ -286,7 +286,7 @@ AC_CACHE_CHECK([type of operating system we're going to target],
     llvm_cv_target_os_type="Darwin" ;;
   *-*-minix*)
     llvm_cv_target_os_type="Minix" ;;
-  *-*-freebsd*)
+  *-*-freebsd* | *-*-kfreebsd-gnu)
     llvm_cv_target_os_type="FreeBSD" ;;
   *-*-openbsd*)
     llvm_cv_target_os_type="OpenBSD" ;;
@@ -300,6 +300,8 @@ AC_CACHE_CHECK([type of operating system we're going to target],
     llvm_cv_target_os_type="Interix" ;;
   *-*-linux*)
     llvm_cv_target_os_type="Linux" ;;
+  *-*-gnu*)
+    llvm_cv_target_os_type="GNU" ;;
   *-*-solaris*)
     llvm_cv_target_os_type="SunOS" ;;
   *-*-auroraux*)
@@ -626,13 +628,13 @@ TARGETS_TO_BUILD=""
 AC_ARG_ENABLE([targets],AS_HELP_STRING([--enable-targets],
     [Build specific host targets: all or target1,target2,... Valid targets are:
      host, x86, x86_64, sparc, powerpc, arm, mips, spu, hexagon,
-     xcore, msp430, ptx, cbe, and cpp (default=all)]),,
+     xcore, msp430, ptx, and cpp (default=all)]),,
     enableval=all)
 if test "$enableval" = host-only ; then
   enableval=host
 fi
 case "$enableval" in
-  all) TARGETS_TO_BUILD="X86 Sparc PowerPC ARM Mips CellSPU XCore MSP430 CBackend CppBackend MBlaze PTX Hexagon" ;;
+  all) TARGETS_TO_BUILD="X86 Sparc PowerPC ARM Mips CellSPU XCore MSP430 CppBackend MBlaze PTX Hexagon" ;;
   *)for a_target in `echo $enableval|sed -e 's/,/ /g' ` ; do
       case "$a_target" in
         x86)      TARGETS_TO_BUILD="X86 $TARGETS_TO_BUILD" ;;
@@ -645,7 +647,6 @@ case "$enableval" in
         spu)      TARGETS_TO_BUILD="CellSPU $TARGETS_TO_BUILD" ;;
         xcore)    TARGETS_TO_BUILD="XCore $TARGETS_TO_BUILD" ;;
         msp430)   TARGETS_TO_BUILD="MSP430 $TARGETS_TO_BUILD" ;;
-        cbe)      TARGETS_TO_BUILD="CBackend $TARGETS_TO_BUILD" ;;
         cpp)      TARGETS_TO_BUILD="CppBackend $TARGETS_TO_BUILD" ;;
         hexagon)  TARGETS_TO_BUILD="Hexagon $TARGETS_TO_BUILD" ;;
         mblaze)   TARGETS_TO_BUILD="MBlaze $TARGETS_TO_BUILD" ;;
@@ -685,6 +686,9 @@ for a_target in $TARGETS_TO_BUILD; do
     if test -f ${srcdir}/lib/Target/${LLVM_NATIVE_ARCH}/AsmParser/Makefile ; then
       LLVM_NATIVE_ASMPARSER="LLVMInitialize${LLVM_NATIVE_ARCH}AsmParser"
     fi
+    if test -f ${srcdir}/lib/Target/${LLVM_NATIVE_ARCH}/Disassembler/Makefile ; then
+      LLVM_NATIVE_DISASSEMBLER="LLVMInitialize${LLVM_NATIVE_ARCH}Disassembler"
+    fi
     AC_DEFINE_UNQUOTED(LLVM_NATIVE_TARGET, $LLVM_NATIVE_TARGET,
       [LLVM name for the native Target init function, if available])
     AC_DEFINE_UNQUOTED(LLVM_NATIVE_TARGETINFO, $LLVM_NATIVE_TARGETINFO,
@@ -696,6 +700,10 @@ for a_target in $TARGETS_TO_BUILD; do
     if test -f ${srcdir}/lib/Target/${LLVM_NATIVE_ARCH}/AsmParser/Makefile ; then
       AC_DEFINE_UNQUOTED(LLVM_NATIVE_ASMPARSER, $LLVM_NATIVE_ASMPARSER,
        [LLVM name for the native AsmParser init function, if available])
+    fi
+    if test -f ${srcdir}/lib/Target/${LLVM_NATIVE_ARCH}/Disassembler/Makefile ; then
+      AC_DEFINE_UNQUOTED(LLVM_NATIVE_DISASSEMBLER, $LLVM_NATIVE_DISASSEMBLER,
+       [LLVM name for the native Disassembler init function, if available])
     fi
   fi
 done
@@ -722,21 +730,6 @@ AC_SUBST(LLVM_ENUM_TARGETS)
 AC_SUBST(LLVM_ENUM_ASM_PRINTERS)
 AC_SUBST(LLVM_ENUM_ASM_PARSERS)
 AC_SUBST(LLVM_ENUM_DISASSEMBLERS)
-
-dnl Prevent the CBackend from using printf("%a") for floating point so older
-dnl C compilers that cannot deal with the 0x0p+0 hex floating point format
-dnl can still compile the CBE's output
-AC_ARG_ENABLE([cbe-printf-a],AS_HELP_STRING([--enable-cbe-printf-a],
-  [Enable C Backend output with hex floating point via %a  (default is YES)]),,
-  enableval=default)
-case "$enableval" in
-  yes) AC_SUBST(ENABLE_CBE_PRINTF_A,[1]) ;;
-  no)  AC_SUBST(ENABLE_CBE_PRINTF_A,[0]) ;;
-  default)  AC_SUBST(ENABLE_CBE_PRINTF_A,[1]) ;;
-  *) AC_MSG_ERROR([Invalid setting for --enable-cbe-printf-a. Use "yes" or "no"]) ;;
-esac
-AC_DEFINE_UNQUOTED([ENABLE_CBE_PRINTF_A],$ENABLE_CBE_PRINTF_A,
-                   [Define if CBE is enabled for printf %a output])
 
 dnl Override the option to use for optimized builds.
 AC_ARG_WITH(optimize-option,
@@ -844,6 +837,13 @@ AC_ARG_WITH(gcc-toolchain,
     withval="")
 AC_DEFINE_UNQUOTED(GCC_INSTALL_PREFIX,"$withval",
                    [Directory where gcc is installed.])
+
+AC_ARG_WITH(sysroot,
+  AS_HELP_STRING([--with-default-sysroot],
+    [Add --sysroot=<path> to all compiler invocations.]),,
+    withval="")
+AC_DEFINE_UNQUOTED(DEFAULT_SYSROOT,"$withval",
+                   [Default <path> to all compiler invocations for --sysroot=<path>.])
 
 dnl Allow linking of LLVM with GPLv3 binutils code.
 AC_ARG_WITH(binutils-include,

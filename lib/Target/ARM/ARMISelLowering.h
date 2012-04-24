@@ -315,7 +315,6 @@ namespace llvm {
                                             SelectionDAG &DAG) const;
 
     virtual void computeMaskedBitsForTargetNode(const SDValue Op,
-                                                const APInt &Mask,
                                                 APInt &KnownZero,
                                                 APInt &KnownOne,
                                                 const SelectionDAG &DAG,
@@ -494,7 +493,7 @@ namespace llvm {
                   const SmallVectorImpl<SDValue> &OutVals,
                   DebugLoc dl, SelectionDAG &DAG) const;
 
-    virtual bool isUsedByReturnOnly(SDNode *N) const;
+    virtual bool isUsedByReturnOnly(SDNode *N, SDValue &Chain) const;
 
     virtual bool mayBeEmittedAsTailCall(CallInst *CI) const;
 

@@ -77,11 +77,11 @@
 #include <algorithm>
 using namespace llvm;
 
-static cl::opt<bool> EnableNested(
-  "enable-lsr-nested", cl::Hidden, cl::desc("Enable LSR on nested loops"));
-
-static cl::opt<bool> EnableRetry(
-  "enable-lsr-retry", cl::Hidden, cl::desc("Enable LSR retry"));
+/// MaxIVUsers is an arbitrary threshold that provides an early opportunitiy for
+/// bail out. This threshold is far beyond the number of users that LSR can
+/// conceivably solve, so it should not affect generated code, but catches the
+/// worst cases before LSR burns too much compile time and stack space.
+static const unsigned MaxIVUsers = 200;
 
 // Temporary flag to cleanup congruent phis after LSR phi expansion.
 // It's currently disabled until we can determine whether it's truly useful or
@@ -710,8 +710,9 @@ static bool isHighCostExpansion(const SCEV *S,
         Value *UVal = U->getValue();
         for (Value::use_iterator UI = UVal->use_begin(), UE = UVal->use_end();
              UI != UE; ++UI) {
-          Instruction *User = cast<Instruction>(*UI);
-          if (User->getOpcode() == Instruction::Mul
+          // If U is a constant, it may be used by a ConstantExpr.
+          Instruction *User = dyn_cast<Instruction>(*UI);
+          if (User && User->getOpcode() == Instruction::Mul
               && SE.isSCEVable(User->getType())) {
             return SE.getSCEV(User) == Mul;
           }
@@ -824,36 +825,20 @@ void Cost::RateRegister(const SCEV *Reg,
                         const Loop *L,
                         ScalarEvolution &SE, DominatorTree &DT) {
   if (const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(Reg)) {
-    if (AR->getLoop() == L)
-      AddRecCost += 1; /// TODO: This should be a function of the stride.
-
     // If this is an addrec for another loop, don't second-guess its addrec phi
     // nodes. LSR isn't currently smart enough to reason about more than one
-    // loop at a time. LSR has either already run on inner loops, will not run
-    // on other loops, and cannot be expected to change sibling loops. If the
-    // AddRec exists, consider it's register free and leave it alone. Otherwise,
-    // do not consider this formula at all.
-    else if (!EnableNested || L->contains(AR->getLoop()) ||
-             (!AR->getLoop()->contains(L) &&
-              DT.dominates(L->getHeader(), AR->getLoop()->getHeader()))) {
+    // loop at a time. LSR has already run on inner loops, will not run on outer
+    // loops, and cannot be expected to change sibling loops.
+    if (AR->getLoop() != L) {
+      // If the AddRec exists, consider it's register free and leave it alone.
       if (isExistingPhi(AR, SE))
         return;
 
-      // For !EnableNested, never rewrite IVs in other loops.
-      if (!EnableNested) {
-        Loose();
-        return;
-      }
-      // If this isn't one of the addrecs that the loop already has, it
-      // would require a costly new phi and add. TODO: This isn't
-      // precisely modeled right now.
-      ++NumBaseAdds;
-      if (!Regs.count(AR->getStart())) {
-        RateRegister(AR->getStart(), Regs, L, SE, DT);
-        if (isLoser())
-          return;
-      }
+      // Otherwise, do not consider this formula at all.
+      Loose();
+      return;
     }
+    AddRecCost += 1; /// TODO: This should be a function of the stride.
 
     // Add the step value register, if it needs one.
     // TODO: The non-affine case isn't precisely modeled here.
@@ -1303,10 +1288,19 @@ static bool isLegalUse(const TargetLowering::AddrMode &AM,
     // If we have low-level target information, ask the target if it can fold an
     // integer immediate on an icmp.
     if (AM.BaseOffs != 0) {
-      if (TLI) return TLI->isLegalICmpImmediate(-(uint64_t)AM.BaseOffs);
-      return false;
+      if (!TLI)
+        return false;
+      // We have one of:
+      // ICmpZero     BaseReg + Offset => ICmp BaseReg, -Offset
+      // ICmpZero -1*ScaleReg + Offset => ICmp ScaleReg, Offset
+      // Offs is the ICmp immediate.
+      int64_t Offs = AM.BaseOffs;
+      if (AM.Scale == 0)
+        Offs = -(uint64_t)Offs; // The cast does the right thing with INT64_MIN.
+      return TLI->isLegalICmpImmediate(Offs);
     }
 
+    // ICmpZero BaseReg + -1*ScaleReg => ICmp BaseReg, ScaleReg
     return true;
 
   case LSRUse::Basic:
@@ -2193,7 +2187,7 @@ void LSRInstance::CollectInterestingTypesAndFactors() {
     do {
       const SCEV *S = Worklist.pop_back_val();
       if (const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(S)) {
-        if (EnableNested || AR->getLoop() == L)
+        if (AR->getLoop() == L)
           Strides.insert(AR->getStepRecurrence(SE));
         Worklist.push_back(AR->getStart());
       } else if (const SCEVAddExpr *Add = dyn_cast<SCEVAddExpr>(S)) {
@@ -2463,7 +2457,7 @@ void LSRInstance::ChainInstruction(Instruction *UserInst, Instruction *IVOper,
     if (!isCompatibleIVType(PrevIV, NextIV))
       continue;
 
-    // A phi nodes terminates a chain.
+    // A phi node terminates a chain.
     if (isa<PHINode>(UserInst)
         && isa<PHINode>(IVChainVec[ChainIdx].back().UserInst))
       continue;
@@ -2519,13 +2513,14 @@ void LSRInstance::ChainInstruction(Instruction *UserInst, Instruction *IVOper,
   for (Value::use_iterator UseIter = IVOper->use_begin(),
          UseEnd = IVOper->use_end(); UseIter != UseEnd; ++UseIter) {
     Instruction *OtherUse = dyn_cast<Instruction>(*UseIter);
+    if (!OtherUse || OtherUse == UserInst)
+      continue;
     if (SE.isSCEVable(OtherUse->getType())
         && !isa<SCEVUnknown>(SE.getSCEV(OtherUse))
         && IU.isIVUserOrOperand(OtherUse)) {
       continue;
     }
-    if (OtherUse && OtherUse != UserInst)
-      NearUsers.insert(OtherUse);
+    NearUsers.insert(OtherUse);
   }
 
   // Since this user is part of the chain, it's no longer considered a use
@@ -3986,24 +3981,29 @@ void LSRInstance::SolveRecurse(SmallVectorImpl<const Formula *> &Solution,
     if (LU.Regs.count(*I))
       ReqRegs.insert(*I);
 
-  bool AnySatisfiedReqRegs = false;
   SmallPtrSet<const SCEV *, 16> NewRegs;
   Cost NewCost;
-retry:
   for (SmallVectorImpl<Formula>::const_iterator I = LU.Formulae.begin(),
        E = LU.Formulae.end(); I != E; ++I) {
     const Formula &F = *I;
 
     // Ignore formulae which do not use any of the required registers.
+    bool SatisfiedReqReg = true;
     for (SmallSetVector<const SCEV *, 4>::const_iterator J = ReqRegs.begin(),
          JE = ReqRegs.end(); J != JE; ++J) {
       const SCEV *Reg = *J;
       if ((!F.ScaledReg || F.ScaledReg != Reg) &&
           std::find(F.BaseRegs.begin(), F.BaseRegs.end(), Reg) ==
-          F.BaseRegs.end())
-        goto skip;
+          F.BaseRegs.end()) {
+        SatisfiedReqReg = false;
+        break;
+      }
     }
-    AnySatisfiedReqRegs = true;
+    if (!SatisfiedReqReg) {
+      // If none of the formulae satisfied the required registers, then we could
+      // clear ReqRegs and try again. Currently, we simply give up in this case.
+      continue;
+    }
 
     // Evaluate the cost of the current formula. If it's already worse than
     // the current best, prune the search at that point.
@@ -4030,18 +4030,6 @@ retry:
       }
       Workspace.pop_back();
     }
-  skip:;
-  }
-
-  if (!EnableRetry && !AnySatisfiedReqRegs)
-    return;
-
-  // If none of the formulae had all of the required registers, relax the
-  // constraint so that we don't exclude all formulae.
-  if (!AnySatisfiedReqRegs) {
-    assert(!ReqRegs.empty() && "Solver failed even without required registers");
-    ReqRegs.clear();
-    goto retry;
   }
 }
 
@@ -4537,6 +4525,17 @@ LSRInstance::LSRInstance(const TargetLowering *tli, Loop *l, Pass *P)
   // If there's no interesting work to be done, bail early.
   if (IU.empty()) return;
 
+  // If there's too much analysis to be done, bail early. We won't be able to
+  // model the problem anyway.
+  unsigned NumUsers = 0;
+  for (IVUsers::const_iterator UI = IU.begin(), E = IU.end(); UI != E; ++UI) {
+    if (++NumUsers > MaxIVUsers) {
+      DEBUG(dbgs() << "LSR skipping loop, too many IV Users in " << *L
+            << "\n");
+      return;
+    }
+  }
+
 #ifndef NDEBUG
   // All dominating loops must have preheaders, or SCEVExpander may not be able
   // to materialize an AddRecExpr whose Start is an outer AddRecExpr.
@@ -4566,7 +4565,7 @@ LSRInstance::LSRInstance(const TargetLowering *tli, Loop *l, Pass *P)
   if (IU.empty()) return;
 
   // Skip nested loops until we can model them better with formulae.
-  if (!EnableNested && !L->empty()) {
+  if (!L->empty()) {
     DEBUG(dbgs() << "LSR skipping outer loop " << *L << "\n");
     return;
   }

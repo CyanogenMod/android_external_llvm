@@ -158,8 +158,10 @@ bool ARMPassConfig::addPreRegAlloc() {
 bool ARMPassConfig::addPreSched2() {
   // FIXME: temporarily disabling load / store optimization pass for Thumb1.
   if (getOptLevel() != CodeGenOpt::None) {
-    if (!getARMSubtarget().isThumb1Only())
+    if (!getARMSubtarget().isThumb1Only()) {
       PM.add(createARMLoadStoreOptimizationPass());
+      printAndVerify("After ARM load / store optimizer");
+    }
     if (getARMSubtarget().hasNEON())
       PM.add(createExecutionDependencyFixPass(&ARM::DPRRegClass));
   }
@@ -192,7 +194,8 @@ bool ARMPassConfig::addPreEmitPass() {
   return true;
 }
 
-bool ARMBaseTargetMachine::addCodeEmitter(PassManagerBase &PM, JITCodeEmitter &JCE) {
+bool ARMBaseTargetMachine::addCodeEmitter(PassManagerBase &PM,
+                                          JITCodeEmitter &JCE) {
   // Machine code emitter pass for ARM.
   PM.add(createARMJITCodeEmitterPass(*this, JCE));
   return false;

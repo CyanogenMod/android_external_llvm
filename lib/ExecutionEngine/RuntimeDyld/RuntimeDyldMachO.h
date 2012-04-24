@@ -26,6 +26,13 @@ using namespace llvm::object;
 namespace llvm {
 class RuntimeDyldMachO : public RuntimeDyldImpl {
 protected:
+  bool resolveI386Relocation(uint8_t *LocalAddress,
+                             uint64_t FinalAddress,
+                             uint64_t Value,
+                             bool isPCRel,
+                             unsigned Type,
+                             unsigned Size,
+                             int64_t Addend);
   bool resolveX86_64Relocation(uint8_t *LocalAddress,
                                uint64_t FinalAddress,
                                uint64_t Value,
@@ -42,7 +49,7 @@ protected:
                             int64_t Addend);
 
   virtual void processRelocationRef(const ObjRelocationInfo &Rel,
-                                    const ObjectFile &Obj,
+                                    ObjectImage &Obj,
                                     ObjSectionToIDMap &ObjSectionToID,
                                     LocalSymbolMap &Symbols, StubMap &Stubs);
 
@@ -52,7 +59,7 @@ public:
                                  uint64_t Value,
                                  uint32_t Type,
                                  int64_t Addend);
-                                 
+
   RuntimeDyldMachO(RTDyldMemoryManager *mm) : RuntimeDyldImpl(mm) {}
 
   bool isCompatibleFormat(const MemoryBuffer *InputBuffer) const;

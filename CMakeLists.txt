@@ -72,7 +72,6 @@ set(LLVM_LIBDIR_SUFFIX "" CACHE STRING "Define suffix of library directory name 
 
 set(LLVM_ALL_TARGETS
   ARM
-  CBackend
   CellSPU
   CppBackend
   Hexagon
@@ -397,7 +396,7 @@ add_subdirectory(utils/FileUpdate)
 add_subdirectory(utils/count)
 add_subdirectory(utils/not)
 add_subdirectory(utils/llvm-lit)
-add_subdirectory(utils/json-bench)
+add_subdirectory(utils/yaml-bench)
 
 add_subdirectory(projects)
 
