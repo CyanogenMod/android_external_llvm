@@ -30,6 +30,7 @@ support_SRC_FILES := \
   IntrusiveRefCntPtr.cpp \
   IsInf.cpp \
   IsNAN.cpp \
+  Locale.cpp \
   LockFileManager.cpp \
   ManagedStatic.cpp \
   Memory.cpp \
