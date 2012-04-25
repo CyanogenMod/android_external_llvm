@@ -49,6 +49,7 @@
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Target/TargetOptions.h"
 #include <bitset>
+#include <cctype>
 using namespace llvm;
 
 STATISTIC(NumTailCalls, "Number of tail calls");
@@ -15747,8 +15748,8 @@ X86TargetLowering::getRegForInlineAsmConstraint(const std::string &Constraint,
   if (Res.second == 0) {
     // Map st(0) -> st(7) -> ST0
     if (Constraint.size() == 7 && Constraint[0] == '{' &&
-        tolower(Constraint[1]) == 's' &&
-        tolower(Constraint[2]) == 't' &&
+        std::tolower(Constraint[1]) == 's' &&
+        std::tolower(Constraint[2]) == 't' &&
         Constraint[3] == '(' &&
         (Constraint[4] >= '0' && Constraint[4] <= '7') &&
         Constraint[5] == ')' &&
