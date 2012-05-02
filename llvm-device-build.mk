@@ -5,6 +5,7 @@ LOCAL_CFLAGS :=	\
 	-D__STDC_FORMAT_MACROS	\
 	-O2	\
 	-fomit-frame-pointer	\
+	-fno-strict-aliasing	\
 	-Wall	\
 	-W	\
 	-Wno-unused-parameter	\
