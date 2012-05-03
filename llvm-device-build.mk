@@ -27,9 +27,9 @@ endif
 
 ifeq ($(LLVM_ENABLE_ASSERTION),true)
 LOCAL_CFLAGS :=	\
+	$(LOCAL_CFLAGS) \
 	-D_DEBUG	\
-	-UNDEBUG	\
-	$(LOCAL_CFLAGS)
+	-UNDEBUG
 endif
 
 ifneq ($(REQUIRES_EH),1)
