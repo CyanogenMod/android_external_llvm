@@ -19,6 +19,7 @@ subdirs := \
   lib/Linker \
   lib/MC \
   lib/MC/MCParser \
+  lib/Object \
   lib/Support \
   lib/TableGen \
   lib/Target \

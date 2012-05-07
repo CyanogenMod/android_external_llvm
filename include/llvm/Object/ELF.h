@@ -30,6 +30,8 @@
 #include <limits>
 #include <utility>
 
+#include <ctype.h>
+
 namespace llvm {
 namespace object {
 
