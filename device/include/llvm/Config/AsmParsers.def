@@ -27,8 +27,7 @@
 #if defined(__arm__)
   LLVM_ASM_PARSER(ARM)
 #elif defined(__mips__)
-  // MIPS does not support assembly parser.
-  //LLVM_ASM_PARSER(Mips)
+  LLVM_ASM_PARSER(Mips)
 #elif defined(__i386__)
   LLVM_ASM_PARSER(X86)
 #else

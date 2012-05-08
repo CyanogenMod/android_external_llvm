@@ -45,7 +45,9 @@ subdirs += \
 # MIPS Code Generation Libraries
 subdirs += \
   lib/Target/Mips \
+  lib/Target/Mips/AsmParser \
   lib/Target/Mips/InstPrinter \
+  lib/Target/Mips/Disassembler \
   lib/Target/Mips/MCTargetDesc \
   lib/Target/Mips/TargetInfo
 
