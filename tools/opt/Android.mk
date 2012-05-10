@@ -67,8 +67,9 @@ LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_SRC_FILES := $(llvm_opt_SRC_FILES)
 LOCAL_C_INCLUDES += external/llvm/include
 LOCAL_STATIC_LIBRARIES := $(llvm_opt_STATIC_LIBRARIES)
-LOCAL_SHARED_LIBRARIES := \
-  libdl \
+LOCAL_SHARED_LIBRARIES :=  \
+  libcutils  \
+  libdl  \
   libstlport
 
 

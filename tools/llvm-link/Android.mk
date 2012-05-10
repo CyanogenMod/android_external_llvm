@@ -40,6 +40,7 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(llvm_link_SRC_FILES)
 LOCAL_STATIC_LIBRARIES := $(llvm_link_STATIC_LIBRARIES)
 LOCAL_SHARED_LIBRARIES := \
+  libcutils  \
   libstlport
 
 include $(LLVM_DEVICE_BUILD_MK)

@@ -112,8 +112,9 @@ endif
 
 LOCAL_STATIC_LIBRARIES += $(llvm_llc_STATIC_LIBRARIES)
 
-LOCAL_SHARED_LIBRARIES := \
-  libdl \
+LOCAL_SHARED_LIBRARIES :=  \
+  libcutils  \
+  libdl  \
   libstlport
 
 include $(LLVM_ROOT_PATH)/llvm.mk
