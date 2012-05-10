@@ -230,7 +230,7 @@
 /* #undef HAVE_MACH_O_DYLD_H */
 
 /* Define if mallinfo() is available on this platform. */
-#define HAVE_MALLINFO 1
+/* #undef HAVE_MALLINFO */
 
 /* Define to 1 if you have the <malloc.h> header file. */
 /* #define HAVE_MALLOC_H 1 */ /* Defined by AndroidConfig.h */
