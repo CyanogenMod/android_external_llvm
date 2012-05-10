@@ -288,13 +288,17 @@
 #define HAVE_POWF 1
 
 /* Define to 1 if you have the `pread' function. */
+#if !defined(_WIN32) && !defined(_WIN64)
 #define HAVE_PREAD 1
+#endif
 
 /* Define if libtool can extract symbol lists from object files. */
 #define HAVE_PRELOADED_SYMBOLS 1
 
 /* Define to have the %a format string */
 #define HAVE_PRINTF_A 1
+
+#if !defined(_WIN32) && !defined(_WIN64)
 
 /* Have pthread_getspecific */
 #define HAVE_PTHREAD_GETSPECIFIC 1
@@ -307,6 +311,8 @@
 
 /* Have pthread_rwlock_init */
 #define HAVE_PTHREAD_RWLOCK_INIT 1
+
+#endif /* !defined(_WIN32) && !defined(_WIN64) */
 
 /* Define to 1 if srand48/lrand48/drand48 exist in <stdlib.h> */
 #define HAVE_RAND48 1
@@ -468,11 +474,20 @@
 /* Define to 1 if you have the <valgrind/valgrind.h> header file. */
 /* #undef HAVE_VALGRIND_VALGRIND_H */
 
+#if defined(_WIN32) || defined(_WIN64)
+/* Define to 1 if you have the <windows.h> header file. */
+#define HAVE_WINDOWS_H 1
+
+/* Define to 1 if you have the `writev' function. */
+/* #undef HAVE_WRITEV */
+
+#else
 /* Define to 1 if you have the <windows.h> header file. */
 /* #undef HAVE_WINDOWS_H */
 
 /* Define to 1 if you have the `writev' function. */
 #define HAVE_WRITEV 1
+#endif
 
 /* Define if the xdot.py program is available */
 /* #undef HAVE_XDOT_PY */
