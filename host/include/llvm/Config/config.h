@@ -230,7 +230,11 @@
 /* #undef HAVE_MACH_O_DYLD_H */
 
 /* Define if mallinfo() is available on this platform. */
+#if !defined(_APPLE_)
+#define HAVE_MALLINFO 1
+#else
 /* #undef HAVE_MALLINFO */
+#endif
 
 /* Define to 1 if you have the <malloc.h> header file. */
 /* #define HAVE_MALLOC_H 1 */ /* Defined by AndroidConfig.h */
@@ -264,7 +268,11 @@
 
 /* Define if mmap() uses MAP_ANONYMOUS to map anonymous pages, or undefine if
    it uses MAP_ANON */
+#if !defined(_APPLE_)
+#define HAVE_MMAP_ANONYMOUS
+#else
 /* #undef HAVE_MMAP_ANONYMOUS */
+#endif
 
 /* Define if mmap() can map files into memory */
 #define HAVE_MMAP_FILE
