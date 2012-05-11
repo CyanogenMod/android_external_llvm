@@ -580,6 +580,10 @@
 /* Has gcc/MSVC atomic intrinsics */
 #define LLVM_HAS_ATOMICS 1
 
+#else
+
+#define LLVM_HAS_ATOMICS 0
+
 #endif /* !defined(_WIN32) && !defined(_WIN64) */
 
 /* Installation directory for include files */
