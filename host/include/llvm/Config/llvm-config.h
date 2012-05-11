@@ -38,8 +38,16 @@
 /* Installation directory for config files */
 #define LLVM_ETCDIR "/opt/llvm-android/etc/llvm"
 
+#if !defined(_WIN32) && !defined(_WIN64)
+
 /* Has gcc/MSVC atomic intrinsics */
 #define LLVM_HAS_ATOMICS 1
+
+#else
+
+#define LLVM_HAS_ATOMICS 0
+
+#endif /* !defined(_WIN32) && !defined(_WIN64) */
 
 /* Installation directory for include files */
 #define LLVM_INCLUDEDIR "/opt/llvm-android/include"
