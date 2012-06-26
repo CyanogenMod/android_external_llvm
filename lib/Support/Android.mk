@@ -13,6 +13,7 @@ support_SRC_FILES := \
   CrashRecoveryContext.cpp \
   DAGDeltaAlgorithm.cpp \
   DataStream.cpp \
+  DataExtractor.cpp \
   Debug.cpp \
   DeltaAlgorithm.cpp \
   Dwarf.cpp \
