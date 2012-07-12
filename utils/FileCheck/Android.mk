@@ -9,7 +9,6 @@ filecheck_STATIC_LIBRARIES := \
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := FileCheck
-LOCAL_MODULE_TAGS := optional eng
 LOCAL_SRC_FILES := $(filecheck_SRC_FILES)
 LOCAL_STATIC_LIBRARIES := $(filecheck_STATIC_LIBRARIES)
 LOCAL_C_INCLUDES += external/llvm/include
