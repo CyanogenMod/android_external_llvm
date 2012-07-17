@@ -1,5 +1,8 @@
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
+	-D__STDC_LIMIT_MACROS	\
+	-D__STDC_CONSTANT_MACROS	\
+	-D__STDC_FORMAT_MACROS	\
 	-O2	\
 	-fomit-frame-pointer	\
 	-Wall	\
@@ -7,13 +10,6 @@ LOCAL_CFLAGS :=	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
 	$(LOCAL_CFLAGS)
-
-ifneq ($(HOST_OS),darwin)
-LOCAL_CFLAGS +=	\
-	-D__STDC_LIMIT_MACROS	\
-	-D__STDC_CONSTANT_MACROS	\
-	-D__STDC_FORMAT_MACROS
-endif
 
 # The three inline options together reduce libbcc.so almost 1MB.
 # We move them from global build/core/combo/TARGET_linux-arm.mk
