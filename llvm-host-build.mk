@@ -1,5 +1,8 @@
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
+	-D__STDC_LIMIT_MACROS	\
+	-D__STDC_CONSTANT_MACROS	\
+	-D__STDC_FORMAT_MACROS	\
 	-O2	\
 	-fomit-frame-pointer	\
 	-Wall	\
@@ -7,13 +10,6 @@ LOCAL_CFLAGS :=	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
 	$(LOCAL_CFLAGS)
-
-ifneq ($(HOST_OS),darwin)
-LOCAL_CFLAGS +=	\
-	-D__STDC_LIMIT_MACROS	\
-	-D__STDC_CONSTANT_MACROS	\
-	-D__STDC_FORMAT_MACROS
-endif
 
 ifeq ($(LLVM_ENABLE_ASSERTION),true)
 LOCAL_CFLAGS :=	\
