@@ -71,9 +71,14 @@ def X86insrtps : SDNode<"X86ISD::INSERTPS",
                                       SDTCisVT<2, v4f32>, SDTCisPtrTy<3>]>>;
 def X86vzmovl  : SDNode<"X86ISD::VZEXT_MOVL",
                  SDTypeProfile<1, 1, [SDTCisSameAs<0,1>]>>;
+
+def X86vzmovly  : SDNode<"X86ISD::VZEXT_MOVL",
+                 SDTypeProfile<1, 1, [SDTCisVec<0>, SDTCisVec<1>, 
+                                      SDTCisOpSmallerThanOp<1, 0> ]>>;
+
 def X86vsmovl  : SDNode<"X86ISD::VSEXT_MOVL",
                  SDTypeProfile<1, 1, [SDTCisVec<0>, SDTCisInt<1>, SDTCisInt<0>]>>;
-                 
+
 def X86vzload  : SDNode<"X86ISD::VZEXT_LOAD", SDTLoad,
                         [SDNPHasChain, SDNPMayLoad, SDNPMemOperand]>;
 def X86vshldq  : SDNode<"X86ISD::VSHLDQ",    SDTIntShiftOp>;
@@ -101,13 +106,6 @@ def SDTX86CmpPTest : SDTypeProfile<1, 2, [SDTCisVT<0, i32>,
                                           SDTCisSameAs<2, 1>]>;
 def X86ptest   : SDNode<"X86ISD::PTEST", SDTX86CmpPTest>;
 def X86testp   : SDNode<"X86ISD::TESTP", SDTX86CmpPTest>;
-
-def X86vpcom   : SDNode<"X86ISD::VPCOM",
-                        SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0,1>,
-                                      SDTCisSameAs<0,2>, SDTCisVT<3, i8>]>>;
-def X86vpcomu  : SDNode<"X86ISD::VPCOMU",
-                        SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0,1>,
-                                      SDTCisSameAs<0,2>, SDTCisVT<3, i8>]>>;
 
 def X86pmuludq : SDNode<"X86ISD::PMULUDQ",
                         SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>,
@@ -304,7 +302,7 @@ def nontemporalstore : PatFrag<(ops node:$val, node:$ptr),
 }]>;
 
 def alignednontemporalstore : PatFrag<(ops node:$val, node:$ptr),
-			           (st node:$val, node:$ptr), [{
+                                    (st node:$val, node:$ptr), [{
   if (StoreSDNode *ST = dyn_cast<StoreSDNode>(N))
     return ST->isNonTemporal() && !ST->isTruncatingStore() &&
            ST->getAddressingMode() == ISD::UNINDEXED &&
@@ -313,7 +311,7 @@ def alignednontemporalstore : PatFrag<(ops node:$val, node:$ptr),
 }]>;
 
 def unalignednontemporalstore : PatFrag<(ops node:$val, node:$ptr),
-			           (st node:$val, node:$ptr), [{
+                                      (st node:$val, node:$ptr), [{
   if (StoreSDNode *ST = dyn_cast<StoreSDNode>(N))
     return ST->isNonTemporal() &&
            ST->getAlignment() < 16;

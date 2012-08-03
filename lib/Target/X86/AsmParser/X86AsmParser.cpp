@@ -117,7 +117,7 @@ static unsigned MatchRegisterName(StringRef Name);
 
 /// }
 
-static  bool isImmSExti16i8Value(uint64_t Value) {
+static bool isImmSExti16i8Value(uint64_t Value) {
   return ((                                  Value <= 0x000000000000007FULL)||
           (0x000000000000FF80ULL <= Value && Value <= 0x000000000000FFFFULL)||
           (0xFFFFFFFFFFFFFF80ULL <= Value && Value <= 0xFFFFFFFFFFFFFFFFULL));
@@ -135,12 +135,12 @@ static bool isImmZExtu32u8Value(uint64_t Value) {
 
 static bool isImmSExti64i8Value(uint64_t Value) {
   return ((                                  Value <= 0x000000000000007FULL)||
-	  (0xFFFFFFFFFFFFFF80ULL <= Value && Value <= 0xFFFFFFFFFFFFFFFFULL));
+          (0xFFFFFFFFFFFFFF80ULL <= Value && Value <= 0xFFFFFFFFFFFFFFFFULL));
 }
 
 static bool isImmSExti64i32Value(uint64_t Value) {
   return ((                                  Value <= 0x000000007FFFFFFFULL)||
-	  (0xFFFFFFFF80000000ULL <= Value && Value <= 0xFFFFFFFFFFFFFFFFULL));
+          (0xFFFFFFFF80000000ULL <= Value && Value <= 0xFFFFFFFFFFFFFFFFULL));
 }
 namespace {
 
@@ -187,7 +187,7 @@ struct X86Operand : public MCParsedAsmOperand {
   SMLoc getStartLoc() const { return StartLoc; }
   /// getEndLoc - Get the location of the last token of this operand.
   SMLoc getEndLoc() const { return EndLoc; }
-  
+
   SMRange getLocRange() const { return SMRange(StartLoc, EndLoc); }
 
   virtual void print(raw_ostream &OS) const {}
@@ -309,26 +309,43 @@ struct X86Operand : public MCParsedAsmOperand {
   }
 
   bool isMem() const { return Kind == Memory; }
-  bool isMem8() const { 
+  bool isMem8() const {
     return Kind == Memory && (!Mem.Size || Mem.Size == 8);
   }
-  bool isMem16() const { 
+  bool isMem16() const {
     return Kind == Memory && (!Mem.Size || Mem.Size == 16);
   }
-  bool isMem32() const { 
+  bool isMem32() const {
     return Kind == Memory && (!Mem.Size || Mem.Size == 32);
   }
-  bool isMem64() const { 
+  bool isMem64() const {
     return Kind == Memory && (!Mem.Size || Mem.Size == 64);
   }
-  bool isMem80() const { 
+  bool isMem80() const {
     return Kind == Memory && (!Mem.Size || Mem.Size == 80);
   }
-  bool isMem128() const { 
+  bool isMem128() const {
     return Kind == Memory && (!Mem.Size || Mem.Size == 128);
   }
-  bool isMem256() const { 
+  bool isMem256() const {
     return Kind == Memory && (!Mem.Size || Mem.Size == 256);
+  }
+
+  bool isMemVX32() const {
+    return Kind == Memory && (!Mem.Size || Mem.Size == 32) &&
+      getMemIndexReg() >= X86::XMM0 && getMemIndexReg() <= X86::XMM15;
+  }
+  bool isMemVY32() const {
+    return Kind == Memory && (!Mem.Size || Mem.Size == 32) &&
+      getMemIndexReg() >= X86::YMM0 && getMemIndexReg() <= X86::YMM15;
+  }
+  bool isMemVX64() const {
+    return Kind == Memory && (!Mem.Size || Mem.Size == 64) &&
+      getMemIndexReg() >= X86::XMM0 && getMemIndexReg() <= X86::XMM15;
+  }
+  bool isMemVY64() const {
+    return Kind == Memory && (!Mem.Size || Mem.Size == 64) &&
+      getMemIndexReg() >= X86::YMM0 && getMemIndexReg() <= X86::YMM15;
   }
 
   bool isAbsMem() const {
@@ -356,26 +373,38 @@ struct X86Operand : public MCParsedAsmOperand {
     addExpr(Inst, getImm());
   }
 
-  void addMem8Operands(MCInst &Inst, unsigned N) const { 
-    addMemOperands(Inst, N); 
+  void addMem8Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
   }
-  void addMem16Operands(MCInst &Inst, unsigned N) const { 
-    addMemOperands(Inst, N); 
+  void addMem16Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
   }
-  void addMem32Operands(MCInst &Inst, unsigned N) const { 
-    addMemOperands(Inst, N); 
+  void addMem32Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
   }
-  void addMem64Operands(MCInst &Inst, unsigned N) const { 
-    addMemOperands(Inst, N); 
+  void addMem64Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
   }
-  void addMem80Operands(MCInst &Inst, unsigned N) const { 
-    addMemOperands(Inst, N); 
+  void addMem80Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
   }
-  void addMem128Operands(MCInst &Inst, unsigned N) const { 
-    addMemOperands(Inst, N); 
+  void addMem128Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
   }
-  void addMem256Operands(MCInst &Inst, unsigned N) const { 
-    addMemOperands(Inst, N); 
+  void addMem256Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
+  }
+  void addMemVX32Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
+  }
+  void addMemVY32Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
+  }
+  void addMemVX64Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
+  }
+  void addMemVY64Operands(MCInst &Inst, unsigned N) const {
+    addMemOperands(Inst, N);
   }
 
   void addMemOperands(MCInst &Inst, unsigned N) const {
@@ -467,7 +496,7 @@ bool X86AsmParser::isSrcOp(X86Operand &Op) {
 bool X86AsmParser::isDstOp(X86Operand &Op) {
   unsigned basereg = is64BitMode() ? X86::RDI : X86::EDI;
 
-  return Op.isMem() && 
+  return Op.isMem() &&
     (Op.Mem.SegReg == 0 || Op.Mem.SegReg == X86::ES) &&
     isa<MCConstantExpr>(Op.Mem.Disp) &&
     cast<MCConstantExpr>(Op.Mem.Disp)->getValue() == 0 &&
@@ -611,7 +640,7 @@ X86Operand *X86AsmParser::ParseIntelBracExpression(unsigned SegReg,
   if (getLexer().isNot(AsmToken::LBrac))
     return ErrorOperand(Start, "Expected '[' token!");
   Parser.Lex();
-  
+
   if (getLexer().is(AsmToken::Identifier)) {
     // Parse BaseReg
     if (ParseRegister(BaseReg, Start, End)) {
@@ -638,11 +667,11 @@ X86Operand *X86AsmParser::ParseIntelBracExpression(unsigned SegReg,
         // Handle '[' Scale*IndexReg ']'
         Parser.Lex();
         SMLoc IdxRegLoc = Parser.getTok().getLoc();
-	if (ParseRegister(IndexReg, IdxRegLoc, End))
-	  return ErrorOperand(IdxRegLoc, "Expected register");
+        if (ParseRegister(IndexReg, IdxRegLoc, End))
+          return ErrorOperand(IdxRegLoc, "Expected register");
         Scale = Val;
       } else
-        return ErrorOperand(Loc, "Unepxeted token");
+        return ErrorOperand(Loc, "Unexpected token");
   }
 
   if (getLexer().is(AsmToken::Plus) || getLexer().is(AsmToken::Minus)) {
@@ -655,8 +684,8 @@ X86Operand *X86AsmParser::ParseIntelBracExpression(unsigned SegReg,
       if (getLexer().is(AsmToken::Star)) {
         Parser.Lex();
         SMLoc IdxRegLoc = Parser.getTok().getLoc();
-	if (ParseRegister(IndexReg, IdxRegLoc, End))
-	  return ErrorOperand(IdxRegLoc, "Expected register");
+        if (ParseRegister(IndexReg, IdxRegLoc, End))
+          return ErrorOperand(IdxRegLoc, "Expected register");
         Scale = Val;
       } else if (getLexer().is(AsmToken::RBrac)) {
         const MCExpr *ValExpr = MCConstantExpr::Create(Val, getContext());
@@ -668,7 +697,7 @@ X86Operand *X86AsmParser::ParseIntelBracExpression(unsigned SegReg,
       End = Parser.getTok().getLoc();
       if (!IndexReg)
         ParseRegister(IndexReg, Start, End);
-      else if (getParser().ParseExpression(Disp, End)) return 0;        
+      else if (getParser().ParseExpression(Disp, End)) return 0;
     }
   }
 
@@ -881,7 +910,7 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
           if (getParser().ParseAbsoluteExpression(ScaleVal)){
             Error(Loc, "expected scale expression");
             return 0;
-	  }
+          }
 
           // Validate the scale amount.
           if (ScaleVal != 1 && ScaleVal != 2 && ScaleVal != 4 && ScaleVal != 8){
@@ -916,15 +945,18 @@ X86Operand *X86AsmParser::ParseMemOperand(unsigned SegReg, SMLoc MemStart) {
 
   // If we have both a base register and an index register make sure they are
   // both 64-bit or 32-bit registers.
+  // To support VSIB, IndexReg can be 128-bit or 256-bit registers.
   if (BaseReg != 0 && IndexReg != 0) {
     if (X86MCRegisterClasses[X86::GR64RegClassID].contains(BaseReg) &&
-        !X86MCRegisterClasses[X86::GR64RegClassID].contains(IndexReg) &&
+        (X86MCRegisterClasses[X86::GR16RegClassID].contains(IndexReg) ||
+         X86MCRegisterClasses[X86::GR32RegClassID].contains(IndexReg)) &&
         IndexReg != X86::RIZ) {
       Error(IndexLoc, "index register is 32-bit, but base register is 64-bit");
       return 0;
     }
     if (X86MCRegisterClasses[X86::GR32RegClassID].contains(BaseReg) &&
-        !X86MCRegisterClasses[X86::GR32RegClassID].contains(IndexReg) &&
+        (X86MCRegisterClasses[X86::GR16RegClassID].contains(IndexReg) ||
+         X86MCRegisterClasses[X86::GR64RegClassID].contains(IndexReg)) &&
         IndexReg != X86::EIZ){
       Error(IndexLoc, "index register is 64-bit, but base register is 32-bit");
       return 0;
@@ -944,7 +976,7 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
   if (PatchedName.startswith("set") && PatchedName.endswith("b") &&
       PatchedName != "setb" && PatchedName != "setnb")
     PatchedName = PatchedName.substr(0, Name.size()-1);
-  
+
   // FIXME: Hack to recognize cmp<comparison code>{ss,sd,ps,pd}.
   const MCExpr *ExtraImmOp = 0;
   if ((PatchedName.startswith("cmp") || PatchedName.startswith("vcmp")) &&
@@ -1204,20 +1236,20 @@ ParseInstruction(StringRef Name, SMLoc NameLoc,
       // Intel syntax
       X86Operand *Op1 = static_cast<X86Operand*>(Operands[2]);
       if (Op1->isImm() && isa<MCConstantExpr>(Op1->getImm()) &&
-	  cast<MCConstantExpr>(Op1->getImm())->getValue() == 1) {
-	delete Operands[2];
-	Operands.pop_back();
+          cast<MCConstantExpr>(Op1->getImm())->getValue() == 1) {
+        delete Operands[2];
+        Operands.pop_back();
       }
     } else {
       X86Operand *Op1 = static_cast<X86Operand*>(Operands[1]);
       if (Op1->isImm() && isa<MCConstantExpr>(Op1->getImm()) &&
-	  cast<MCConstantExpr>(Op1->getImm())->getValue() == 1) {
-	delete Operands[1];
-	Operands.erase(Operands.begin() + 1);
+          cast<MCConstantExpr>(Op1->getImm())->getValue() == 1) {
+        delete Operands[1];
+        Operands.erase(Operands.begin() + 1);
       }
     }
   }
-  
+
   // Transforms "int $3" into "int3" as a size optimization.  We can't write an
   // instalias with an immediate operand yet.
   if (Name == "int" && Operands.size() == 2) {
@@ -1520,7 +1552,7 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   case Match_Success:
     // Some instructions need post-processing to, for example, tweak which
     // encoding is selected. Loop on it while changes happen so the
-    // individual transformations can chain off each other. 
+    // individual transformations can chain off each other.
     while (processInstruction(Inst, Operands))
       ;
 
@@ -1558,12 +1590,12 @@ MatchAndEmitInstruction(SMLoc IDLoc,
   // Otherwise, we assume that this may be an integer instruction, which comes
   // in 8/16/32/64-bit forms using the b,w,l,q suffixes respectively.
   const char *Suffixes = Base[0] != 'f' ? "bwlq" : "slt\0";
-  
+
   // Check for the various suffix matches.
   Tmp[Base.size()] = Suffixes[0];
   unsigned ErrorInfoIgnore;
   unsigned Match1, Match2, Match3, Match4;
-  
+
   Match1 = MatchInstructionImpl(Operands, Inst, ErrorInfoIgnore);
   Tmp[Base.size()] = Suffixes[1];
   Match2 = MatchInstructionImpl(Operands, Inst, ErrorInfoIgnore);
@@ -1673,10 +1705,10 @@ bool X86AsmParser::ParseDirective(AsmToken DirectiveID) {
     getParser().setAssemblerDialect(1);
     if (getLexer().isNot(AsmToken::EndOfStatement)) {
       if(Parser.getTok().getString() == "noprefix") {
-	// FIXME : Handle noprefix
-	Parser.Lex();
+        // FIXME : Handle noprefix
+        Parser.Lex();
       } else
-	return true;
+        return true;
     }
     return false;
   }
@@ -1691,19 +1723,19 @@ bool X86AsmParser::ParseDirectiveWord(unsigned Size, SMLoc L) {
       const MCExpr *Value;
       if (getParser().ParseExpression(Value))
         return true;
-      
+
       getParser().getStreamer().EmitValue(Value, Size, 0 /*addrspace*/);
-      
+
       if (getLexer().is(AsmToken::EndOfStatement))
         break;
-      
+
       // FIXME: Improve diagnostic.
       if (getLexer().isNot(AsmToken::Comma))
         return Error(L, "unexpected token in directive");
       Parser.Lex();
     }
   }
-  
+
   Parser.Lex();
   return false;
 }

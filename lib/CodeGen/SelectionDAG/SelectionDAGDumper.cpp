@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "ScheduleDAGSDNodes.h"
+#include "llvm/DebugInfo.h"
 #include "llvm/Function.h"
 #include "llvm/Intrinsics.h"
 #include "llvm/Assembly/Writer.h"
@@ -19,7 +20,6 @@
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
-#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"
@@ -265,6 +265,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::STACKSAVE:                  return "stacksave";
   case ISD::STACKRESTORE:               return "stackrestore";
   case ISD::TRAP:                       return "trap";
+  case ISD::DEBUGTRAP:                  return "debugtrap";
 
   // Bit manipulation
   case ISD::BSWAP:                      return "bswap";

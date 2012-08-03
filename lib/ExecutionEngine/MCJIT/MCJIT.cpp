@@ -45,7 +45,7 @@ ExecutionEngine *MCJIT::createJIT(Module *M,
 
   // If the target supports JIT code generation, create the JIT.
   if (TargetJITInfo *TJ = TM->getJITInfo())
-    return new MCJIT(M, TM, *TJ, new MCJITMemoryManager(JMM, M), GVsWithCode);
+    return new MCJIT(M, TM, *TJ, new MCJITMemoryManager(JMM), GVsWithCode);
 
   if (ErrorStr)
     *ErrorStr = "target does not support JIT code generation";
@@ -217,7 +217,7 @@ GenericValue MCJIT::runFunction(Function *F,
 }
 
 void *MCJIT::getPointerToNamedFunction(const std::string &Name,
-                                       bool AbortOnFailure){
+                                       bool AbortOnFailure) {
   if (!isSymbolSearchingDisabled() && MemMgr) {
     void *ptr = MemMgr->getPointerToNamedFunction(Name, false);
     if (ptr)
@@ -231,7 +231,7 @@ void *MCJIT::getPointerToNamedFunction(const std::string &Name,
 
   if (AbortOnFailure) {
     report_fatal_error("Program used external function '"+Name+
-                      "' which could not be resolved!");
+                       "' which could not be resolved!");
   }
   return 0;
 }

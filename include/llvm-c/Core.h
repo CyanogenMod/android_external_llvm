@@ -21,9 +21,9 @@
 
 /* Need these includes to support the LLVM 'cast' template for the C++ 'wrap' 
    and 'unwrap' conversion functions. */
+#include "llvm/IRBuilder.h"
 #include "llvm/Module.h"
 #include "llvm/PassRegistry.h"
-#include "llvm/Support/IRBuilder.h"
 
 extern "C" {
 #endif
@@ -476,6 +476,15 @@ void LLVMSetTarget(LLVMModuleRef M, const char *Triple);
  * @see Module::dump()
  */
 void LLVMDumpModule(LLVMModuleRef M);
+
+/**
+ * Print a representation of a module to a file. The ErrorMessage needs to be
+ * disposed with LLVMDisposeMessage. Returns 0 on success, 1 otherwise.
+ *
+ * @see Module::print()
+ */
+LLVMBool LLVMPrintModuleToFile(LLVMModuleRef M, const char *Filename,
+                               char **ErrorMessage);
 
 /**
  * Set inline assembly for a module.
@@ -2106,7 +2115,7 @@ LLVMBasicBlockRef LLVMGetInstructionParent(LLVMValueRef Inst);
 LLVMValueRef LLVMGetNextInstruction(LLVMValueRef Inst);
 
 /**
- * Obtain the instruction that occured before this one.
+ * Obtain the instruction that occurred before this one.
  *
  * If the instruction is the first instruction in a basic block, NULL
  * will be returned.

@@ -409,7 +409,7 @@ void LTOModule::addAsmGlobalSymbol(const char *name,
     // much.
 
     // fill information structure
-    info.name = name;
+    info.name = entry.getKey().data();
     info.attributes =
       LTO_SYMBOL_PERMISSIONS_DATA | LTO_SYMBOL_DEFINITION_REGULAR | scope;
     info.isFunction = false;
@@ -599,7 +599,7 @@ namespace {
         markGlobal(*Symbol);
     }
     virtual void EmitZerofill(const MCSection *Section, MCSymbol *Symbol,
-                              unsigned Size , unsigned ByteAlignment) {
+                              uint64_t Size , unsigned ByteAlignment) {
       markDefined(*Symbol);
     }
     virtual void EmitCommonSymbol(MCSymbol *Symbol, uint64_t Size,

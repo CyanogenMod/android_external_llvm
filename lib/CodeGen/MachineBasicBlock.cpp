@@ -271,11 +271,9 @@ void MachineBasicBlock::print(raw_ostream &OS, SlotIndexes *Indexes) const {
   }
   if (isLandingPad()) { OS << Comma << "EH LANDING PAD"; Comma = ", "; }
   if (hasAddressTaken()) { OS << Comma << "ADDRESS TAKEN"; Comma = ", "; }
-  if (Alignment) {
+  if (Alignment)
     OS << Comma << "Align " << Alignment << " (" << (1u << Alignment)
        << " bytes)";
-    Comma = ", ";
-  }
 
   OS << '\n';
 
@@ -596,6 +594,11 @@ bool MachineBasicBlock::canFallThrough() {
 
 MachineBasicBlock *
 MachineBasicBlock::SplitCriticalEdge(MachineBasicBlock *Succ, Pass *P) {
+  // Splitting the critical edge to a landing pad block is non-trivial. Don't do
+  // it in this generic function.
+  if (Succ->isLandingPad())
+    return NULL;
+
   MachineFunction *MF = getParent();
   DebugLoc dl;  // FIXME: this is nowhere
 
@@ -670,7 +673,7 @@ MachineBasicBlock::SplitCriticalEdge(MachineBasicBlock *Succ, Pass *P) {
 
   // Inherit live-ins from the successor
   for (MachineBasicBlock::livein_iterator I = Succ->livein_begin(),
-	 E = Succ->livein_end(); I != E; ++I)
+         E = Succ->livein_end(); I != E; ++I)
     NMBB->addLiveIn(*I);
 
   // Update LiveVariables.

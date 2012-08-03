@@ -16,6 +16,7 @@
 #if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
 #   include "DwarfDebug.h"
 #   include "DwarfException.h"
+#   include "llvm/DebugInfo.h"
 #endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
 #include "llvm/Module.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
@@ -26,7 +27,6 @@
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/Analysis/ConstantFolding.h"
-#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
@@ -484,10 +484,8 @@ void AsmPrinter::EmitFunctionHeader() {
 void AsmPrinter::EmitFunctionEntryLabel() {
   // The function label could have already been emitted if two symbols end up
   // conflicting due to asm renaming.  Detect this and emit an error.
-  if (CurrentFnSym->isUndefined()) {
-    OutStreamer.ForceCodeRegion();
+  if (CurrentFnSym->isUndefined())
     return OutStreamer.EmitLabel(CurrentFnSym);
-  }
 
   report_fatal_error("'" + Twine(CurrentFnSym->getName()) +
                      "' label emitted multiple times to assembly file");
@@ -624,7 +622,7 @@ bool AsmPrinter::needsSEHMoves() {
 }
 
 bool AsmPrinter::needsRelocationsForDwarfStringPool() const {
-  return MAI->doesDwarfUseRelocationsForStringPool();
+  return MAI->doesDwarfUseRelocationsAcrossSections();
 }
 
 void AsmPrinter::emitPrologLabel(const MachineInstr &MI) {
@@ -813,8 +811,8 @@ void AsmPrinter::EmitDwarfRegOp(const MachineLocation &MLoc) const {
   const TargetRegisterInfo *TRI = TM.getRegisterInfo();
   int Reg = TRI->getDwarfRegNum(MLoc.getReg(), false);
 
-  for (const uint16_t *SR = TRI->getSuperRegisters(MLoc.getReg());
-       *SR && Reg < 0; ++SR) {
+  for (MCSuperRegIterator SR(MLoc.getReg(), TRI); SR.isValid() && Reg < 0;
+       ++SR) {
     Reg = TRI->getDwarfRegNum(*SR, false);
     // FIXME: Get the bit range this register uses of the superregister
     // so that we can produce a DW_OP_bit_piece
@@ -1101,15 +1099,6 @@ void AsmPrinter::EmitJumpTableInfo() {
   }
 
   EmitAlignment(Log2_32(MJTI->getEntryAlignment(*TM.getTargetData())));
-
-  // If we know the form of the jump table, go ahead and tag it as such.
-  if (!JTInDiffSection) {
-    if (MJTI->getEntryKind() == MachineJumpTableInfo::EK_LabelDifference32) {
-      OutStreamer.EmitJumpTable32Region();
-    } else {
-      OutStreamer.EmitDataRegion();
-    }
-  }
 
   for (unsigned JTI = 0, e = JT.size(); JTI != e; ++JTI) {
     const std::vector<MachineBasicBlock*> &JTBBs = JT[JTI].MBBs;
@@ -1416,13 +1405,14 @@ void AsmPrinter::EmitLabelPlusOffset(const MCSymbol *Label, uint64_t Offset,
                                       unsigned Size)
   const {
 
-  // Emit Label+Offset
-  const MCExpr *Plus =
-    MCBinaryExpr::CreateAdd(MCSymbolRefExpr::Create(Label, OutContext),
-                            MCConstantExpr::Create(Offset, OutContext),
-                            OutContext);
+  // Emit Label+Offset (or just Label if Offset is zero)
+  const MCExpr *Expr = MCSymbolRefExpr::Create(Label, OutContext);
+  if (Offset)
+    Expr = MCBinaryExpr::CreateAdd(Expr,
+                                   MCConstantExpr::Create(Offset, OutContext),
+                                   OutContext);
 
-  OutStreamer.EmitValue(Plus, 4, 0/*AddrSpace*/);
+  OutStreamer.EmitValue(Expr, Size, 0/*AddrSpace*/);
 }
 
 
