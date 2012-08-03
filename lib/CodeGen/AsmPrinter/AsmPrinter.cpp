@@ -16,8 +16,8 @@
 #if !defined(ANDROID_TARGET_BUILD) || defined(ANDROID_ENGINEERING_BUILD)
 #   include "DwarfDebug.h"
 #   include "DwarfException.h"
-#   include "llvm/DebugInfo.h"
 #endif // !ANDROID_TARGET_BUILD || ANDROID_ENGINEERING_BUILD
+#include "llvm/DebugInfo.h"
 #include "llvm/Module.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
 #include "llvm/CodeGen/MachineConstantPool.h"

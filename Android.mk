@@ -65,7 +65,6 @@ subdirs += \
 #subdirs += tools/llc
 subdirs += tools/llvm-as
 subdirs += tools/llvm-dis
-subdirs += tools/llvm-ld
 subdirs += tools/llvm-link
 #subdirs += tools/opt
 

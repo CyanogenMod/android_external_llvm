@@ -2,6 +2,7 @@ LOCAL_PATH:= $(call my-dir)
 
 instrumentation_SRC_FILES := \
   AddressSanitizer.cpp \
+  BoundsChecking.cpp \
   EdgeProfiling.cpp \
   FunctionBlackList.cpp \
   GCOVProfiling.cpp \

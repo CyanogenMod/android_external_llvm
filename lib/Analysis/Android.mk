@@ -14,9 +14,7 @@ analysis_SRC_FILES := \
   CaptureTracking.cpp \
   CodeMetrics.cpp \
   ConstantFolding.cpp \
-  DIBuilder.cpp \
   DbgInfoPrinter.cpp \
-  DebugInfo.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
   IVUsers.cpp \

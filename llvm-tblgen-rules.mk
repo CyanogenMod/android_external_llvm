@@ -59,6 +59,20 @@ $(intermediates)/%GenSubtargetInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
 	$(call transform-td-to-out,subtarget)
 endif
 
+ifeq ($(tblgen_source_dir),$(LLVM_ROOT_PATH)/lib/Target/Mips/MCTargetDesc)
+$(intermediates)/%GenRegisterInfo.inc: TBLGEN_LOCAL_MODULE := $(LOCAL_MODULE)
+$(intermediates)/%GenRegisterInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out, register-info)
+
+$(intermediates)/%GenInstrInfo.inc: TBLGEN_LOCAL_MODULE := $(LOCAL_MODULE)
+$(intermediates)/%GenInstrInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out,instr-info)
+
+$(intermediates)/%GenSubtargetInfo.inc: TBLGEN_LOCAL_MODULE := $(LOCAL_MODULE)
+$(intermediates)/%GenSubtargetInfo.inc: $(tblgen_source_dir)/../%.td $(TBLGEN)
+	$(call transform-td-to-out,subtarget)
+endif
+
 
 ifneq ($(filter %GenRegisterInfo.inc,$(tblgen_gen_tables)),)
 $(intermediates)/%GenRegisterInfo.inc: TBLGEN_LOCAL_MODULE := $(LOCAL_MODULE)

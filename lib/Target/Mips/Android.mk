@@ -15,13 +15,12 @@ mips_codegen_SRC_FILES := \
   MipsAsmPrinter.cpp \
   MipsCodeEmitter.cpp \
   MipsDelaySlotFiller.cpp \
-  MipsEmitGPRestore.cpp \
-  MipsExpandPseudo.cpp \
-  MipsJITInfo.cpp \
+  MipsFrameLowering.cpp \
   MipsInstrInfo.cpp \
   MipsISelDAGToDAG.cpp \
   MipsISelLowering.cpp \
-  MipsFrameLowering.cpp \
+  MipsJITInfo.cpp \
+  MipsLongBranch.cpp \
   MipsMachineFunction.cpp \
   MipsMCInstLower.cpp \
   MipsRegisterInfo.cpp \
