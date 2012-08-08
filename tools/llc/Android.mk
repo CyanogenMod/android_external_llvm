@@ -11,6 +11,7 @@ llvm_llc_SRC_FILES := \
   llc.cpp
 
 llvm_llc_mips_STATIC_LIBRARIES := \
+  libLLVMMipsAsmParser \
   libLLVMMipsInfo \
   libLLVMMipsCodeGen \
   libLLVMMipsDesc \
