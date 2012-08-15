@@ -12,7 +12,7 @@ mips_disassembler_SRC_FILES := \
 
 # For the device
 # =====================================================
-ifeq ($(TARGET_ARCH),arm)
+ifeq ($(TARGET_ARCH),mips)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
@@ -47,4 +47,3 @@ TBLGEN_TD_DIR := $(LOCAL_PATH)/..
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
-
