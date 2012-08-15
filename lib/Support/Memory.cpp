@@ -70,6 +70,10 @@ void llvm::sys::Memory::InvalidateInstructionCache(const void *Addr,
   const char *Start = static_cast<const char *>(Addr);
   const char *End = Start + Len;
   __clear_cache(const_cast<char *>(Start), const_cast<char *>(End));
+#  elif defined(__mips__) && defined(ANDROID)
+  // NOTE: The declaration of "cacheflush" in bionic:
+  // extern int cacheflush(long start, long end, long flags);
+  cacheflush((long)Addr, (long)(Addr+Len), BCACHE);
 #  elif defined(__mips__)
   const char *Start = static_cast<const char *>(Addr);
   cacheflush(const_cast<char *>(Start), Len, BCACHE);
