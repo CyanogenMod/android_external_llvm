@@ -34,6 +34,11 @@ TBLGEN_TD_DIR := $(arm_asm_parser_TBLGEN_TD_DIR)
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
+ifeq (darwin,$(BUILD_OS))
+# Override the default optimization level to work around taking forever (~50m)
+# to compile ARMAsmParser.cpp on Mac with gcc 4.2.
+LOCAL_CFLAGS += -O0
+endif
 include $(BUILD_HOST_STATIC_LIBRARY)
 
 
