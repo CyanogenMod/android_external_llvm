@@ -15,6 +15,7 @@ mips_codegen_SRC_FILES := \
   MipsAsmPrinter.cpp \
   MipsCodeEmitter.cpp \
   MipsDelaySlotFiller.cpp \
+  MipsELFWriterInfo.cpp \
   MipsFrameLowering.cpp \
   MipsInstrInfo.cpp \
   MipsISelDAGToDAG.cpp \
@@ -25,9 +26,15 @@ mips_codegen_SRC_FILES := \
   MipsMCInstLower.cpp \
   MipsRegisterInfo.cpp \
   MipsSubtarget.cpp \
+  MipsSEFrameLowering.cpp \
+  MipsSEInstrInfo.cpp \
+  MipsSERegisterInfo.cpp \
   MipsTargetMachine.cpp \
   MipsTargetObjectFile.cpp \
-  MipsSelectionDAGInfo.cpp
+  MipsSelectionDAGInfo.cpp \
+  Mips16FrameLowering.cpp \
+  Mips16InstrInfo.cpp \
+  Mips16RegisterInfo.cpp
 
 # For the host
 # =====================================================
