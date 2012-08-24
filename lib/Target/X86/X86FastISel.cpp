@@ -57,7 +57,9 @@ class X86FastISel : public FastISel {
   bool X86ScalarSSEf32;
 
 public:
-  explicit X86FastISel(FunctionLoweringInfo &funcInfo) : FastISel(funcInfo) {
+  explicit X86FastISel(FunctionLoweringInfo &funcInfo,
+                       const TargetLibraryInfo *libInfo)
+    : FastISel(funcInfo, libInfo) {
     Subtarget = &TM.getSubtarget<X86Subtarget>();
     StackPtr = Subtarget->is64Bit() ? X86::RSP : X86::ESP;
     X86ScalarSSEf64 = Subtarget->hasSSE2();
@@ -155,9 +157,9 @@ bool X86FastISel::isTypeLegal(Type *Ty, MVT &VT, bool AllowI1) {
   // For now, require SSE/SSE2 for performing floating-point operations,
   // since x87 requires additional work.
   if (VT == MVT::f64 && !X86ScalarSSEf64)
-     return false;
+    return false;
   if (VT == MVT::f32 && !X86ScalarSSEf32)
-     return false;
+    return false;
   // Similarly, no f80 support yet.
   if (VT == MVT::f80)
     return false;
@@ -1516,6 +1518,22 @@ bool X86FastISel::X86SelectCall(const Instruction *I) {
   return DoSelectCall(I, 0);
 }
 
+static unsigned computeBytesPoppedByCallee(const X86Subtarget &Subtarget,
+                                           const ImmutableCallSite &CS) {
+  if (Subtarget.is64Bit())
+    return 0;
+  if (Subtarget.isTargetWindows())
+    return 0;
+  CallingConv::ID CC = CS.getCallingConv();
+  if (CC == CallingConv::Fast || CC == CallingConv::GHC)
+    return 0;
+  if (!CS.paramHasAttr(1, Attribute::StructRet))
+    return 0;
+  if (CS.paramHasAttr(1, Attribute::InReg))
+    return 0;
+  return 4;
+}
+
 // Select either a call, or an llvm.memcpy/memmove/memset intrinsic
 bool X86FastISel::DoSelectCall(const Instruction *I, const char *MemIntName) {
   const CallInst *CI = cast<CallInst>(I);
@@ -1862,12 +1880,7 @@ bool X86FastISel::DoSelectCall(const Instruction *I, const char *MemIntName) {
 
   // Issue CALLSEQ_END
   unsigned AdjStackUp = TII.getCallFrameDestroyOpcode();
-  unsigned NumBytesCallee = 0;
-  if (!Subtarget->is64Bit() && !Subtarget->isTargetWindows() &&
-      !(CS.getCallingConv() == CallingConv::Fast ||
-        CS.getCallingConv() == CallingConv::GHC) &&
-      CS.paramHasAttr(1, Attribute::StructRet))
-    NumBytesCallee = 4;
+  const unsigned NumBytesCallee = computeBytesPoppedByCallee(*Subtarget, CS);
   BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DL, TII.get(AdjStackUp))
     .addImm(NumBytes).addImm(NumBytesCallee);
 
@@ -2129,28 +2142,28 @@ unsigned X86FastISel::TargetMaterializeFloatZero(const ConstantFP *CF) {
   unsigned Opc = 0;
   const TargetRegisterClass *RC = NULL;
   switch (VT.SimpleTy) {
-    default: return false;
-    case MVT::f32:
-      if (X86ScalarSSEf32) {
-        Opc = X86::FsFLD0SS;
-        RC  = &X86::FR32RegClass;
-      } else {
-        Opc = X86::LD_Fp032;
-        RC  = &X86::RFP32RegClass;
-      }
-      break;
-    case MVT::f64:
-      if (X86ScalarSSEf64) {
-        Opc = X86::FsFLD0SD;
-        RC  = &X86::FR64RegClass;
-      } else {
-        Opc = X86::LD_Fp064;
-        RC  = &X86::RFP64RegClass;
-      }
-      break;
-    case MVT::f80:
-      // No f80 support yet.
-      return false;
+  default: return false;
+  case MVT::f32:
+    if (X86ScalarSSEf32) {
+      Opc = X86::FsFLD0SS;
+      RC  = &X86::FR32RegClass;
+    } else {
+      Opc = X86::LD_Fp032;
+      RC  = &X86::RFP32RegClass;
+    }
+    break;
+  case MVT::f64:
+    if (X86ScalarSSEf64) {
+      Opc = X86::FsFLD0SD;
+      RC  = &X86::FR64RegClass;
+    } else {
+      Opc = X86::LD_Fp064;
+      RC  = &X86::RFP64RegClass;
+    }
+    break;
+  case MVT::f80:
+    // No f80 support yet.
+    return false;
   }
 
   unsigned ResultReg = createResultReg(RC);
@@ -2169,7 +2182,7 @@ bool X86FastISel::TryToFoldLoad(MachineInstr *MI, unsigned OpNo,
   if (!X86SelectAddress(LI->getOperand(0), AM))
     return false;
 
-  X86InstrInfo &XII = (X86InstrInfo&)TII;
+  const X86InstrInfo &XII = (const X86InstrInfo&)TII;
 
   unsigned Size = TD.getTypeAllocSize(LI->getType());
   unsigned Alignment = LI->getAlignment();
@@ -2188,7 +2201,8 @@ bool X86FastISel::TryToFoldLoad(MachineInstr *MI, unsigned OpNo,
 
 
 namespace llvm {
-  FastISel *X86::createFastISel(FunctionLoweringInfo &funcInfo) {
-    return new X86FastISel(funcInfo);
+  FastISel *X86::createFastISel(FunctionLoweringInfo &funcInfo,
+                                const TargetLibraryInfo *libInfo) {
+    return new X86FastISel(funcInfo, libInfo);
   }
 }

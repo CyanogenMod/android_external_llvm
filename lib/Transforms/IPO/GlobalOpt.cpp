@@ -352,7 +352,8 @@ static bool IsSafeComputationToRemove(Value *V) {
       return true;
     if (!V->hasOneUse())
       return false;
-    if (isa<LoadInst>(V) || isa<Argument>(V) || isa<GlobalValue>(V))
+    if (isa<LoadInst>(V) || isa<InvokeInst>(V) || isa<Argument>(V) ||
+        isa<GlobalValue>(V))
       return false;
     if (isAllocationFn(V))
       return true;
@@ -442,12 +443,14 @@ static bool CleanupPointerRootUsers(GlobalVariable *GV) {
       Dead[i].second->eraseFromParent();
       Instruction *I = Dead[i].first;
       do {
+	if (isAllocationFn(I))
+	  break;
         Instruction *J = dyn_cast<Instruction>(I->getOperand(0));
         if (!J)
           break;
         I->eraseFromParent();
         I = J;
-      } while (!isAllocationFn(I));
+      } while (1);
       I->eraseFromParent();
     }
   }
