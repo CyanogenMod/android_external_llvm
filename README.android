@@ -19,8 +19,9 @@
 * For Ice Cream Sandwich MR1: Synced to upstream r142530
 * For Ice Cream Sandwich MR2: Synced to upstream r146714
 * For Jellybean: Synced to upstream r155090
-* For Jellybean MR1: Synced to upstream r160668
+* For Jellybean MR1: Synced to upstream r162314
 
+* Recent downstreaming on 2012/8/23: Synced to r162314 (Contact srhines for merge questions.)
 * Recent downstreaming on 2012/8/3: Synced to r160668 (Contact sliao for merge questions.)
 * Cherry-pick on 2012/05/23: https://llvm.org/svn/llvm-project/llvm/trunk@157317 (Contact srhines for merge questions.)
 * Recent downstreaming on 2012/4/24: Synced to r155090 (Contact sliao for merge questions.)

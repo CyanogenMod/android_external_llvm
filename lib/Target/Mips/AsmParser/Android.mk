@@ -10,6 +10,7 @@ mips_asm_parser_SRC_FILES := \
 mips_asm_parser_C_INCLUDES := $(LOCAL_PATH)/..
 
 mips_asm_parser_TBLGEN_TABLES := \
+  MipsGenAsmMatcher.inc \
   MipsGenInstrInfo.inc \
   MipsGenRegisterInfo.inc \
   MipsGenSubtargetInfo.inc

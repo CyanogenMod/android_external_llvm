@@ -61,6 +61,7 @@ codegen_SRC_FILES := \
   MachineSSAUpdater.cpp \
   MachineScheduler.cpp \
   MachineSink.cpp \
+  MachineTraceMetrics.cpp \
   MachineVerifier.cpp \
   OcamlGC.cpp \
   OptimizePHIs.cpp \
