@@ -1097,10 +1097,9 @@ SDValue SelectionDAG::getGlobalAddress(const GlobalValue *GV, DebugLoc DL,
          "Cannot set target flags on target-independent globals");
 
   // Truncate (with sign-extension) the offset value to the pointer size.
-  EVT PTy = TLI.getPointerTy();
-  unsigned BitWidth = PTy.getSizeInBits();
+  unsigned BitWidth = TLI.getPointerTy().getSizeInBits();
   if (BitWidth < 64)
-    Offset = (Offset << (64 - BitWidth) >> (64 - BitWidth));
+    Offset = SignExtend64(Offset, BitWidth);
 
   const GlobalVariable *GVar = dyn_cast<GlobalVariable>(GV);
   if (!GVar) {
@@ -2817,6 +2816,24 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
         if (ConstantFPSDNode *CFP = dyn_cast<ConstantFPSDNode>(N2))
           if (CFP->getValueAPF().isZero())
             return N1;
+      } else if (Opcode == ISD::FMUL) {
+        ConstantFPSDNode *CFP = dyn_cast<ConstantFPSDNode>(N1);
+        SDValue V = N2;
+
+        // If the first operand isn't the constant, try the second
+        if (!CFP) {
+          CFP = dyn_cast<ConstantFPSDNode>(N2);
+          V = N1;
+        }
+
+        if (CFP) {
+          // 0*x --> 0
+          if (CFP->isZero())
+            return SDValue(CFP,0);
+          // 1*x --> x
+          if (CFP->isExactlyValue(1.0))
+            return V;
+        }
       }
     }
     assert(VT.isFloatingPoint() && "This operator only applies to FP types!");
@@ -2935,17 +2952,13 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
     // expanding large vector constants.
     if (N2C && N1.getOpcode() == ISD::BUILD_VECTOR) {
       SDValue Elt = N1.getOperand(N2C->getZExtValue());
-      EVT VEltTy = N1.getValueType().getVectorElementType();
-      if (Elt.getValueType() != VEltTy) {
+
+      if (VT != Elt.getValueType())
         // If the vector element type is not legal, the BUILD_VECTOR operands
-        // are promoted and implicitly truncated.  Make that explicit here.
-        Elt = getNode(ISD::TRUNCATE, DL, VEltTy, Elt);
-      }
-      if (VT != VEltTy) {
-        // If the vector element type is not legal, the EXTRACT_VECTOR_ELT
-        // result is implicitly extended.
-        Elt = getNode(ISD::ANY_EXTEND, DL, VT, Elt);
-      }
+        // are promoted and implicitly truncated, and the result implicitly
+        // extended. Make that explicit here.
+        Elt = getAnyExtOrTrunc(Elt, DL, VT);
+
       return Elt;
     }
 
@@ -3923,17 +3936,21 @@ SDValue SelectionDAG::getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT,
                                 SDValue Swp, MachinePointerInfo PtrInfo,
                                 unsigned Alignment,
                                 AtomicOrdering Ordering,
-                                SynchronizationScope SynchScope) {                                
+                                SynchronizationScope SynchScope) {
   if (Alignment == 0)  // Ensure that codegen never sees alignment 0
     Alignment = getEVTAlignment(MemVT);
 
   MachineFunction &MF = getMachineFunction();
-  unsigned Flags = MachineMemOperand::MOLoad | MachineMemOperand::MOStore;
 
+  // All atomics are load and store, except for ATMOIC_LOAD and ATOMIC_STORE.
   // For now, atomics are considered to be volatile always.
   // FIXME: Volatile isn't really correct; we should keep track of atomic
   // orderings in the memoperand.
-  Flags |= MachineMemOperand::MOVolatile;
+  unsigned Flags = MachineMemOperand::MOVolatile;
+  if (Opcode != ISD::ATOMIC_STORE)
+    Flags |= MachineMemOperand::MOLoad;
+  if (Opcode != ISD::ATOMIC_LOAD)
+    Flags |= MachineMemOperand::MOStore;
 
   MachineMemOperand *MMO =
     MF.getMachineMemOperand(PtrInfo, Flags, MemVT.getStoreSize(), Alignment);
@@ -3983,17 +4000,17 @@ SDValue SelectionDAG::getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT,
     Alignment = getEVTAlignment(MemVT);
 
   MachineFunction &MF = getMachineFunction();
-  // A monotonic store does not load; a release store "loads" in the sense
-  // that other stores cannot be sunk past it.
+  // An atomic store does not load. An atomic load does not store.
   // (An atomicrmw obviously both loads and stores.)
-  unsigned Flags = MachineMemOperand::MOStore;
-  if (Opcode != ISD::ATOMIC_STORE || Ordering > Monotonic)
-    Flags |= MachineMemOperand::MOLoad;
-
-  // For now, atomics are considered to be volatile always.
+  // For now, atomics are considered to be volatile always, and they are
+  // chained as such.
   // FIXME: Volatile isn't really correct; we should keep track of atomic
   // orderings in the memoperand.
-  Flags |= MachineMemOperand::MOVolatile;
+  unsigned Flags = MachineMemOperand::MOVolatile;
+  if (Opcode != ISD::ATOMIC_STORE)
+    Flags |= MachineMemOperand::MOLoad;
+  if (Opcode != ISD::ATOMIC_LOAD)
+    Flags |= MachineMemOperand::MOStore;
 
   MachineMemOperand *MMO =
     MF.getMachineMemOperand(MachinePointerInfo(PtrVal), Flags,
@@ -4056,16 +4073,17 @@ SDValue SelectionDAG::getAtomic(unsigned Opcode, DebugLoc dl, EVT MemVT,
     Alignment = getEVTAlignment(MemVT);
 
   MachineFunction &MF = getMachineFunction();
-  // A monotonic load does not store; an acquire load "stores" in the sense
-  // that other loads cannot be hoisted past it.
-  unsigned Flags = MachineMemOperand::MOLoad;
-  if (Ordering > Monotonic)
-    Flags |= MachineMemOperand::MOStore;
-
-  // For now, atomics are considered to be volatile always.
+  // An atomic store does not load. An atomic load does not store.
+  // (An atomicrmw obviously both loads and stores.)
+  // For now, atomics are considered to be volatile always, and they are
+  // chained as such.
   // FIXME: Volatile isn't really correct; we should keep track of atomic
   // orderings in the memoperand.
-  Flags |= MachineMemOperand::MOVolatile;
+  unsigned Flags = MachineMemOperand::MOVolatile;
+  if (Opcode != ISD::ATOMIC_STORE)
+    Flags |= MachineMemOperand::MOLoad;
+  if (Opcode != ISD::ATOMIC_LOAD)
+    Flags |= MachineMemOperand::MOStore;
 
   MachineMemOperand *MMO =
     MF.getMachineMemOperand(MachinePointerInfo(PtrVal), Flags,
@@ -4157,6 +4175,8 @@ SelectionDAG::getMemIntrinsicNode(unsigned Opcode, DebugLoc dl, SDVTList VTList,
   assert((Opcode == ISD::INTRINSIC_VOID ||
           Opcode == ISD::INTRINSIC_W_CHAIN ||
           Opcode == ISD::PREFETCH ||
+          Opcode == ISD::LIFETIME_START ||
+          Opcode == ISD::LIFETIME_END ||
           (Opcode <= INT_MAX &&
            (int)Opcode >= ISD::FIRST_TARGET_MEMORY_OPCODE)) &&
          "Opcode is not a memory-accessing opcode!");
@@ -4226,7 +4246,7 @@ SelectionDAG::getLoad(ISD::MemIndexedMode AM, ISD::LoadExtType ExtType,
                       bool isVolatile, bool isNonTemporal, bool isInvariant,
                       unsigned Alignment, const MDNode *TBAAInfo,
                       const MDNode *Ranges) {
-  assert(Chain.getValueType() == MVT::Other && 
+  assert(Chain.getValueType() == MVT::Other &&
         "Invalid chain type");
   if (Alignment == 0)  // Ensure that codegen never sees alignment 0
     Alignment = getEVTAlignment(VT);
@@ -4284,7 +4304,7 @@ SelectionDAG::getLoad(ISD::MemIndexedMode AM, ISD::LoadExtType ExtType,
   AddNodeIDNode(ID, ISD::LOAD, VTs, Ops, 3);
   ID.AddInteger(MemVT.getRawBits());
   ID.AddInteger(encodeMemSDNodeFlags(ExtType, AM, MMO->isVolatile(),
-                                     MMO->isNonTemporal(), 
+                                     MMO->isNonTemporal(),
                                      MMO->isInvariant()));
   ID.AddInteger(MMO->getPointerInfo().getAddrSpace());
   void *IP = 0;
@@ -4303,7 +4323,7 @@ SDValue SelectionDAG::getLoad(EVT VT, DebugLoc dl,
                               SDValue Chain, SDValue Ptr,
                               MachinePointerInfo PtrInfo,
                               bool isVolatile, bool isNonTemporal,
-                              bool isInvariant, unsigned Alignment, 
+                              bool isInvariant, unsigned Alignment,
                               const MDNode *TBAAInfo,
                               const MDNode *Ranges) {
   SDValue Undef = getUNDEF(Ptr.getValueType());
@@ -4332,7 +4352,7 @@ SelectionDAG::getIndexedLoad(SDValue OrigLoad, DebugLoc dl, SDValue Base,
          "Load is already a indexed load!");
   return getLoad(AM, LD->getExtensionType(), OrigLoad.getValueType(), dl,
                  LD->getChain(), Base, Offset, LD->getPointerInfo(),
-                 LD->getMemoryVT(), LD->isVolatile(), LD->isNonTemporal(), 
+                 LD->getMemoryVT(), LD->isVolatile(), LD->isNonTemporal(),
                  false, LD->getAlignment());
 }
 
@@ -4340,7 +4360,7 @@ SDValue SelectionDAG::getStore(SDValue Chain, DebugLoc dl, SDValue Val,
                                SDValue Ptr, MachinePointerInfo PtrInfo,
                                bool isVolatile, bool isNonTemporal,
                                unsigned Alignment, const MDNode *TBAAInfo) {
-  assert(Chain.getValueType() == MVT::Other && 
+  assert(Chain.getValueType() == MVT::Other &&
         "Invalid chain type");
   if (Alignment == 0)  // Ensure that codegen never sees alignment 0
     Alignment = getEVTAlignment(Val.getValueType());
@@ -4365,7 +4385,7 @@ SDValue SelectionDAG::getStore(SDValue Chain, DebugLoc dl, SDValue Val,
 
 SDValue SelectionDAG::getStore(SDValue Chain, DebugLoc dl, SDValue Val,
                                SDValue Ptr, MachineMemOperand *MMO) {
-  assert(Chain.getValueType() == MVT::Other && 
+  assert(Chain.getValueType() == MVT::Other &&
         "Invalid chain type");
   EVT VT = Val.getValueType();
   SDVTList VTs = getVTList(MVT::Other);
@@ -4394,7 +4414,7 @@ SDValue SelectionDAG::getTruncStore(SDValue Chain, DebugLoc dl, SDValue Val,
                                     EVT SVT,bool isVolatile, bool isNonTemporal,
                                     unsigned Alignment,
                                     const MDNode *TBAAInfo) {
-  assert(Chain.getValueType() == MVT::Other && 
+  assert(Chain.getValueType() == MVT::Other &&
         "Invalid chain type");
   if (Alignment == 0)  // Ensure that codegen never sees alignment 0
     Alignment = getEVTAlignment(SVT);
@@ -4421,7 +4441,7 @@ SDValue SelectionDAG::getTruncStore(SDValue Chain, DebugLoc dl, SDValue Val,
                                     MachineMemOperand *MMO) {
   EVT VT = Val.getValueType();
 
-  assert(Chain.getValueType() == MVT::Other && 
+  assert(Chain.getValueType() == MVT::Other &&
         "Invalid chain type");
   if (VT == SVT)
     return getStore(Chain, dl, Val, Ptr, MMO);

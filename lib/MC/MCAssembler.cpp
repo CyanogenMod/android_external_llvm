@@ -331,6 +331,12 @@ uint64_t MCAssembler::computeFragmentSize(const MCAsmLayout &Layout,
     const MCAlignFragment &AF = cast<MCAlignFragment>(F);
     unsigned Offset = Layout.getFragmentOffset(&AF);
     unsigned Size = OffsetToAlignment(Offset, AF.getAlignment());
+    // If we are padding with nops, force the padding to be larger than the
+    // minimum nop size.
+    if (Size > 0 && AF.hasEmitNops()) {
+      while (Size % getBackend().getMinimumNopSize())
+        Size += AF.getAlignment();
+    }
     if (Size > AF.getMaxBytesToEmit())
       return 0;
     return Size;
@@ -830,6 +836,7 @@ raw_ostream &operator<<(raw_ostream &OS, const MCFixup &AF) {
 
 }
 
+#ifndef NDEBUG
 void MCFragment::dump() {
   raw_ostream &OS = llvm::errs();
 
@@ -970,6 +977,7 @@ void MCAssembler::dump() {
   }
   OS << "]>\n";
 }
+#endif
 
 // anchors for MC*Fragment vtables
 void MCDataFragment::anchor() { }
