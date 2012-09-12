@@ -34,9 +34,11 @@ TBLGEN_TD_DIR := $(arm_asm_parser_TBLGEN_TD_DIR)
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
-ifeq (darwin,$(BUILD_OS))
+ifneq (,$(filter windows darwin,$(HOST_OS)))
 # Override the default optimization level to work around taking forever (~50m)
-# to compile ARMAsmParser.cpp on Mac with gcc 4.2.
+# to compile ARMAsmParser.cpp on Mac with gcc 4.2,
+# or on Linux with mingw32msvc-gcc 4.2, which is used to cross-compile
+# the win_sdk.
 LOCAL_CFLAGS += -O0
 endif
 include $(BUILD_HOST_STATIC_LIBRARY)
