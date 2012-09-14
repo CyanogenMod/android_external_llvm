@@ -93,6 +93,7 @@ codegen_SRC_FILES := \
   SpillPlacement.cpp \
   Spiller.cpp \
   SplitKit.cpp \
+  StackColoring.cpp \
   StackProtector.cpp \
   StackSlotColoring.cpp \
   StrongPHIElimination.cpp \
