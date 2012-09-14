@@ -41,6 +41,8 @@ analysis_SRC_FILES := \
   PathProfileInfo.cpp \
   PathProfileVerifier.cpp \
   PostDominators.cpp \
+  ProfileDataLoader.cpp \
+  ProfileDataLoaderPass.cpp \
   ProfileEstimatorPass.cpp \
   ProfileInfo.cpp \
   ProfileInfoLoader.cpp \
