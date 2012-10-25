@@ -62,7 +62,7 @@ subdirs += \
   lib/Target/X86/Utils
 
 # LLVM Command Line Tools
-#subdirs += tools/llc
+subdirs += tools/llc
 subdirs += tools/llvm-as
 subdirs += tools/llvm-dis
 subdirs += tools/llvm-link
