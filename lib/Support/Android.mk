@@ -75,7 +75,19 @@ support_SRC_FILES := \
   regexec.c \
   regfree.c \
   regstrlcpy.c \
-  system_error.cpp
+  system_error.cpp \
+  Unix/Host.inc \
+  Unix/Memory.inc \
+  Unix/Mutex.inc \
+  Unix/Path.inc \
+  Unix/PathV2.inc \
+  Unix/Process.inc \
+  Unix/Program.inc \
+  Unix/RWMutex.inc \
+  Unix/Signals.inc \
+  Unix/system_error.inc \
+  Unix/ThreadLocal.inc \
+  Unix/TimeValue.inc
 
 # For the host
 # =====================================================
@@ -84,7 +96,20 @@ include $(CLEAR_VARS)
 # FIXME: This only requires RTTI because tblgen uses it.  Fix that.
 REQUIRES_RTTI := 1
 
-LOCAL_SRC_FILES := $(support_SRC_FILES)
+LOCAL_SRC_FILES := $(support_SRC_FILES) \
+                   Windows/DynamicLibrary.inc \
+                   Windows/Host.inc \
+                   Windows/Memory.inc \
+                   Windows/Mutex.inc \
+                   Windows/Path.inc \
+                   Windows/PathV2.inc \
+                   Windows/Process.inc \
+                   Windows/Program.inc \
+                   Windows/RWMutex.inc \
+                   Windows/Signals.inc \
+                   Windows/system_error.inc \
+                   Windows/ThreadLocal.inc \
+                   Windows/TimeValue.inc
 
 LOCAL_MODULE:= libLLVMSupport
 
