@@ -17,9 +17,10 @@
 #include "DwarfAccelTable.h"
 #include "DwarfCompileUnit.h"
 #include "llvm/Constants.h"
+#include "llvm/DebugInfo.h"
+#include "llvm/DIBuilder.h"
 #include "llvm/Module.h"
 #include "llvm/Instructions.h"
-#include "llvm/ADT/Triple.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/MC/MCAsmInfo.h"
@@ -32,11 +33,10 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/Analysis/DebugInfo.h"
-#include "llvm/Analysis/DIBuilder.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -54,9 +54,29 @@ static cl::opt<bool> UnknownLocations("use-unknown-locations", cl::Hidden,
      cl::desc("Make an absence of debug location information explicit."),
      cl::init(false));
 
-static cl::opt<bool> DwarfAccelTables("dwarf-accel-tables", cl::Hidden,
+namespace {
+  enum DefaultOnOff {
+    Default, Enable, Disable
+  };
+}
+
+static cl::opt<DefaultOnOff> DwarfAccelTables("dwarf-accel-tables", cl::Hidden,
      cl::desc("Output prototype dwarf accelerator tables."),
-     cl::init(false));
+     cl::values(
+                clEnumVal(Default, "Default for platform"),
+                clEnumVal(Enable, "Enabled"),
+                clEnumVal(Disable, "Disabled"),
+                clEnumValEnd),
+     cl::init(Default));
+
+static cl::opt<DefaultOnOff> DarwinGDBCompat("darwin-gdb-compat", cl::Hidden,
+     cl::desc("Compatibility with Darwin gdb."),
+     cl::values(
+                clEnumVal(Default, "Default for platform"),
+                clEnumVal(Enable, "Enabled"),
+                clEnumVal(Disable, "Disabled"),
+                clEnumValEnd),
+     cl::init(Default));
 
 namespace {
   const char *DWARFGroupName = "DWARF Emission";
@@ -117,7 +137,6 @@ DIType DbgVariable::getType() const {
       if (getName() == DT.getName())
         return (DT.getTypeDerivedFrom());
     }
-    return Ty;
   }
   return Ty;
 }
@@ -127,6 +146,7 @@ DIType DbgVariable::getType() const {
 DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
   : Asm(A), MMI(Asm->MMI), FirstCU(0),
     AbbreviationsSet(InitAbbreviationsSetSize),
+    SourceIdMap(DIEValueAllocator), StringPool(DIEValueAllocator),
     PrevLabel(NULL) {
   NextStringPoolNumber = 0;
 
@@ -135,10 +155,25 @@ DwarfDebug::DwarfDebug(AsmPrinter *A, Module *M)
   DwarfDebugRangeSectionSym = DwarfDebugLocSectionSym = 0;
   FunctionBeginSym = FunctionEndSym = 0;
 
-  // Turn on accelerator tables for Darwin.
-  if (Triple(M->getTargetTriple()).isOSDarwin())
-    DwarfAccelTables = true;
-  
+  // Turn on accelerator tables and older gdb compatibility
+  // for Darwin.
+  bool isDarwin = Triple(M->getTargetTriple()).isOSDarwin();
+  if (DarwinGDBCompat == Default) {
+    if (isDarwin)
+      isDarwinGDBCompat = true;
+    else
+      isDarwinGDBCompat = false;
+  } else
+    isDarwinGDBCompat = DarwinGDBCompat == Enable ? true : false;
+
+  if (DwarfAccelTables == Default) {
+    if (isDarwin)
+      hasDwarfAccelTables = true;
+    else
+      hasDwarfAccelTables = false;
+  } else
+    hasDwarfAccelTables = DwarfAccelTables == Enable ? true : false;
+
   {
     NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
     beginModule(M);
@@ -282,7 +317,7 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
     if (SP.isDefinition() && !SP.getContext().isCompileUnit() &&
         !SP.getContext().isFile() &&
         !isSubprogramContext(SP.getContext())) {
-      SPCU->addUInt(SPDie, dwarf::DW_AT_declaration, dwarf::DW_FORM_flag, 1);
+      SPCU->addFlag(SPDie, dwarf::DW_AT_declaration);
       
       // Add arguments.
       DICompositeType SPTy = SP.getType();
@@ -294,7 +329,7 @@ DIE *DwarfDebug::updateSubprogramScopeDIE(CompileUnit *SPCU,
           DIType ATy = DIType(DIType(Args.getElement(i)));
           SPCU->addType(Arg, ATy);
           if (ATy.isArtificial())
-            SPCU->addUInt(Arg, dwarf::DW_AT_artificial, dwarf::DW_FORM_flag, 1);
+            SPCU->addFlag(Arg, dwarf::DW_AT_artificial);
           SPDie->addChild(Arg);
         }
       DIE *SPDeclDie = SPDie;
@@ -566,7 +601,7 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   NewCU->addUInt(Die, dwarf::DW_AT_low_pc, dwarf::DW_FORM_addr, 0);
   // DW_AT_stmt_list is a offset of line number information for this
   // compile unit in debug_line section.
-  if (Asm->MAI->doesDwarfRequireRelocationForSectionOffset())
+  if (Asm->MAI->doesDwarfUseRelocationsAcrossSections())
     NewCU->addLabel(Die, dwarf::DW_AT_stmt_list, dwarf::DW_FORM_data4,
                     Asm->GetTempSymbol("section_line"));
   else
@@ -575,7 +610,7 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   if (!CompilationDir.empty())
     NewCU->addString(Die, dwarf::DW_AT_comp_dir, CompilationDir);
   if (DIUnit.isOptimized())
-    NewCU->addUInt(Die, dwarf::DW_AT_APPLE_optimized, dwarf::DW_FORM_flag, 1);
+    NewCU->addFlag(Die, dwarf::DW_AT_APPLE_optimized);
 
   StringRef Flags = DIUnit.getFlags();
   if (!Flags.empty())
@@ -816,8 +851,8 @@ void DwarfDebug::endModule() {
   // Corresponding abbreviations into a abbrev section.
   emitAbbreviations();
 
-  // Emit info into a dwarf accelerator table sections.
-  if (DwarfAccelTables) {
+  // Emit info into the dwarf accelerator table sections.
+  if (useDwarfAccelTables()) {
     emitAccelNames();
     emitAccelObjC();
     emitAccelNamespaces();
@@ -825,7 +860,10 @@ void DwarfDebug::endModule() {
   }
   
   // Emit info into a debug pubtypes section.
-  emitDebugPubTypes();
+  // TODO: When we don't need the option anymore we can
+  // remove all of the code that adds to the table.
+  if (useDarwinGDBCompat())
+    emitDebugPubTypes();
 
   // Emit info into a debug loc section.
   emitDebugLoc();
@@ -840,7 +878,11 @@ void DwarfDebug::endModule() {
   emitDebugMacInfo();
 
   // Emit inline info.
-  emitDebugInlineInfo();
+  // TODO: When we don't need the option anymore we
+  // can remove all of the code that this section
+  // depends upon.
+  if (useDarwinGDBCompat())
+    emitDebugInlineInfo();
 
   // Emit info into a debug str section.
   emitDebugStr();
@@ -1310,8 +1352,9 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
                MOE = MI->operands_end(); MOI != MOE; ++MOI) {
           if (!MOI->isReg() || !MOI->isDef() || !MOI->getReg())
             continue;
-          for (const uint16_t *AI = TRI->getOverlaps(MOI->getReg());
-               unsigned Reg = *AI; ++AI) {
+          for (MCRegAliasIterator AI(MOI->getReg(), TRI, true);
+               AI.isValid(); ++AI) {
+            unsigned Reg = *AI;
             const MDNode *Var = LiveUserVar[Reg];
             if (!Var)
               continue;
@@ -1381,7 +1424,7 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
                                        MF->getFunction()->getContext());
     recordSourceLine(FnStartDL.getLine(), FnStartDL.getCol(),
                      FnStartDL.getScope(MF->getFunction()->getContext()),
-                     0);
+                     DWARF2_LINE_DEFAULT_IS_STMT ? DWARF2_FLAG_IS_STMT : 0);
   }
 }
 
@@ -1421,6 +1464,12 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
         DIVariable DV(Variables.getElement(i));
         if (!DV || !DV.Verify() || !ProcessedVars.insert(DV))
           continue;
+        // Check that DbgVariable for DV wasn't created earlier, when
+        // findAbstractVariable() was called for inlined instance of DV.
+        LLVMContext &Ctx = DV->getContext();
+        DIVariable CleanDV = cleanseInlinedVariable(DV, Ctx);
+        if (AbstractVariables.lookup(CleanDV))
+          continue;
         if (LexicalScope *Scope = LScopes.findAbstractScope(DV.getContext()))
           addScopeVariable(Scope, new DbgVariable(DV, NULL));
       }
@@ -1432,8 +1481,7 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
   DIE *CurFnDIE = constructScopeDIE(TheCU, FnScope);
   
   if (!MF->getTarget().Options.DisableFramePointerElim(*MF))
-    TheCU->addUInt(CurFnDIE, dwarf::DW_AT_APPLE_omit_frame_ptr,
-                   dwarf::DW_FORM_flag, 1);
+    TheCU->addFlag(CurFnDIE, dwarf::DW_AT_APPLE_omit_frame_ptr);
 
   DebugFrames.push_back(FunctionDebugFrameInfo(Asm->getFunctionNumber(),
                                                MMI->getFrameMoves()));
@@ -1623,7 +1671,7 @@ void DwarfDebug::emitDIE(DIE *Die) {
       // DW_AT_range Value encodes offset in debug_range section.
       DIEInteger *V = cast<DIEInteger>(Values[i]);
 
-      if (Asm->MAI->doesDwarfUseLabelOffsetForRanges()) {
+      if (Asm->MAI->doesDwarfUseRelocationsAcrossSections()) {
         Asm->EmitLabelPlusOffset(DwarfDebugRangeSectionSym,
                                  V->getValue(),
                                  4);
@@ -1636,10 +1684,14 @@ void DwarfDebug::emitDIE(DIE *Die) {
       break;
     }
     case dwarf::DW_AT_location: {
-      if (DIELabel *L = dyn_cast<DIELabel>(Values[i]))
-        Asm->EmitLabelDifference(L->getValue(), DwarfDebugLocSectionSym, 4);
-      else
+      if (DIELabel *L = dyn_cast<DIELabel>(Values[i])) {
+        if (Asm->MAI->doesDwarfUseRelocationsAcrossSections())
+          Asm->EmitLabelReference(L->getValue(), 4);
+        else
+          Asm->EmitLabelDifference(L->getValue(), DwarfDebugLocSectionSym, 4);
+      } else {
         Values[i]->EmitValue(Asm, Form);
+      }
       break;
     }
     case dwarf::DW_AT_accessibility: {
@@ -2049,9 +2101,11 @@ void DwarfDebug::emitDebugLoc() {
             if (Element == DIBuilder::OpPlus) {
               Asm->EmitInt8(dwarf::DW_OP_plus_uconst);
               Asm->EmitULEB128(DV.getAddrElement(++i));
-            } else if (Element == DIBuilder::OpDeref)
-              Asm->EmitInt8(dwarf::DW_OP_deref);
-            else llvm_unreachable("unknown Opcode found in complex address");
+            } else if (Element == DIBuilder::OpDeref) {
+              if (!Entry.Loc.isReg())
+                Asm->EmitInt8(dwarf::DW_OP_deref);
+            } else
+              llvm_unreachable("unknown Opcode found in complex address");
           }
         }
       }

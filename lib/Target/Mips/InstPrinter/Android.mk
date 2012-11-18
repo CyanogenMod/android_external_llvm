@@ -1,7 +1,10 @@
 LOCAL_PATH := $(call my-dir)
 
 mips_asm_printer_TBLGEN_TABLES := \
-  MipsGenAsmWriter.inc
+  MipsGenAsmWriter.inc \
+  MipsGenRegisterInfo.inc \
+  MipsGenSubtargetInfo.inc \
+  MipsGenInstrInfo.inc
 
 mips_asm_printer_SRC_FILES := \
   MipsInstPrinter.cpp

@@ -459,22 +459,23 @@ void ARMExpandPseudo::ExpandVST(MachineBasicBlock::iterator &MBBI) {
     MIB.addOperand(MI.getOperand(OpIdx++));
 
   bool SrcIsKill = MI.getOperand(OpIdx).isKill();
+  bool SrcIsUndef = MI.getOperand(OpIdx).isUndef();
   unsigned SrcReg = MI.getOperand(OpIdx++).getReg();
   unsigned D0, D1, D2, D3;
   GetDSubRegs(SrcReg, RegSpc, TRI, D0, D1, D2, D3);
-  MIB.addReg(D0);
+  MIB.addReg(D0, getUndefRegState(SrcIsUndef));
   if (NumRegs > 1 && TableEntry->copyAllListRegs)
-    MIB.addReg(D1);
+    MIB.addReg(D1, getUndefRegState(SrcIsUndef));
   if (NumRegs > 2 && TableEntry->copyAllListRegs)
-    MIB.addReg(D2);
+    MIB.addReg(D2, getUndefRegState(SrcIsUndef));
   if (NumRegs > 3 && TableEntry->copyAllListRegs)
-    MIB.addReg(D3);
+    MIB.addReg(D3, getUndefRegState(SrcIsUndef));
 
   // Copy the predicate operands.
   MIB.addOperand(MI.getOperand(OpIdx++));
   MIB.addOperand(MI.getOperand(OpIdx++));
 
-  if (SrcIsKill) // Add an implicit kill for the super-reg.
+  if (SrcIsKill && !SrcIsUndef) // Add an implicit kill for the super-reg.
     MIB->addRegisterKilled(SrcReg, TRI, true);
   TransferImpOps(MI, MIB, MIB);
 
@@ -925,7 +926,7 @@ bool ARMExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
       if (isARM) {
         AddDefaultPred(MIB3);
         if (Opcode == ARM::MOV_ga_pcrel_ldr)
-          MIB2->setMemRefs(MI.memoperands_begin(), MI.memoperands_end());
+          MIB3->setMemRefs(MI.memoperands_begin(), MI.memoperands_end());
       }
       TransferImpOps(MI, MIB1, MIB3);
       MI.eraseFromParent();
@@ -1008,7 +1009,7 @@ bool ARMExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
         BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(NewOpc));
       unsigned OpIdx = 0;
       unsigned SrcReg = MI.getOperand(1).getReg();
-      unsigned Lane = getARMRegisterNumbering(SrcReg) & 1;
+      unsigned Lane = TRI->getEncodingValue(SrcReg) & 1;
       unsigned DReg = TRI->getMatchingSuperReg(SrcReg,
                             Lane & 1 ? ARM::ssub_1 : ARM::ssub_0,
                             &ARM::DPR_VFP2RegClass);
@@ -1206,6 +1207,57 @@ bool ARMExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
     case ARM::VST4LNq32Pseudo_UPD:
       ExpandLaneOp(MBBI);
       return true;
+
+    case ARM::VSETLNi8Q:
+    case ARM::VSETLNi16Q: {
+      // Expand VSETLNs acting on a Q register to equivalent VSETLNs acting
+      // on the respective D register.
+
+      unsigned QReg  = MI.getOperand(1).getReg();
+      unsigned QLane = MI.getOperand(3).getImm();
+
+      unsigned NewOpcode, DLane, DSubReg;
+      switch (Opcode) {
+      default: llvm_unreachable("Invalid opcode!");
+      case ARM::VSETLNi8Q:
+        // 4 possible 8-bit lanes per DPR:
+        NewOpcode = ARM::VSETLNi8;
+        DLane = QLane % 8;
+        DSubReg  = (QLane / 8) ? ARM::dsub_1 : ARM::dsub_0;
+        break;
+      case ARM::VSETLNi16Q:
+        // 4 possible 16-bit lanes per DPR.
+        NewOpcode = ARM::VSETLNi16;
+        DLane = QLane % 4;
+        DSubReg  = (QLane / 4) ? ARM::dsub_1 : ARM::dsub_0;
+        break;
+      }
+
+      MachineInstrBuilder MIB =
+        BuildMI(MBB, MBBI, MI.getDebugLoc(), TII->get(NewOpcode));
+
+      unsigned DReg = TRI->getSubReg(QReg, DSubReg);
+
+      MIB.addReg(DReg, RegState::Define); // Output DPR
+      MIB.addReg(DReg);                   // Input DPR
+      MIB.addOperand(MI.getOperand(2));   // Input GPR
+      MIB.addImm(DLane);                  // Lane
+
+      // Add the predicate operands.
+      MIB.addOperand(MI.getOperand(4));
+      MIB.addOperand(MI.getOperand(5));
+
+      if (MI.getOperand(1).isKill()) // Add an implicit kill for the Q register.
+        MIB->addRegisterKilled(QReg, TRI, true);
+      // And an implicit def of the output register (which should always be the
+      // same as the input register).
+      MIB->addRegisterDefined(QReg, TRI);
+
+      TransferImpOps(MI, MIB, MIB);
+
+      MI.eraseFromParent();
+      return true;
+    }
 
     case ARM::VTBL3Pseudo: ExpandVTBL(MBBI, ARM::VTBL3, false); return true;
     case ARM::VTBL4Pseudo: ExpandVTBL(MBBI, ARM::VTBL4, false); return true;

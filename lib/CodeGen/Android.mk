@@ -13,6 +13,7 @@ codegen_SRC_FILES := \
   DFAPacketizer.cpp \
   DeadMachineInstructionElim.cpp \
   DwarfEHPrepare.cpp \
+  EarlyIfConversion.cpp \
   EdgeBundles.cpp \
   ExecutionDepsFix.cpp \
   ExpandISelPseudos.cpp \
@@ -24,7 +25,6 @@ codegen_SRC_FILES := \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
   IntrinsicLowering.cpp \
-  LLVMTargetMachine.cpp \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
   LiveDebugVariables.cpp \
@@ -33,8 +33,10 @@ codegen_SRC_FILES := \
   LiveIntervalUnion.cpp \
   LiveRangeCalc.cpp \
   LiveRangeEdit.cpp \
+  LiveRegMatrix.cpp \
   LiveStackAnalysis.cpp \
   LiveVariables.cpp \
+  LLVMTargetMachine.cpp \
   LocalStackSlotAllocation.cpp \
   MachineBasicBlock.cpp \
   MachineBlockFrequencyInfo.cpp \
@@ -59,6 +61,7 @@ codegen_SRC_FILES := \
   MachineSSAUpdater.cpp \
   MachineScheduler.cpp \
   MachineSink.cpp \
+  MachineTraceMetrics.cpp \
   MachineVerifier.cpp \
   OcamlGC.cpp \
   OptimizePHIs.cpp \
@@ -77,8 +80,8 @@ codegen_SRC_FILES := \
   RegAllocPBQP.cpp \
   RegisterClassInfo.cpp \
   RegisterCoalescer.cpp \
+  RegisterPressure.cpp \
   RegisterScavenging.cpp \
-  RenderMachineFunction.cpp \
   ScheduleDAG.cpp \
   ScheduleDAGInstrs.cpp \
   ScheduleDAGPrinter.cpp \
@@ -90,6 +93,7 @@ codegen_SRC_FILES := \
   SpillPlacement.cpp \
   Spiller.cpp \
   SplitKit.cpp \
+  StackColoring.cpp \
   StackProtector.cpp \
   StackSlotColoring.cpp \
   StrongPHIElimination.cpp \

@@ -11,24 +11,31 @@ mips_codegen_TBLGEN_TABLES := \
   MipsGenSubtargetInfo.inc
 
 mips_codegen_SRC_FILES := \
+  Mips16FrameLowering.cpp \
+  Mips16InstrInfo.cpp \
+  Mips16RegisterInfo.cpp \
   MipsAnalyzeImmediate.cpp \
   MipsAsmPrinter.cpp \
   MipsCodeEmitter.cpp \
   MipsDelaySlotFiller.cpp \
-  MipsEmitGPRestore.cpp \
-  MipsExpandPseudo.cpp \
-  MipsJITInfo.cpp \
+  MipsDirectObjLower.cpp \
+  MipsELFWriterInfo.cpp \
+  MipsFrameLowering.cpp \
   MipsInstrInfo.cpp \
   MipsISelDAGToDAG.cpp \
   MipsISelLowering.cpp \
-  MipsFrameLowering.cpp \
+  MipsJITInfo.cpp \
+  MipsLongBranch.cpp \
   MipsMachineFunction.cpp \
   MipsMCInstLower.cpp \
   MipsRegisterInfo.cpp \
+  MipsSEFrameLowering.cpp \
+  MipsSEInstrInfo.cpp \
+  MipsSERegisterInfo.cpp \
+  MipsSelectionDAGInfo.cpp \
   MipsSubtarget.cpp \
   MipsTargetMachine.cpp \
-  MipsTargetObjectFile.cpp \
-  MipsSelectionDAGInfo.cpp
+  MipsTargetObjectFile.cpp
 
 # For the host
 # =====================================================

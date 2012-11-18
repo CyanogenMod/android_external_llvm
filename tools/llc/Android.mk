@@ -11,6 +11,7 @@ llvm_llc_SRC_FILES := \
   llc.cpp
 
 llvm_llc_mips_STATIC_LIBRARIES := \
+  libLLVMMipsAsmParser \
   libLLVMMipsInfo \
   libLLVMMipsCodeGen \
   libLLVMMipsDesc \
@@ -112,8 +113,9 @@ endif
 
 LOCAL_STATIC_LIBRARIES += $(llvm_llc_STATIC_LIBRARIES)
 
-LOCAL_SHARED_LIBRARIES := \
-  libdl \
+LOCAL_SHARED_LIBRARIES :=  \
+  libcutils  \
+  libdl  \
   libstlport
 
 include $(LLVM_ROOT_PATH)/llvm.mk

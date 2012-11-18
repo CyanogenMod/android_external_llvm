@@ -11,11 +11,14 @@ set(CMAKE_MODULE_PATH
   )
 
 set(LLVM_VERSION_MAJOR 3)
-set(LLVM_VERSION_MINOR 1)
+set(LLVM_VERSION_MINOR 2)
 
 set(PACKAGE_VERSION "${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}svn")
 
-set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+option(LLVM_USE_FOLDERS "Enable solution folders in Visual Studio. Disable for Express versions." ON)
+if ( LLVM_USE_FOLDERS )
+  set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+endif()
 
 include(VersionFromVCS)
 
@@ -78,8 +81,8 @@ set(LLVM_ALL_TARGETS
   Mips
   MBlaze
   MSP430
+  NVPTX
   PowerPC
-  PTX
   Sparc
   X86
   XCore
@@ -95,6 +98,9 @@ else( MSVC )
   set(LLVM_TARGETS_TO_BUILD "all"
     CACHE STRING "Semicolon-separated list of targets to build, or \"all\".")
 endif( MSVC )
+
+set(LLVM_EXPERIMENTAL_TARGETS_TO_BUILD ""
+  CACHE STRING "Semicolon-separated list of experimental targets to build.")
 
 option(BUILD_SHARED_LIBS
   "Build all libraries as shared libraries instead of static" OFF)
@@ -122,10 +128,15 @@ if( LLVM_TARGETS_TO_BUILD STREQUAL "all" )
   set( LLVM_TARGETS_TO_BUILD ${LLVM_ALL_TARGETS} )
 endif()
 
+set(LLVM_TARGETS_TO_BUILD
+   ${LLVM_TARGETS_TO_BUILD}
+   ${LLVM_EXPERIMENTAL_TARGETS_TO_BUILD})
+
 set(LLVM_ENUM_TARGETS "")
 foreach(c ${LLVM_TARGETS_TO_BUILD})
   list(FIND LLVM_ALL_TARGETS ${c} idx)
-  if( idx LESS 0 )
+  list(FIND LLVM_EXPERIMENTAL_TARGETS_TO_BUILD ${c} idy)
+  if( idx LESS 0 AND idy LESS 0 )
     message(FATAL_ERROR "The target `${c}' does not exist.
     It should be one of\n${LLVM_ALL_TARGETS}")
   else()
@@ -213,15 +224,6 @@ if( WIN32 AND NOT CYGWIN )
   set(LLVM_LIT_TOOLS_DIR "" CACHE PATH "Path to GnuWin32 tools")
 endif()
 
-# On Win32 using MS tools, provide an option to set the number of parallel jobs
-# to use.
-if( MSVC_IDE AND ( MSVC90 OR MSVC10 ) )
-  # Only Visual Studio 2008 and 2010 officially supports /MP.  Visual Studio
-  # 2005 supports it but it is experimental.
-  set(LLVM_COMPILER_JOBS "0" CACHE STRING
-    "Number of parallel compiler jobs. 0 means use all processors. Default is 0.")
-endif()
-
 # Define options to control the inclusion and default build behavior for
 # components which may not strictly be necessary (tools, runtime, examples, and
 # tests).
@@ -247,6 +249,14 @@ option(LLVM_INCLUDE_TESTS "Generate build targets for the LLVM unit tests." ON)
 # BEFORE this include, otherwise options will not be correctly set on
 # first cmake run
 include(config-ix)
+
+# By default, we target the host, but this can be overridden at CMake
+# invocation time.
+set(LLVM_DEFAULT_TARGET_TRIPLE "${LLVM_HOST_TRIPLE}" CACHE STRING
+  "Default target for which LLVM will generate code." )
+set(TARGET_TRIPLE "${LLVM_DEFAULT_TARGET_TRIPLE}" CACHE STRING
+  "Default target for which LLVM will generate code." )
+
 include(HandleLLVMOptions)
 
 # Verify that we can find a Python interpreter,
@@ -277,11 +287,21 @@ set(LLVMCONFIGLIBRARYDEPENDENCIESINC
   "${LLVM_BINARY_DIR}/tools/llvm-config/LibraryDependencies.inc")
 set(LLVMBUILDCMAKEFRAG
   "${LLVM_BINARY_DIR}/LLVMBuild.cmake")
+
+# Create the list of optional components that are enabled
+if (LLVM_USE_INTEL_JITEVENTS)
+  set(LLVMOPTIONALCOMPONENTS IntelJITEvents)
+endif (LLVM_USE_INTEL_JITEVENTS)
+if (LLVM_USE_OPROFILE)
+  set(LLVMOPTIONALCOMPONENTS ${LLVMOPTIONALCOMPONENTS} OProfileJIT)
+endif (LLVM_USE_OPROFILE)
+
 message(STATUS "Constructing LLVMBuild project information")
 execute_process(
   COMMAND ${PYTHON_EXECUTABLE} ${LLVMBUILDTOOL}
             --native-target "${LLVM_NATIVE_ARCH}"
             --enable-targets "${LLVM_TARGETS_TO_BUILD}"
+            --enable-optional-components "${LLVMOPTIONALCOMPONENTS}"
             --write-library-table ${LLVMCONFIGLIBRARYDEPENDENCIESINC}
             --write-cmake-fragment ${LLVMBUILDCMAKEFRAG}
             ERROR_VARIABLE LLVMBUILDOUTPUT
@@ -397,6 +417,8 @@ add_subdirectory(utils/count)
 add_subdirectory(utils/not)
 add_subdirectory(utils/llvm-lit)
 add_subdirectory(utils/yaml-bench)
+add_subdirectory(utils/obj2yaml)
+add_subdirectory(utils/yaml2obj)
 
 add_subdirectory(projects)
 
@@ -421,6 +443,20 @@ if( LLVM_INCLUDE_TESTS )
     # Windows.
     add_subdirectory(utils/KillTheDoctor)
   endif()
+
+  # Add a global check rule now that all subdirectories have been traversed
+  # and we know the total set of lit testsuites.
+  get_property(LLVM_LIT_TESTSUITES GLOBAL PROPERTY LLVM_LIT_TESTSUITES)
+  get_property(LLVM_LIT_PARAMS GLOBAL PROPERTY LLVM_LIT_PARAMS)
+  get_property(LLVM_LIT_DEPENDS GLOBAL PROPERTY LLVM_LIT_DEPENDS)
+  get_property(LLVM_LIT_EXTRA_ARGS GLOBAL PROPERTY LLVM_LIT_EXTRA_ARGS)
+  add_lit_target(check-all
+    "Running all regression tests"
+    ${LLVM_LIT_TESTSUITES}
+    PARAMS ${LLVM_LIT_PARAMS}
+    DEPENDS ${LLVM_LIT_DEPENDS}
+    ARGS ${LLVM_LIT_EXTRA_ARGS}
+    )
 endif()
 
 add_subdirectory(cmake/modules)

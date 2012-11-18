@@ -40,8 +40,8 @@ namespace llvm {
   /// of the sections that it creates.
   ///
   class MCContext {
-    MCContext(const MCContext&); // DO NOT IMPLEMENT
-    MCContext &operator=(const MCContext&); // DO NOT IMPLEMENT
+    MCContext(const MCContext&) LLVM_DELETED_FUNCTION;
+    MCContext &operator=(const MCContext&) LLVM_DELETED_FUNCTION;
   public:
     typedef StringMap<MCSymbol*, BumpPtrAllocator&> SymbolTable;
   private:
@@ -160,6 +160,10 @@ namespace llvm {
     /// CreateTempSymbol - Create and return a new assembler temporary symbol
     /// with a unique but unspecified name.
     MCSymbol *CreateTempSymbol();
+
+    /// getUniqueSymbolID() - Return a unique identifier for use in constructing
+    /// symbol names.
+    unsigned getUniqueSymbolID() { return NextUniqueID++; }
 
     /// CreateDirectionalLocalSymbol - Create the definition of a directional
     /// local symbol for numbered label (used for "1:" definitions).

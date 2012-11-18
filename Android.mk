@@ -19,6 +19,7 @@ subdirs := \
   lib/Linker \
   lib/MC \
   lib/MC/MCParser \
+  lib/Object \
   lib/Support \
   lib/TableGen \
   lib/Target \
@@ -44,7 +45,9 @@ subdirs += \
 # MIPS Code Generation Libraries
 subdirs += \
   lib/Target/Mips \
+  lib/Target/Mips/AsmParser \
   lib/Target/Mips/InstPrinter \
+  lib/Target/Mips/Disassembler \
   lib/Target/Mips/MCTargetDesc \
   lib/Target/Mips/TargetInfo
 
@@ -62,7 +65,6 @@ subdirs += \
 #subdirs += tools/llc
 subdirs += tools/llvm-as
 subdirs += tools/llvm-dis
-subdirs += tools/llvm-ld
 subdirs += tools/llvm-link
 #subdirs += tools/opt
 

@@ -23,6 +23,7 @@ void llvm::initializeCodeGen(PassRegistry &Registry) {
   initializeCalculateSpillWeightsPass(Registry);
   initializeCodePlacementOptPass(Registry);
   initializeDeadMachineInstructionElimPass(Registry);
+  initializeEarlyIfConverterPass(Registry);
   initializeExpandPostRAPass(Registry);
   initializeExpandISelPseudosPass(Registry);
   initializeFinalizeMachineBundlesPass(Registry);
@@ -53,9 +54,9 @@ void llvm::initializeCodeGen(PassRegistry &Registry) {
   initializeProcessImplicitDefsPass(Registry);
   initializePEIPass(Registry);
   initializeRegisterCoalescerPass(Registry);
-  initializeRenderMachineFunctionPass(Registry);
   initializeSlotIndexesPass(Registry);
   initializeStackProtectorPass(Registry);
+  initializeStackColoringPass(Registry);
   initializeStackSlotColoringPass(Registry);
   initializeStrongPHIEliminationPass(Registry);
   initializeTailDuplicatePassPass(Registry);
@@ -65,7 +66,9 @@ void llvm::initializeCodeGen(PassRegistry &Registry) {
   initializeUnreachableBlockElimPass(Registry);
   initializeUnreachableMachineBlockElimPass(Registry);
   initializeVirtRegMapPass(Registry);
+  initializeVirtRegRewriterPass(Registry);
   initializeLowerIntrinsicsPass(Registry);
+  initializeMachineFunctionPrinterPassPass(Registry);
 }
 
 void LLVMInitializeCodeGen(LLVMPassRegistryRef R) {

@@ -14,9 +14,7 @@ analysis_SRC_FILES := \
   CaptureTracking.cpp \
   CodeMetrics.cpp \
   ConstantFolding.cpp \
-  DIBuilder.cpp \
   DbgInfoPrinter.cpp \
-  DebugInfo.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
   IVUsers.cpp \
@@ -43,6 +41,8 @@ analysis_SRC_FILES := \
   PathProfileInfo.cpp \
   PathProfileVerifier.cpp \
   PostDominators.cpp \
+  ProfileDataLoader.cpp \
+  ProfileDataLoaderPass.cpp \
   ProfileEstimatorPass.cpp \
   ProfileInfo.cpp \
   ProfileInfoLoader.cpp \

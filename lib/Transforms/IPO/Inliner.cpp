@@ -20,6 +20,7 @@
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/InlineCost.h"
 #include "llvm/Target/TargetData.h"
+#include "llvm/Target/TargetLibraryInfo.h"
 #include "llvm/Transforms/IPO/InlinerPass.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 #include "llvm/Transforms/Utils/Local.h"
@@ -36,7 +37,7 @@ STATISTIC(NumCallsDeleted, "Number of call sites deleted, not inlined");
 STATISTIC(NumDeleted, "Number of functions deleted because all callers found");
 STATISTIC(NumMergedAllocas, "Number of allocas merged together");
 
-// This weirdly named statistic tracks the number of times that, when attemting
+// This weirdly named statistic tracks the number of times that, when attempting
 // to inline a function A into B, we analyze the callers of B in order to see
 // if those would be more profitable and blocked inline steps.
 STATISTIC(NumCallerCallersAnalyzed, "Number of caller-callers analyzed");
@@ -201,19 +202,22 @@ static bool InlineCallIfPossible(CallSite CS, InlineFunctionInfo &IFI,
 }
 
 unsigned Inliner::getInlineThreshold(CallSite CS) const {
-  int thres = InlineThreshold;
+  int thres = InlineThreshold; // -inline-threshold or else selected by
+                               // overall opt level
 
-  // Listen to optsize when -inline-limit is not given.
+  // If -inline-threshold is not given, listen to the optsize attribute when it
+  // would decrease the threshold.
   Function *Caller = CS.getCaller();
-  if (Caller && !Caller->isDeclaration() &&
-      Caller->hasFnAttr(Attribute::OptimizeForSize) &&
-      InlineLimit.getNumOccurrences() == 0)
+  bool OptSize = Caller && !Caller->isDeclaration() &&
+    Caller->hasFnAttr(Attribute::OptimizeForSize);
+  if (!(InlineLimit.getNumOccurrences() > 0) && OptSize && OptSizeThreshold < thres)
     thres = OptSizeThreshold;
 
-  // Listen to inlinehint when it would increase the threshold.
+  // Listen to the inlinehint attribute when it would increase the threshold.
   Function *Callee = CS.getCalledFunction();
-  if (HintThreshold > thres && Callee && !Callee->isDeclaration() &&
-      Callee->hasFnAttr(Attribute::InlineHint))
+  bool InlineHint = Callee && !Callee->isDeclaration() &&
+    Callee->hasFnAttr(Attribute::InlineHint);
+  if (InlineHint && HintThreshold > thres)
     thres = HintThreshold;
 
   return thres;
@@ -336,6 +340,7 @@ static bool InlineHistoryIncludes(Function *F, int InlineHistoryID,
 bool Inliner::runOnSCC(CallGraphSCC &SCC) {
   CallGraph &CG = getAnalysis<CallGraph>();
   const TargetData *TD = getAnalysisIfAvailable<TargetData>();
+  const TargetLibraryInfo *TLI = getAnalysisIfAvailable<TargetLibraryInfo>();
 
   SmallPtrSet<Function*, 8> SCCFunctions;
   DEBUG(dbgs() << "Inliner visiting SCC:");
@@ -414,7 +419,7 @@ bool Inliner::runOnSCC(CallGraphSCC &SCC) {
       // just delete the call instead of trying to inline it, regardless of
       // size.  This happens because IPSCCP propagates the result out of the
       // call and then we're left with the dead call.
-      if (isInstructionTriviallyDead(CS.getInstruction())) {
+      if (isInstructionTriviallyDead(CS.getInstruction(), TLI)) {
         DEBUG(dbgs() << "    -> Deleting dead call: "
                      << *CS.getInstruction() << "\n");
         // Update the call graph by deleting the edge from Callee to Caller.

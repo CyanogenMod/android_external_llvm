@@ -16,6 +16,7 @@
 #define LLVM_APINT_H
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/Support/Compiler.h"
 #include "llvm/Support/MathExtras.h"
 #include <cassert>
 #include <climits>
@@ -273,6 +274,13 @@ public:
       initSlowCase(that);
   }
 
+#if LLVM_USE_RVALUE_REFERENCES
+  /// @brief Move Constructor.
+  APInt(APInt&& that) : BitWidth(that.BitWidth), VAL(that.VAL) {
+    that.BitWidth = 0;
+  }
+#endif
+
   /// @brief Destructor.
   ~APInt() {
     if (!isSingleWord())
@@ -349,13 +357,7 @@ public:
   /// @brief Check if this APInt has an N-bits unsigned integer value.
   bool isIntN(unsigned N) const {
     assert(N && "N == 0 ???");
-    if (N >= getBitWidth())
-      return true;
-
-    if (isSingleWord())
-      return isUIntN(N, VAL);
-    return APInt(N, makeArrayRef(pVal, getNumWords())).zext(getBitWidth())
-      == (*this);
+    return getActiveBits() <= N;
   }
 
   /// @brief Check if this APInt has an N-bits signed integer value.
@@ -503,6 +505,18 @@ public:
     return getAllOnesValue(numBits).lshr(numBits - loBitsSet);
   }
 
+  /// \brief Determine if two APInts have the same value, after zero-extending
+  /// one of them (if needed!) to ensure that the bit-widths match.
+  static bool isSameValue(const APInt &I1, const APInt &I2) {
+    if (I1.getBitWidth() == I2.getBitWidth())
+      return I1 == I2;
+
+    if (I1.getBitWidth() > I2.getBitWidth())
+      return I1 == I2.zext(I1.getBitWidth());
+
+    return I1.zext(I2.getBitWidth()) == I2;
+  }
+  
   /// \brief Overload to compute a hash_code for an APInt value.
   friend hash_code hash_value(const APInt &Arg);
 
@@ -586,6 +600,21 @@ public:
 
     return AssignSlowCase(RHS);
   }
+
+#if LLVM_USE_RVALUE_REFERENCES
+  /// @brief Move assignment operator.
+  APInt& operator=(APInt&& that) {
+    if (!isSingleWord())
+      delete [] pVal;
+
+    BitWidth = that.BitWidth;
+    VAL = that.VAL;
+
+    that.BitWidth = 0;
+
+    return *this;
+  }
+#endif
 
   /// The RHS value is assigned to *this. If the significant bits in RHS exceed
   /// the bit width, the excess bits are truncated. If the bit width is larger
@@ -817,9 +846,10 @@ public:
     if (LHS.isNegative()) {
       if (RHS.isNegative())
         APInt::udivrem(-LHS, -RHS, Quotient, Remainder);
-      else
+      else {
         APInt::udivrem(-LHS, RHS, Quotient, Remainder);
-      Quotient = -Quotient;
+        Quotient = -Quotient;
+      }
       Remainder = -Remainder;
     } else if (RHS.isNegative()) {
       APInt::udivrem(LHS, -RHS, Quotient, Remainder);
@@ -1087,7 +1117,7 @@ public:
     else {
       // Set all the bits in all the words.
       for (unsigned i = 0; i < getNumWords(); ++i)
-	pVal[i] = -1ULL;
+        pVal[i] = -1ULL;
     }
     // Clear the unused ones
     clearUnusedBits();
@@ -1208,8 +1238,8 @@ public:
   /// countLeadingZeros - This function is an APInt version of the
   /// countLeadingZeros_{32,64} functions in MathExtras.h. It counts the number
   /// of zeros from the most significant bit to the first one bit.
-  /// @returns BitWidth if the value is zero.
-  /// @returns the number of zeros from the most significant bit to the first
+  /// @returns BitWidth if the value is zero, otherwise
+  /// returns the number of zeros from the most significant bit to the first
   /// one bits.
   unsigned countLeadingZeros() const {
     if (isSingleWord()) {
@@ -1222,8 +1252,8 @@ public:
   /// countLeadingOnes - This function is an APInt version of the
   /// countLeadingOnes_{32,64} functions in MathExtras.h. It counts the number
   /// of ones from the most significant bit to the first zero bit.
-  /// @returns 0 if the high order bit is not set
-  /// @returns the number of 1 bits from the most significant to the least
+  /// @returns 0 if the high order bit is not set, otherwise
+  /// returns the number of 1 bits from the most significant to the least
   /// @brief Count the number of leading one bits.
   unsigned countLeadingOnes() const;
 
@@ -1236,8 +1266,8 @@ public:
   /// countTrailingZeros - This function is an APInt version of the
   /// countTrailingZeros_{32,64} functions in MathExtras.h. It counts
   /// the number of zeros from the least significant bit to the first set bit.
-  /// @returns BitWidth if the value is zero.
-  /// @returns the number of zeros from the least significant bit to the first
+  /// @returns BitWidth if the value is zero, otherwise
+  /// returns the number of zeros from the least significant bit to the first
   /// one bit.
   /// @brief Count the number of trailing zero bits.
   unsigned countTrailingZeros() const;
@@ -1245,8 +1275,8 @@ public:
   /// countTrailingOnes - This function is an APInt version of the
   /// countTrailingOnes_{32,64} functions in MathExtras.h. It counts
   /// the number of ones from the least significant bit to the first zero bit.
-  /// @returns BitWidth if the value is all ones.
-  /// @returns the number of ones from the least significant bit to the first
+  /// @returns BitWidth if the value is all ones, otherwise
+  /// returns the number of ones from the least significant bit to the first
   /// zero bit.
   /// @brief Count the number of trailing one bits.
   unsigned countTrailingOnes() const {
@@ -1258,8 +1288,8 @@ public:
   /// countPopulation - This function is an APInt version of the
   /// countPopulation_{32,64} functions in MathExtras.h. It counts the number
   /// of 1 bits in the APInt value.
-  /// @returns 0 if the value is zero.
-  /// @returns the number of set bits.
+  /// @returns 0 if the value is zero, otherwise returns the number of set
+  /// bits.
   /// @brief Count the number of bits set.
   unsigned countPopulation() const {
     if (isSingleWord())

@@ -27,6 +27,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/TargetRegistry.h"
+#include "llvm/Support/LEB128.h"
 
 using namespace llvm;
 
@@ -330,6 +331,12 @@ uint64_t MCAssembler::computeFragmentSize(const MCAsmLayout &Layout,
     const MCAlignFragment &AF = cast<MCAlignFragment>(F);
     unsigned Offset = Layout.getFragmentOffset(&AF);
     unsigned Size = OffsetToAlignment(Offset, AF.getAlignment());
+    // If we are padding with nops, force the padding to be larger than the
+    // minimum nop size.
+    if (Size > 0 && AF.hasEmitNops()) {
+      while (Size % getBackend().getMinimumNopSize())
+        Size += AF.getAlignment();
+    }
     if (Size > AF.getMaxBytesToEmit())
       return 0;
     return Size;
@@ -409,7 +416,7 @@ static void WriteFragmentData(const MCAssembler &Asm, const MCAsmLayout &Layout,
 
     // See if we are aligning with nops, and if so do that first to try to fill
     // the Count bytes.  Then if that did not fill any bytes or there are any
-    // bytes left to fill use the the Value and ValueSize to fill the rest.
+    // bytes left to fill use the Value and ValueSize to fill the rest.
     // If we are aligning with nops, ask that target to emit the right data.
     if (AF.hasEmitNops()) {
       if (!Asm.getBackend().writeNopData(Count, OW))
@@ -719,9 +726,9 @@ bool MCAssembler::relaxLEB(MCAsmLayout &Layout, MCLEBFragment &LF) {
   Data.clear();
   raw_svector_ostream OSE(Data);
   if (LF.isSigned())
-    MCObjectWriter::EncodeSLEB128(Value, OSE);
+    encodeSLEB128(Value, OSE);
   else
-    MCObjectWriter::EncodeULEB128(Value, OSE);
+    encodeULEB128(Value, OSE);
   OSE.flush();
   return OldSize != LF.getContents().size();
 }
@@ -829,6 +836,7 @@ raw_ostream &operator<<(raw_ostream &OS, const MCFixup &AF) {
 
 }
 
+#ifndef NDEBUG
 void MCFragment::dump() {
   raw_ostream &OS = llvm::errs();
 
@@ -969,6 +977,7 @@ void MCAssembler::dump() {
   }
   OS << "]>\n";
 }
+#endif
 
 // anchors for MC*Fragment vtables
 void MCDataFragment::anchor() { }

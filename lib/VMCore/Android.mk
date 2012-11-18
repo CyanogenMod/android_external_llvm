@@ -8,7 +8,9 @@ vmcore_SRC_FILES := \
   ConstantFold.cpp \
   Constants.cpp \
   Core.cpp \
+  DebugInfo.cpp \
   DebugLoc.cpp \
+  DIBuilder.cpp \
   Dominators.cpp \
   Function.cpp \
   GVMaterializer.cpp \
@@ -28,6 +30,7 @@ vmcore_SRC_FILES := \
   PassRegistry.cpp \
   PrintModulePass.cpp \
   Type.cpp \
+  TypeFinder.cpp \
   Use.cpp \
   User.cpp \
   Value.cpp \

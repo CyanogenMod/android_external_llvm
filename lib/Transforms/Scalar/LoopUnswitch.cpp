@@ -409,15 +409,6 @@ bool LoopUnswitch::processCurrentLoop() {
   if (!currentLoop->isSafeToClone())
     return false;
 
-  // Loops with invokes, whose unwind edge escapes the loop, cannot be
-  // unswitched because splitting their edges are non-trivial and don't preserve
-  // loop simplify information.
-  for (Loop::block_iterator I = currentLoop->block_begin(),
-         E = currentLoop->block_end(); I != E; ++I)
-    if (const InvokeInst *II = dyn_cast<InvokeInst>((*I)->getTerminator()))
-      if (!currentLoop->contains(II->getUnwindDest()))
-        return false;
-
   // Without dedicated exits, splitting the exit edge may fail.
   if (!currentLoop->hasDedicatedExits())
     return false;
@@ -633,11 +624,10 @@ bool LoopUnswitch::IsTrivialUnswitchCondition(Value *Cond, Constant **Val,
 /// LoopCond == Val to simplify the loop.  If we decide that this is profitable,
 /// unswitch the loop, reprocess the pieces, then return true.
 bool LoopUnswitch::UnswitchIfProfitable(Value *LoopCond, Constant *Val) {
-
   Function *F = loopHeader->getParent();
-
   Constant *CondVal = 0;
   BasicBlock *ExitBlock = 0;
+
   if (IsTrivialUnswitchCondition(LoopCond, &CondVal, &ExitBlock)) {
     // If the condition is trivial, always unswitch. There is no code growth
     // for this case.
@@ -697,8 +687,8 @@ void LoopUnswitch::EmitPreheaderBranchOnCondition(Value *LIC, Constant *Val,
 
   // If either edge is critical, split it. This helps preserve LoopSimplify
   // form for enclosing loops.
-  SplitCriticalEdge(BI, 0, this);
-  SplitCriticalEdge(BI, 1, this);
+  SplitCriticalEdge(BI, 0, this, false, false, true);
+  SplitCriticalEdge(BI, 1, this, false, false, true);
 }
 
 /// UnswitchTrivialCondition - Given a loop that has a trivial unswitchable
@@ -1224,8 +1214,8 @@ void LoopUnswitch::SimplifyCode(std::vector<Instruction*> &Worklist, Loop *L) {
 
     // See if instruction simplification can hack this up.  This is common for
     // things like "select false, X, Y" after unswitching made the condition be
-    // 'false'.
-    if (Value *V = SimplifyInstruction(I, 0, 0, DT))
+    // 'false'.  TODO: update the domtree properly so we can pass it here.
+    if (Value *V = SimplifyInstruction(I))
       if (LI->replacementPreservesLCSSAForm(I, V)) {
         ReplaceUsesOfWith(I, V, Worklist, L, LPM);
         continue;

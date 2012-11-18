@@ -65,12 +65,19 @@ public:
   RuntimeDyld(RTDyldMemoryManager*);
   ~RuntimeDyld();
 
+  /// Load an in-memory object file into the dynamic linker.
   bool loadObject(MemoryBuffer *InputBuffer);
-  // Get the address of our local copy of the symbol. This may or may not
-  // be the address used for relocation (clients can copy the data around
-  // and resolve relocatons based on where they put it).
+
+  /// Get the address of our local copy of the symbol. This may or may not
+  /// be the address used for relocation (clients can copy the data around
+  /// and resolve relocatons based on where they put it).
   void *getSymbolAddress(StringRef Name);
-  // Resolve the relocations for all symbols we currently know about.
+
+  /// Get the address of the target copy of the symbol. This is the address
+  /// used for relocation.
+  uint64_t getSymbolLoadAddress(StringRef Name);
+
+  /// Resolve the relocations for all symbols we currently know about.
   void resolveRelocations();
 
   /// mapSectionAddress - map a section to its target address space value.

@@ -20,10 +20,10 @@
 #include "X86TargetMachine.h"
 #include "InstPrinter/X86ATTInstPrinter.h"
 #include "llvm/CallingConv.h"
+#include "llvm/DebugInfo.h"
 #include "llvm/DerivedTypes.h"
 #include "llvm/Module.h"
 #include "llvm/Type.h"
-#include "llvm/Analysis/DebugInfo.h"
 #include "llvm/Assembly/Writer.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
@@ -186,10 +186,14 @@ void X86AsmPrinter::printSymbolOperand(const MachineOperand &MO,
     O << '-' << *MF->getPICBaseSymbol();
     break;
   case X86II::MO_TLSGD:     O << "@TLSGD";     break;
+  case X86II::MO_TLSLD:     O << "@TLSLD";     break;
+  case X86II::MO_TLSLDM:    O << "@TLSLDM";    break;
   case X86II::MO_GOTTPOFF:  O << "@GOTTPOFF";  break;
   case X86II::MO_INDNTPOFF: O << "@INDNTPOFF"; break;
   case X86II::MO_TPOFF:     O << "@TPOFF";     break;
+  case X86II::MO_DTPOFF:    O << "@DTPOFF";    break;
   case X86II::MO_NTPOFF:    O << "@NTPOFF";    break;
+  case X86II::MO_GOTNTPOFF: O << "@GOTNTPOFF"; break;
   case X86II::MO_GOTPCREL:  O << "@GOTPCREL";  break;
   case X86II::MO_GOT:       O << "@GOT";       break;
   case X86II::MO_GOTOFF:    O << "@GOTOFF";    break;
@@ -229,12 +233,14 @@ void X86AsmPrinter::print_pcrel_imm(const MachineInstr *MI, unsigned OpNo,
 
 
 void X86AsmPrinter::printOperand(const MachineInstr *MI, unsigned OpNo,
-                                 raw_ostream &O, const char *Modifier) {
+                                 raw_ostream &O, const char *Modifier,
+                                 unsigned AsmVariant) {
   const MachineOperand &MO = MI->getOperand(OpNo);
   switch (MO.getType()) {
   default: llvm_unreachable("unknown operand type!");
   case MachineOperand::MO_Register: {
-    O << '%';
+    // FIXME: Enumerating AsmVariant, so we can remove magic number.
+    if (AsmVariant == 0) O << '%';
     unsigned Reg = MO.getReg();
     if (Modifier && strncmp(Modifier, "subreg", strlen("subreg")) == 0) {
       EVT VT = (strcmp(Modifier+6,"64") == 0) ?
@@ -403,7 +409,9 @@ bool X86AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
     const MachineOperand &MO = MI->getOperand(OpNo);
 
     switch (ExtraCode[0]) {
-    default: return true;  // Unknown modifier.
+    default:
+      // See if this is a generic print operand
+      return AsmPrinter::PrintAsmOperand(MI, OpNo, AsmVariant, ExtraCode, O);
     case 'a': // This is an address.  Currently only 'i' and 'r' are expected.
       if (MO.isImm()) {
         O << MO.getImm();
@@ -465,7 +473,7 @@ bool X86AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNo,
     }
   }
 
-  printOperand(MI, OpNo, O);
+  printOperand(MI, OpNo, O, /*Modifier*/ 0, AsmVariant);
   return false;
 }
 

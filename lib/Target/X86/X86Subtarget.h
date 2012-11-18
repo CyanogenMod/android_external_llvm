@@ -55,7 +55,7 @@ protected:
 
   /// X86ProcFamily - X86 processor family: Intel Atom, and others
   X86ProcFamilyEnum X86ProcFamily;
-  
+
   /// PICStyle - Which PIC style to use
   ///
   PICStyles::Style PICStyle;
@@ -85,11 +85,11 @@ protected:
   /// HasAES - Target has AES instructions
   bool HasAES;
 
-  /// HasCLMUL - Target has carry-less multiplication
-  bool HasCLMUL;
+  /// HasPCLMUL - Target has carry-less multiplication
+  bool HasPCLMUL;
 
-  /// HasFMA3 - Target has 3-operand fused multiply-add
-  bool HasFMA3;
+  /// HasFMA - Target has 3-operand fused multiply-add
+  bool HasFMA;
 
   /// HasFMA4 - Target has 4-operand fused multiply-add
   bool HasFMA4;
@@ -136,6 +136,10 @@ protected:
   /// the stack pointer. This is an optimization for Intel Atom processors.
   bool UseLeaForSP;
 
+  /// HasSlowDivide - True if smaller divides are significantly faster than
+  /// full divides and should be used when possible.
+  bool HasSlowDivide;
+
   /// PostRAScheduler - True if using post-register-allocation scheduler.
   bool PostRAScheduler;
 
@@ -149,7 +153,7 @@ protected:
 
   /// TargetTriple - What processor and OS we're targeting.
   Triple TargetTriple;
-  
+
   /// Instruction itineraries for scheduling
   InstrItineraryData InstrItins;
 
@@ -198,14 +202,16 @@ public:
   bool hasSSE42() const { return X86SSELevel >= SSE42; }
   bool hasAVX() const { return X86SSELevel >= AVX; }
   bool hasAVX2() const { return X86SSELevel >= AVX2; }
+  bool hasNoAVX() const { return X86SSELevel < AVX; }
   bool hasSSE4A() const { return HasSSE4A; }
   bool has3DNow() const { return X863DNowLevel >= ThreeDNow; }
   bool has3DNowA() const { return X863DNowLevel >= ThreeDNowA; }
   bool hasPOPCNT() const { return HasPOPCNT; }
   bool hasAES() const { return HasAES; }
-  bool hasCLMUL() const { return HasCLMUL; }
-  bool hasFMA3() const { return HasFMA3; }
-  bool hasFMA4() const { return HasFMA4; }
+  bool hasPCLMUL() const { return HasPCLMUL; }
+  bool hasFMA() const { return HasFMA; }
+  // FIXME: Favor FMA when both are enabled. Is this the right thing to do?
+  bool hasFMA4() const { return HasFMA4 && !HasFMA; }
   bool hasXOP() const { return HasXOP; }
   bool hasMOVBE() const { return HasMOVBE; }
   bool hasRDRAND() const { return HasRDRAND; }
@@ -219,6 +225,7 @@ public:
   bool hasVectorUAMem() const { return HasVectorUAMem; }
   bool hasCmpxchg16b() const { return HasCmpxchg16b; }
   bool useLeaForSP() const { return UseLeaForSP; }
+  bool hasSlowDivide() const { return HasSlowDivide; }
 
   bool isAtom() const { return X86ProcFamily == IntelAtom; }
 
@@ -306,6 +313,8 @@ public:
   bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
                              TargetSubtargetInfo::AntiDepBreakMode& Mode,
                              RegClassVector& CriticalPathRCs) const;
+
+  bool postRAScheduler() const { return PostRAScheduler; }
 
   /// getInstrItins = Return the instruction itineraries based on the
   /// subtarget selection.

@@ -27,8 +27,7 @@
 #if defined(__arm__)
   LLVM_DISASSEMBLER(ARM)
 #elif defined(__mips__)
-  // MIPS does not support disassembler.
-  //LLVM_DISASSEMBLER(Mips)
+  LLVM_DISASSEMBLER(Mips)
 #elif defined(__i386__)
   LLVM_DISASSEMBLER(X86)
 #else

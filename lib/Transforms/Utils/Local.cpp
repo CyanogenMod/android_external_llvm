@@ -14,31 +14,31 @@
 
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Constants.h"
+#include "llvm/DIBuilder.h"
+#include "llvm/DebugInfo.h"
+#include "llvm/DerivedTypes.h"
 #include "llvm/GlobalAlias.h"
 #include "llvm/GlobalVariable.h"
-#include "llvm/DerivedTypes.h"
+#include "llvm/IRBuilder.h"
 #include "llvm/Instructions.h"
-#include "llvm/Intrinsics.h"
 #include "llvm/IntrinsicInst.h"
+#include "llvm/Intrinsics.h"
 #include "llvm/Metadata.h"
 #include "llvm/Operator.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/Analysis/DebugInfo.h"
-#include "llvm/Analysis/DIBuilder.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/ProfileInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/Target/TargetData.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
-#include "llvm/Support/IRBuilder.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetData.h"
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -52,7 +52,8 @@ using namespace llvm;
 /// Also calls RecursivelyDeleteTriviallyDeadInstructions() on any branch/switch
 /// conditions and indirectbr addresses this might make dead if
 /// DeleteDeadConditions is true.
-bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions) {
+bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions,
+                                  const TargetLibraryInfo *TLI) {
   TerminatorInst *T = BB->getTerminator();
   IRBuilder<> Builder(T);
 
@@ -96,7 +97,7 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions) {
       Value *Cond = BI->getCondition();
       BI->eraseFromParent();
       if (DeleteDeadConditions)
-        RecursivelyDeleteTriviallyDeadInstructions(Cond);
+        RecursivelyDeleteTriviallyDeadInstructions(Cond, TLI);
       return true;
     }
     return false;
@@ -161,7 +162,7 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions) {
       Value *Cond = SI->getCondition();
       SI->eraseFromParent();
       if (DeleteDeadConditions)
-        RecursivelyDeleteTriviallyDeadInstructions(Cond);
+        RecursivelyDeleteTriviallyDeadInstructions(Cond, TLI);
       return true;
     }
     
@@ -169,16 +170,21 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions) {
       // Otherwise, we can fold this switch into a conditional branch
       // instruction if it has only one non-default destination.
       SwitchInst::CaseIt FirstCase = SI->case_begin();
-      Value *Cond = Builder.CreateICmpEQ(SI->getCondition(),
-          FirstCase.getCaseValue(), "cond");
+      IntegersSubset& Case = FirstCase.getCaseValueEx();
+      if (Case.isSingleNumber()) {
+        // FIXME: Currently work with ConstantInt based numbers.
+        Value *Cond = Builder.CreateICmpEQ(SI->getCondition(),
+             Case.getSingleNumber(0).toConstantInt(),
+            "cond");
 
-      // Insert the new branch.
-      Builder.CreateCondBr(Cond, FirstCase.getCaseSuccessor(),
-                           SI->getDefaultDest());
+        // Insert the new branch.
+        Builder.CreateCondBr(Cond, FirstCase.getCaseSuccessor(),
+                             SI->getDefaultDest());
 
-      // Delete the old switch.
-      SI->eraseFromParent();
-      return true;
+        // Delete the old switch.
+        SI->eraseFromParent();
+        return true;
+      }
     }
     return false;
   }
@@ -200,7 +206,7 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions) {
       Value *Address = IBI->getAddress();
       IBI->eraseFromParent();
       if (DeleteDeadConditions)
-        RecursivelyDeleteTriviallyDeadInstructions(Address);
+        RecursivelyDeleteTriviallyDeadInstructions(Address, TLI);
       
       // If we didn't find our destination in the IBI successor list, then we
       // have undefined behavior.  Replace the unconditional branch with an
@@ -225,7 +231,8 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions) {
 /// isInstructionTriviallyDead - Return true if the result produced by the
 /// instruction is not used, and the instruction has no side effects.
 ///
-bool llvm::isInstructionTriviallyDead(Instruction *I) {
+bool llvm::isInstructionTriviallyDead(Instruction *I,
+                                      const TargetLibraryInfo *TLI) {
   if (!I->use_empty() || isa<TerminatorInst>(I)) return false;
 
   // We don't want the landingpad instruction removed by anything this general.
@@ -260,9 +267,9 @@ bool llvm::isInstructionTriviallyDead(Instruction *I) {
       return isa<UndefValue>(II->getArgOperand(1));
   }
 
-  if (extractMallocCall(I)) return true;
+  if (isAllocLikeFn(I, TLI)) return true;
 
-  if (CallInst *CI = isFreeCall(I))
+  if (CallInst *CI = isFreeCall(I, TLI))
     if (Constant *C = dyn_cast<Constant>(CI->getArgOperand(0)))
       return C->isNullValue() || isa<UndefValue>(C);
 
@@ -273,9 +280,11 @@ bool llvm::isInstructionTriviallyDead(Instruction *I) {
 /// trivially dead instruction, delete it.  If that makes any of its operands
 /// trivially dead, delete them too, recursively.  Return true if any
 /// instructions were deleted.
-bool llvm::RecursivelyDeleteTriviallyDeadInstructions(Value *V) {
+bool
+llvm::RecursivelyDeleteTriviallyDeadInstructions(Value *V,
+                                                 const TargetLibraryInfo *TLI) {
   Instruction *I = dyn_cast<Instruction>(V);
-  if (!I || !I->use_empty() || !isInstructionTriviallyDead(I))
+  if (!I || !I->use_empty() || !isInstructionTriviallyDead(I, TLI))
     return false;
   
   SmallVector<Instruction*, 16> DeadInsts;
@@ -296,7 +305,7 @@ bool llvm::RecursivelyDeleteTriviallyDeadInstructions(Value *V) {
       // operand, and if it is 'trivially' dead, delete it in a future loop
       // iteration.
       if (Instruction *OpI = dyn_cast<Instruction>(OpV))
-        if (isInstructionTriviallyDead(OpI))
+        if (isInstructionTriviallyDead(OpI, TLI))
           DeadInsts.push_back(OpI);
     }
     
@@ -329,19 +338,20 @@ static bool areAllUsesEqual(Instruction *I) {
 /// either forms a cycle or is terminated by a trivially dead instruction,
 /// delete it.  If that makes any of its operands trivially dead, delete them
 /// too, recursively.  Return true if a change was made.
-bool llvm::RecursivelyDeleteDeadPHINode(PHINode *PN) {
+bool llvm::RecursivelyDeleteDeadPHINode(PHINode *PN,
+                                        const TargetLibraryInfo *TLI) {
   SmallPtrSet<Instruction*, 4> Visited;
   for (Instruction *I = PN; areAllUsesEqual(I) && !I->mayHaveSideEffects();
        I = cast<Instruction>(*I->use_begin())) {
     if (I->use_empty())
-      return RecursivelyDeleteTriviallyDeadInstructions(I);
+      return RecursivelyDeleteTriviallyDeadInstructions(I, TLI);
 
     // If we find an instruction more than once, we're on a cycle that
     // won't prove fruitful.
     if (!Visited.insert(I)) {
       // Break the cycle and delete the instruction and its operands.
       I->replaceAllUsesWith(UndefValue::get(I->getType()));
-      (void)RecursivelyDeleteTriviallyDeadInstructions(I);
+      (void)RecursivelyDeleteTriviallyDeadInstructions(I, TLI);
       return true;
     }
   }
@@ -353,7 +363,8 @@ bool llvm::RecursivelyDeleteDeadPHINode(PHINode *PN) {
 ///
 /// This returns true if it changed the code, note that it can delete
 /// instructions in other blocks as well in this block.
-bool llvm::SimplifyInstructionsInBlock(BasicBlock *BB, const TargetData *TD) {
+bool llvm::SimplifyInstructionsInBlock(BasicBlock *BB, const TargetData *TD,
+                                       const TargetLibraryInfo *TLI) {
   bool MadeChange = false;
 
 #ifndef NDEBUG
@@ -376,7 +387,7 @@ bool llvm::SimplifyInstructionsInBlock(BasicBlock *BB, const TargetData *TD) {
       continue;
     }
 
-    MadeChange |= RecursivelyDeleteTriviallyDeadInstructions(Inst);
+    MadeChange |= RecursivelyDeleteTriviallyDeadInstructions(Inst, TLI);
     if (BIHandle != BI)
       BI = BB->begin();
   }
@@ -700,7 +711,7 @@ bool llvm::EliminateDuplicatePHINodes(BasicBlock *BB) {
         CollisionMap[PN] = Old;
         break;
       }
-      // Procede to the next PHI in the list.
+      // Proceed to the next PHI in the list.
       OtherPN = I->second;
     }
   }

@@ -47,9 +47,9 @@ namespace path {
 /// C:\foo\bar => C:,/,foo,bar
 ///
 class const_iterator {
-  StringRef Path;      //< The entire path.
-  StringRef Component; //< The current component. Not necessarily in Path.
-  size_t    Position;  //< The iterators current position within Path.
+  StringRef Path;      ///< The entire path.
+  StringRef Component; ///< The current component. Not necessarily in Path.
+  size_t    Position;  ///< The iterators current position within Path.
 
   // An end iterator has Position = Path.size() + 1.
   friend const_iterator begin(StringRef path);
@@ -133,7 +133,7 @@ void replace_extension(SmallVectorImpl<char> &path, const Twine &extension);
 /// foo   + bar/f => foo/bar/f
 ///
 /// @param path Set to \a path + \a component.
-/// @param component The component to be appended to \a path.
+/// @param a The component to be appended to \a path.
 void append(SmallVectorImpl<char> &path, const Twine &a,
                                          const Twine &b = "",
                                          const Twine &c = "",
@@ -272,7 +272,7 @@ bool is_separator(char value);
 /// ignored if the user or system has set the typical environment variable
 /// (e.g., TEMP on Windows, TMPDIR on *nix) to specify a temporary directory.
 ///
-/// @param Result Holds the resulting path name.
+/// @param result Holds the resulting path name.
 void system_temp_directory(bool erasedOnReboot, SmallVectorImpl<char> &result);
 
 /// @brief Has root name?

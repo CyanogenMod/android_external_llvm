@@ -115,6 +115,25 @@ void LLVMDumpModule(LLVMModuleRef M) {
   unwrap(M)->dump();
 }
 
+LLVMBool LLVMPrintModuleToFile(LLVMModuleRef M, const char *Filename,
+                               char **ErrorMessage) {
+  std::string error;
+  raw_fd_ostream dest(Filename, error);
+  if (!error.empty()) {
+    *ErrorMessage = strdup(error.c_str());
+    return true;
+  }
+
+  unwrap(M)->print(dest, NULL);
+
+  if (!error.empty()) {
+    *ErrorMessage = strdup(error.c_str());
+    return true;
+  }
+  dest.flush();
+  return false;
+}
+
 /*--.. Operations on inline assembler ......................................--*/
 void LLVMSetModuleInlineAsm(LLVMModuleRef M, const char *Asm) {
   unwrap(M)->setModuleInlineAsm(StringRef(Asm));
@@ -1065,6 +1084,8 @@ LLVMLinkage LLVMGetLinkage(LLVMValueRef Global) {
     return LLVMLinkOnceAnyLinkage;
   case GlobalValue::LinkOnceODRLinkage:
     return LLVMLinkOnceODRLinkage;
+  case GlobalValue::LinkOnceODRAutoHideLinkage:
+    return LLVMLinkOnceODRAutoHideLinkage;
   case GlobalValue::WeakAnyLinkage:
     return LLVMWeakAnyLinkage;
   case GlobalValue::WeakODRLinkage:
@@ -1079,8 +1100,6 @@ LLVMLinkage LLVMGetLinkage(LLVMValueRef Global) {
     return LLVMLinkerPrivateLinkage;
   case GlobalValue::LinkerPrivateWeakLinkage:
     return LLVMLinkerPrivateWeakLinkage;
-  case GlobalValue::LinkerPrivateWeakDefAutoLinkage:
-    return LLVMLinkerPrivateWeakDefAutoLinkage;
   case GlobalValue::DLLImportLinkage:
     return LLVMDLLImportLinkage;
   case GlobalValue::DLLExportLinkage:
@@ -1110,6 +1129,9 @@ void LLVMSetLinkage(LLVMValueRef Global, LLVMLinkage Linkage) {
   case LLVMLinkOnceODRLinkage:
     GV->setLinkage(GlobalValue::LinkOnceODRLinkage);
     break;
+  case LLVMLinkOnceODRAutoHideLinkage:
+    GV->setLinkage(GlobalValue::LinkOnceODRAutoHideLinkage);
+    break;
   case LLVMWeakAnyLinkage:
     GV->setLinkage(GlobalValue::WeakAnyLinkage);
     break;
@@ -1130,9 +1152,6 @@ void LLVMSetLinkage(LLVMValueRef Global, LLVMLinkage Linkage) {
     break;
   case LLVMLinkerPrivateWeakLinkage:
     GV->setLinkage(GlobalValue::LinkerPrivateWeakLinkage);
-    break;
-  case LLVMLinkerPrivateWeakDefAutoLinkage:
-    GV->setLinkage(GlobalValue::LinkerPrivateWeakDefAutoLinkage);
     break;
   case LLVMDLLImportLinkage:
     GV->setLinkage(GlobalValue::DLLImportLinkage);
@@ -1191,7 +1210,7 @@ LLVMValueRef LLVMAddGlobalInAddressSpace(LLVMModuleRef M, LLVMTypeRef Ty,
                                          unsigned AddressSpace) {
   return wrap(new GlobalVariable(*unwrap(M), unwrap(Ty), false,
                                  GlobalValue::ExternalLinkage, 0, Name, 0,
-                                 false, AddressSpace));
+                                 GlobalVariable::NotThreadLocal, AddressSpace));
 }
 
 LLVMValueRef LLVMGetNamedGlobal(LLVMModuleRef M, const char *Name) {

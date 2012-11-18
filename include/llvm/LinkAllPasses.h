@@ -55,6 +55,7 @@ namespace {
       (void) llvm::createScalarEvolutionAliasAnalysisPass();
       (void) llvm::createTypeBasedAliasAnalysisPass();
       (void) llvm::createBlockPlacementPass();
+      (void) llvm::createBoundsCheckingPass();
       (void) llvm::createBreakCriticalEdgesPass();
       (void) llvm::createCFGSimplificationPass();
       (void) llvm::createConstantMergePass();
@@ -106,6 +107,7 @@ namespace {
       (void) llvm::createProfileVerifierPass();
       (void) llvm::createPathProfileVerifierPass();
       (void) llvm::createProfileLoaderPass();
+      (void) llvm::createProfileMetadataLoaderPass();
       (void) llvm::createPathProfileLoaderPass();
       (void) llvm::createPromoteMemoryToRegisterPass();
       (void) llvm::createDemoteRegisterToMemoryPass();

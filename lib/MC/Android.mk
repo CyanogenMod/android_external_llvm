@@ -28,6 +28,7 @@ mc_SRC_FILES := \
   MCObjectFileInfo.cpp \
   MCObjectStreamer.cpp \
   MCObjectWriter.cpp \
+  MCRegisterInfo.cpp \
   MCSection.cpp \
   MCSectionCOFF.cpp	\
   MCSectionELF.cpp \

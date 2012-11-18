@@ -9,6 +9,7 @@ tablegen_SRC_FILES := \
   CodeGenDAGPatterns.cpp \
   CodeGenInstruction.cpp \
   CodeGenRegisters.cpp \
+  CodeGenSchedule.cpp \
   CodeGenTarget.cpp \
   DAGISelEmitter.cpp \
   DAGISelMatcherEmitter.cpp \
@@ -25,7 +26,6 @@ tablegen_SRC_FILES := \
   PseudoLoweringEmitter.cpp \
   RegisterInfoEmitter.cpp \
   SetTheory.cpp \
-  StringMatcher.cpp \
   SubtargetEmitter.cpp \
   TGValueTypes.cpp \
   TableGen.cpp \

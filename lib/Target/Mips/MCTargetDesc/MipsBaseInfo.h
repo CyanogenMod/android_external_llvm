@@ -79,7 +79,12 @@ namespace MipsII {
     MO_GPOFF_LO,
     MO_GOT_DISP,
     MO_GOT_PAGE,
-    MO_GOT_OFST
+    MO_GOT_OFST,
+
+    /// MO_HIGHER/HIGHEST - Represents the highest or higher half word of a
+    /// 64-bit symbol address.
+    MO_HIGHER,
+    MO_HIGHEST
   };
 
   enum {
@@ -117,7 +122,7 @@ inline static unsigned getMipsRegisterNumbering(unsigned RegEnum)
 {
   switch (RegEnum) {
   case Mips::ZERO: case Mips::ZERO_64: case Mips::F0: case Mips::D0_64:
-  case Mips::D0:
+  case Mips::D0:   case Mips::FCC0:
     return 0;
   case Mips::AT: case Mips::AT_64: case Mips::F1: case Mips::D1_64:
     return 1;

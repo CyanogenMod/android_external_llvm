@@ -15,7 +15,7 @@
 #define CODEGEN_ASMPRINTER_DWARFCOMPILEUNIT_H
 
 #include "DIE.h"
-#include "llvm/Analysis/DebugInfo.h"
+#include "llvm/DebugInfo.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/OwningPtr.h"
@@ -176,6 +176,9 @@ public:
   }
 public:
 
+  /// addFlag - Add a flag that is true to the DIE.
+  void addFlag(DIE *Die, unsigned Attribute);
+  
   /// addUInt - Add an unsigned integer attribute data and value.
   ///
   void addUInt(DIE *Die, unsigned Attribute, unsigned Form, uint64_t Integer);

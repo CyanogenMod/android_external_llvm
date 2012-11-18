@@ -4,59 +4,53 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+/* Bug report URL. */
+#define BUG_REPORT_URL "http://llvm.org/bugs/"
+
 /* Relative directory for resource files */
 #define CLANG_RESOURCE_DIR ""
-
-/* 32 bit multilib directory. */
-#define CXX_INCLUDE_32BIT_DIR ""
-
-/* 64 bit multilib directory. */
-#define CXX_INCLUDE_64BIT_DIR ""
-
-/* Arch the libstdc++ headers. */
-#define CXX_INCLUDE_ARCH ""
-
-/* Directory with the libstdc++ headers. */
-#define CXX_INCLUDE_ROOT ""
 
 /* Directories clang will search for headers */
 #define C_INCLUDE_DIRS ""
 
-/* Define if CBE is enabled for printf %a output */
-#define ENABLE_CBE_PRINTF_A 1
+/* Default <path> to all compiler invocations for --sysroot=<path>. */
+#define DEFAULT_SYSROOT ""
 
 /* Define if position independent code is enabled */
-#define ENABLE_PIC 0
-
-/* Define if threads enabled */
-#define ENABLE_THREADS 0
+#define ENABLE_PIC 1
 
 /* Define if timestamp information (e.g., __DATE___) is allowed */
 #define ENABLE_TIMESTAMPS 1
 
+/* Directory where gcc is installed. */
+#define GCC_INSTALL_PREFIX ""
+
 /* Define to 1 if you have the `argz_append' function. */
-#define HAVE_ARGZ_APPEND 1
+/* #undef HAVE_ARGZ_APPEND */
 
 /* Define to 1 if you have the `argz_create_sep' function. */
-#define HAVE_ARGZ_CREATE_SEP 1
+/* #undef HAVE_ARGZ_CREATE_SEP */
 
 /* Define to 1 if you have the <argz.h> header file. */
-#define HAVE_ARGZ_H 1
+/* #undef HAVE_ARGZ_H */
 
 /* Define to 1 if you have the `argz_insert' function. */
-#define HAVE_ARGZ_INSERT 1
+/* #undef HAVE_ARGZ_INSERT */
 
 /* Define to 1 if you have the `argz_next' function. */
-#define HAVE_ARGZ_NEXT 1
+/* #undef HAVE_ARGZ_NEXT */
 
 /* Define to 1 if you have the `argz_stringify' function. */
-#define HAVE_ARGZ_STRINGIFY 1
+/* #undef HAVE_ARGZ_STRINGIFY */
 
 /* Define to 1 if you have the <assert.h> header file. */
 #define HAVE_ASSERT_H 1
 
 /* Define to 1 if you have the `backtrace' function. */
+#if defined(HAVE_BACKTRACE) && HAVE_BACKTRACE == 0
+/* Defined by AndroidConfig.h as 0 */
 #undef HAVE_BACKTRACE
+#endif
 
 /* Define to 1 if you have the `bcopy' function. */
 /* #undef HAVE_BCOPY */
@@ -73,8 +67,18 @@
 /* Define to 1 if you have the <CrashReporterClient.h> header file. */
 /* #undef HAVE_CRASHREPORTERCLIENT_H */
 
+/* Define if __crashreporter_info__ exists. */
+/* #undef HAVE_CRASHREPORTER_INFO */
+
 /* Define to 1 if you have the <ctype.h> header file. */
 #define HAVE_CTYPE_H 1
+
+/* Define to 1 if you have the <cxxabi.h> header file. */
+#define HAVE_CXXABI_H 0
+
+/* Define to 1 if you have the declaration of `strerror_s', and to 0 if you
+   don't. */
+#define HAVE_DECL_STRERROR_S 0
 
 /* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
    */
@@ -90,7 +94,7 @@
 #define HAVE_DLERROR 1
 
 /* Define to 1 if you have the <dlfcn.h> header file. */
-/* #undef HAVE_DLFCN_H */
+#define HAVE_DLFCN_H 1
 
 /* Define if dlopen() is available on this platform. */
 #define HAVE_DLOPEN 1
@@ -114,13 +118,16 @@
 #define HAVE_ERROR_T 1
 
 /* Define to 1 if you have the <execinfo.h> header file. */
-/* #undef HAVE_EXECINFO_H */
+#define HAVE_EXECINFO_H 0
 
 /* Define to 1 if you have the <fcntl.h> header file. */
 #define HAVE_FCNTL_H 1
 
 /* Define if the neat program is available */
 /* #undef HAVE_FDP */
+
+/* Define to 1 if you have the <fenv.h> header file. */
+#define HAVE_FENV_H 1
 
 /* Define if libffi is available on this platform. */
 /* #undef HAVE_FFI_CALL */
@@ -228,6 +235,9 @@
 /* Define if mallinfo() is available on this platform. */
 #define HAVE_MALLINFO 1
 
+/* Define to 1 if you have the <malloc.h> header file. */
+//#define HAVE_MALLOC_H 1 /* Defined by AndroidConfig.h */
+
 /* Define to 1 if you have the <malloc/malloc.h> header file. */
 /* #undef HAVE_MALLOC_MALLOC_H */
 
@@ -244,7 +254,7 @@
 #define HAVE_MEMORY_H 1
 
 /* Define to 1 if you have the `mkdtemp' function. */
-/* #undef HAVE_MKDTEMP */
+#define HAVE_MKDTEMP 0
 
 /* Define to 1 if you have the `mkstemp' function. */
 #define HAVE_MKSTEMP 1
@@ -280,6 +290,9 @@
 /* Define to 1 if you have the `powf' function. */
 #define HAVE_POWF 1
 
+/* Define to 1 if you have the `pread' function. */
+#define HAVE_PREAD 1
+
 /* Define if libtool can extract symbol lists from object files. */
 #define HAVE_PRELOADED_SYMBOLS 1
 
@@ -287,16 +300,16 @@
 #define HAVE_PRINTF_A 1
 
 /* Have pthread_getspecific */
-/* #undef HAVE_PTHREAD_GETSPECIFIC */
+#define HAVE_PTHREAD_GETSPECIFIC 1
 
 /* Define to 1 if you have the <pthread.h> header file. */
-/* #undef HAVE_PTHREAD_H */
+#define HAVE_PTHREAD_H 1
 
 /* Have pthread_mutex_lock */
-/* #undef HAVE_PTHREAD_MUTEX_LOCK */
+#define HAVE_PTHREAD_MUTEX_LOCK 1
 
 /* Have pthread_rwlock_init */
-/* #undef HAVE_PTHREAD_RWLOCK_INIT */
+#define HAVE_PTHREAD_RWLOCK_INIT 1
 
 /* Define to 1 if srand48/lrand48/drand48 exist in <stdlib.h> */
 #define HAVE_RAND48 1
@@ -374,10 +387,9 @@
 #define HAVE_STRERROR 1
 
 /* Define to 1 if you have the `strerror_r' function. */
+#ifndef USE_MINGW
 #define HAVE_STRERROR_R 1
-
-/* Define to 1 if you have the `strerror_s' function. */
-/* #undef HAVE_STRERROR_S */
+#endif
 
 /* Define to 1 if you have the <strings.h> header file. */
 #define HAVE_STRINGS_H 1
@@ -432,6 +444,9 @@
 /* Define to 1 if you have the <sys/types.h> header file. */
 #define HAVE_SYS_TYPES_H 1
 
+/* Define to 1 if you have the <sys/uio.h> header file. */
+#define HAVE_SYS_UIO_H 1
+
 /* Define to 1 if you have <sys/wait.h> that is POSIX.1 compatible. */
 #define HAVE_SYS_WAIT_H 1
 
@@ -459,72 +474,101 @@
 /* Define to 1 if you have the <windows.h> header file. */
 /* #undef HAVE_WINDOWS_H */
 
+/* Define to 1 if you have the `writev' function. */
+#define HAVE_WRITEV 1
+
+/* Define if the xdot.py program is available */
+/* #undef HAVE_XDOT_PY */
+
+/* Have host's _alloca */
+/* #undef HAVE__ALLOCA */
+
+/* Have host's __alloca */
+/* #undef HAVE___ALLOCA */
+
+/* Have host's __ashldi3 */
+/* #undef HAVE___ASHLDI3 */
+
+/* Have host's __ashrdi3 */
+/* #undef HAVE___ASHRDI3 */
+
+/* Have host's __chkstk */
+/* #undef HAVE___CHKSTK */
+
+/* Have host's __cmpdi2 */
+/* #undef HAVE___CMPDI2 */
+
+/* Have host's __divdi3 */
+/* #undef HAVE___DIVDI3 */
+
 /* Define to 1 if you have the `__dso_handle' function. */
 #define HAVE___DSO_HANDLE 1
 
+/* Have host's __fixdfdi */
+/* #undef HAVE___FIXDFDI */
+
+/* Have host's __fixsfdi */
+/* #undef HAVE___FIXSFDI */
+
+/* Have host's __floatdidf */
+/* #undef HAVE___FLOATDIDF */
+
+/* Have host's __lshrdi3 */
+/* #undef HAVE___LSHRDI3 */
+
+/* Have host's __main */
+/* #undef HAVE___MAIN */
+
+/* Have host's __moddi3 */
+/* #undef HAVE___MODDI3 */
+
+/* Have host's __udivdi3 */
+/* #undef HAVE___UDIVDI3 */
+
+/* Have host's __umoddi3 */
+/* #undef HAVE___UMODDI3 */
+
+/* Have host's ___chkstk */
+/* #undef HAVE____CHKSTK */
+
 /* Linker version detected at compile time. */
-/* #undef HOST_LINK_VERSION */
+#define HOST_LINK_VERSION "2.20.1"
 
 /* Installation directory for binary executables */
-#define LLVM_BINDIR "/usr/local/google/llvm/bin"
+#define LLVM_BINDIR "/opt/llvm-android/bin"
 
 /* Time at which LLVM was configured */
-#define LLVM_CONFIGTIME "Tue Apr 27 18:30:43 CST 2010"
+#define LLVM_CONFIGTIME "Tue May  8 14:22:45 CST 2012"
 
 /* Installation directory for data files */
-#define LLVM_DATADIR "/usr/local/google/llvm/share/llvm"
+#define LLVM_DATADIR "/opt/llvm-android/share/llvm"
+
+/* Target triple LLVM will generate code for by default */
+#define LLVM_DEFAULT_TARGET_TRIPLE "i386-unknown-linux"
 
 /* Installation directory for documentation */
-#define LLVM_DOCSDIR "/usr/local/google/llvm/docs/llvm"
+#define LLVM_DOCSDIR "/opt/llvm-android/share/doc/llvm"
+
+/* Define if threads enabled */
+#define LLVM_ENABLE_THREADS 1
 
 /* Installation directory for config files */
-#define LLVM_ETCDIR "/usr/local/google/llvm/etc/llvm"
+#define LLVM_ETCDIR "/opt/llvm-android/etc/llvm"
 
-/* Host triple we were built on */
-#define LLVM_DEFAULT_TARGET_TRIPLE "x86_64-unknown-linux-gnu"
+/* Has gcc/MSVC atomic intrinsics */
+#define LLVM_HAS_ATOMICS 1
 
 /* Installation directory for include files */
-#define LLVM_INCLUDEDIR "/usr/local/google/llvm/include"
+#define LLVM_INCLUDEDIR "/opt/llvm-android/include"
 
 /* Installation directory for .info files */
-#define LLVM_INFODIR "/usr/local/google/llvm/info"
+#define LLVM_INFODIR "/opt/llvm-android/info"
 
 /* Installation directory for libraries */
-#define LLVM_LIBDIR "/usr/local/google/llvm/lib"
+#define LLVM_LIBDIR "/opt/llvm-android/lib"
 
 /* Installation directory for man pages */
-#define LLVM_MANDIR "/usr/local/google/llvm/man"
-
-/* Build multithreading support into LLVM */
-/* #undef LLVM_MULTITHREADED */
-
-/* LLVM architecture name for the native architecture, if available */
-#if defined(__arm__)
-#   define LLVM_NATIVE_ARCH ARMTarget
-#elif defined(__mips__)
-#   define LLVM_NATIVE_ARCH MipsTarget
-#elif defined(__i386__)
-#   define LLVM_NATIVE_ARCH X86Target
-#else
-#   error Unsupported target architecture for LLVM_NATIVE_ARCH
-#endif
-
-/* Short LLVM architecture name for the native architecture, if available */
-#if defined(__arm__)
-#   define LLVM_NATIVE_ARCHNAME ARM
-#elif defined(__mips__)
-#   define LLVM_NATIVE_ARCHNAME Mips
-#elif defined(__i386__)
-#   define LLVM_NATIVE_ARCHNAME X86
-#else
-#   error Unsupported target architecture for LLVM_NATIVE_ARCHNAME
-#endif
-
-/* Define if this is Unixish platform */
-#define LLVM_ON_UNIX 1
-
-/* Define if this is Win32ish platform */
-/* #undef LLVM_ON_WIN32 */
+#define LLVM_MANDIR "/opt/llvm-android/man"
 
 /* Define to path to circo program if found or 'echo circo' otherwise */
 /* #undef LLVM_PATH_CIRCO */
@@ -550,8 +594,23 @@
 /* Define to path to twopi program if found or 'echo twopi' otherwise */
 /* #undef LLVM_PATH_TWOPI */
 
+/* Define to path to xdot.py program if found or 'echo xdot.py' otherwise */
+/* #undef LLVM_PATH_XDOT_PY */
+
 /* Installation prefix directory */
-#define LLVM_PREFIX "/usr/local/google/llvm"
+#define LLVM_PREFIX "/opt/llvm-android"
+
+/* Define if we have the Intel JIT API runtime support library */
+#define LLVM_USE_INTEL_JITEVENTS 0
+
+/* Define if we have the oprofile JIT-support library */
+#define LLVM_USE_OPROFILE 0
+
+/* Major version of the LLVM API */
+#define LLVM_VERSION_MAJOR 3
+
+/* Minor version of the LLVM API */
+#define LLVM_VERSION_MINOR 1
 
 /* Define if the OS needs help to load dependent libraries for dlopen(). */
 /* #undef LTDL_DLOPEN_DEPLIBS */
@@ -578,19 +637,19 @@
 /* #undef NEED_USCORE */
 
 /* Define to the address where bug reports for this package should be sent. */
-#define PACKAGE_BUGREPORT "llvmbugs@cs.uiuc.edu"
+#define PACKAGE_BUGREPORT "http://llvm.org/bugs/"
 
 /* Define to the full name of this package. */
-#define PACKAGE_NAME "llvm"
+#define PACKAGE_NAME "LLVM"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "llvm 2.8svn"
+#define PACKAGE_STRING "LLVM 3.1svn"
 
 /* Define to the one symbol short name of this package. */
-#define PACKAGE_TARNAME "-llvm-"
+#define PACKAGE_TARNAME "llvm"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "2.8svn"
+#define PACKAGE_VERSION "3.1svn"
 
 /* Define as the return type of signal handlers (`int' or `void'). */
 #define RETSIGTYPE void
@@ -607,9 +666,6 @@
 /* Define to 1 if your <sys/time.h> declares `struct tm'. */
 /* #undef TM_IN_SYS_TIME */
 
-/* Define if we have the oprofile JIT-support library */
-#define USE_OPROFILE 0
-
 /* Define if use udis86 library */
 #define USE_UDIS86 0
 
@@ -624,5 +680,7 @@
 
 /* Define to `unsigned int' if <sys/types.h> does not define. */
 /* #undef size_t */
+
+#include "llvm/Config/llvm-platform-config.h"
 
 #endif

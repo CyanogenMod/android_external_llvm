@@ -45,8 +45,8 @@ class MCFragment : public ilist_node<MCFragment> {
   friend class MCAsmLayout;
   friend class mcld::Layout;
 
-  MCFragment(const MCFragment&);     // DO NOT IMPLEMENT
-  void operator=(const MCFragment&); // DO NOT IMPLEMENT
+  MCFragment(const MCFragment&) LLVM_DELETED_FUNCTION;
+  void operator=(const MCFragment&) LLVM_DELETED_FUNCTION;
 
 public:
   enum FragmentType {
@@ -138,7 +138,7 @@ public:
 
   void addFixup(MCFixup Fixup) {
     // Enforce invariant that fixups are in offset order.
-    assert((Fixups.empty() || Fixup.getOffset() > Fixups.back().getOffset()) &&
+    assert((Fixups.empty() || Fixup.getOffset() >= Fixups.back().getOffset()) &&
            "Fixups must be added in order!");
     Fixups.push_back(Fixup);
   }
@@ -184,7 +184,7 @@ public:
   typedef SmallVectorImpl<MCFixup>::iterator fixup_iterator;
 
 public:
-  MCInstFragment(MCInst _Inst, MCSectionData *SD = 0)
+  MCInstFragment(const MCInst &_Inst, MCSectionData *SD = 0)
     : MCFragment(FT_Inst, SD), Inst(_Inst) {
   }
 
@@ -199,7 +199,7 @@ public:
   MCInst &getInst() { return Inst; }
   const MCInst &getInst() const { return Inst; }
 
-  void setInst(MCInst Value) { Inst = Value; }
+  void setInst(const MCInst& Value) { Inst = Value; }
 
   /// @}
   /// @name Fixup Access
@@ -659,6 +659,16 @@ struct IndirectSymbolData {
   MCSectionData *SectionData;
 };
 
+// FIXME: Ditto this. Purely so the Streamer and the ObjectWriter can talk
+// to one another.
+struct DataRegionData {
+  // This enum should be kept in sync w/ the mach-o definition in
+  // llvm/Object/MachOFormat.h.
+  enum KindTy { Data = 1, JumpTable8, JumpTable16, JumpTable32 } Kind;
+  MCSymbol *Start;
+  MCSymbol *End;
+};
+
 class MCAssembler {
   friend class MCAsmLayout;
 
@@ -675,6 +685,10 @@ public:
   typedef std::vector<IndirectSymbolData>::const_iterator
     const_indirect_symbol_iterator;
   typedef std::vector<IndirectSymbolData>::iterator indirect_symbol_iterator;
+
+  typedef std::vector<DataRegionData>::const_iterator
+    const_data_region_iterator;
+  typedef std::vector<DataRegionData>::iterator data_region_iterator;
 
 private:
   MCAssembler(const MCAssembler&);    // DO NOT IMPLEMENT
@@ -706,6 +720,7 @@ private:
 
   std::vector<IndirectSymbolData> IndirectSymbols;
 
+  std::vector<DataRegionData> DataRegions;
   /// The set of function symbols for which a .thumb_func directive has
   /// been seen.
   //
@@ -892,6 +907,33 @@ public:
   }
 
   size_t indirect_symbol_size() const { return IndirectSymbols.size(); }
+
+  /// @}
+  /// @name Data Region List Access
+  /// @{
+
+  // FIXME: This is a total hack, this should not be here. Once things are
+  // factored so that the streamer has direct access to the .o writer, it can
+  // disappear.
+  std::vector<DataRegionData> &getDataRegions() {
+    return DataRegions;
+  }
+
+  data_region_iterator data_region_begin() {
+    return DataRegions.begin();
+  }
+  const_data_region_iterator data_region_begin() const {
+    return DataRegions.begin();
+  }
+
+  data_region_iterator data_region_end() {
+    return DataRegions.end();
+  }
+  const_data_region_iterator data_region_end() const {
+    return DataRegions.end();
+  }
+
+  size_t data_region_size() const { return DataRegions.size(); }
 
   /// @}
   /// @name Backend Data Access
