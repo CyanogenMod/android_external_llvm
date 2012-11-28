@@ -35,10 +35,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES :=	\
 	AsmPrinter.cpp \
 	AsmPrinterDwarf.cpp \
-	AsmPrinterInlineAsm.cpp
-
-ifeq ($(TARGET_BUILD_VARIANT),eng)
-LOCAL_SRC_FILES :=      \
+	AsmPrinterInlineAsm.cpp \
 	ARMException.cpp        \
 	DIE.cpp \
 	DwarfAccelTable.cpp \
@@ -48,7 +45,6 @@ LOCAL_SRC_FILES :=      \
 	DwarfException.cpp      \
 	Win64Exception.cpp \
 	$(LOCAL_SRC_FILES)
-endif
 
 LOCAL_MODULE:= libLLVMAsmPrinter
 
