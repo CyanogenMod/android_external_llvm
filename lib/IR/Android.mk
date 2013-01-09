@@ -8,6 +8,7 @@ vmcore_SRC_FILES := \
   ConstantFold.cpp \
   Constants.cpp \
   Core.cpp \
+  DataLayout.cpp \
   DebugInfo.cpp \
   DebugLoc.cpp \
   DIBuilder.cpp \

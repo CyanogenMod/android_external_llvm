@@ -4,6 +4,7 @@ codegen_SRC_FILES := \
   AggressiveAntiDepBreaker.cpp \
   AllocationOrder.cpp \
   Analysis.cpp \
+  BasicTargetTransformInfo.cpp \
   BranchFolding.cpp \
   CalcSpillWeights.cpp \
   CallingConvLower.cpp \
@@ -53,10 +54,10 @@ codegen_SRC_FILES := \
   MachineInstrBundle.cpp \
   MachineLICM.cpp \
   MachineLoopInfo.cpp \
-  MachineLoopRanges.cpp \
   MachineModuleInfo.cpp \
   MachineModuleInfoImpls.cpp \
   MachinePassRegistry.cpp \
+  MachinePostDominators.cpp \
   MachineRegisterInfo.cpp \
   MachineSSAUpdater.cpp \
   MachineScheduler.cpp \
@@ -99,9 +100,11 @@ codegen_SRC_FILES := \
   StrongPHIElimination.cpp \
   TailDuplication.cpp \
   TargetFrameLoweringImpl.cpp \
-  TargetInstrInfoImpl.cpp \
+  TargetInstrInfo.cpp \
   TargetLoweringObjectFileImpl.cpp \
   TargetOptionsImpl.cpp \
+  TargetRegisterInfo.cpp \
+  TargetSchedule.cpp \
   TwoAddressInstructionPass.cpp \
   UnreachableBlockElim.cpp \
   VirtRegMap.cpp

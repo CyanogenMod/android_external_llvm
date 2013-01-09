@@ -6,7 +6,6 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 x86_asm_parser_SRC_FILES :=	\
-	X86AsmLexer.cpp	\
 	X86AsmParser.cpp
 
 x86_asm_parser_TBLGEN_TABLES :=	\

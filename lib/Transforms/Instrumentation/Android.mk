@@ -7,6 +7,7 @@ instrumentation_SRC_FILES := \
   EdgeProfiling.cpp \
   GCOVProfiling.cpp \
   Instrumentation.cpp \
+  MemorySanitizer.cpp \
   OptimalEdgeProfiling.cpp \
   PathProfiling.cpp \
   ProfilingUtils.cpp \

@@ -2,7 +2,6 @@ LOCAL_PATH := $(call my-dir)
 
 x86_disassembler_TBLGEN_TABLES := \
   X86GenDisassemblerTables.inc \
-  X86GenEDInfo.inc \
   X86GenInstrInfo.inc \
   X86GenRegisterInfo.inc
 

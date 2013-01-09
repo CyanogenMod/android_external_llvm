@@ -3,15 +3,12 @@ LOCAL_PATH:= $(call my-dir)
 target_SRC_FILES := \
   Mangler.cpp \
   Target.cpp \
-  TargetData.cpp \
-  TargetELFWriterInfo.cpp \
-  TargetInstrInfo.cpp \
   TargetIntrinsicInfo.cpp \
   TargetJITInfo.cpp \
   TargetLibraryInfo.cpp \
   TargetLoweringObjectFile.cpp \
+  TargetMachineC.cpp \
   TargetMachine.cpp \
-  TargetRegisterInfo.cpp \
   TargetSubtargetInfo.cpp
 
 # For the host

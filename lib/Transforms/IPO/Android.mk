@@ -2,6 +2,7 @@ LOCAL_PATH:= $(call my-dir)
 
 transforms_ipo_SRC_FILES := \
   ArgumentPromotion.cpp \
+  BarrierNoopPass.cpp \
   ConstantMerge.cpp \
   DeadArgumentElimination.cpp \
   ExtractGV.cpp \

@@ -16,6 +16,7 @@ subdirs := \
   lib/CodeGen \
   lib/CodeGen/AsmPrinter \
   lib/CodeGen/SelectionDAG \
+  lib/IR \
   lib/Linker \
   lib/MC \
   lib/MC/MCParser \
@@ -29,7 +30,6 @@ subdirs := \
   lib/Transforms/Scalar \
   lib/Transforms/Utils \
   lib/Transforms/Vectorize \
-  lib/VMCore \
   utils/FileCheck \
   utils/TableGen
 

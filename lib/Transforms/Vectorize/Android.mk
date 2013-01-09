@@ -2,6 +2,7 @@ LOCAL_PATH:= $(call my-dir)
 
 transforms_vectorize_SRC_FILES := \
   BBVectorize.cpp \
+  LoopVectorize.cpp \
   Vectorize.cpp
 
 # For the host

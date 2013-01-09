@@ -29,7 +29,7 @@ void DeltaAlgorithm::Split(const changeset_ty &S, changesetlist_ty &Res) {
   // FIXME: Allow clients to provide heuristics for improved splitting.
   // Get the iterator to the middle.
   unsigned N = S.size() / 2;
-  changeset_ty::iterator middle(S.begin());
+  changeset_ty::const_iterator middle(S.begin());
   std::advance(middle, N);
 
   // Create each vector using the middle as the split.

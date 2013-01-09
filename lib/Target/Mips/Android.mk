@@ -5,6 +5,7 @@ mips_codegen_TBLGEN_TABLES := \
   MipsGenInstrInfo.inc \
   MipsGenCodeEmitter.inc \
   MipsGenMCCodeEmitter.inc \
+  MipsGenMCPseudoLowering.inc \
   MipsGenAsmWriter.inc \
   MipsGenDAGISel.inc \
   MipsGenCallingConv.inc \
@@ -18,8 +19,6 @@ mips_codegen_SRC_FILES := \
   MipsAsmPrinter.cpp \
   MipsCodeEmitter.cpp \
   MipsDelaySlotFiller.cpp \
-  MipsDirectObjLower.cpp \
-  MipsELFWriterInfo.cpp \
   MipsFrameLowering.cpp \
   MipsInstrInfo.cpp \
   MipsISelDAGToDAG.cpp \
