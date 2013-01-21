@@ -13,15 +13,15 @@
 
 #define DEBUG_TYPE "correlated-value-propagation"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/Constants.h"
-#include "llvm/Function.h"
-#include "llvm/Instructions.h"
-#include "llvm/Pass.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/LazyValueInfo.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Transforms/Utils/Local.h"
-#include "llvm/ADT/Statistic.h"
 using namespace llvm;
 
 STATISTIC(NumPhis,      "Number of phis propagated");
@@ -235,6 +235,11 @@ bool CorrelatedValuePropagation::processSwitch(SwitchInst *SI) {
       // This case never fires - remove it.
       CI.getCaseSuccessor()->removePredecessor(BB);
       SI->removeCase(CI); // Does not invalidate the iterator.
+
+      // The condition can be modified by removePredecessor's PHI simplification
+      // logic.
+      Cond = SI->getCondition();
+
       ++NumDeadCases;
       Changed = true;
     } else if (State == LazyValueInfo::True) {

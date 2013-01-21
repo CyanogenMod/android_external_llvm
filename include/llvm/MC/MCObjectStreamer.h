@@ -45,6 +45,11 @@ protected:
                    MCAssembler *_Assembler);
   ~MCObjectStreamer();
 
+public:
+  /// state management
+  virtual void reset();
+
+protected:
   MCSectionData *getCurrentSectionData() const {
     return CurSectionData;
   }
@@ -64,6 +69,8 @@ public:
   /// @{
 
   virtual void EmitLabel(MCSymbol *Symbol);
+  virtual void EmitDebugLabel(MCSymbol *Symbol);
+  virtual void EmitAssignment(MCSymbol *Symbol, const MCExpr *Value);
   virtual void EmitValueImpl(const MCExpr *Value, unsigned Size,
                              unsigned AddrSpace);
   virtual void EmitULEB128Value(const MCExpr *Value);
@@ -71,7 +78,21 @@ public:
   virtual void EmitWeakReference(MCSymbol *Alias, const MCSymbol *Symbol);
   virtual void ChangeSection(const MCSection *Section);
   virtual void EmitInstruction(const MCInst &Inst);
+
+  /// \brief Emit an instruction to a special fragment, because this instruction
+  /// can change its size during relaxation.
   virtual void EmitInstToFragment(const MCInst &Inst);
+
+  virtual void EmitBundleAlignMode(unsigned AlignPow2);
+  virtual void EmitBundleLock(bool AlignToEnd);
+  virtual void EmitBundleUnlock();
+  virtual void EmitBytes(StringRef Data, unsigned AddrSpace);
+  virtual void EmitValueToAlignment(unsigned ByteAlignment,
+                                    int64_t Value = 0,
+                                    unsigned ValueSize = 1,
+                                    unsigned MaxBytesToEmit = 0);
+  virtual void EmitCodeAlignment(unsigned ByteAlignment,
+                                 unsigned MaxBytesToEmit = 0);
   virtual bool EmitValueToOffset(const MCExpr *Offset, unsigned char Value);
   virtual void EmitDwarfAdvanceLineAddr(int64_t LineDelta,
                                         const MCSymbol *LastLabel,
@@ -81,6 +102,8 @@ public:
                                          const MCSymbol *Label);
   virtual void EmitGPRel32Value(const MCExpr *Value);
   virtual void EmitGPRel64Value(const MCExpr *Value);
+  virtual void EmitFill(uint64_t NumBytes, uint8_t FillValue,
+                        unsigned AddrSpace);
   virtual void FinishImpl();
 
   /// @}

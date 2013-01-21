@@ -29,10 +29,10 @@ class RegisterClassInfo {
     unsigned Tag;
     unsigned NumRegs;
     bool ProperSubClass;
-    OwningArrayPtr<unsigned> Order;
+    OwningArrayPtr<MCPhysReg> Order;
 
     RCInfo() : Tag(0), NumRegs(0), ProperSubClass(false) {}
-    operator ArrayRef<unsigned>() const {
+    operator ArrayRef<MCPhysReg>() const {
       return makeArrayRef(Order.get(), NumRegs);
     }
   };
@@ -84,7 +84,7 @@ public:
   /// getOrder - Returns the preferred allocation order for RC. The order
   /// contains no reserved registers, and registers that alias callee saved
   /// registers come last.
-  ArrayRef<unsigned> getOrder(const TargetRegisterClass *RC) const {
+  ArrayRef<MCPhysReg> getOrder(const TargetRegisterClass *RC) const {
     return get(RC);
   }
 
@@ -105,25 +105,6 @@ public:
     if (unsigned N = CSRNum[PhysReg])
       return CalleeSaved[N-1];
     return 0;
-  }
-
-  /// isReserved - Returns true when PhysReg is a reserved register.
-  ///
-  /// Reserved registers may belong to an allocatable register class, but the
-  /// target has explicitly requested that they are not used.
-  ///
-  bool isReserved(unsigned PhysReg) const {
-    return Reserved.test(PhysReg);
-  }
-
-  /// isAllocatable - Returns true when PhysReg belongs to an allocatable
-  /// register class and it hasn't been reserved.
-  ///
-  /// Allocatable registers may show up in the allocation order of some virtual
-  /// register, so a register allocator needs to track its liveness and
-  /// availability.
-  bool isAllocatable(unsigned PhysReg) const {
-    return TRI->isInAllocatableClass(PhysReg) && !isReserved(PhysReg);
   }
 };
 } // end namespace llvm

@@ -15,24 +15,27 @@
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/Config/config.h"
-#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Errno.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Program.h"
 #include "llvm/Support/system_error.h"
 #include <cassert>
+#include <cerrno>
 #include <cstdio>
 #include <cstring>
-#include <cerrno>
 #include <new>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #if !defined(_MSC_VER) && !defined(__MINGW32__)
 #include <unistd.h>
 #else
 #include <io.h>
+#ifndef S_ISFIFO
+#define S_ISFIFO(x) (0)
+#endif
 #endif
 #include <fcntl.h>
 using namespace llvm;
@@ -81,12 +84,12 @@ public:
     init(InputData.begin(), InputData.end(), RequiresNullTerminator);
   }
 
-  virtual const char *getBufferIdentifier() const {
+  virtual const char *getBufferIdentifier() const LLVM_OVERRIDE {
      // The name is stored after the class itself.
     return reinterpret_cast<const char*>(this + 1);
   }
-  
-  virtual BufferKind getBufferKind() const {
+
+  virtual BufferKind getBufferKind() const LLVM_OVERRIDE {
     return MemoryBuffer_Malloc;
   }
 };
@@ -184,7 +187,7 @@ public:
     : MemoryBufferMem(Buffer, RequiresNullTerminator) { }
 
   ~MemoryBufferMMapFile() {
-    static int PageSize = sys::Process::GetPageSize();
+    static int PageSize = sys::process::get_self()->page_size();
 
     uintptr_t Start = reinterpret_cast<uintptr_t>(getBufferStart());
     size_t Size = getBufferSize();
@@ -194,11 +197,32 @@ public:
     sys::Path::UnMapFilePages(reinterpret_cast<const char*>(RealStart),
                               RealSize);
   }
-  
-  virtual BufferKind getBufferKind() const {
+
+  virtual BufferKind getBufferKind() const LLVM_OVERRIDE {
     return MemoryBuffer_MMap;
   }
 };
+}
+
+static error_code getMemoryBufferForStream(int FD, 
+                                           StringRef BufferName,
+                                           OwningPtr<MemoryBuffer> &result) {
+  const ssize_t ChunkSize = 4096*4;
+  SmallString<ChunkSize> Buffer;
+  ssize_t ReadBytes;
+  // Read into Buffer until we hit EOF.
+  do {
+    Buffer.reserve(Buffer.size() + ChunkSize);
+    ReadBytes = read(FD, Buffer.end(), ChunkSize);
+    if (ReadBytes == -1) {
+      if (errno == EINTR) continue;
+      return error_code(errno, posix_category());
+    }
+    Buffer.set_size(Buffer.size() + ReadBytes);
+  } while (ReadBytes != 0);
+
+  result.reset(MemoryBuffer::getMemBufferCopy(Buffer, BufferName));
+  return error_code::success();
 }
 
 error_code MemoryBuffer::getFile(StringRef Filename,
@@ -285,7 +309,7 @@ error_code MemoryBuffer::getOpenFile(int FD, const char *Filename,
                                      uint64_t FileSize, uint64_t MapSize,
                                      int64_t Offset,
                                      bool RequiresNullTerminator) {
-  static int PageSize = sys::Process::GetPageSize();
+  static int PageSize = sys::process::get_self()->page_size();
 
   // Default is to map the full file.
   if (MapSize == uint64_t(-1)) {
@@ -297,6 +321,13 @@ error_code MemoryBuffer::getOpenFile(int FD, const char *Filename,
       if (fstat(FD, &FileInfo) == -1) {
         return error_code(errno, posix_category());
       }
+
+      // If this is a named pipe, we can't trust the size. Create the memory
+      // buffer by copying off the stream.
+      if (S_ISFIFO(FileInfo.st_mode)) {
+        return getMemoryBufferForStream(FD, Filename, result);
+      }
+
       FileSize = FileInfo.st_size;
     }
     MapSize = FileSize;
@@ -370,20 +401,5 @@ error_code MemoryBuffer::getSTDIN(OwningPtr<MemoryBuffer> &result) {
   // fallback if it fails.
   sys::Program::ChangeStdinToBinary();
 
-  const ssize_t ChunkSize = 4096*4;
-  SmallString<ChunkSize> Buffer;
-  ssize_t ReadBytes;
-  // Read into Buffer until we hit EOF.
-  do {
-    Buffer.reserve(Buffer.size() + ChunkSize);
-    ReadBytes = read(0, Buffer.end(), ChunkSize);
-    if (ReadBytes == -1) {
-      if (errno == EINTR) continue;
-      return error_code(errno, posix_category());
-    }
-    Buffer.set_size(Buffer.size() + ReadBytes);
-  } while (ReadBytes != 0);
-
-  result.reset(getMemBufferCopy(Buffer, "<stdin>"));
-  return error_code::success();
+  return getMemoryBufferForStream(0, "<stdin>", result);
 }

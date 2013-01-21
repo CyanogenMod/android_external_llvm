@@ -14,22 +14,22 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "inline"
-#include "llvm/Module.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
+#include "llvm/Transforms/IPO/InlinerPass.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/InlineCost.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetLibraryInfo.h"
-#include "llvm/Transforms/IPO/InlinerPass.h"
-#include "llvm/Transforms/Utils/Cloning.h"
-#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/Statistic.h"
+#include "llvm/Target/TargetLibraryInfo.h"
+#include "llvm/Transforms/Utils/Cloning.h"
+#include "llvm/Transforms/Utils/Local.h"
 using namespace llvm;
 
 STATISTIC(NumInlined, "Number of functions inlined");
@@ -64,8 +64,8 @@ Inliner::Inliner(char &ID, int Threshold, bool InsertLifetime)
 /// getAnalysisUsage - For this class, we declare that we require and preserve
 /// the call graph.  If the derived class implements this method, it should
 /// always explicitly call the implementation here.
-void Inliner::getAnalysisUsage(AnalysisUsage &Info) const {
-  CallGraphSCCPass::getAnalysisUsage(Info);
+void Inliner::getAnalysisUsage(AnalysisUsage &AU) const {
+  CallGraphSCCPass::getAnalysisUsage(AU);
 }
 
 
@@ -93,10 +93,13 @@ static bool InlineCallIfPossible(CallSite CS, InlineFunctionInfo &IFI,
 
   // If the inlined function had a higher stack protection level than the
   // calling function, then bump up the caller's stack protection level.
-  if (Callee->hasFnAttr(Attribute::StackProtectReq))
+  if (Callee->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                           Attribute::StackProtectReq))
     Caller->addFnAttr(Attribute::StackProtectReq);
-  else if (Callee->hasFnAttr(Attribute::StackProtect) &&
-           !Caller->hasFnAttr(Attribute::StackProtectReq))
+  else if (Callee->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                                Attribute::StackProtect) &&
+           !Caller->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                                 Attribute::StackProtectReq))
     Caller->addFnAttr(Attribute::StackProtect);
 
   // Look at all of the allocas that we inlined through this call site.  If we
@@ -209,15 +212,21 @@ unsigned Inliner::getInlineThreshold(CallSite CS) const {
   // would decrease the threshold.
   Function *Caller = CS.getCaller();
   bool OptSize = Caller && !Caller->isDeclaration() &&
-    Caller->hasFnAttr(Attribute::OptimizeForSize);
-  if (!(InlineLimit.getNumOccurrences() > 0) && OptSize && OptSizeThreshold < thres)
+    Caller->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                         Attribute::OptimizeForSize);
+  if (!(InlineLimit.getNumOccurrences() > 0) && OptSize &&
+      OptSizeThreshold < thres)
     thres = OptSizeThreshold;
 
-  // Listen to the inlinehint attribute when it would increase the threshold.
+  // Listen to the inlinehint attribute when it would increase the threshold
+  // and the caller does not need to minimize its size.
   Function *Callee = CS.getCalledFunction();
   bool InlineHint = Callee && !Callee->isDeclaration() &&
-    Callee->hasFnAttr(Attribute::InlineHint);
-  if (InlineHint && HintThreshold > thres)
+    Callee->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                         Attribute::InlineHint);
+  if (InlineHint && HintThreshold > thres
+      && !Caller->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                               Attribute::MinSize))
     thres = HintThreshold;
 
   return thres;
@@ -339,7 +348,7 @@ static bool InlineHistoryIncludes(Function *F, int InlineHistoryID,
 
 bool Inliner::runOnSCC(CallGraphSCC &SCC) {
   CallGraph &CG = getAnalysis<CallGraph>();
-  const TargetData *TD = getAnalysisIfAvailable<TargetData>();
+  const DataLayout *TD = getAnalysisIfAvailable<DataLayout>();
   const TargetLibraryInfo *TLI = getAnalysisIfAvailable<TargetLibraryInfo>();
 
   SmallPtrSet<Function*, 8> SCCFunctions;
@@ -532,7 +541,9 @@ bool Inliner::removeDeadFunctions(CallGraph &CG, bool AlwaysInlineOnly) {
     // Handle the case when this function is called and we only want to care
     // about always-inline functions. This is a bit of a hack to share code
     // between here and the InlineAlways pass.
-    if (AlwaysInlineOnly && !F->hasFnAttr(Attribute::AlwaysInline))
+    if (AlwaysInlineOnly &&
+        !F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                         Attribute::AlwaysInline))
       continue;
 
     // If the only remaining users of the function are dead constants, remove

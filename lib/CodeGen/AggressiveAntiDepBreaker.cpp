@@ -20,14 +20,13 @@
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/RegisterClassInfo.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetRegisterInfo.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 using namespace llvm;
 
 // If DebugDiv > 0 then only break antidep with (ID % DebugDiv) == DebugMod
@@ -616,7 +615,7 @@ bool AggressiveAntiDepBreaker::FindSuitableFreeRegisters(
   const TargetRegisterClass *SuperRC =
     TRI->getMinimalPhysRegClass(SuperReg, MVT::Other);
 
-  ArrayRef<unsigned> Order = RegClassInfo.getOrder(SuperRC);
+  ArrayRef<MCPhysReg> Order = RegClassInfo.getOrder(SuperRC);
   if (Order.empty()) {
     DEBUG(dbgs() << "\tEmpty Super Regclass!!\n");
     return false;
@@ -635,7 +634,7 @@ bool AggressiveAntiDepBreaker::FindSuitableFreeRegisters(
     --R;
     const unsigned NewSuperReg = Order[R];
     // Don't consider non-allocatable registers
-    if (!RegClassInfo.isAllocatable(NewSuperReg)) continue;
+    if (!MRI.isAllocatable(NewSuperReg)) continue;
     // Don't replace a register with itself.
     if (NewSuperReg == SuperReg) continue;
 
@@ -818,7 +817,7 @@ unsigned AggressiveAntiDepBreaker::BreakAntiDependencies(
         DEBUG(dbgs() << "\tAntidep reg: " << TRI->getName(AntiDepReg));
         assert(AntiDepReg != 0 && "Anti-dependence on reg0?");
 
-        if (!RegClassInfo.isAllocatable(AntiDepReg)) {
+        if (!MRI.isAllocatable(AntiDepReg)) {
           // Don't break anti-dependencies on non-allocatable registers.
           DEBUG(dbgs() << " (non-allocatable)\n");
           continue;

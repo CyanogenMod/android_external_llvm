@@ -659,3 +659,50 @@ define i1 @test64(i8 %a, i32 %b) nounwind {
 ; CHECK-NEXT: %c = icmp eq i8 %1, %a
 ; CHECK-NEXT: ret i1 %c
 }
+
+define i1 @test65(i64 %A, i64 %B) {
+  %s1 = add i64 %A, %B
+  %s2 = add i64 %A, %B
+  %cmp = icmp eq i64 %s1, %s2
+; CHECK: @test65
+; CHECK-NEXT: ret i1 true
+  ret i1 %cmp
+}
+
+define i1 @test66(i64 %A, i64 %B) {
+  %s1 = add i64 %A, %B
+  %s2 = add i64 %B, %A
+  %cmp = icmp eq i64 %s1, %s2
+; CHECK: @test66
+; CHECK-NEXT: ret i1 true
+  ret i1 %cmp
+}
+
+; CHECK: @test67
+; CHECK: %and = and i32 %x, 96
+; CHECK: %cmp = icmp ne i32 %and, 0
+define i1 @test67(i32 %x) nounwind uwtable {
+  %and = and i32 %x, 127
+  %cmp = icmp sgt i32 %and, 31
+  ret i1 %cmp
+}
+
+; CHECK: @test68
+; CHECK: %cmp = icmp ugt i32 %and, 30
+define i1 @test68(i32 %x) nounwind uwtable {
+  %and = and i32 %x, 127
+  %cmp = icmp sgt i32 %and, 30
+  ret i1 %cmp
+}
+
+; PR14708
+; CHECK: @test69
+; CHECK: %1 = and i32 %c, -33
+; CHECK: %2 = icmp eq i32 %1, 65
+; CHECK: ret i1 %2
+define i1 @test69(i32 %c) nounwind uwtable {
+  %1 = icmp eq i32 %c, 97
+  %2 = icmp eq i32 %c, 65
+  %3 = or i1 %1, %2
+  ret i1 %3
+}

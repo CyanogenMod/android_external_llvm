@@ -14,11 +14,11 @@
 #define DEBUG_TYPE "subtarget"
 #include "X86Subtarget.h"
 #include "X86InstrInfo.h"
-#include "llvm/GlobalValue.h"
+#include "llvm/IR/GlobalValue.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 
@@ -163,17 +163,6 @@ bool X86Subtarget::IsLegalToCallImmediateAddr(const TargetMachine &TM) const {
   return isTargetELF() || TM.getRelocationModel() == Reloc::Static;
 }
 
-/// getSpecialAddressLatency - For targets where it is beneficial to
-/// backschedule instructions that compute addresses, return a value
-/// indicating the number of scheduling cycles of backscheduling that
-/// should be attempted.
-unsigned X86Subtarget::getSpecialAddressLatency() const {
-  // For x86 out-of-order targets, back-schedule address computations so
-  // that loads and stores aren't blocked.
-  // This value was chosen arbitrarily.
-  return 200;
-}
-
 void X86Subtarget::AutoDetectSubtargetFeatures() {
   unsigned EAX = 0, EBX = 0, ECX = 0, EDX = 0;
   unsigned MaxLevel;
@@ -245,12 +234,20 @@ void X86Subtarget::AutoDetectSubtargetFeatures() {
       ToggleFeature(X86::FeatureSlowBTMem);
     }
 
-    // If it's Nehalem, unaligned memory access is fast.
-    // Include Westmere and Sandy Bridge as well.
-    // FIXME: add later processors.
-    if (IsIntel && ((Family == 6 && Model == 26) ||
-        (Family == 6 && Model == 44) ||
-        (Family == 6 && Model == 42))) {
+    // If it's an Intel chip since Nehalem and not an Atom chip, unaligned
+    // memory access is fast. We hard code model numbers here because they
+    // aren't strictly increasing for Intel chips it seems.
+    if (IsIntel &&
+        ((Family == 6 && Model == 0x1E) || // Nehalem: Clarksfield, Lynnfield,
+                                           //          Jasper Froest
+         (Family == 6 && Model == 0x1A) || // Nehalem: Bloomfield, Nehalem-EP
+         (Family == 6 && Model == 0x2E) || // Nehalem: Nehalem-EX
+         (Family == 6 && Model == 0x25) || // Westmere: Arrandale, Clarksdale
+         (Family == 6 && Model == 0x2C) || // Westmere: Gulftown, Westmere-EP
+         (Family == 6 && Model == 0x2F) || // Westmere: Westmere-EX
+         (Family == 6 && Model == 0x2A) || // SandyBridge
+         (Family == 6 && Model == 0x2D) || // SandyBridge: SandyBridge-E*
+         (Family == 6 && Model == 0x3A))) {// IvyBridge
       IsUAMemFast = true;
       ToggleFeature(X86::FeatureFastUAMem);
     }
@@ -313,6 +310,10 @@ void X86Subtarget::AutoDetectSubtargetFeatures() {
         HasBMI2 = true;
         ToggleFeature(X86::FeatureBMI2);
       }
+      if (IsIntel && ((EBX >> 11) & 0x1)) {
+        HasRTM = true;
+        ToggleFeature(X86::FeatureRTM);
+      }
     }
   }
 }
@@ -341,6 +342,7 @@ X86Subtarget::X86Subtarget(const std::string &TT, const std::string &CPU,
   , HasLZCNT(false)
   , HasBMI(false)
   , HasBMI2(false)
+  , HasRTM(false)
   , IsBTMemSlow(false)
   , IsUAMemFast(false)
   , HasVectorUAMem(false)
@@ -348,6 +350,7 @@ X86Subtarget::X86Subtarget(const std::string &TT, const std::string &CPU,
   , UseLeaForSP(false)
   , HasSlowDivide(false)
   , PostRAScheduler(false)
+  , PadShortFunctions(false)
   , stackAlignment(4)
   // FIXME: this is a known good value for Yonah. How about others?
   , MaxInlineSizeThreshold(128)
@@ -401,6 +404,10 @@ X86Subtarget::X86Subtarget(const std::string &TT, const std::string &CPU,
     }
   }
 
+  // CPUName may have been set by the CPU detection code. Make sure the
+  // new MCSchedModel is used.
+  InitMCProcessorInfo(CPUName, FS);
+
   if (X86ProcFamily == IntelAtom)
     PostRAScheduler = true;
 
@@ -417,12 +424,12 @@ X86Subtarget::X86Subtarget(const std::string &TT, const std::string &CPU,
   assert((!In64BitMode || HasX86_64) &&
          "64-bit code requested on a subtarget that doesn't support it!");
 
-  // Stack alignment is 16 bytes on Darwin, FreeBSD, Linux and Solaris (both
+  // Stack alignment is 16 bytes on Darwin, Linux and Solaris (both
   // 32 and 64 bit) and for all 64-bit targets.
   if (StackAlignOverride)
     stackAlignment = StackAlignOverride;
-  else if (isTargetDarwin() || isTargetFreeBSD() || isTargetLinux() ||
-           isTargetSolaris() || In64BitMode)
+  else if (isTargetDarwin() || isTargetLinux() || isTargetSolaris() ||
+           In64BitMode)
     stackAlignment = 16;
 }
 

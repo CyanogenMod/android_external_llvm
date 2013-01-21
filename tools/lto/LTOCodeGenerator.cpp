@@ -14,36 +14,36 @@
 
 #include "LTOCodeGenerator.h"
 #include "LTOModule.h"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Linker.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
-#include "llvm/PassManager.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/Analysis/Passes.h"
 #include "llvm/Analysis/Verifier.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/Config/config.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Linker.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/SubtargetFeature.h"
-#include "llvm/Target/Mangler.h"
-#include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Transforms/IPO.h"
-#include "llvm/Transforms/IPO/PassManagerBuilder.h"
+#include "llvm/PassManager.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FormattedStream.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/system_error.h"
-#include "llvm/ADT/StringExtras.h"
+#include "llvm/Target/Mangler.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Transforms/IPO.h"
+#include "llvm/Transforms/IPO/PassManagerBuilder.h"
 using namespace llvm;
 
 static cl::opt<bool>
@@ -218,12 +218,13 @@ bool LTOCodeGenerator::determineTarget(std::string& errMsg) {
   if (_target != NULL)
     return false;
 
-  std::string Triple = _linker.getModule()->getTargetTriple();
-  if (Triple.empty())
-    Triple = sys::getDefaultTargetTriple();
+  std::string TripleStr = _linker.getModule()->getTargetTriple();
+  if (TripleStr.empty())
+    TripleStr = sys::getDefaultTargetTriple();
+  llvm::Triple Triple(TripleStr);
 
   // create target machine from info for merged modules
-  const Target *march = TargetRegistry::lookupTarget(Triple, errMsg);
+  const Target *march = TargetRegistry::lookupTarget(TripleStr, errMsg);
   if (march == NULL)
     return true;
 
@@ -244,11 +245,18 @@ bool LTOCodeGenerator::determineTarget(std::string& errMsg) {
 
   // construct LTOModule, hand over ownership of module and target
   SubtargetFeatures Features;
-  Features.getDefaultSubtargetFeatures(llvm::Triple(Triple));
+  Features.getDefaultSubtargetFeatures(Triple);
   std::string FeatureStr = Features.getString();
+  // Set a default CPU for Darwin triples.
+  if (_mCpu.empty() && Triple.isOSDarwin()) {
+    if (Triple.getArch() == llvm::Triple::x86_64)
+      _mCpu = "core2";
+    else if (Triple.getArch() == llvm::Triple::x86)
+      _mCpu = "yonah";
+  }
   TargetOptions Options;
   LTOModule::getTargetOptions(Options);
-  _target = march->createTargetMachine(Triple, _mCpu, FeatureStr, Options,
+  _target = march->createTargetMachine(TripleStr, _mCpu, FeatureStr, Options,
                                        RelocModel, CodeModel::Default,
                                        CodeGenOpt::Aggressive);
   return false;
@@ -293,7 +301,7 @@ void LTOCodeGenerator::applyScopeRestrictions() {
 
   // mark which symbols can not be internalized
   MCContext Context(*_target->getMCAsmInfo(), *_target->getRegisterInfo(),NULL);
-  Mangler mangler(Context, *_target->getTargetData());
+  Mangler mangler(Context, *_target->getDataLayout());
   std::vector<const char*> mustPreserveList;
   SmallPtrSet<GlobalValue*, 8> asmUsed;
 
@@ -361,13 +369,15 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
   // Start off with a verification pass.
   passes.add(createVerifierPass());
 
-  // Add an appropriate TargetData instance for this module...
-  passes.add(new TargetData(*_target->getTargetData()));
+  // Add an appropriate DataLayout instance for this module...
+  passes.add(new DataLayout(*_target->getDataLayout()));
+  _target->addAnalysisPasses(passes);
 
   // Enabling internalize here would use its AllButMain variant. It
   // keeps only main if it exists and does nothing for libraries. Instead
   // we create the pass ourselves with the symbol list provided by the linker.
-  PassManagerBuilder().populateLTOPassManager(passes, /*Internalize=*/false,
+  PassManagerBuilder().populateLTOPassManager(passes,
+                                              /*Internalize=*/false,
                                               !DisableInline,
                                               DisableGVNLoadPRE);
 
@@ -376,7 +386,7 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
 
   FunctionPassManager *codeGenPasses = new FunctionPassManager(mergedModule);
 
-  codeGenPasses->add(new TargetData(*_target->getTargetData()));
+  codeGenPasses->add(new DataLayout(*_target->getDataLayout()));
 
   formatted_raw_ostream Out(out);
 

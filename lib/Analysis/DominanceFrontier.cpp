@@ -8,9 +8,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Analysis/DominanceFrontier.h"
-#include "llvm/Support/Debug.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Assembly/Writer.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace llvm;
 
@@ -133,7 +133,7 @@ void DominanceFrontierBase::print(raw_ostream &OS, const Module* ) const {
   }
 }
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
 void DominanceFrontierBase::dump() const {
   print(dbgs());
 }

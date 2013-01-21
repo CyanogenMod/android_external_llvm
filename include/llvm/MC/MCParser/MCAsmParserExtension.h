@@ -10,8 +10,8 @@
 #ifndef LLVM_MC_MCASMPARSEREXTENSION_H
 #define LLVM_MC_MCASMPARSEREXTENSION_H
 
-#include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/MC/MCParser/MCAsmParser.h"
 #include "llvm/Support/SMLoc.h"
 
 namespace llvm {
@@ -43,8 +43,8 @@ protected:
 public:
   virtual ~MCAsmParserExtension();
 
-  /// \brief Initialize the extension for parsing using the given \arg
-  /// Parser. The extension should use the AsmParser interfaces to register its
+  /// \brief Initialize the extension for parsing using the given \p Parser.
+  /// The extension should use the AsmParser interfaces to register its
   /// parsing routines.
   virtual void Initialize(MCAsmParser &Parser);
 

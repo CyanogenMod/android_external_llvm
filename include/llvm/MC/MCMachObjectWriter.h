@@ -45,6 +45,13 @@ protected:
 public:
   virtual ~MCMachObjectTargetWriter();
 
+  /// @name Lifetime Management
+  /// @{
+
+  virtual void reset() {};
+
+  /// @}
+
   /// @name Accessors
   /// @{
 
@@ -111,6 +118,13 @@ public:
     : MCObjectWriter(_OS, _IsLittleEndian), TargetObjectWriter(MOTW) {
   }
 
+  /// @name Lifetime management Methods
+  /// @{
+
+  virtual void reset();
+
+  /// @}
+
   /// @name Utility Methods
   /// @{
 
@@ -153,8 +167,8 @@ public:
 
   /// WriteSegmentLoadCommand - Write a segment load command.
   ///
-  /// \arg NumSections - The number of sections in this segment.
-  /// \arg SectionDataSize - The total size of the sections.
+  /// \param NumSections The number of sections in this segment.
+  /// \param SectionDataSize The total size of the sections.
   void WriteSegmentLoadCommand(unsigned NumSections,
                                uint64_t VMSize,
                                uint64_t SectionDataStartOffset,
@@ -223,8 +237,6 @@ public:
   /// ComputeSymbolTable - Compute the symbol table data
   ///
   /// \param StringTable [out] - The string table data.
-  /// \param StringIndexMap [out] - Map from symbol names to offsets in the
-  /// string table.
   void ComputeSymbolTable(MCAssembler &Asm, SmallString<256> &StringTable,
                           std::vector<MachSymbolData> &LocalSymbolData,
                           std::vector<MachSymbolData> &ExternalSymbolData,
@@ -233,6 +245,8 @@ public:
   void computeSectionAddresses(const MCAssembler &Asm,
                                const MCAsmLayout &Layout);
 
+  void markAbsoluteVariableSymbols(MCAssembler &Asm,
+                                   const MCAsmLayout &Layout);
   void ExecutePostLayoutBinding(MCAssembler &Asm, const MCAsmLayout &Layout);
 
   virtual bool IsSymbolRefDifferenceFullyResolvedImpl(const MCAssembler &Asm,

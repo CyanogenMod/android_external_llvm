@@ -11,23 +11,23 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "ScheduleDAGSDNodes.h"
-#include "llvm/DebugInfo.h"
-#include "llvm/Function.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/SelectionDAG.h"
+#include "ScheduleDAGSDNodes.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
+#include "llvm/DebugInfo.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/GraphWriter.h"
+#include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetIntrinsicInfo.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/GraphWriter.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/ADT/StringExtras.h"
 using namespace llvm;
 
 std::string SDNode::getOperationName(const SelectionDAG *G) const {
@@ -475,11 +475,16 @@ void SDNode::print_details(raw_ostream &OS, const SelectionDAG *G) const {
     OS << "<" << *M->getMemOperand() << ">";
   } else if (const BlockAddressSDNode *BA =
                dyn_cast<BlockAddressSDNode>(this)) {
+    int64_t offset = BA->getOffset();
     OS << "<";
     WriteAsOperand(OS, BA->getBlockAddress()->getFunction(), false);
     OS << ", ";
     WriteAsOperand(OS, BA->getBlockAddress()->getBasicBlock(), false);
     OS << ">";
+    if (offset > 0)
+      OS << " + " << offset;
+    else
+      OS << " " << offset;
     if (unsigned int TF = BA->getTargetFlags())
       OS << " [TF=" << TF << ']';
   }

@@ -8,7 +8,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/MCStreamer.h"
-
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCSectionMachO.h"
@@ -36,7 +35,9 @@ namespace {
       assert(getCurrentSection() && "Cannot emit before setting section!");
       Symbol->setSection(*getCurrentSection());
     }
-
+    virtual void EmitDebugLabel(MCSymbol *Symbol) {
+      EmitLabel(Symbol);
+    }
     virtual void EmitAssemblerFlag(MCAssemblerFlag Flag) {}
     virtual void EmitThumbFunc(MCSymbol *Func) {}
 
@@ -93,6 +94,10 @@ namespace {
                                        unsigned Isa, unsigned Discriminator,
                                        StringRef FileName) {}
     virtual void EmitInstruction(const MCInst &Inst) {}
+
+    virtual void EmitBundleAlignMode(unsigned AlignPow2) {}
+    virtual void EmitBundleLock(bool AlignToEnd) {}
+    virtual void EmitBundleUnlock() {}
 
     virtual void FinishImpl() {}
 

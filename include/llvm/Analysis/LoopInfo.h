@@ -30,14 +30,14 @@
 #ifndef LLVM_ANALYSIS_LOOP_INFO_H
 #define LLVM_ANALYSIS_LOOP_INFO_H
 
-#include "llvm/Pass.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/DepthFirstIterator.h"
 #include "llvm/ADT/GraphTraits.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
@@ -72,10 +72,9 @@ class LoopBase {
   // Blocks - The list of blocks in this loop.  First entry is the header node.
   std::vector<BlockT*> Blocks;
 
-  // DO NOT IMPLEMENT
-  LoopBase(const LoopBase<BlockT, LoopT> &);
-  // DO NOT IMPLEMENT
-  const LoopBase<BlockT, LoopT>&operator=(const LoopBase<BlockT, LoopT> &);
+  LoopBase(const LoopBase<BlockT, LoopT> &) LLVM_DELETED_FUNCTION;
+  const LoopBase<BlockT, LoopT>&
+    operator=(const LoopBase<BlockT, LoopT> &) LLVM_DELETED_FUNCTION;
 public:
   /// Loop ctor - This creates an empty loop.
   LoopBase() : ParentLoop(0) {}
@@ -416,8 +415,8 @@ class LoopInfoBase {
   friend class LoopBase<BlockT, LoopT>;
   friend class LoopInfo;
 
-  void operator=(const LoopInfoBase &); // do not implement
-  LoopInfoBase(const LoopInfo &);       // do not implement
+  void operator=(const LoopInfoBase &) LLVM_DELETED_FUNCTION;
+  LoopInfoBase(const LoopInfo &) LLVM_DELETED_FUNCTION;
 public:
   LoopInfoBase() { }
   ~LoopInfoBase() { releaseMemory(); }
@@ -550,8 +549,8 @@ class LoopInfo : public FunctionPass {
   LoopInfoBase<BasicBlock, Loop> LI;
   friend class LoopBase<BasicBlock, Loop>;
 
-  void operator=(const LoopInfo &); // do not implement
-  LoopInfo(const LoopInfo &);       // do not implement
+  void operator=(const LoopInfo &) LLVM_DELETED_FUNCTION;
+  LoopInfo(const LoopInfo &) LLVM_DELETED_FUNCTION;
 public:
   static char ID; // Pass identification, replacement for typeid
 

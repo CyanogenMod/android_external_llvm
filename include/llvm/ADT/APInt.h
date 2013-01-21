@@ -251,7 +251,7 @@ public:
   /// constructor.
   APInt(unsigned numBits, unsigned numWords, const uint64_t bigVal[]);
 
-  /// This constructor interprets the string \arg str in the given radix. The
+  /// This constructor interprets the string \p str in the given radix. The
   /// interpretation stops when the first character that is not suitable for the
   /// radix is encountered, or the end of the string. Acceptable radix values
   /// are 2, 8, 10, 16, and 36. It is an error for the value implied by the 
@@ -274,7 +274,7 @@ public:
       initSlowCase(that);
   }
 
-#if LLVM_USE_RVALUE_REFERENCES
+#if LLVM_HAS_RVALUE_REFERENCES
   /// @brief Move Constructor.
   APInt(APInt&& that) : BitWidth(that.BitWidth), VAL(that.VAL) {
     that.BitWidth = 0;
@@ -601,7 +601,7 @@ public:
     return AssignSlowCase(RHS);
   }
 
-#if LLVM_USE_RVALUE_REFERENCES
+#if LLVM_HAS_RVALUE_REFERENCES
   /// @brief Move assignment operator.
   APInt& operator=(APInt&& that) {
     if (!isSingleWord())
@@ -760,7 +760,7 @@ public:
   APInt shl(unsigned shiftAmt) const {
     assert(shiftAmt <= BitWidth && "Invalid shift amount");
     if (isSingleWord()) {
-      if (shiftAmt == BitWidth)
+      if (shiftAmt >= BitWidth)
         return APInt(BitWidth, 0); // avoid undefined shift results
       return APInt(BitWidth, VAL << shiftAmt);
     }
@@ -1231,7 +1231,7 @@ public:
   }
 
   /// This method determines how many bits are required to hold the APInt
-  /// equivalent of the string given by \arg str.
+  /// equivalent of the string given by \p str.
   /// @brief Get bits required for string value.
   static unsigned getBitsNeeded(StringRef str, uint8_t radix);
 
@@ -1780,6 +1780,9 @@ inline APInt Not(const APInt& APIVal) {
 
 } // End of APIntOps namespace
 
+  // See friend declaration above. This additional declaration is required in
+  // order to compile LLVM with IBM xlC compiler.
+  hash_code hash_value(const APInt &Arg);
 } // End of llvm namespace
 
 #endif

@@ -13,20 +13,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Function.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/Constant.h"
-#include "llvm/Type.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/MemoryDependenceAnalysis.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Transforms/Utils/Local.h"
-#include "llvm/Transforms/Scalar.h"
+#include "llvm/IR/Constant.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Type.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ValueHandle.h"
+#include "llvm/Transforms/Scalar.h"
+#include "llvm/Transforms/Utils/Local.h"
 #include <algorithm>
 using namespace llvm;
 
@@ -687,3 +687,42 @@ ReturnInst *llvm::FoldReturnIntoUncondBranch(ReturnInst *RI, BasicBlock *BB,
   return cast<ReturnInst>(NewRet);
 }
 
+/// SplitBlockAndInsertIfThen - Split the containing block at the
+/// specified instruction - everything before and including Cmp stays
+/// in the old basic block, and everything after Cmp is moved to a
+/// new block. The two blocks are connected by a conditional branch
+/// (with value of Cmp being the condition).
+/// Before:
+///   Head
+///   Cmp
+///   Tail
+/// After:
+///   Head
+///   Cmp
+///   if (Cmp)
+///     ThenBlock
+///   Tail
+///
+/// If Unreachable is true, then ThenBlock ends with
+/// UnreachableInst, otherwise it branches to Tail.
+/// Returns the NewBasicBlock's terminator.
+
+TerminatorInst *llvm::SplitBlockAndInsertIfThen(Instruction *Cmp,
+    bool Unreachable, MDNode *BranchWeights) {
+  Instruction *SplitBefore = Cmp->getNextNode();
+  BasicBlock *Head = SplitBefore->getParent();
+  BasicBlock *Tail = Head->splitBasicBlock(SplitBefore);
+  TerminatorInst *HeadOldTerm = Head->getTerminator();
+  LLVMContext &C = Head->getContext();
+  BasicBlock *ThenBlock = BasicBlock::Create(C, "", Head->getParent(), Tail);
+  TerminatorInst *CheckTerm;
+  if (Unreachable)
+    CheckTerm = new UnreachableInst(C, ThenBlock);
+  else
+    CheckTerm = BranchInst::Create(Tail, ThenBlock);
+  BranchInst *HeadNewTerm =
+    BranchInst::Create(/*ifTrue*/ThenBlock, /*ifFalse*/Tail, Cmp);
+  HeadNewTerm->setMetadata(LLVMContext::MD_prof, BranchWeights);
+  ReplaceInstWithInst(HeadOldTerm, HeadNewTerm);
+  return CheckTerm;
+}

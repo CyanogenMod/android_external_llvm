@@ -1,7 +1,5 @@
 
-link_directories( ${LLVM_INTEL_JITEVENTS_LIBDIR} )
-
-set(LLVM_LINK_COMPONENTS mcjit jit interpreter nativecodegen bitreader asmparser selectiondag)
+set(LLVM_LINK_COMPONENTS mcjit jit interpreter nativecodegen bitreader asmparser selectiondag native)
 
 if( LLVM_USE_OPROFILE )
   set(LLVM_LINK_COMPONENTS

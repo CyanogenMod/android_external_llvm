@@ -14,8 +14,8 @@
 #ifndef MIPSASMPRINTER_H
 #define MIPSASMPRINTER_H
 
-#include "MipsMachineFunction.h"
 #include "MipsMCInstLower.h"
+#include "MipsMachineFunction.h"
 #include "MipsSubtarget.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/Support/Compiler.h"
@@ -31,6 +31,14 @@ class raw_ostream;
 class LLVM_LIBRARY_VISIBILITY MipsAsmPrinter : public AsmPrinter {
 
   void EmitInstrWithMacroNoAT(const MachineInstr *MI);
+
+private:
+  // tblgen'erated function.
+  bool emitPseudoExpansionLowering(MCStreamer &OutStreamer,
+                                   const MachineInstr *MI);
+
+  // lowerOperand - Convert a MachineOperand into the equivalent MCOperand.
+  bool lowerOperand(const MachineOperand &MO, MCOperand &MCOp);
 
 public:
 

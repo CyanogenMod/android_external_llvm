@@ -14,14 +14,14 @@
 #ifndef LLVM_ANALYSIS_MEMORY_DEPENDENCE_H
 #define LLVM_ANALYSIS_MEMORY_DEPENDENCE_H
 
-#include "llvm/BasicBlock.h"
-#include "llvm/Pass.h"
-#include "llvm/Support/ValueHandle.h"
-#include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/ADT/PointerIntPair.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/ValueHandle.h"
 
 namespace llvm {
   class Function;
@@ -29,7 +29,7 @@ namespace llvm {
   class Instruction;
   class CallSite;
   class AliasAnalysis;
-  class TargetData;
+  class DataLayout;
   class MemoryDependenceAnalysis;
   class PredIteratorCache;
   class DominatorTree;
@@ -323,7 +323,7 @@ namespace llvm {
     
     /// Current AA implementation, just a cache.
     AliasAnalysis *AA;
-    TargetData *TD;
+    DataLayout *TD;
     DominatorTree *DT;
     OwningPtr<PredIteratorCache> PredCache;
   public:
@@ -412,7 +412,7 @@ namespace llvm {
                                                     int64_t MemLocOffs,
                                                     unsigned MemLocSize,
                                                     const LoadInst *LI,
-                                                    const TargetData &TD);
+                                                    const DataLayout &TD);
     
   private:
     MemDepResult getCallSiteDependencyFrom(CallSite C, bool isReadOnlyCall,

@@ -17,14 +17,14 @@
 #include "MSP430.h"
 #include "MSP430MachineFunctionInfo.h"
 #include "MSP430TargetMachine.h"
-#include "llvm/Function.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/IR/Function.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/ADT/BitVector.h"
-#include "llvm/Support/ErrorHandling.h"
 
 #define GET_REGINFO_TARGET_DESC
 #include "MSP430GenRegisterInfo.inc"
@@ -218,20 +218,6 @@ MSP430RegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II,
 
   MI.getOperand(i).ChangeToRegister(BasePtr, false);
   MI.getOperand(i+1).ChangeToImmediate(Offset);
-}
-
-void
-MSP430RegisterInfo::processFunctionBeforeFrameFinalized(MachineFunction &MF)
-                                                                         const {
-  const TargetFrameLowering *TFI = MF.getTarget().getFrameLowering();
-
-  // Create a frame entry for the FPW register that must be saved.
-  if (TFI->hasFP(MF)) {
-    int FrameIdx = MF.getFrameInfo()->CreateFixedObject(2, -4, true);
-    (void)FrameIdx;
-    assert(FrameIdx == MF.getFrameInfo()->getObjectIndexBegin() &&
-           "Slot for FPW register must be last in order to be found!");
-  }
 }
 
 unsigned MSP430RegisterInfo::getFrameRegister(const MachineFunction &MF) const {

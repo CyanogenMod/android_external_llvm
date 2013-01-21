@@ -12,20 +12,20 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/GCs.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/GCMetadataPrinter.h"
-#include "llvm/Module.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
-#include "llvm/MC/MCSymbol.h"
 #include "llvm/MC/MCStreamer.h"
-#include "llvm/Target/Mangler.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetLoweringObjectFile.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/ADT/SmallString.h"
+#include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Target/Mangler.h"
+#include "llvm/Target/TargetLoweringObjectFile.h"
+#include "llvm/Target/TargetMachine.h"
 #include <cctype>
 using namespace llvm;
 
@@ -91,7 +91,7 @@ void OcamlGCMetadataPrinter::beginAssembly(AsmPrinter &AP) {
 /// either condition is detected in a function which uses the GC.
 ///
 void OcamlGCMetadataPrinter::finishAssembly(AsmPrinter &AP) {
-  unsigned IntPtrSize = AP.TM.getTargetData()->getPointerSize();
+  unsigned IntPtrSize = AP.TM.getDataLayout()->getPointerSize();
 
   AP.OutStreamer.SwitchSection(AP.getObjFileLowering().getTextSection());
   EmitCamlGlobal(getModule(), AP, "code_end");

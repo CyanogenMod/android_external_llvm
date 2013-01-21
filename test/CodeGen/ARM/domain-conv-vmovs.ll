@@ -78,7 +78,43 @@ define float @test_ineligible(float, float %in) {
   ; use-def chains would be messed up. Primarily a compile-test (we used to
   ; internal fault).
   call void @bar()
-; CHECL: bl bar
-; CHECK: vmov.f32 {{s[0-9]+}}, {{s[0-9]+}}
+; CHECK: bl bar
+; CHECK: vext.32
+; CHECK: vext.32
   ret float %val
+}
+
+define i32 @test_vmovs_no_sreg(i32 %in) {
+; CHECK: test_vmovs_no_sreg:
+
+  ; Check that the movement to and from GPRs takes place in the NEON domain.
+; CHECK: vmov.32 d
+  %x = bitcast i32 %in to float
+
+  %res = fadd float %x, %x
+
+; CHECK: vmov.32 r{{[0-9]+}}, d
+  %resi = bitcast float %res to i32
+
+  ret i32 %resi
+}
+
+
+; The point of this test is:
+;   + Make sure s1 is live before the BL
+;   + Make sure s1 is clobbered by the BL
+;   + Convince LLVM to emit a VMOV to S0
+;   + Convince LLVM to domain-convert this.
+
+; When all of those are satisfied, LLVM should *not* mark s1 as an implicit-use
+; because it's dead.
+
+declare float @clobbers_s1(float, float)
+
+define <2 x float> @test_clobbers_recognised(<2 x float> %invec, float %val) {
+  %elt = call float @clobbers_s1(float %val, float %val)
+
+  %vec = insertelement <2 x float> %invec, float %elt, i32 0
+  %res = fadd <2 x float> %vec, %vec
+  ret <2 x float> %res
 }

@@ -1,4 +1,4 @@
-; RUN: llc < %s -enable-early-ifcvt -stress-early-ifcvt | FileCheck %s
+; RUN: llc < %s -x86-early-ifcvt -stress-early-ifcvt | FileCheck %s
 target triple = "x86_64-apple-macosx10.8.0"
 
 ; CHECK: mm2
@@ -67,3 +67,109 @@ if.end41:
 }
 
 declare void @fprintf(...) nounwind
+
+; CHECK: BZ2_decompress
+; This test case contains irreducible control flow, so MachineLoopInfo doesn't
+; recognize the cycle in the CFG. This would confuse MachineTraceMetrics.
+define void @BZ2_decompress(i8* %s) nounwind ssp {
+entry:
+  switch i32 undef, label %sw.default [
+    i32 39, label %if.end.sw.bb2050_crit_edge
+    i32 36, label %sw.bb1788
+    i32 37, label %if.end.sw.bb1855_crit_edge
+    i32 40, label %sw.bb2409
+    i32 38, label %sw.bb1983
+    i32 44, label %if.end.sw.bb3058_crit_edge
+  ]
+
+if.end.sw.bb3058_crit_edge:                       ; preds = %entry
+  br label %save_state_and_return
+
+if.end.sw.bb1855_crit_edge:                       ; preds = %entry
+  br label %save_state_and_return
+
+if.end.sw.bb2050_crit_edge:                       ; preds = %entry
+  br label %sw.bb2050
+
+sw.bb1788:                                        ; preds = %entry
+  br label %save_state_and_return
+
+sw.bb1983:                                        ; preds = %entry
+  br i1 undef, label %save_state_and_return, label %if.then1990
+
+if.then1990:                                      ; preds = %sw.bb1983
+  br label %while.body2038
+
+while.body2038:                                   ; preds = %sw.bb2050, %if.then1990
+  %groupPos.8 = phi i32 [ 0, %if.then1990 ], [ %groupPos.9, %sw.bb2050 ]
+  br i1 undef, label %save_state_and_return, label %if.end2042
+
+if.end2042:                                       ; preds = %while.body2038
+  br i1 undef, label %if.end2048, label %while.end2104
+
+if.end2048:                                       ; preds = %if.end2042
+  %bsLive2054.pre = getelementptr inbounds i8* %s, i32 8
+  br label %sw.bb2050
+
+sw.bb2050:                                        ; preds = %if.end2048, %if.end.sw.bb2050_crit_edge
+  %groupPos.9 = phi i32 [ 0, %if.end.sw.bb2050_crit_edge ], [ %groupPos.8, %if.end2048 ]
+  %and2064 = and i32 undef, 1
+  br label %while.body2038
+
+while.end2104:                                    ; preds = %if.end2042
+  br i1 undef, label %save_state_and_return, label %if.end2117
+
+if.end2117:                                       ; preds = %while.end2104
+  br i1 undef, label %while.body2161.lr.ph, label %while.body2145.lr.ph
+
+while.body2145.lr.ph:                             ; preds = %if.end2117
+  br label %save_state_and_return
+
+while.body2161.lr.ph:                             ; preds = %if.end2117
+  br label %save_state_and_return
+
+sw.bb2409:                                        ; preds = %entry
+  br label %save_state_and_return
+
+sw.default:                                       ; preds = %entry
+  call void @BZ2_bz__AssertH__fail() nounwind
+  br label %save_state_and_return
+
+save_state_and_return:
+  %groupPos.14 = phi i32 [ 0, %sw.default ], [ %groupPos.8, %while.body2038 ], [ %groupPos.8, %while.end2104 ], [ 0, %if.end.sw.bb3058_crit_edge ], [ 0, %if.end.sw.bb1855_crit_edge ], [ %groupPos.8, %while.body2161.lr.ph ], [ %groupPos.8, %while.body2145.lr.ph ], [ 0, %sw.bb2409 ], [ 0, %sw.bb1788 ], [ 0, %sw.bb1983 ]
+  store i32 %groupPos.14, i32* undef, align 4
+  ret void
+}
+
+declare void @BZ2_bz__AssertH__fail()
+
+; Make sure we don't speculate on div/idiv instructions
+; CHECK: test_idiv
+; CHECK-NOT: cmov
+define i32 @test_idiv(i32 %a, i32 %b) nounwind uwtable readnone ssp {
+  %1 = icmp eq i32 %b, 0
+  br i1 %1, label %4, label %2
+
+; <label>:2                                       ; preds = %0
+  %3 = sdiv i32 %a, %b
+  br label %4
+
+; <label>:4                                       ; preds = %0, %2
+  %5 = phi i32 [ %3, %2 ], [ %a, %0 ]
+  ret i32 %5
+}
+
+; CHECK: test_div
+; CHECK-NOT: cmov
+define i32 @test_div(i32 %a, i32 %b) nounwind uwtable readnone ssp {
+  %1 = icmp eq i32 %b, 0
+  br i1 %1, label %4, label %2
+
+; <label>:2                                       ; preds = %0
+  %3 = udiv i32 %a, %b
+  br label %4
+
+; <label>:4                                       ; preds = %0, %2
+  %5 = phi i32 [ %3, %2 ], [ %a, %0 ]
+  ret i32 %5
+}

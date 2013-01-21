@@ -13,32 +13,34 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/Transforms/Utils/Local.h"
-#include "llvm/Constants.h"
-#include "llvm/DIBuilder.h"
-#include "llvm/DebugInfo.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/GlobalAlias.h"
-#include "llvm/GlobalVariable.h"
-#include "llvm/IRBuilder.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/Metadata.h"
-#include "llvm/Operator.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/Analysis/MemoryBuiltins.h"
 #include "llvm/Analysis/ProfileInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/DIBuilder.h"
+#include "llvm/DebugInfo.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/GlobalAlias.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/MDBuilder.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Operator.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/ValueHandle.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetData.h"
 using namespace llvm;
 
 //===----------------------------------------------------------------------===//
@@ -122,6 +124,27 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions,
       // Check to see if this branch is going to the same place as the default
       // dest.  If so, eliminate it as an explicit compare.
       if (i.getCaseSuccessor() == DefaultDest) {
+        MDNode* MD = SI->getMetadata(LLVMContext::MD_prof);
+        // MD should have 2 + NumCases operands.
+        if (MD && MD->getNumOperands() == 2 + SI->getNumCases()) {
+          // Collect branch weights into a vector.
+          SmallVector<uint32_t, 8> Weights;
+          for (unsigned MD_i = 1, MD_e = MD->getNumOperands(); MD_i < MD_e;
+               ++MD_i) {
+            ConstantInt* CI = dyn_cast<ConstantInt>(MD->getOperand(MD_i));
+            assert(CI);
+            Weights.push_back(CI->getValue().getZExtValue());
+          }
+          // Merge weight of this case to the default weight.
+          unsigned idx = i.getCaseIndex();
+          Weights[0] += Weights[idx+1];
+          // Remove weight for this case.
+          std::swap(Weights[idx+1], Weights.back());
+          Weights.pop_back();
+          SI->setMetadata(LLVMContext::MD_prof,
+                          MDBuilder(BB->getContext()).
+                          createBranchWeights(Weights));
+        }
         // Remove this entry.
         DefaultDest->removePredecessor(SI->getParent());
         SI->removeCase(i);
@@ -178,8 +201,20 @@ bool llvm::ConstantFoldTerminator(BasicBlock *BB, bool DeleteDeadConditions,
             "cond");
 
         // Insert the new branch.
-        Builder.CreateCondBr(Cond, FirstCase.getCaseSuccessor(),
-                             SI->getDefaultDest());
+        BranchInst *NewBr = Builder.CreateCondBr(Cond,
+                                FirstCase.getCaseSuccessor(),
+                                SI->getDefaultDest());
+        MDNode* MD = SI->getMetadata(LLVMContext::MD_prof);
+        if (MD && MD->getNumOperands() == 3) {
+          ConstantInt *SICase = dyn_cast<ConstantInt>(MD->getOperand(2));
+          ConstantInt *SIDef = dyn_cast<ConstantInt>(MD->getOperand(1));
+          assert(SICase && SIDef);
+          // The TrueWeight should be the weight for the single case of SI.
+          NewBr->setMetadata(LLVMContext::MD_prof,
+                 MDBuilder(BB->getContext()).
+                 createBranchWeights(SICase->getValue().getZExtValue(),
+                                     SIDef->getValue().getZExtValue()));
+        }
 
         // Delete the old switch.
         SI->eraseFromParent();
@@ -363,7 +398,7 @@ bool llvm::RecursivelyDeleteDeadPHINode(PHINode *PN,
 ///
 /// This returns true if it changed the code, note that it can delete
 /// instructions in other blocks as well in this block.
-bool llvm::SimplifyInstructionsInBlock(BasicBlock *BB, const TargetData *TD,
+bool llvm::SimplifyInstructionsInBlock(BasicBlock *BB, const DataLayout *TD,
                                        const TargetLibraryInfo *TLI) {
   bool MadeChange = false;
 
@@ -411,7 +446,7 @@ bool llvm::SimplifyInstructionsInBlock(BasicBlock *BB, const TargetData *TD,
 /// .. and delete the predecessor corresponding to the '1', this will attempt to
 /// recursively fold the and to 0.
 void llvm::RemovePredecessorAndSimplify(BasicBlock *BB, BasicBlock *Pred,
-                                        TargetData *TD) {
+                                        DataLayout *TD) {
   // This only adjusts blocks with PHI nodes.
   if (!isa<PHINode>(BB->begin()))
     return;
@@ -570,7 +605,7 @@ bool llvm::TryToSimplifyUncondBranchFromEmptyBlock(BasicBlock *BB) {
   // possible to handle such cases, but difficult: it requires checking whether
   // BB dominates Succ, which is non-trivial to calculate in the case where
   // Succ has multiple predecessors.  Also, it requires checking whether
-  // constructing the necessary self-referential PHI node doesn't intoduce any
+  // constructing the necessary self-referential PHI node doesn't introduce any
   // conflicts; this isn't too difficult, but the previous code for doing this
   // was incorrect.
   //
@@ -726,7 +761,7 @@ bool llvm::EliminateDuplicatePHINodes(BasicBlock *BB) {
 /// their preferred alignment from the beginning.
 ///
 static unsigned enforceKnownAlignment(Value *V, unsigned Align,
-                                      unsigned PrefAlign, const TargetData *TD) {
+                                      unsigned PrefAlign, const DataLayout *TD) {
   V = V->stripPointerCasts();
 
   if (AllocaInst *AI = dyn_cast<AllocaInst>(V)) {
@@ -769,7 +804,7 @@ static unsigned enforceKnownAlignment(Value *V, unsigned Align,
 /// and it is more than the alignment of the ultimate object, see if we can
 /// increase the alignment of the ultimate object, making this check succeed.
 unsigned llvm::getOrEnforceKnownAlignment(Value *V, unsigned PrefAlign,
-                                          const TargetData *TD) {
+                                          const DataLayout *TD) {
   assert(V->getType()->isPointerTy() &&
          "getOrEnforceKnownAlignment expects a pointer!");
   unsigned BitWidth = TD ? TD->getPointerSizeInBits() : 64;
@@ -893,4 +928,79 @@ DbgDeclareInst *llvm::FindAllocaDbgDeclare(Value *V) {
         return DDI;
 
   return 0;
+}
+
+bool llvm::replaceDbgDeclareForAlloca(AllocaInst *AI, Value *NewAllocaAddress,
+                                      DIBuilder &Builder) {
+  DbgDeclareInst *DDI = FindAllocaDbgDeclare(AI);
+  if (!DDI)
+    return false;
+  DIVariable DIVar(DDI->getVariable());
+  if (!DIVar.Verify())
+    return false;
+
+  // Create a copy of the original DIDescriptor for user variable, appending
+  // "deref" operation to a list of address elements, as new llvm.dbg.declare
+  // will take a value storing address of the memory for variable, not
+  // alloca itself.
+  Type *Int64Ty = Type::getInt64Ty(AI->getContext());
+  SmallVector<Value*, 4> NewDIVarAddress;
+  if (DIVar.hasComplexAddress()) {
+    for (unsigned i = 0, n = DIVar.getNumAddrElements(); i < n; ++i) {
+      NewDIVarAddress.push_back(
+          ConstantInt::get(Int64Ty, DIVar.getAddrElement(i)));
+    }
+  }
+  NewDIVarAddress.push_back(ConstantInt::get(Int64Ty, DIBuilder::OpDeref));
+  DIVariable NewDIVar = Builder.createComplexVariable(
+      DIVar.getTag(), DIVar.getContext(), DIVar.getName(),
+      DIVar.getFile(), DIVar.getLineNumber(), DIVar.getType(),
+      NewDIVarAddress, DIVar.getArgNumber());
+
+  // Insert llvm.dbg.declare in the same basic block as the original alloca,
+  // and remove old llvm.dbg.declare.
+  BasicBlock *BB = AI->getParent();
+  Builder.insertDeclare(NewAllocaAddress, NewDIVar, BB);
+  DDI->eraseFromParent();
+  return true;
+}
+
+bool llvm::removeUnreachableBlocks(Function &F) {
+  SmallPtrSet<BasicBlock*, 16> Reachable;
+  SmallVector<BasicBlock*, 128> Worklist;
+  Worklist.push_back(&F.getEntryBlock());
+  Reachable.insert(&F.getEntryBlock());
+  do {
+    BasicBlock *BB = Worklist.pop_back_val();
+    for (succ_iterator SI = succ_begin(BB), SE = succ_end(BB); SI != SE; ++SI)
+      if (Reachable.insert(*SI))
+        Worklist.push_back(*SI);
+  } while (!Worklist.empty());
+
+  if (Reachable.size() == F.size())
+    return false;
+
+  assert(Reachable.size() < F.size());
+  for (Function::iterator I = llvm::next(F.begin()), E = F.end(); I != E; ++I) {
+    if (Reachable.count(I))
+      continue;
+
+    // Remove the block as predecessor of all its reachable successors.
+    // Unreachable successors don't matter as they'll soon be removed, too.
+    for (succ_iterator SI = succ_begin(I), SE = succ_end(I); SI != SE; ++SI)
+      if (Reachable.count(*SI))
+        (*SI)->removePredecessor(I);
+
+    // Zap all instructions in this basic block.
+    while (!I->empty()) {
+      Instruction &Inst = I->back();
+      if (!Inst.use_empty())
+        Inst.replaceAllUsesWith(UndefValue::get(Inst.getType()));
+      I->getInstList().pop_back();
+    }
+
+    --I;
+    llvm::next(I)->eraseFromParent();
+  }
+  return true;
 }

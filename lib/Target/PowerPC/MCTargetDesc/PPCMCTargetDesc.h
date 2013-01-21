@@ -14,6 +14,9 @@
 #ifndef PPCMCTARGETDESC_H
 #define PPCMCTARGETDESC_H
 
+// GCC #defines PPC on Linux but we use it as our namespace name
+#undef PPC
+
 #include "llvm/Support/DataTypes.h"
 
 namespace llvm {
@@ -36,7 +39,7 @@ MCCodeEmitter *createPPCMCCodeEmitter(const MCInstrInfo &MCII,
                                       const MCSubtargetInfo &STI,
                                       MCContext &Ctx);
 
-MCAsmBackend *createPPCAsmBackend(const Target &T, StringRef TT);
+MCAsmBackend *createPPCAsmBackend(const Target &T, StringRef TT, StringRef CPU);
 
 /// createPPCELFObjectWriter - Construct an PPC ELF object writer.
 MCObjectWriter *createPPCELFObjectWriter(raw_ostream &OS,

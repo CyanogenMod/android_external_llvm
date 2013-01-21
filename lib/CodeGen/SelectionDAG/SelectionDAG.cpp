@@ -12,42 +12,43 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "SDNodeOrdering.h"
 #include "SDNodeDbgValue.h"
-#include "llvm/CallingConv.h"
-#include "llvm/Constants.h"
-#include "llvm/DebugInfo.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Function.h"
-#include "llvm/GlobalAlias.h"
-#include "llvm/GlobalVariable.h"
-#include "llvm/Intrinsics.h"
+#include "SDNodeOrdering.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetLowering.h"
-#include "llvm/Target/TargetSelectionDAGInfo.h"
-#include "llvm/Target/TargetOptions.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetIntrinsicInfo.h"
-#include "llvm/Target/TargetMachine.h"
+#include "llvm/DebugInfo.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/GlobalAlias.h"
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Intrinsics.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Mutex.h"
-#include "llvm/ADT/SetVector.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/SmallSet.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetIntrinsicInfo.h"
+#include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetOptions.h"
+#include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Target/TargetSelectionDAGInfo.h"
 #include <algorithm>
 #include <cmath>
 using namespace llvm;
@@ -91,11 +92,6 @@ bool ConstantFPSDNode::isValueValidForType(EVT VT,
                                            const APFloat& Val) {
   assert(VT.isFloatingPoint() && "Can only convert between FP types");
 
-  // PPC long double cannot be converted to any other type.
-  if (VT == MVT::ppcf128 ||
-      &Val.getSemantics() == &APFloat::PPCDoubleDouble)
-    return false;
-
   // convert modifies in place, so make a copy.
   APFloat Val2 = APFloat(Val);
   bool losesInfo;
@@ -136,13 +132,11 @@ bool ISD::isBuildVectorAllOnes(const SDNode *N) {
   // constants are.
   SDValue NotZero = N->getOperand(i);
   unsigned EltSize = N->getValueType(0).getVectorElementType().getSizeInBits();
-  if (isa<ConstantSDNode>(NotZero)) {
-    if (cast<ConstantSDNode>(NotZero)->getAPIntValue().countTrailingOnes() <
-        EltSize)
+  if (ConstantSDNode *CN = dyn_cast<ConstantSDNode>(NotZero)) {
+    if (CN->getAPIntValue().countTrailingOnes() < EltSize)
       return false;
-  } else if (isa<ConstantFPSDNode>(NotZero)) {
-    if (cast<ConstantFPSDNode>(NotZero)->getValueAPF()
-              .bitcastToAPInt().countTrailingOnes() < EltSize)
+  } else if (ConstantFPSDNode *CFPN = dyn_cast<ConstantFPSDNode>(NotZero)) {
+    if (CFPN->getValueAPF().bitcastToAPInt().countTrailingOnes() < EltSize)
       return false;
   } else
     return false;
@@ -179,11 +173,11 @@ bool ISD::isBuildVectorAllZeros(const SDNode *N) {
   // Do not accept build_vectors that aren't all constants or which have non-0
   // elements.
   SDValue Zero = N->getOperand(i);
-  if (isa<ConstantSDNode>(Zero)) {
-    if (!cast<ConstantSDNode>(Zero)->isNullValue())
+  if (ConstantSDNode *CN = dyn_cast<ConstantSDNode>(Zero)) {
+    if (!CN->isNullValue())
       return false;
-  } else if (isa<ConstantFPSDNode>(Zero)) {
-    if (!cast<ConstantFPSDNode>(Zero)->getValueAPF().isPosZero())
+  } else if (ConstantFPSDNode *CFPN = dyn_cast<ConstantFPSDNode>(Zero)) {
+    if (!CFPN->getValueAPF().isPosZero())
       return false;
   } else
     return false;
@@ -494,8 +488,10 @@ static void AddNodeIDCustom(FoldingSetNodeID &ID, const SDNode *N) {
   }
   case ISD::TargetBlockAddress:
   case ISD::BlockAddress: {
-    ID.AddPointer(cast<BlockAddressSDNode>(N)->getBlockAddress());
-    ID.AddInteger(cast<BlockAddressSDNode>(N)->getTargetFlags());
+    const BlockAddressSDNode *BA = cast<BlockAddressSDNode>(N);
+    ID.AddPointer(BA->getBlockAddress());
+    ID.AddInteger(BA->getOffset());
+    ID.AddInteger(BA->getTargetFlags());
     break;
   }
   } // end switch (N->getOpcode())
@@ -883,21 +879,23 @@ unsigned SelectionDAG::getEVTAlignment(EVT VT) const {
                    PointerType::get(Type::getInt8Ty(*getContext()), 0) :
                    VT.getTypeForEVT(*getContext());
 
-  return TLI.getTargetData()->getABITypeAlignment(Ty);
+  return TLI.getDataLayout()->getABITypeAlignment(Ty);
 }
 
 // EntryNode could meaningfully have debug info if we can find it...
 SelectionDAG::SelectionDAG(const TargetMachine &tm, CodeGenOpt::Level OL)
   : TM(tm), TLI(*tm.getTargetLowering()), TSI(*tm.getSelectionDAGInfo()),
-    OptLevel(OL), EntryNode(ISD::EntryToken, DebugLoc(), getVTList(MVT::Other)),
+    TTI(0), OptLevel(OL), EntryNode(ISD::EntryToken, DebugLoc(),
+                                    getVTList(MVT::Other)),
     Root(getEntryNode()), Ordering(0), UpdateListeners(0) {
   AllNodes.push_back(&EntryNode);
   Ordering = new SDNodeOrdering();
   DbgInfo = new SDDbgInfo();
 }
 
-void SelectionDAG::init(MachineFunction &mf) {
+void SelectionDAG::init(MachineFunction &mf, const TargetTransformInfo *tti) {
   MF = &mf;
+  TTI = tti;
   Context = &mf.getFunction()->getContext();
 }
 
@@ -1079,7 +1077,8 @@ SDValue SelectionDAG::getConstantFP(double Val, EVT VT, bool isTarget) {
     return getConstantFP(APFloat((float)Val), VT, isTarget);
   else if (EltVT==MVT::f64)
     return getConstantFP(APFloat(Val), VT, isTarget);
-  else if (EltVT==MVT::f80 || EltVT==MVT::f128 || EltVT==MVT::f16) {
+  else if (EltVT==MVT::f80 || EltVT==MVT::f128 || EltVT==MVT::ppcf128 ||
+           EltVT==MVT::f16) {
     bool ignored;
     APFloat apf = APFloat(Val);
     apf.convert(*EVTToAPFloatSemantics(EltVT), APFloat::rmNearestTiesToEven,
@@ -1173,7 +1172,7 @@ SDValue SelectionDAG::getConstantPool(const Constant *C, EVT VT,
   assert((TargetFlags == 0 || isTarget) &&
          "Cannot set target flags on target-independent globals");
   if (Alignment == 0)
-    Alignment = TLI.getTargetData()->getPrefTypeAlignment(C->getType());
+    Alignment = TLI.getDataLayout()->getPrefTypeAlignment(C->getType());
   unsigned Opc = isTarget ? ISD::TargetConstantPool : ISD::ConstantPool;
   FoldingSetNodeID ID;
   AddNodeIDNode(ID, Opc, getVTList(VT), 0, 0);
@@ -1200,7 +1199,7 @@ SDValue SelectionDAG::getConstantPool(MachineConstantPoolValue *C, EVT VT,
   assert((TargetFlags == 0 || isTarget) &&
          "Cannot set target flags on target-independent globals");
   if (Alignment == 0)
-    Alignment = TLI.getTargetData()->getPrefTypeAlignment(C->getType());
+    Alignment = TLI.getDataLayout()->getPrefTypeAlignment(C->getType());
   unsigned Opc = isTarget ? ISD::TargetConstantPool : ISD::ConstantPool;
   FoldingSetNodeID ID;
   AddNodeIDNode(ID, Opc, getVTList(VT), 0, 0);
@@ -1470,6 +1469,7 @@ SDValue SelectionDAG::getEHLabel(DebugLoc dl, SDValue Root, MCSymbol *Label) {
 
 
 SDValue SelectionDAG::getBlockAddress(const BlockAddress *BA, EVT VT,
+                                      int64_t Offset,
                                       bool isTarget,
                                       unsigned char TargetFlags) {
   unsigned Opc = isTarget ? ISD::TargetBlockAddress : ISD::BlockAddress;
@@ -1477,12 +1477,14 @@ SDValue SelectionDAG::getBlockAddress(const BlockAddress *BA, EVT VT,
   FoldingSetNodeID ID;
   AddNodeIDNode(ID, Opc, getVTList(VT), 0, 0);
   ID.AddPointer(BA);
+  ID.AddInteger(Offset);
   ID.AddInteger(TargetFlags);
   void *IP = 0;
   if (SDNode *E = CSEMap.FindNodeOrInsertPos(ID, IP))
     return SDValue(E, 0);
 
-  SDNode *N = new (NodeAllocator) BlockAddressSDNode(Opc, VT, BA, TargetFlags);
+  SDNode *N = new (NodeAllocator) BlockAddressSDNode(Opc, VT, BA, Offset,
+                                                     TargetFlags);
   CSEMap.InsertNode(N, IP);
   AllNodes.push_back(N);
   return SDValue(N, 0);
@@ -1541,7 +1543,7 @@ SDValue SelectionDAG::CreateStackTemporary(EVT VT, unsigned minAlign) {
   unsigned ByteSize = VT.getStoreSize();
   Type *Ty = VT.getTypeForEVT(*getContext());
   unsigned StackAlign =
-  std::max((unsigned)TLI.getTargetData()->getPrefTypeAlignment(Ty), minAlign);
+  std::max((unsigned)TLI.getDataLayout()->getPrefTypeAlignment(Ty), minAlign);
 
   int FrameIdx = FrameInfo->CreateStackObject(ByteSize, StackAlign, false);
   return getFrameIndex(FrameIdx, TLI.getPointerTy());
@@ -1554,7 +1556,7 @@ SDValue SelectionDAG::CreateStackTemporary(EVT VT1, EVT VT2) {
                             VT2.getStoreSizeInBits())/8;
   Type *Ty1 = VT1.getTypeForEVT(*getContext());
   Type *Ty2 = VT2.getTypeForEVT(*getContext());
-  const TargetData *TD = TLI.getTargetData();
+  const DataLayout *TD = TLI.getDataLayout();
   unsigned Align = std::max(TD->getPrefTypeAlignment(Ty1),
                             TD->getPrefTypeAlignment(Ty2));
 
@@ -1609,10 +1611,6 @@ SDValue SelectionDAG::FoldSetCC(EVT VT, SDValue N1,
   }
   if (ConstantFPSDNode *N1C = dyn_cast<ConstantFPSDNode>(N1.getNode())) {
     if (ConstantFPSDNode *N2C = dyn_cast<ConstantFPSDNode>(N2.getNode())) {
-      // No compile time operations on this type yet.
-      if (N1C->getValueType(0) == MVT::ppcf128)
-        return SDValue();
-
       APFloat::cmpResult R = N1C->getValueAPF().compare(N2C->getValueAPF());
       switch (Cond) {
       default: break;
@@ -2444,8 +2442,6 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
       return getConstant(Val.zextOrTrunc(VT.getSizeInBits()), VT);
     case ISD::UINT_TO_FP:
     case ISD::SINT_TO_FP: {
-      // No compile time operations on ppcf128.
-      if (VT == MVT::ppcf128) break;
       APFloat apf(APInt::getNullValue(VT.getSizeInBits()));
       (void)apf.convertFromAPInt(Val,
                                  Opcode==ISD::SINT_TO_FP,
@@ -2454,9 +2450,9 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
     }
     case ISD::BITCAST:
       if (VT == MVT::f32 && C->getValueType(0) == MVT::i32)
-        return getConstantFP(Val.bitsToFloat(), VT);
+        return getConstantFP(APFloat(Val), VT);
       else if (VT == MVT::f64 && C->getValueType(0) == MVT::i64)
-        return getConstantFP(Val.bitsToDouble(), VT);
+        return getConstantFP(APFloat(Val), VT);
       break;
     case ISD::BSWAP:
       return getConstant(Val.byteSwap(), VT);
@@ -2474,61 +2470,59 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL,
   // Constant fold unary operations with a floating point constant operand.
   if (ConstantFPSDNode *C = dyn_cast<ConstantFPSDNode>(Operand.getNode())) {
     APFloat V = C->getValueAPF();    // make copy
-    if (VT != MVT::ppcf128 && Operand.getValueType() != MVT::ppcf128) {
-      switch (Opcode) {
-      case ISD::FNEG:
-        V.changeSign();
+    switch (Opcode) {
+    case ISD::FNEG:
+      V.changeSign();
+      return getConstantFP(V, VT);
+    case ISD::FABS:
+      V.clearSign();
+      return getConstantFP(V, VT);
+    case ISD::FCEIL: {
+      APFloat::opStatus fs = V.roundToIntegral(APFloat::rmTowardPositive);
+      if (fs == APFloat::opOK || fs == APFloat::opInexact)
         return getConstantFP(V, VT);
-      case ISD::FABS:
-        V.clearSign();
+      break;
+    }
+    case ISD::FTRUNC: {
+      APFloat::opStatus fs = V.roundToIntegral(APFloat::rmTowardZero);
+      if (fs == APFloat::opOK || fs == APFloat::opInexact)
         return getConstantFP(V, VT);
-      case ISD::FCEIL: {
-        APFloat::opStatus fs = V.roundToIntegral(APFloat::rmTowardPositive);
-        if (fs == APFloat::opOK || fs == APFloat::opInexact)
-          return getConstantFP(V, VT);
-        break;
-      }
-      case ISD::FTRUNC: {
-        APFloat::opStatus fs = V.roundToIntegral(APFloat::rmTowardZero);
-        if (fs == APFloat::opOK || fs == APFloat::opInexact)
-          return getConstantFP(V, VT);
-        break;
-      }
-      case ISD::FFLOOR: {
-        APFloat::opStatus fs = V.roundToIntegral(APFloat::rmTowardNegative);
-        if (fs == APFloat::opOK || fs == APFloat::opInexact)
-          return getConstantFP(V, VT);
-        break;
-      }
-      case ISD::FP_EXTEND: {
-        bool ignored;
-        // This can return overflow, underflow, or inexact; we don't care.
-        // FIXME need to be more flexible about rounding mode.
-        (void)V.convert(*EVTToAPFloatSemantics(VT),
-                        APFloat::rmNearestTiesToEven, &ignored);
+      break;
+    }
+    case ISD::FFLOOR: {
+      APFloat::opStatus fs = V.roundToIntegral(APFloat::rmTowardNegative);
+      if (fs == APFloat::opOK || fs == APFloat::opInexact)
         return getConstantFP(V, VT);
-      }
-      case ISD::FP_TO_SINT:
-      case ISD::FP_TO_UINT: {
-        integerPart x[2];
-        bool ignored;
-        assert(integerPartWidth >= 64);
-        // FIXME need to be more flexible about rounding mode.
-        APFloat::opStatus s = V.convertToInteger(x, VT.getSizeInBits(),
-                              Opcode==ISD::FP_TO_SINT,
-                              APFloat::rmTowardZero, &ignored);
-        if (s==APFloat::opInvalidOp)     // inexact is OK, in fact usual
-          break;
-        APInt api(VT.getSizeInBits(), x);
-        return getConstant(api, VT);
-      }
-      case ISD::BITCAST:
-        if (VT == MVT::i32 && C->getValueType(0) == MVT::f32)
-          return getConstant((uint32_t)V.bitcastToAPInt().getZExtValue(), VT);
-        else if (VT == MVT::i64 && C->getValueType(0) == MVT::f64)
-          return getConstant(V.bitcastToAPInt().getZExtValue(), VT);
+      break;
+    }
+    case ISD::FP_EXTEND: {
+      bool ignored;
+      // This can return overflow, underflow, or inexact; we don't care.
+      // FIXME need to be more flexible about rounding mode.
+      (void)V.convert(*EVTToAPFloatSemantics(VT),
+                      APFloat::rmNearestTiesToEven, &ignored);
+      return getConstantFP(V, VT);
+    }
+    case ISD::FP_TO_SINT:
+    case ISD::FP_TO_UINT: {
+      integerPart x[2];
+      bool ignored;
+      assert(integerPartWidth >= 64);
+      // FIXME need to be more flexible about rounding mode.
+      APFloat::opStatus s = V.convertToInteger(x, VT.getSizeInBits(),
+                            Opcode==ISD::FP_TO_SINT,
+                            APFloat::rmTowardZero, &ignored);
+      if (s==APFloat::opInvalidOp)     // inexact is OK, in fact usual
         break;
-      }
+      APInt api(VT.getSizeInBits(), x);
+      return getConstant(api, VT);
+    }
+    case ISD::BITCAST:
+      if (VT == MVT::i32 && C->getValueType(0) == MVT::f32)
+        return getConstant((uint32_t)V.bitcastToAPInt().getZExtValue(), VT);
+      else if (VT == MVT::i64 && C->getValueType(0) == MVT::f64)
+        return getConstant(V.bitcastToAPInt().getZExtValue(), VT);
+      break;
     }
   }
 
@@ -3049,7 +3043,7 @@ SDValue SelectionDAG::getNode(unsigned Opcode, DebugLoc DL, EVT VT,
       // Cannonicalize constant to RHS if commutative
       std::swap(N1CFP, N2CFP);
       std::swap(N1, N2);
-    } else if (N2CFP && VT != MVT::ppcf128) {
+    } else if (N2CFP) {
       APFloat V1 = N1CFP->getValueAPF(), V2 = N2CFP->getValueAPF();
       APFloat::opStatus s;
       switch (Opcode) {
@@ -3383,7 +3377,7 @@ static SDValue getMemsetStringVal(EVT VT, DebugLoc dl, SelectionDAG &DAG,
   unsigned NumVTBytes = VT.getSizeInBits() / 8;
   unsigned NumBytes = std::min(NumVTBytes, unsigned(Str.size()));
 
-  uint64_t Val = 0;
+  APInt Val(NumBytes*8, 0);
   if (TLI.isLittleEndian()) {
     for (unsigned i = 0; i != NumBytes; ++i)
       Val |= (uint64_t)(unsigned char)Str[i] << i*8;
@@ -3392,7 +3386,12 @@ static SDValue getMemsetStringVal(EVT VT, DebugLoc dl, SelectionDAG &DAG,
       Val |= (uint64_t)(unsigned char)Str[i] << (NumVTBytes-i-1)*8;
   }
 
-  return DAG.getConstant(Val, VT);
+  // If the "cost" of materializing the integer immediate is 1 or free, then
+  // it is cost effective to turn the load into the immediate.
+  const TargetTransformInfo *TTI = DAG.getTargetTransformInfo();
+  if (TTI->getIntImmCost(Val, VT.getTypeForEVT(*DAG.getContext())) < 2)
+    return DAG.getConstant(Val, VT);
+  return SDValue(0, 0);
 }
 
 /// getMemBasePlusOffset - Returns base and offset node for the
@@ -3430,8 +3429,10 @@ static bool isMemSrcFromString(SDValue Src, StringRef &Str) {
 static bool FindOptimalMemOpLowering(std::vector<EVT> &MemOps,
                                      unsigned Limit, uint64_t Size,
                                      unsigned DstAlign, unsigned SrcAlign,
-                                     bool IsZeroVal,
+                                     bool IsMemset,
+                                     bool ZeroMemset,
                                      bool MemcpyStrSrc,
+                                     bool AllowOverlap,
                                      SelectionDAG &DAG,
                                      const TargetLowering &TLI) {
   assert((SrcAlign == 0 || SrcAlign >= DstAlign) &&
@@ -3444,11 +3445,11 @@ static bool FindOptimalMemOpLowering(std::vector<EVT> &MemOps,
   // 'MemcpyStrSrc' indicates whether the memcpy source is constant so it does
   // not need to be loaded.
   EVT VT = TLI.getOptimalMemOpType(Size, DstAlign, SrcAlign,
-                                   IsZeroVal, MemcpyStrSrc,
+                                   IsMemset, ZeroMemset, MemcpyStrSrc,
                                    DAG.getMachineFunction());
 
   if (VT == MVT::Other) {
-    if (DstAlign >= TLI.getTargetData()->getPointerPrefAlignment() ||
+    if (DstAlign >= TLI.getDataLayout()->getPointerPrefAlignment() ||
         TLI.allowsUnalignedMemoryAccesses(VT)) {
       VT = TLI.getPointerTy();
     } else {
@@ -3474,21 +3475,51 @@ static bool FindOptimalMemOpLowering(std::vector<EVT> &MemOps,
     unsigned VTSize = VT.getSizeInBits() / 8;
     while (VTSize > Size) {
       // For now, only use non-vector load / store's for the left-over pieces.
+      EVT NewVT = VT;
+      unsigned NewVTSize;
+
+      bool Found = false;
       if (VT.isVector() || VT.isFloatingPoint()) {
-        VT = MVT::i64;
-        while (!TLI.isTypeLegal(VT))
-          VT = (MVT::SimpleValueType)(VT.getSimpleVT().SimpleTy - 1);
-        VTSize = VT.getSizeInBits() / 8;
-      } else {
-        // This can result in a type that is not legal on the target, e.g.
-        // 1 or 2 bytes on PPC.
-        VT = (MVT::SimpleValueType)(VT.getSimpleVT().SimpleTy - 1);
-        VTSize >>= 1;
+        NewVT = (VT.getSizeInBits() > 64) ? MVT::i64 : MVT::i32;
+        if (TLI.isOperationLegalOrCustom(ISD::STORE, NewVT) &&
+            TLI.isSafeMemOpType(NewVT.getSimpleVT()))
+          Found = true;
+        else if (NewVT == MVT::i64 &&
+                 TLI.isOperationLegalOrCustom(ISD::STORE, MVT::f64) &&
+                 TLI.isSafeMemOpType(MVT::f64)) {
+          // i64 is usually not legal on 32-bit targets, but f64 may be.
+          NewVT = MVT::f64;
+          Found = true;
+        }
+      }
+
+      if (!Found) {
+        do {
+          NewVT = (MVT::SimpleValueType)(NewVT.getSimpleVT().SimpleTy - 1);
+          if (NewVT == MVT::i8)
+            break;
+        } while (!TLI.isSafeMemOpType(NewVT.getSimpleVT()));
+      }
+      NewVTSize = NewVT.getSizeInBits() / 8;
+
+      // If the new VT cannot cover all of the remaining bits, then consider
+      // issuing a (or a pair of) unaligned and overlapping load / store.
+      // FIXME: Only does this for 64-bit or more since we don't have proper
+      // cost model for unaligned load / store.
+      bool Fast;
+      if (NumMemOps && AllowOverlap &&
+          VTSize >= 8 && NewVTSize < Size &&
+          TLI.allowsUnalignedMemoryAccesses(VT, &Fast) && Fast)
+        VTSize = Size;
+      else {
+        VT = NewVT;
+        VTSize = NewVTSize;
       }
     }
 
     if (++NumMemOps > Limit)
       return false;
+
     MemOps.push_back(VT);
     Size -= VTSize;
   }
@@ -3516,7 +3547,9 @@ static SDValue getMemcpyLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
   bool DstAlignCanChange = false;
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo *MFI = MF.getFrameInfo();
-  bool OptSize = MF.getFunction()->hasFnAttr(Attribute::OptimizeForSize);
+  bool OptSize =
+    MF.getFunction()->getAttributes().
+      hasAttribute(AttributeSet::FunctionIndex, Attribute::OptimizeForSize);
   FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(Dst);
   if (FI && !MFI->isFixedObjectIndex(FI->getIndex()))
     DstAlignCanChange = true;
@@ -3531,12 +3564,12 @@ static SDValue getMemcpyLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
   if (!FindOptimalMemOpLowering(MemOps, Limit, Size,
                                 (DstAlignCanChange ? 0 : Align),
                                 (isZeroStr ? 0 : SrcAlign),
-                                true, CopyFromStr, DAG, TLI))
+                                false, false, CopyFromStr, true, DAG, TLI))
     return SDValue();
 
   if (DstAlignCanChange) {
     Type *Ty = MemOps[0].getTypeForEVT(*DAG.getContext());
-    unsigned NewAlign = (unsigned) TLI.getTargetData()->getABITypeAlignment(Ty);
+    unsigned NewAlign = (unsigned) TLI.getDataLayout()->getABITypeAlignment(Ty);
     if (NewAlign > Align) {
       // Give the stack frame object a larger alignment if needed.
       if (MFI->getObjectAlignment(FI->getIndex()) < NewAlign)
@@ -3553,6 +3586,14 @@ static SDValue getMemcpyLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
     unsigned VTSize = VT.getSizeInBits() / 8;
     SDValue Value, Store;
 
+    if (VTSize > Size) {
+      // Issuing an unaligned load / store pair  that overlaps with the previous
+      // pair. Adjust the offset accordingly.
+      assert(i == NumMemOps-1 && i != 0);
+      SrcOff -= VTSize - Size;
+      DstOff -= VTSize - Size;
+    }
+
     if (CopyFromStr &&
         (isZeroStr || (VT.isInteger() && !VT.isVector()))) {
       // It's unlikely a store of a vector immediate can be done in a single
@@ -3561,11 +3602,14 @@ static SDValue getMemcpyLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
       // FIXME: Handle other cases where store of vector immediate is done in
       // a single instruction.
       Value = getMemsetStringVal(VT, dl, DAG, TLI, Str.substr(SrcOff));
-      Store = DAG.getStore(Chain, dl, Value,
-                           getMemBasePlusOffset(Dst, DstOff, DAG),
-                           DstPtrInfo.getWithOffset(DstOff), isVol,
-                           false, Align);
-    } else {
+      if (Value.getNode())
+        Store = DAG.getStore(Chain, dl, Value,
+                             getMemBasePlusOffset(Dst, DstOff, DAG),
+                             DstPtrInfo.getWithOffset(DstOff), isVol,
+                             false, Align);
+    }
+
+    if (!Store.getNode()) {
       // The type might not be legal for the target.  This should only happen
       // if the type is smaller than a legal type, as on PPC, so the right
       // thing to do is generate a LoadExt/StoreTrunc pair.  These simplify
@@ -3585,6 +3629,7 @@ static SDValue getMemcpyLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
     OutChains.push_back(Store);
     SrcOff += VTSize;
     DstOff += VTSize;
+    Size -= VTSize;
   }
 
   return DAG.getNode(ISD::TokenFactor, dl, MVT::Other,
@@ -3609,7 +3654,8 @@ static SDValue getMemmoveLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
   bool DstAlignCanChange = false;
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo *MFI = MF.getFrameInfo();
-  bool OptSize = MF.getFunction()->hasFnAttr(Attribute::OptimizeForSize);
+  bool OptSize = MF.getFunction()->getAttributes().
+    hasAttribute(AttributeSet::FunctionIndex, Attribute::OptimizeForSize);
   FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(Dst);
   if (FI && !MFI->isFixedObjectIndex(FI->getIndex()))
     DstAlignCanChange = true;
@@ -3619,13 +3665,13 @@ static SDValue getMemmoveLoadsAndStores(SelectionDAG &DAG, DebugLoc dl,
   unsigned Limit = AlwaysInline ? ~0U : TLI.getMaxStoresPerMemmove(OptSize);
 
   if (!FindOptimalMemOpLowering(MemOps, Limit, Size,
-                                (DstAlignCanChange ? 0 : Align),
-                                SrcAlign, true, false, DAG, TLI))
+                                (DstAlignCanChange ? 0 : Align), SrcAlign,
+                                false, false, false, false, DAG, TLI))
     return SDValue();
 
   if (DstAlignCanChange) {
     Type *Ty = MemOps[0].getTypeForEVT(*DAG.getContext());
-    unsigned NewAlign = (unsigned) TLI.getTargetData()->getABITypeAlignment(Ty);
+    unsigned NewAlign = (unsigned) TLI.getDataLayout()->getABITypeAlignment(Ty);
     if (NewAlign > Align) {
       // Give the stack frame object a larger alignment if needed.
       if (MFI->getObjectAlignment(FI->getIndex()) < NewAlign)
@@ -3687,7 +3733,8 @@ static SDValue getMemsetStores(SelectionDAG &DAG, DebugLoc dl,
   bool DstAlignCanChange = false;
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo *MFI = MF.getFrameInfo();
-  bool OptSize = MF.getFunction()->hasFnAttr(Attribute::OptimizeForSize);
+  bool OptSize = MF.getFunction()->getAttributes().
+    hasAttribute(AttributeSet::FunctionIndex, Attribute::OptimizeForSize);
   FrameIndexSDNode *FI = dyn_cast<FrameIndexSDNode>(Dst);
   if (FI && !MFI->isFixedObjectIndex(FI->getIndex()))
     DstAlignCanChange = true;
@@ -3695,12 +3742,12 @@ static SDValue getMemsetStores(SelectionDAG &DAG, DebugLoc dl,
     isa<ConstantSDNode>(Src) && cast<ConstantSDNode>(Src)->isNullValue();
   if (!FindOptimalMemOpLowering(MemOps, TLI.getMaxStoresPerMemset(OptSize),
                                 Size, (DstAlignCanChange ? 0 : Align), 0,
-                                IsZeroVal, false, DAG, TLI))
+                                true, IsZeroVal, false, true, DAG, TLI))
     return SDValue();
 
   if (DstAlignCanChange) {
     Type *Ty = MemOps[0].getTypeForEVT(*DAG.getContext());
-    unsigned NewAlign = (unsigned) TLI.getTargetData()->getABITypeAlignment(Ty);
+    unsigned NewAlign = (unsigned) TLI.getDataLayout()->getABITypeAlignment(Ty);
     if (NewAlign > Align) {
       // Give the stack frame object a larger alignment if needed.
       if (MFI->getObjectAlignment(FI->getIndex()) < NewAlign)
@@ -3722,6 +3769,13 @@ static SDValue getMemsetStores(SelectionDAG &DAG, DebugLoc dl,
 
   for (unsigned i = 0; i < NumMemOps; i++) {
     EVT VT = MemOps[i];
+    unsigned VTSize = VT.getSizeInBits() / 8;
+    if (VTSize > Size) {
+      // Issuing an unaligned load / store pair  that overlaps with the previous
+      // pair. Adjust the offset accordingly.
+      assert(i == NumMemOps-1 && i != 0);
+      DstOff -= VTSize - Size;
+    }
 
     // If this store is smaller than the largest store see whether we can get
     // the smaller value for free with a truncate.
@@ -3740,6 +3794,7 @@ static SDValue getMemsetStores(SelectionDAG &DAG, DebugLoc dl,
                                  isVol, false, Align);
     OutChains.push_back(Store);
     DstOff += VT.getSizeInBits() / 8;
+    Size -= VTSize;
   }
 
   return DAG.getNode(ISD::TokenFactor, dl, MVT::Other,
@@ -3794,7 +3849,7 @@ SDValue SelectionDAG::getMemcpy(SDValue Chain, DebugLoc dl, SDValue Dst,
   // Emit a library call.
   TargetLowering::ArgListTy Args;
   TargetLowering::ArgListEntry Entry;
-  Entry.Ty = TLI.getTargetData()->getIntPtrType(*getContext());
+  Entry.Ty = TLI.getDataLayout()->getIntPtrType(*getContext());
   Entry.Node = Dst; Args.push_back(Entry);
   Entry.Node = Src; Args.push_back(Entry);
   Entry.Node = Size; Args.push_back(Entry);
@@ -3849,7 +3904,7 @@ SDValue SelectionDAG::getMemmove(SDValue Chain, DebugLoc dl, SDValue Dst,
   // Emit a library call.
   TargetLowering::ArgListTy Args;
   TargetLowering::ArgListEntry Entry;
-  Entry.Ty = TLI.getTargetData()->getIntPtrType(*getContext());
+  Entry.Ty = TLI.getDataLayout()->getIntPtrType(*getContext());
   Entry.Node = Dst; Args.push_back(Entry);
   Entry.Node = Src; Args.push_back(Entry);
   Entry.Node = Size; Args.push_back(Entry);
@@ -3898,7 +3953,7 @@ SDValue SelectionDAG::getMemset(SDValue Chain, DebugLoc dl, SDValue Dst,
     return Result;
 
   // Emit a library call.
-  Type *IntPtrTy = TLI.getTargetData()->getIntPtrType(*getContext());
+  Type *IntPtrTy = TLI.getDataLayout()->getIntPtrType(*getContext());
   TargetLowering::ArgListTy Args;
   TargetLowering::ArgListEntry Entry;
   Entry.Node = Dst; Entry.Ty = IntPtrTy;
@@ -6094,7 +6149,7 @@ unsigned SelectionDAG::InferPtrAlignment(SDValue Ptr) const {
     unsigned PtrWidth = TLI.getPointerTy().getSizeInBits();
     APInt KnownZero(PtrWidth, 0), KnownOne(PtrWidth, 0);
     llvm::ComputeMaskedBits(const_cast<GlobalValue*>(GV), KnownZero, KnownOne,
-                            TLI.getTargetData());
+                            TLI.getDataLayout());
     unsigned AlignBits = KnownZero.countTrailingOnes();
     unsigned Align = AlignBits ? 1 << std::min(31U, AlignBits) : 0;
     if (Align)

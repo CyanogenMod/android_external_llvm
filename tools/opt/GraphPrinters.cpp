@@ -14,11 +14,11 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Support/GraphWriter.h"
-#include "llvm/Pass.h"
-#include "llvm/Value.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/Dominators.h"
+#include "llvm/IR/Value.h"
+#include "llvm/Pass.h"
+#include "llvm/Support/GraphWriter.h"
 #include "llvm/Support/ToolOutputFile.h"
 using namespace llvm;
 

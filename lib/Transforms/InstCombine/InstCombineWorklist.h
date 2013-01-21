@@ -11,11 +11,11 @@
 #define INSTCOMBINE_WORKLIST_H
 
 #define DEBUG_TYPE "instcombine"
-#include "llvm/Instruction.h"
-#include "llvm/Support/Debug.h"
-#include "llvm/Support/Compiler.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/Support/Compiler.h"
+#include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
 
 namespace llvm {
@@ -26,8 +26,8 @@ class LLVM_LIBRARY_VISIBILITY InstCombineWorklist {
   SmallVector<Instruction*, 256> Worklist;
   DenseMap<Instruction*, unsigned> WorklistMap;
   
-  void operator=(const InstCombineWorklist&RHS);   // DO NOT IMPLEMENT
-  InstCombineWorklist(const InstCombineWorklist&); // DO NOT IMPLEMENT
+  void operator=(const InstCombineWorklist&RHS) LLVM_DELETED_FUNCTION;
+  InstCombineWorklist(const InstCombineWorklist&) LLVM_DELETED_FUNCTION;
 public:
   InstCombineWorklist() {}
   

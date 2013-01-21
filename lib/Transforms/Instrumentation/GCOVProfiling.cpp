@@ -16,19 +16,19 @@
 
 #define DEBUG_TYPE "insert-gcov-profiling"
 
-#include "ProfilingUtils.h"
 #include "llvm/Transforms/Instrumentation.h"
-#include "llvm/DebugInfo.h"
-#include "llvm/IRBuilder.h"
-#include "llvm/Instructions.h"
-#include "llvm/Module.h"
-#include "llvm/Pass.h"
+#include "ProfilingUtils.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/UniqueVector.h"
+#include "llvm/DebugInfo.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/DebugLoc.h"
 #include "llvm/Support/InstIterator.h"
@@ -45,13 +45,14 @@ namespace {
     static char ID;
     GCOVProfiler()
         : ModulePass(ID), EmitNotes(true), EmitData(true), Use402Format(false),
-          UseExtraChecksum(false) {
+          UseExtraChecksum(false), NoRedZone(false) {
       initializeGCOVProfilerPass(*PassRegistry::getPassRegistry());
     }
-    GCOVProfiler(bool EmitNotes, bool EmitData, bool use402Format = false,
-                 bool useExtraChecksum = false)
+    GCOVProfiler(bool EmitNotes, bool EmitData, bool use402Format,
+                 bool useExtraChecksum, bool NoRedZone_)
         : ModulePass(ID), EmitNotes(EmitNotes), EmitData(EmitData),
-          Use402Format(use402Format), UseExtraChecksum(useExtraChecksum) {
+          Use402Format(use402Format), UseExtraChecksum(useExtraChecksum),
+          NoRedZone(NoRedZone_) {
       assert((EmitNotes || EmitData) && "GCOVProfiler asked to do nothing?");
       initializeGCOVProfilerPass(*PassRegistry::getPassRegistry());
     }
@@ -90,6 +91,7 @@ namespace {
     // list.
     void insertCounterWriteout(ArrayRef<std::pair<GlobalVariable*, MDNode*> >);
     void insertIndirectCounterIncrement();
+    void insertFlush(ArrayRef<std::pair<GlobalVariable*, MDNode*> >);
 
     std::string mangleName(DICompileUnit CU, const char *NewStem);
 
@@ -97,6 +99,7 @@ namespace {
     bool EmitData;
     bool Use402Format;
     bool UseExtraChecksum;
+    bool NoRedZone;
 
     Module *M;
     LLVMContext *Ctx;
@@ -109,8 +112,10 @@ INITIALIZE_PASS(GCOVProfiler, "insert-gcov-profiling",
 
 ModulePass *llvm::createGCOVProfilerPass(bool EmitNotes, bool EmitData,
                                          bool Use402Format,
-                                         bool UseExtraChecksum) {
-  return new GCOVProfiler(EmitNotes, EmitData, Use402Format, UseExtraChecksum);
+                                         bool UseExtraChecksum,
+                                         bool NoRedZone) {
+  return new GCOVProfiler(EmitNotes, EmitData, Use402Format, UseExtraChecksum,
+                          NoRedZone);
 }
 
 namespace {
@@ -518,6 +523,7 @@ bool GCOVProfiler::emitProfileArcs() {
     }
 
     insertCounterWriteout(CountersBySP);
+    insertFlush(CountersBySP);
   }
 
   if (InsertIndCounterIncrCode)
@@ -538,13 +544,13 @@ GlobalVariable *GCOVProfiler::buildEdgeLookupTable(
   // read it. Threads and invoke make this untrue.
 
   // emit [(succs * preds) x i64*], logically [succ x [pred x i64*]].
+  size_t TableSize = Succs.size() * Preds.size();
   Type *Int64PtrTy = Type::getInt64PtrTy(*Ctx);
-  ArrayType *EdgeTableTy = ArrayType::get(
-      Int64PtrTy, Succs.size() * Preds.size());
+  ArrayType *EdgeTableTy = ArrayType::get(Int64PtrTy, TableSize);
 
-  Constant **EdgeTable = new Constant*[Succs.size() * Preds.size()];
+  OwningArrayPtr<Constant *> EdgeTable(new Constant*[TableSize]);
   Constant *NullValue = Constant::getNullValue(Int64PtrTy);
-  for (int i = 0, ie = Succs.size() * Preds.size(); i != ie; ++i)
+  for (size_t i = 0; i != TableSize; ++i)
     EdgeTable[i] = NullValue;
 
   unsigned Edge = 0;
@@ -564,7 +570,7 @@ GlobalVariable *GCOVProfiler::buildEdgeLookupTable(
     Edge += Successors;
   }
 
-  ArrayRef<Constant*> V(&EdgeTable[0], Succs.size() * Preds.size());
+  ArrayRef<Constant*> V(&EdgeTable[0], TableSize);
   GlobalVariable *EdgeTableGV =
       new GlobalVariable(
           *M, EdgeTableTy, true, GlobalValue::InternalLinkage,
@@ -630,13 +636,17 @@ GlobalVariable *GCOVProfiler::getEdgeStateValue() {
 
 void GCOVProfiler::insertCounterWriteout(
     ArrayRef<std::pair<GlobalVariable *, MDNode *> > CountersBySP) {
-  FunctionType *WriteoutFTy =
-      FunctionType::get(Type::getVoidTy(*Ctx), false);
-  Function *WriteoutF = Function::Create(WriteoutFTy,
-                                         GlobalValue::InternalLinkage,
-                                         "__llvm_gcov_writeout", M);
+  FunctionType *WriteoutFTy = FunctionType::get(Type::getVoidTy(*Ctx), false);
+  Function *WriteoutF = M->getFunction("__llvm_gcov_writeout");
+  if (!WriteoutF)
+    WriteoutF = Function::Create(WriteoutFTy, GlobalValue::InternalLinkage,
+                                 "__llvm_gcov_writeout", M);
   WriteoutF->setUnnamedAddr(true);
-  BasicBlock *BB = BasicBlock::Create(*Ctx, "", WriteoutF);
+  WriteoutF->addFnAttr(Attribute::NoInline);
+  if (NoRedZone)
+    WriteoutF->addFnAttr(Attribute::NoRedZone);
+
+  BasicBlock *BB = BasicBlock::Create(*Ctx, "entry", WriteoutF);
   IRBuilder<> Builder(BB);
 
   Constant *StartFile = getStartFileFunc();
@@ -647,8 +657,8 @@ void GCOVProfiler::insertCounterWriteout(
   NamedMDNode *CU_Nodes = M->getNamedMetadata("llvm.dbg.cu");
   if (CU_Nodes) {
     for (unsigned i = 0, e = CU_Nodes->getNumOperands(); i != e; ++i) {
-      DICompileUnit compile_unit(CU_Nodes->getOperand(i));
-      std::string FilenameGcda = mangleName(compile_unit, "gcda");
+      DICompileUnit CU(CU_Nodes->getOperand(i));
+      std::string FilenameGcda = mangleName(CU, "gcda");
       Builder.CreateCall(StartFile,
                          Builder.CreateGlobalStringPtr(FilenameGcda));
       for (ArrayRef<std::pair<GlobalVariable *, MDNode *> >::iterator
@@ -680,6 +690,8 @@ void GCOVProfiler::insertCounterWriteout(
   F->setUnnamedAddr(true);
   F->setLinkage(GlobalValue::InternalLinkage);
   F->addFnAttr(Attribute::NoInline);
+  if (NoRedZone)
+    F->addFnAttr(Attribute::NoRedZone);
 
   BB = BasicBlock::Create(*Ctx, "entry", F);
   Builder.SetInsertPoint(BB);
@@ -699,6 +711,8 @@ void GCOVProfiler::insertIndirectCounterIncrement() {
   Fn->setUnnamedAddr(true);
   Fn->setLinkage(GlobalValue::InternalLinkage);
   Fn->addFnAttr(Attribute::NoInline);
+  if (NoRedZone)
+    Fn->addFnAttr(Attribute::NoRedZone);
 
   Type *Int32Ty = Type::getInt32Ty(*Ctx);
   Type *Int64Ty = Type::getInt64Ty(*Ctx);
@@ -743,4 +757,46 @@ void GCOVProfiler::insertIndirectCounterIncrement() {
   // Fill in the exit block.
   Builder.SetInsertPoint(Exit);
   Builder.CreateRetVoid();
+}
+
+void GCOVProfiler::
+insertFlush(ArrayRef<std::pair<GlobalVariable*, MDNode*> > CountersBySP) {
+  FunctionType *FTy = FunctionType::get(Type::getVoidTy(*Ctx), false);
+  Function *FlushF = M->getFunction("__gcov_flush");
+  if (!FlushF)
+    FlushF = Function::Create(FTy, GlobalValue::InternalLinkage,
+                              "__gcov_flush", M);
+  else
+    FlushF->setLinkage(GlobalValue::InternalLinkage);
+  FlushF->setUnnamedAddr(true);
+  FlushF->addFnAttr(Attribute::NoInline);
+  if (NoRedZone)
+    FlushF->addFnAttr(Attribute::NoRedZone);
+
+  BasicBlock *Entry = BasicBlock::Create(*Ctx, "entry", FlushF);
+
+  // Write out the current counters.
+  Constant *WriteoutF = M->getFunction("__llvm_gcov_writeout");
+  assert(WriteoutF && "Need to create the writeout function first!");
+
+  IRBuilder<> Builder(Entry);
+  Builder.CreateCall(WriteoutF);
+
+  // Zero out the counters.
+  for (ArrayRef<std::pair<GlobalVariable *, MDNode *> >::iterator
+         I = CountersBySP.begin(), E = CountersBySP.end();
+       I != E; ++I) {
+    GlobalVariable *GV = I->first;
+    Constant *Null = Constant::getNullValue(GV->getType()->getElementType());
+    Builder.CreateStore(Null, GV);
+  }
+
+  Type *RetTy = FlushF->getReturnType();
+  if (RetTy == Type::getVoidTy(*Ctx))
+    Builder.CreateRetVoid();
+  else if (RetTy->isIntegerTy())
+    // Used if __gcov_flush was implicitly declared.
+    Builder.CreateRet(ConstantInt::get(RetTy, 0));
+  else
+    report_fatal_error("invalid return type for __gcov_flush");
 }

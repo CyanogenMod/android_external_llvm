@@ -20,7 +20,6 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/PBQP/Graph.h"
 #include "llvm/CodeGen/PBQP/Solution.h"
-
 #include <map>
 #include <set>
 
@@ -29,6 +28,7 @@ namespace llvm {
   class LiveIntervals;
   class MachineFunction;
   class MachineLoopInfo;
+  class TargetRegisterInfo;
 
   /// This class wraps up a PBQP instance representing a register allocation
   /// problem, plus the structures necessary to map back from the PBQP solution
@@ -109,8 +109,8 @@ namespace llvm {
   /// class to support additional constraints for your architecture.
   class PBQPBuilder {
   private:
-    PBQPBuilder(const PBQPBuilder&) {}
-    void operator=(const PBQPBuilder&) {}
+    PBQPBuilder(const PBQPBuilder&) LLVM_DELETED_FUNCTION;
+    void operator=(const PBQPBuilder&) LLVM_DELETED_FUNCTION;
   public:
 
     typedef std::set<unsigned> RegSet;

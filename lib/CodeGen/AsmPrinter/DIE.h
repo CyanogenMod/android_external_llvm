@@ -8,7 +8,7 @@
 //===----------------------------------------------------------------------===//
 //
 // Data structures for DWARF info entries.
-// 
+//
 //===----------------------------------------------------------------------===//
 
 #ifndef CODEGEN_ASMPRINTER_DIE_H__
@@ -131,7 +131,7 @@ namespace llvm {
 
     DIE *Parent;
 
-    /// Attributes values.
+    /// Attribute values.
     ///
     SmallVector<DIEValue*, 32> Values;
 
@@ -155,7 +155,7 @@ namespace llvm {
     void setTag(unsigned Tag) { Abbrev.setTag(Tag); }
     void setOffset(unsigned O) { Offset = O; }
     void setSize(unsigned S) { Size = S; }
-    
+
     /// addValue - Add a value and attributes to a DIE.
     ///
     void addValue(unsigned Attribute, unsigned Form, DIEValue *Value) {
@@ -214,9 +214,6 @@ namespace llvm {
     ///
     virtual unsigned SizeOf(AsmPrinter *AP, unsigned Form) const = 0;
 
-    // Implement isa/cast/dyncast.
-    static bool classof(const DIEValue *) { return true; }
-
 #ifndef NDEBUG
     virtual void print(raw_ostream &O) = 0;
     void dump();
@@ -257,7 +254,6 @@ namespace llvm {
     virtual unsigned SizeOf(AsmPrinter *AP, unsigned Form) const;
 
     // Implement isa/cast/dyncast.
-    static bool classof(const DIEInteger *) { return true; }
     static bool classof(const DIEValue *I) { return I->getType() == isInteger; }
 
 #ifndef NDEBUG
@@ -286,7 +282,6 @@ namespace llvm {
     virtual unsigned SizeOf(AsmPrinter *AP, unsigned Form) const;
 
     // Implement isa/cast/dyncast.
-    static bool classof(const DIELabel *)  { return true; }
     static bool classof(const DIEValue *L) { return L->getType() == isLabel; }
 
 #ifndef NDEBUG
@@ -313,7 +308,6 @@ namespace llvm {
     virtual unsigned SizeOf(AsmPrinter *AP, unsigned Form) const;
 
     // Implement isa/cast/dyncast.
-    static bool classof(const DIEDelta *)  { return true; }
     static bool classof(const DIEValue *D) { return D->getType() == isDelta; }
 
 #ifndef NDEBUG
@@ -343,7 +337,6 @@ namespace llvm {
     }
 
     // Implement isa/cast/dyncast.
-    static bool classof(const DIEEntry *)  { return true; }
     static bool classof(const DIEValue *E) { return E->getType() == isEntry; }
 
 #ifndef NDEBUG
@@ -383,7 +376,6 @@ namespace llvm {
     virtual unsigned SizeOf(AsmPrinter *AP, unsigned Form) const;
 
     // Implement isa/cast/dyncast.
-    static bool classof(const DIEBlock *)  { return true; }
     static bool classof(const DIEValue *E) { return E->getType() == isBlock; }
 
 #ifndef NDEBUG

@@ -12,9 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/MCParser/AsmLexer.h"
-#include "llvm/Support/SMLoc.h"
-#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SMLoc.h"
 #include <cctype>
 #include <cerrno>
 #include <cstdio>
@@ -396,8 +396,17 @@ AsmToken AsmLexer::LexToken() {
   case 0:
   case ' ':
   case '\t':
-    // Ignore whitespace.
-    return LexToken();
+    if (SkipSpace) {
+      // Ignore whitespace.
+      return LexToken();
+    } else {
+      int len = 1;
+      while (*CurPtr==' ' || *CurPtr=='\t') {
+        CurPtr++;
+        len++;
+      }
+      return AsmToken(AsmToken::Space, StringRef(TokStart, len));
+    }
   case '\n': // FALL THROUGH.
   case '\r':
     isAtStartOfLine = true;

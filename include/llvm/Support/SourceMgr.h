@@ -16,8 +16,8 @@
 #ifndef SUPPORT_SOURCEMGR_H
 #define SUPPORT_SOURCEMGR_H
 
-#include "llvm/Support/SMLoc.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/Support/SMLoc.h"
 #include <string>
 
 namespace llvm {
@@ -64,9 +64,9 @@ private:
 
   DiagHandlerTy DiagHandler;
   void *DiagContext;
-  
-  SourceMgr(const SourceMgr&);    // DO NOT IMPLEMENT
-  void operator=(const SourceMgr&); // DO NOT IMPLEMENT
+
+  SourceMgr(const SourceMgr&) LLVM_DELETED_FUNCTION;
+  void operator=(const SourceMgr&) LLVM_DELETED_FUNCTION;
 public:
   SourceMgr() : LineNoCache(0), DiagHandler(0), DiagContext(0) {}
   ~SourceMgr();
@@ -93,6 +93,10 @@ public:
   const MemoryBuffer *getMemoryBuffer(unsigned i) const {
     assert(i < Buffers.size() && "Invalid Buffer ID!");
     return Buffers[i].Buffer;
+  }
+
+  unsigned getNumBuffers() const {
+    return Buffers.size();
   }
 
   SMLoc getParentIncludeLoc(unsigned i) const {

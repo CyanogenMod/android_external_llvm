@@ -16,22 +16,22 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "pre-RA-sched"
-#include "ScheduleDAGSDNodes.h"
-#include "llvm/InlineAsm.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
-#include "llvm/CodeGen/SelectionDAGISel.h"
-#include "llvm/CodeGen/ScheduleHazardRecognizer.h"
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetInstrInfo.h"
-#include "llvm/Target/TargetLowering.h"
+#include "ScheduleDAGSDNodes.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallSet.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/ADT/STLExtras.h"
+#include "llvm/CodeGen/ScheduleHazardRecognizer.h"
+#include "llvm/CodeGen/SelectionDAGISel.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/InlineAsm.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetLowering.h"
+#include "llvm/Target/TargetMachine.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include <climits>
 using namespace llvm;
 
@@ -156,7 +156,7 @@ public:
                     CodeGenOpt::Level OptLevel)
     : ScheduleDAGSDNodes(mf),
       NeedLatency(needlatency), AvailableQueue(availqueue), CurCycle(0),
-      Topo(SUnits) {
+      Topo(SUnits, NULL) {
 
     const TargetMachine &tm = mf.getTarget();
     if (DisableSchedCycles || !NeedLatency)
@@ -268,7 +268,7 @@ static void GetCostForDef(const ScheduleDAGSDNodes::RegDefIter &RegDefPos,
                           const TargetRegisterInfo *TRI,
                           unsigned &RegClass, unsigned &Cost,
                           const MachineFunction &MF) {
-  EVT VT = RegDefPos.GetValue();
+  MVT VT = RegDefPos.GetValue();
 
   // Special handling for untyped values.  These values can only come from
   // the expansion of custom DAG-to-DAG patterns.
@@ -1058,7 +1058,9 @@ SUnit *ScheduleDAGRRList::CopyAndMoveSuccessors(SUnit *SU) {
 
     // Add a data dependency to reflect that NewSU reads the value defined
     // by LoadSU.
-    AddPred(NewSU, SDep(LoadSU, SDep::Data, LoadSU->Latency));
+    SDep D(LoadSU, SDep::Data, 0);
+    D.setLatency(LoadSU->Latency);
+    AddPred(NewSU, D);
 
     if (isNewLoad)
       AvailableQueue->addNode(LoadSU);
@@ -1140,17 +1142,18 @@ void ScheduleDAGRRList::InsertCopiesAndMoveSuccs(SUnit *SU, unsigned Reg,
       // Avoid scheduling the def-side copy before other successors. Otherwise
       // we could introduce another physreg interference on the copy and
       // continue inserting copies indefinitely.
-      SDep D(CopyFromSU, SDep::Order, /*Latency=*/0,
-             /*Reg=*/0, /*isNormalMemory=*/false,
-             /*isMustAlias=*/false, /*isArtificial=*/true);
-      AddPred(SuccSU, D);
+      AddPred(SuccSU, SDep(CopyFromSU, SDep::Artificial));
     }
   }
   for (unsigned i = 0, e = DelDeps.size(); i != e; ++i)
     RemovePred(DelDeps[i].first, DelDeps[i].second);
 
-  AddPred(CopyFromSU, SDep(SU, SDep::Data, SU->Latency, Reg));
-  AddPred(CopyToSU, SDep(CopyFromSU, SDep::Data, CopyFromSU->Latency, 0));
+  SDep FromDep(SU, SDep::Data, Reg);
+  FromDep.setLatency(SU->Latency);
+  AddPred(CopyFromSU, FromDep);
+  SDep ToDep(CopyFromSU, SDep::Data, 0);
+  ToDep.setLatency(CopyFromSU->Latency);
+  AddPred(CopyToSU, ToDep);
 
   AvailableQueue->updateNode(SU);
   AvailableQueue->addNode(CopyFromSU);
@@ -1359,9 +1362,7 @@ SUnit *ScheduleDAGRRList::PickNodeToScheduleBottomUp() {
         if (!BtSU->isPending)
           AvailableQueue->remove(BtSU);
       }
-      AddPred(TrySU, SDep(BtSU, SDep::Order, /*Latency=*/1,
-                          /*Reg=*/0, /*isNormalMemory=*/false,
-                          /*isMustAlias=*/false, /*isArtificial=*/true));
+      AddPred(TrySU, SDep(BtSU, SDep::Artificial));
 
       // If one or more successors has been unscheduled, then the current
       // node is no longer avaialable. Schedule a successor that's now
@@ -1413,20 +1414,14 @@ SUnit *ScheduleDAGRRList::PickNodeToScheduleBottomUp() {
       InsertCopiesAndMoveSuccs(LRDef, Reg, DestRC, RC, Copies);
       DEBUG(dbgs() << "    Adding an edge from SU #" << TrySU->NodeNum
             << " to SU #" << Copies.front()->NodeNum << "\n");
-      AddPred(TrySU, SDep(Copies.front(), SDep::Order, /*Latency=*/1,
-                          /*Reg=*/0, /*isNormalMemory=*/false,
-                          /*isMustAlias=*/false,
-                          /*isArtificial=*/true));
+      AddPred(TrySU, SDep(Copies.front(), SDep::Artificial));
       NewDef = Copies.back();
     }
 
     DEBUG(dbgs() << "    Adding an edge from SU #" << NewDef->NodeNum
           << " to SU #" << TrySU->NodeNum << "\n");
     LiveRegDefs[Reg] = NewDef;
-    AddPred(NewDef, SDep(TrySU, SDep::Order, /*Latency=*/1,
-                         /*Reg=*/0, /*isNormalMemory=*/false,
-                         /*isMustAlias=*/false,
-                         /*isArtificial=*/true));
+    AddPred(NewDef, SDep(TrySU, SDep::Artificial));
     TrySU->isAvailable = false;
     CurSU = NewDef;
   }
@@ -1758,7 +1753,7 @@ public:
     return V;
   }
 
-#ifndef NDEBUG
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
   void dump(ScheduleDAG *DAG) const {
     // Emulate pop() without clobbering NodeQueueIds.
     std::vector<SUnit*> DumpQueue = Queue;
@@ -1897,7 +1892,7 @@ unsigned RegReductionPQBase::getNodePriority(const SUnit *SU) const {
 //===----------------------------------------------------------------------===//
 
 void RegReductionPQBase::dumpRegPressure() const {
-#ifndef NDEBUG
+#if !defined(NDEBUG) || defined(LLVM_ENABLE_DUMP)
   for (TargetRegisterInfo::regclass_iterator I = TRI->regclass_begin(),
          E = TRI->regclass_end(); I != E; ++I) {
     const TargetRegisterClass *RC = *I;
@@ -1944,7 +1939,7 @@ bool RegReductionPQBase::MayReduceRegPressure(SUnit *SU) const {
 
   unsigned NumDefs = TII->get(N->getMachineOpcode()).getNumDefs();
   for (unsigned i = 0; i != NumDefs; ++i) {
-    EVT VT = N->getValueType(i);
+    MVT VT = N->getSimpleValueType(i);
     if (!N->hasAnyUseOfValue(i))
       continue;
     unsigned RCId = TLI->getRepRegClassFor(VT)->getID();
@@ -1978,7 +1973,7 @@ int RegReductionPQBase::RegPressureDiff(SUnit *SU, unsigned &LiveUses) const {
     }
     for (ScheduleDAGSDNodes::RegDefIter RegDefPos(PredSU, scheduleDAG);
          RegDefPos.IsValid(); RegDefPos.Advance()) {
-      EVT VT = RegDefPos.GetValue();
+      MVT VT = RegDefPos.GetValue();
       unsigned RCId = TLI->getRepRegClassFor(VT)->getID();
       if (RegPressure[RCId] >= RegLimit[RCId])
         ++PDiff;
@@ -1991,7 +1986,7 @@ int RegReductionPQBase::RegPressureDiff(SUnit *SU, unsigned &LiveUses) const {
 
   unsigned NumDefs = TII->get(N->getMachineOpcode()).getNumDefs();
   for (unsigned i = 0; i != NumDefs; ++i) {
-    EVT VT = N->getValueType(i);
+    MVT VT = N->getSimpleValueType(i);
     if (!N->hasAnyUseOfValue(i))
       continue;
     unsigned RCId = TLI->getRepRegClassFor(VT)->getID();
@@ -2102,7 +2097,7 @@ void RegReductionPQBase::unscheduledNode(SUnit *SU) {
     const SDNode *PN = PredSU->getNode();
     if (!PN->isMachineOpcode()) {
       if (PN->getOpcode() == ISD::CopyFromReg) {
-        EVT VT = PN->getValueType(0);
+        MVT VT = PN->getSimpleValueType(0);
         unsigned RCId = TLI->getRepRegClassFor(VT)->getID();
         RegPressure[RCId] += TLI->getRepRegClassCostFor(VT);
       }
@@ -2114,14 +2109,14 @@ void RegReductionPQBase::unscheduledNode(SUnit *SU) {
     if (POpc == TargetOpcode::EXTRACT_SUBREG ||
         POpc == TargetOpcode::INSERT_SUBREG ||
         POpc == TargetOpcode::SUBREG_TO_REG) {
-      EVT VT = PN->getValueType(0);
+      MVT VT = PN->getSimpleValueType(0);
       unsigned RCId = TLI->getRepRegClassFor(VT)->getID();
       RegPressure[RCId] += TLI->getRepRegClassCostFor(VT);
       continue;
     }
     unsigned NumDefs = TII->get(PN->getMachineOpcode()).getNumDefs();
     for (unsigned i = 0; i != NumDefs; ++i) {
-      EVT VT = PN->getValueType(i);
+      MVT VT = PN->getSimpleValueType(i);
       if (!PN->hasAnyUseOfValue(i))
         continue;
       unsigned RCId = TLI->getRepRegClassFor(VT)->getID();
@@ -2138,7 +2133,7 @@ void RegReductionPQBase::unscheduledNode(SUnit *SU) {
   if (SU->NumSuccs && N->isMachineOpcode()) {
     unsigned NumDefs = TII->get(N->getMachineOpcode()).getNumDefs();
     for (unsigned i = NumDefs, e = N->getNumValues(); i != e; ++i) {
-      EVT VT = N->getValueType(i);
+      MVT VT = N->getSimpleValueType(i);
       if (VT == MVT::Glue || VT == MVT::Other)
         continue;
       if (!N->hasAnyUseOfValue(i))
@@ -2936,10 +2931,7 @@ void RegReductionPQBase::AddPseudoTwoAddrDeps() {
             !scheduleDAG->IsReachable(SuccSU, SU)) {
           DEBUG(dbgs() << "    Adding a pseudo-two-addr edge from SU #"
                        << SU->NodeNum << " to SU #" << SuccSU->NodeNum << "\n");
-          scheduleDAG->AddPred(SU, SDep(SuccSU, SDep::Order, /*Latency=*/0,
-                                        /*Reg=*/0, /*isNormalMemory=*/false,
-                                        /*isMustAlias=*/false,
-                                        /*isArtificial=*/true));
+          scheduleDAG->AddPred(SU, SDep(SuccSU, SDep::Artificial));
         }
       }
     }

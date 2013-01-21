@@ -16,13 +16,15 @@
 #ifndef LLVM_LINKALLVMCORE_H
 #define LLVM_LINKALLVMCORE_H
 
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/InlineAsm.h"
 #include "llvm/Analysis/Verifier.h"
+#include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/Dwarf.h"
 #include "llvm/Support/DynamicLibrary.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Memory.h"
 #include "llvm/Support/Mutex.h"
 #include "llvm/Support/Path.h"
@@ -30,8 +32,6 @@
 #include "llvm/Support/Program.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/TimeValue.h"
-#include "llvm/Support/Dwarf.h"
-#include "llvm/Support/MathExtras.h"
 #include <cstdlib>
 
 namespace {

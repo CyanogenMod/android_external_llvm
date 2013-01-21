@@ -13,11 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "SparcISelLowering.h"
-#include "SparcTargetMachine.h"
 #include "SparcMachineFunctionInfo.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Function.h"
-#include "llvm/Module.h"
+#include "SparcTargetMachine.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -25,6 +22,9 @@
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/ErrorHandling.h"
 using namespace llvm;
 
@@ -637,7 +637,7 @@ SparcTargetLowering::getSRetArgSize(SelectionDAG &DAG, SDValue Callee) const
 
   PointerType *Ty = cast<PointerType>(CalleeFn->arg_begin()->getType());
   Type *ElementTy = Ty->getElementType();
-  return getTargetData()->getTypeAllocSize(ElementTy);
+  return getDataLayout()->getTypeAllocSize(ElementTy);
 }
 
 //===----------------------------------------------------------------------===//

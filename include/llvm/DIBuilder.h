@@ -15,9 +15,9 @@
 #ifndef LLVM_ANALYSIS_DIBUILDER_H
 #define LLVM_ANALYSIS_DIBUILDER_H
 
-#include "llvm/Support/DataTypes.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/DataTypes.h"
 
 namespace llvm {
   class BasicBlock;
@@ -63,8 +63,8 @@ namespace llvm {
     SmallVector<Value *, 4> AllSubprograms;
     SmallVector<Value *, 4> AllGVs;
 
-    DIBuilder(const DIBuilder &);       // DO NOT IMPLEMENT
-    void operator=(const DIBuilder &);  // DO NOT IMPLEMENT
+    DIBuilder(const DIBuilder &) LLVM_DELETED_FUNCTION;
+    void operator=(const DIBuilder &) LLVM_DELETED_FUNCTION;
 
     public:
     explicit DIBuilder(Module &M);
@@ -125,6 +125,11 @@ namespace llvm {
     DIType createPointerType(DIType PointeeTy, uint64_t SizeInBits,
                              uint64_t AlignInBits = 0, 
                              StringRef Name = StringRef());
+
+    /// \brief Create debugging information entry for a pointer to member.
+    /// @param PointeeTy Type pointed to by this pointer.
+    /// @param Class Type for which this pointer points to members of.
+    DIType createMemberPointerType(DIType PointeeTy, DIType Class);
 
     /// createReferenceType - Create debugging information entry for a c++
     /// style reference or rvalue reference type.
@@ -331,12 +336,10 @@ namespace llvm {
     /// @param SizeInBits   Member size.
     /// @param AlignInBits  Member alignment.
     /// @param Elements     Enumeration elements.
-    /// @param Flags        Flags (e.g. forward decl)
     DIType createEnumerationType(DIDescriptor Scope, StringRef Name, 
                                  DIFile File, unsigned LineNumber, 
                                  uint64_t SizeInBits, uint64_t AlignInBits,
-                                 DIArray Elements, DIType ClassType,
-                                 unsigned Flags);
+                                 DIArray Elements, DIType ClassType);
 
     /// createSubroutineType - Create subroutine type.
     /// @param File           File in which this subroutine is defined.
@@ -347,13 +350,18 @@ namespace llvm {
     /// createArtificialType - Create a new DIType with "artificial" flag set.
     DIType createArtificialType(DIType Ty);
 
+    /// createObjectPointerType - Create a new DIType with the "object pointer"
+    /// flag set.
+    DIType createObjectPointerType(DIType Ty);
+
     /// createTemporaryType - Create a temporary forward-declared type.
     DIType createTemporaryType();
     DIType createTemporaryType(DIFile F);
 
     /// createForwardDecl - Create a temporary forward-declared type.
     DIType createForwardDecl(unsigned Tag, StringRef Name, DIDescriptor Scope,
-                             DIFile F, unsigned Line, unsigned RuntimeLang = 0);
+                             DIFile F, unsigned Line, unsigned RuntimeLang = 0,
+                             uint64_t SizeInBits = 0, uint64_t AlignInBits = 0);
 
     /// retainType - Retain DIType in a module even if it is not referenced 
     /// through debug info anchors.
@@ -368,7 +376,7 @@ namespace llvm {
 
     /// getOrCreateSubrange - Create a descriptor for a value range.  This
     /// implicitly uniques the values returned.
-    DISubrange getOrCreateSubrange(int64_t Lo, int64_t Hi);
+    DISubrange getOrCreateSubrange(int64_t Lo, int64_t Count);
 
     /// createGlobalVariable - Create a new descriptor for the specified global.
     /// @param Name        Name of the variable.

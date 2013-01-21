@@ -22,11 +22,11 @@ namespace llvm {
   class BasicBlock;
   class Function;
   class Instruction;
-  class TargetData;
+  class DataLayout;
   class Value;
 
   /// \brief Check whether an instruction is likely to be "free" when lowered.
-  bool isInstructionFree(const Instruction *I, const TargetData *TD = 0);
+  bool isInstructionFree(const Instruction *I, const DataLayout *TD = 0);
 
   /// \brief Check whether a call will lower to something small.
   ///
@@ -46,8 +46,11 @@ namespace llvm {
     /// \brief True if this function calls itself.
     bool isRecursive;
 
-    /// \brief True if this function contains one or more indirect branches.
-    bool containsIndirectBr;
+    /// \brief True if this function cannot be duplicated.
+    ///
+    /// True if this function contains one or more indirect branches, or it contains
+    /// one or more 'noduplicate' instructions.
+    bool notDuplicatable;
 
     /// \brief True if this function calls alloca (in the C sense).
     bool usesDynamicAlloca;
@@ -79,16 +82,16 @@ namespace llvm {
     unsigned NumRets;
 
     CodeMetrics() : exposesReturnsTwice(false), isRecursive(false),
-                    containsIndirectBr(false), usesDynamicAlloca(false),
+                    notDuplicatable(false), usesDynamicAlloca(false),
                     NumInsts(0), NumBlocks(0), NumCalls(0),
                     NumInlineCandidates(0), NumVectorInsts(0),
                     NumRets(0) {}
 
     /// \brief Add information about a block to the current state.
-    void analyzeBasicBlock(const BasicBlock *BB, const TargetData *TD = 0);
+    void analyzeBasicBlock(const BasicBlock *BB, const DataLayout *TD = 0);
 
     /// \brief Add information about a function to the current state.
-    void analyzeFunction(Function *F, const TargetData *TD = 0);
+    void analyzeFunction(Function *F, const DataLayout *TD = 0);
   };
 }
 

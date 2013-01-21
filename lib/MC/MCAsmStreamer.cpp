@@ -8,6 +8,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/MC/MCStreamer.h"
+#include "llvm/ADT/OwningPtr.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/MC/MCAsmBackend.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCCodeEmitter.h"
 #include "llvm/MC/MCContext.h"
@@ -20,15 +25,10 @@
 #include "llvm/MC/MCSectionCOFF.h"
 #include "llvm/MC/MCSectionMachO.h"
 #include "llvm/MC/MCSymbol.h"
-#include "llvm/MC/MCAsmBackend.h"
-#include "llvm/ADT/OwningPtr.h"
-#include "llvm/ADT/SmallString.h"
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/PathV2.h"
 #include <cctype>
 using namespace llvm;
@@ -135,6 +135,8 @@ public:
   }
 
   virtual void EmitLabel(MCSymbol *Symbol);
+  virtual void EmitDebugLabel(MCSymbol *Symbol);
+
   virtual void EmitEHSymAttributes(const MCSymbol *Symbol,
                                    MCSymbol *EHSymbol);
   virtual void EmitAssemblerFlag(MCAssemblerFlag Flag);
@@ -226,6 +228,8 @@ public:
   virtual void EmitCFIRelOffset(int64_t Register, int64_t Offset);
   virtual void EmitCFIAdjustCfaOffset(int64_t Adjustment);
   virtual void EmitCFISignalFrame();
+  virtual void EmitCFIUndefined(int64_t Register);
+  virtual void EmitCFIRegister(int64_t Register1, int64_t Register2);
 
   virtual void EmitWin64EHStartProc(const MCSymbol *Symbol);
   virtual void EmitWin64EHEndProc();
@@ -251,8 +255,13 @@ public:
   virtual void EmitPad(int64_t Offset);
   virtual void EmitRegSave(const SmallVectorImpl<unsigned> &RegList, bool);
 
+  virtual void EmitTCEntry(const MCSymbol &S);
 
   virtual void EmitInstruction(const MCInst &Inst);
+
+  virtual void EmitBundleAlignMode(unsigned AlignPow2);
+  virtual void EmitBundleLock(bool AlignToEnd);
+  virtual void EmitBundleUnlock();
 
   /// EmitRawText - If this file is backed by an assembly streamer, this dumps
   /// the specified string in the output .s file.  This capability is
@@ -339,6 +348,14 @@ void MCAsmStreamer::EmitLabel(MCSymbol *Symbol) {
   MCStreamer::EmitLabel(Symbol);
 
   OS << *Symbol << MAI.getLabelSuffix();
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitDebugLabel(MCSymbol *Symbol) {
+  assert(Symbol->isUndefined() && "Cannot define a symbol twice!");
+  MCStreamer::EmitDebugLabel(Symbol);
+
+  OS << *Symbol << MAI.getDebugLabelSuffix();
   EmitEOL();
 }
 
@@ -1035,6 +1052,26 @@ void MCAsmStreamer::EmitCFISignalFrame() {
   EmitEOL();
 }
 
+void MCAsmStreamer::EmitCFIUndefined(int64_t Register) {
+  MCStreamer::EmitCFIUndefined(Register);
+
+  if (!UseCFI)
+    return;
+
+  OS << "\t.cfi_undefined " << Register;
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitCFIRegister(int64_t Register1, int64_t Register2) {
+  MCStreamer::EmitCFIRegister(Register1, Register2);
+
+  if (!UseCFI)
+    return;
+
+  OS << "\t.cfi_register " << Register1 << ", " << Register2;
+  EmitEOL();
+}
+
 void MCAsmStreamer::EmitWin64EHStartProc(const MCSymbol *Symbol) {
   MCStreamer::EmitWin64EHStartProc(Symbol);
 
@@ -1299,6 +1336,14 @@ void MCAsmStreamer::EmitRegSave(const SmallVectorImpl<unsigned> &RegList,
   EmitEOL();
 }
 
+void MCAsmStreamer::EmitTCEntry(const MCSymbol &S) {
+  OS << "\t.tc ";
+  OS << S.getName();
+  OS << "[TC],";
+  OS << S.getName();
+  EmitEOL();
+}
+
 void MCAsmStreamer::EmitInstruction(const MCInst &Inst) {
   assert(getCurrentSection() && "Cannot emit contents before setting section!");
 
@@ -1317,6 +1362,23 @@ void MCAsmStreamer::EmitInstruction(const MCInst &Inst) {
     InstPrinter->printInst(&Inst, OS, "");
   else
     Inst.print(OS, &MAI);
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitBundleAlignMode(unsigned AlignPow2) {
+  OS << "\t.bundle_align_mode " << AlignPow2;
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitBundleLock(bool AlignToEnd) {
+  OS << "\t.bundle_lock";
+  if (AlignToEnd)
+    OS << " align_to_end";
+  EmitEOL();
+}
+
+void MCAsmStreamer::EmitBundleUnlock() {
+  OS << "\t.bundle_unlock";
   EmitEOL();
 }
 

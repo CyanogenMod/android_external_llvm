@@ -9,14 +9,14 @@
 
 #include "MipsTargetObjectFile.h"
 #include "MipsSubtarget.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/GlobalVariable.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/GlobalVariable.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCSectionELF.h"
-#include "llvm/Target/TargetData.h"
-#include "llvm/Target/TargetMachine.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ELF.h"
+#include "llvm/Target/TargetMachine.h"
 using namespace llvm;
 
 static cl::opt<unsigned>
@@ -82,7 +82,7 @@ IsGlobalInSmallSection(const GlobalValue *GV, const TargetMachine &TM,
     return false;
 
   Type *Ty = GV->getType()->getElementType();
-  return IsInSmallSection(TM.getTargetData()->getTypeAllocSize(Ty));
+  return IsInSmallSection(TM.getDataLayout()->getTypeAllocSize(Ty));
 }
 
 

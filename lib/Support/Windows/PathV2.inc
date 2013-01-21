@@ -328,7 +328,7 @@ error_code resize_file(const Twine &path, uint64_t size) {
                                   path_utf16))
     return ec;
 
-  int fd = ::_wopen(path_utf16.begin(), O_BINARY, S_IREAD | S_IWRITE);
+  int fd = ::_wopen(path_utf16.begin(), O_BINARY | _O_RDWR, S_IWRITE);
   if (fd == -1)
     return error_code(errno, generic_category());
 #ifdef HAVE__CHSIZE_S
@@ -794,7 +794,7 @@ mapped_file_region::mapped_file_region(const Twine &path,
   SmallVector<wchar_t, 128> path_utf16;
 
   // Convert path to UTF-16.
-  if (ec = UTF8ToUTF16(path.toStringRef(path_storage), path_utf16))
+  if ((ec = UTF8ToUTF16(path.toStringRef(path_storage), path_utf16)))
     return;
 
   // Get file handle for creating a file mapping.
@@ -861,7 +861,7 @@ mapped_file_region::~mapped_file_region() {
     ::CloseHandle(FileHandle);
 }
 
-#if LLVM_USE_RVALUE_REFERENCES
+#if LLVM_HAS_RVALUE_REFERENCES
 mapped_file_region::mapped_file_region(mapped_file_region &&other)
   : Mode(other.Mode)
   , Size(other.Size)

@@ -31,21 +31,21 @@ dnl===
 dnl===-----------------------------------------------------------------------===
 dnl Initialize autoconf and define the package name, version number and
 dnl address for reporting bugs.
-AC_INIT([LLVM],[3.2svn],[http://llvm.org/bugs/])
+AC_INIT([LLVM],[3.3svn],[http://llvm.org/bugs/])
 AC_DEFINE([LLVM_VERSION_MAJOR], [3], [Major version of the LLVM API])
-AC_DEFINE([LLVM_VERSION_MINOR], [2], [Minor version of the LLVM API])
+AC_DEFINE([LLVM_VERSION_MINOR], [3], [Minor version of the LLVM API])
 
 dnl Provide a copyright substitution and ensure the copyright notice is included
 dnl in the output of --version option of the generated configure script.
-AC_SUBST(LLVM_COPYRIGHT,["Copyright (c) 2003-2012 University of Illinois at Urbana-Champaign."])
-AC_COPYRIGHT([Copyright (c) 2003-2012 University of Illinois at Urbana-Champaign.])
+AC_SUBST(LLVM_COPYRIGHT,["Copyright (c) 2003-2013 University of Illinois at Urbana-Champaign."])
+AC_COPYRIGHT([Copyright (c) 2003-2013 University of Illinois at Urbana-Champaign.])
 
 dnl Indicate that we require autoconf 2.60 or later.
 AC_PREREQ(2.60)
 
 dnl Verify that the source directory is valid. This makes sure that we are
 dnl configuring LLVM and not some other package (it validates --srcdir argument)
-AC_CONFIG_SRCDIR([lib/VMCore/Module.cpp])
+AC_CONFIG_SRCDIR([lib/IR/Module.cpp])
 
 dnl Place all of the extra autoconf files into the config subdirectory. Tell
 dnl various tools where the m4 autoconf macros are.
@@ -363,8 +363,8 @@ AC_CACHE_CHECK([target architecture],[llvm_cv_target_arch],
   sparc*-*)               llvm_cv_target_arch="Sparc" ;;
   powerpc*-*)             llvm_cv_target_arch="PowerPC" ;;
   arm*-*)                 llvm_cv_target_arch="ARM" ;;
-  mips-*)                 llvm_cv_target_arch="Mips" ;;
-  mipsel-*)               llvm_cv_target_arch="Mips" ;;
+  mips-* | mips64-*)      llvm_cv_target_arch="Mips" ;;
+  mipsel-* | mips64el-*)  llvm_cv_target_arch="Mips" ;;
   xcore-*)                llvm_cv_target_arch="XCore" ;;
   msp430-*)               llvm_cv_target_arch="MSP430" ;;
   hexagon-*)              llvm_cv_target_arch="Hexagon" ;;
@@ -396,8 +396,8 @@ case $host in
   sparc*-*)               host_arch="Sparc" ;;
   powerpc*-*)             host_arch="PowerPC" ;;
   arm*-*)                 host_arch="ARM" ;;
-  mips-*)                 host_arch="Mips" ;;
-  mipsel-*)               host_arch="Mips" ;;
+  mips-* | mips64-*)      host_arch="Mips" ;;
+  mipsel-* | mips64el-*)  host_arch="Mips" ;;
   xcore-*)                host_arch="XCore" ;;
   msp430-*)               host_arch="MSP430" ;;
   hexagon-*)              host_arch="Hexagon" ;;
@@ -473,6 +473,54 @@ case "$enableval" in
   no)  AC_SUBST(ENABLE_CXX11,[0]) ;;
   default) AC_SUBST(ENABLE_CXX11,[0]);;
   *) AC_MSG_ERROR([Invalid setting for --enable-cxx11. Use "yes" or "no"]) ;;
+esac
+
+dnl --enable-clang-arcmt: check whether to enable clang arcmt
+clang_arcmt="yes"
+AC_ARG_ENABLE(clang-arcmt,
+              AS_HELP_STRING([--enable-clang-arcmt],
+                             [Enable building of clang ARCMT (default is YES)]),
+                             clang_arcmt="$enableval",
+                             enableval="yes")
+case "$enableval" in
+  yes) AC_SUBST(ENABLE_CLANG_ARCMT,[1]) ;;
+  no)  AC_SUBST(ENABLE_CLANG_ARCMT,[0]) ;;
+  default) AC_SUBST(ENABLE_CLANG_ARCMT,[1]);;
+  *) AC_MSG_ERROR([Invalid setting for --enable-clang-arcmt. Use "yes" or "no"]) ;;
+esac
+
+dnl --enable-clang-static-analyzer: check whether to enable static-analyzer
+clang_static_analyzer="yes"
+AC_ARG_ENABLE(clang-static-analyzer,
+              AS_HELP_STRING([--enable-clang-static-analyzer],
+                             [Enable building of clang Static Analyzer (default is YES)]),
+                             clang_static_analyzer="$enableval",
+                             enableval="yes")
+case "$enableval" in
+  yes) AC_SUBST(ENABLE_CLANG_STATIC_ANALYZER,[1]) ;;
+  no)  AC_SUBST(ENABLE_CLANG_STATIC_ANALYZER,[0]) ;;
+  default) AC_SUBST(ENABLE_CLANG_STATIC_ANALYZER,[1]);;
+  *) AC_MSG_ERROR([Invalid setting for --enable-clang-static-analyzer. Use "yes" or "no"]) ;;
+esac
+
+dnl --enable-clang-rewriter: check whether to enable clang rewriter
+AC_ARG_ENABLE(clang-rewriter,
+              AS_HELP_STRING([--enable-clang-rewriter],
+                             [Enable building of clang rewriter (default is YES)]),,
+                             enableval="yes")
+case "$enableval" in
+  yes) AC_SUBST(ENABLE_CLANG_REWRITER,[1]) ;;
+  no)  
+    if test ${clang_arcmt} != "no" ; then
+      AC_MSG_ERROR([Cannot enable clang ARC Migration Tool while disabling rewriter.])
+    fi
+    if test ${clang_static_analyzer} != "no" ; then
+      AC_MSG_ERROR([Cannot enable clang static analyzer while disabling rewriter.])
+    fi
+    AC_SUBST(ENABLE_CLANG_REWRITER,[0]) 
+    ;;
+  default) AC_SUBST(ENABLE_CLANG_REWRITER,[1]);;
+  *) AC_MSG_ERROR([Invalid setting for --enable-clang-rewriter. Use "yes" or "no"]) ;;
 esac
 
 dnl --enable-optimized : check whether they want to do an optimized build:
@@ -678,18 +726,33 @@ esac
 AC_DEFINE_UNQUOTED([ENABLE_TIMESTAMPS],$ENABLE_TIMESTAMPS,
                    [Define if timestamp information (e.g., __DATE__) is allowed])
 
+dnl Enable embedding timestamp information into build.
+
+AC_ARG_ENABLE(backtraces,
+  AS_HELP_STRING([--enable-backtraces],
+                 [Enable embedding backtraces on crash (default is YES)]),,
+                 enableval=default)
+case "$enableval" in
+  yes) AC_SUBST(ENABLE_BACKTRACES,[1]) ;;
+  no)  AC_SUBST(ENABLE_BACKTRACES,[0]) ;;
+  default) AC_SUBST(ENABLE_BACKTRACES,[1]) ;;
+  *) AC_MSG_ERROR([Invalid setting for --enable-backtraces. Use "yes" or "no"]) ;;
+esac
+AC_DEFINE_UNQUOTED([ENABLE_BACKTRACES],$ENABLE_BACKTRACES,
+                   [Define if you want backtraces on crash])
+
 dnl Allow specific targets to be specified for building (or not)
 TARGETS_TO_BUILD=""
 AC_ARG_ENABLE([targets],AS_HELP_STRING([--enable-targets],
     [Build specific host targets: all or target1,target2,... Valid targets are:
-     host, x86, x86_64, sparc, powerpc, arm, mips, spu, hexagon,
+     host, x86, x86_64, sparc, powerpc, arm, mips, hexagon,
      xcore, msp430, nvptx, and cpp (default=all)]),,
     enableval=all)
 if test "$enableval" = host-only ; then
   enableval=host
 fi
 case "$enableval" in
-  all) TARGETS_TO_BUILD="X86 Sparc PowerPC ARM Mips CellSPU XCore MSP430 CppBackend MBlaze NVPTX Hexagon" ;;
+  all) TARGETS_TO_BUILD="X86 Sparc PowerPC ARM Mips XCore MSP430 CppBackend MBlaze NVPTX Hexagon" ;;
   *)for a_target in `echo $enableval|sed -e 's/,/ /g' ` ; do
       case "$a_target" in
         x86)      TARGETS_TO_BUILD="X86 $TARGETS_TO_BUILD" ;;
@@ -699,7 +762,8 @@ case "$enableval" in
         arm)      TARGETS_TO_BUILD="ARM $TARGETS_TO_BUILD" ;;
         mips)     TARGETS_TO_BUILD="Mips $TARGETS_TO_BUILD" ;;
         mipsel)   TARGETS_TO_BUILD="Mips $TARGETS_TO_BUILD" ;;
-        spu)      TARGETS_TO_BUILD="CellSPU $TARGETS_TO_BUILD" ;;
+        mips64)   TARGETS_TO_BUILD="Mips $TARGETS_TO_BUILD" ;;
+        mips64el) TARGETS_TO_BUILD="Mips $TARGETS_TO_BUILD" ;;
         xcore)    TARGETS_TO_BUILD="XCore $TARGETS_TO_BUILD" ;;
         msp430)   TARGETS_TO_BUILD="MSP430 $TARGETS_TO_BUILD" ;;
         cpp)      TARGETS_TO_BUILD="CppBackend $TARGETS_TO_BUILD" ;;
@@ -714,7 +778,6 @@ case "$enableval" in
             ARM)         TARGETS_TO_BUILD="ARM $TARGETS_TO_BUILD" ;;
             Mips)        TARGETS_TO_BUILD="Mips $TARGETS_TO_BUILD" ;;
             MBlaze)      TARGETS_TO_BUILD="MBlaze $TARGETS_TO_BUILD" ;;
-            CellSPU|SPU) TARGETS_TO_BUILD="CellSPU $TARGETS_TO_BUILD" ;;
             XCore)       TARGETS_TO_BUILD="XCore $TARGETS_TO_BUILD" ;;
             MSP430)      TARGETS_TO_BUILD="MSP430 $TARGETS_TO_BUILD" ;;
             Hexagon)     TARGETS_TO_BUILD="Hexagon $TARGETS_TO_BUILD" ;;
@@ -1187,6 +1250,11 @@ AC_SEARCH_LIBS(dlopen,dl,AC_DEFINE([HAVE_DLOPEN],[1],
                [Define if dlopen() is available on this platform.]),
                AC_MSG_WARN([dlopen() not found - disabling plugin support]))
 
+dnl Search for the clock_gettime() function. Note that we rely on the POSIX
+dnl macros to detect whether clock_gettime is available, this just finds the
+dnl right libraries to link with.
+AC_SEARCH_LIBS(clock_gettime,rt)
+
 dnl libffi is optional; used to call external functions from the interpreter
 if test "$llvm_cv_enable_libffi" = "yes" ; then
   AC_SEARCH_LIBS(ffi_call,ffi,AC_DEFINE([HAVE_FFI_CALL],[1],
@@ -1275,46 +1343,23 @@ AC_DEFINE_UNQUOTED([LLVM_USE_OPROFILE],$USE_OPROFILE,
 
 dnl Enable support for Intel JIT Events API.
 AC_ARG_WITH(intel-jitevents,
-  AS_HELP_STRING([--with-intel-jitevents=<vtune-amplifier-dir>],
-    [Specify location of run-time support library for Intel JIT API (default=/opt/intel/vtune_amplifier_xe_2011)]),
+  AS_HELP_STRING([--with-intel-jitevents  Notify Intel JIT profiling API of generated code]),
     [
+       case "$withval" in
+          yes) AC_SUBST(USE_INTEL_JITEVENTS,[1]);;
+          no)  AC_SUBST(USE_INTEL_JITEVENTS,[0]);;
+          *) AC_MSG_ERROR([Invalid setting for --with-intel-jitevents. Use "yes" or "no"]);;
+       esac
+
       case $llvm_cv_os_type in
         Linux|Win32|Cygwin|MingW) ;;
-        *)
-          AC_MSG_ERROR([
-            Intel JIT API support is available on Linux and Windows only."]) ;;
+        *) AC_MSG_ERROR([Intel JIT API support is available on Linux and Windows only.]);;
       esac
 
-      AC_SUBST(USE_INTEL_JITEVENTS, [1])
       case "$llvm_cv_target_arch" in
-        x86)    llvm_intel_jitevents_archdir="lib32";;
-        x86_64) llvm_intel_jitevents_archdir="lib64";;
-        *)      echo "Target architecture $llvm_cv_target_arch does not support Intel JIT Events API"
-                exit -1;;
+        x86|x86_64) ;;
+        *) AC_MSG_ERROR([Target architecture $llvm_cv_target_arch does not support Intel JIT Events API.]);;
       esac
-      INTEL_JITEVENTS_INCDIR="/opt/intel/vtune_amplifier_xe_2011/include"
-      INTEL_JITEVENTS_LIBDIR="/opt/intel/vtune_amplifier_xe_2011/$llvm_intel_jitevents_archdir"
-      case "$withval" in
-        /* | [[A-Za-z]]:[[\\/]]*) INTEL_JITEVENTS_INCDIR=$withval/include
-                                  INTEL_JITEVENTS_LIBDIR=$withval/$llvm_intel_jitevents_archdir ;;
-        *) ;;
-      esac
-
-      AC_SUBST(INTEL_JITEVENTS_INCDIR)
-      AC_SUBST(INTEL_JITEVENTS_LIBDIR)
-
-      LIBS="$LIBS -L${INTEL_JITEVENTS_LIBDIR}"
-      CPPFLAGS="$CPPFLAGS -I$INTEL_JITEVENTS_INCDIR"
-
-      AC_SEARCH_LIBS(iJIT_IsProfilingActive, jitprofiling, [], [
-        echo "Error! Cannot find libjitprofiling.a. Please check path specified in flag --with-intel-jitevents"
-        exit -1
-      ])
-      AC_CHECK_HEADER([jitprofiling.h], [], [
-        echo "Error! Cannot find jitprofiling.h. Please check path specified in flag --with-intel-jitevents"
-        exit -1
-      ])
-
     ],
     [
       AC_SUBST(USE_INTEL_JITEVENTS, [0])
@@ -1716,6 +1761,11 @@ fi
 
 dnl OCaml findlib META file
 AC_CONFIG_FILES([bindings/ocaml/llvm/META.llvm])
+
+dnl Add --program-prefix value to Makefile.rules. Already an ARG variable.
+test "x$program_prefix" = "xNONE" && program_prefix=""
+AC_SUBST([program_prefix])
+
 
 dnl Do special configuration of Makefiles
 AC_CONFIG_COMMANDS([setup],,[llvm_src="${srcdir}"])

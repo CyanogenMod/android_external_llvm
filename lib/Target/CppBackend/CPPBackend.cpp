@@ -13,25 +13,25 @@
 //===----------------------------------------------------------------------===//
 
 #include "CPPTargetMachine.h"
-#include "llvm/CallingConv.h"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/InlineAsm.h"
-#include "llvm/Instruction.h"
-#include "llvm/Instructions.h"
-#include "llvm/Module.h"
-#include "llvm/Pass.h"
-#include "llvm/PassManager.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Config/config.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/InlineAsm.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCSubtargetInfo.h"
-#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/Pass.h"
+#include "llvm/PassManager.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/FormattedStream.h"
 #include "llvm/Support/TargetRegistry.h"
-#include "llvm/ADT/StringExtras.h"
-#include "llvm/Config/config.h"
 #include <algorithm>
 #include <cstdio>
 #include <map>
@@ -141,7 +141,7 @@ namespace {
     std::string getCppName(const Value* val);
     inline void printCppName(const Value* val);
 
-    void printAttributes(const AttrListPtr &PAL, const std::string &name);
+    void printAttributes(const AttributeSet &PAL, const std::string &name);
     void printType(Type* Ty);
     void printTypes(const Module* M);
 
@@ -464,9 +464,9 @@ void CppWriter::printCppName(const Value* val) {
   printEscapedString(getCppName(val));
 }
 
-void CppWriter::printAttributes(const AttrListPtr &PAL,
+void CppWriter::printAttributes(const AttributeSet &PAL,
                                 const std::string &name) {
-  Out << "AttrListPtr " << name << "_PAL;";
+  Out << "AttributeSet " << name << "_PAL;";
   nl(Out);
   if (!PAL.isEmpty()) {
     Out << '{'; in(); nl(Out);
@@ -474,13 +474,15 @@ void CppWriter::printAttributes(const AttrListPtr &PAL,
     Out << "AttributeWithIndex PAWI;"; nl(Out);
     for (unsigned i = 0; i < PAL.getNumSlots(); ++i) {
       unsigned index = PAL.getSlot(i).Index;
-      Attributes attrs = PAL.getSlot(i).Attrs;
-      Out << "PAWI.Index = " << index << "U; PAWI.Attrs = Attribute::None ";
-#define HANDLE_ATTR(X)                 \
-      if (attrs & Attribute::X)      \
-        Out << " | Attribute::" #X;  \
-      attrs &= ~Attribute::X;
-      
+      AttrBuilder attrs(PAL.getSlot(i).Attrs);
+      Out << "PAWI.Index = " << index << "U;\n";
+      Out << " {\n    AttrBuilder B;\n";
+
+#define HANDLE_ATTR(X)                                     \
+      if (attrs.contains(Attribute::X))                    \
+        Out << "    B.addAttribute(Attribute::" #X ");\n"; \
+      attrs.removeAttribute(Attribute::X);
+
       HANDLE_ATTR(SExt);
       HANDLE_ATTR(ZExt);
       HANDLE_ATTR(NoReturn);
@@ -505,19 +507,18 @@ void CppWriter::printAttributes(const AttrListPtr &PAL,
       HANDLE_ATTR(ReturnsTwice);
       HANDLE_ATTR(UWTable);
       HANDLE_ATTR(NonLazyBind);
+      HANDLE_ATTR(MinSize);
 #undef HANDLE_ATTR
-      if (attrs & Attribute::StackAlignment)
-        Out << " | Attribute::constructStackAlignmentFromInt("
-            << Attribute::getStackAlignmentFromAttrs(attrs)
-            << ")"; 
-      attrs &= ~Attribute::StackAlignment;
-      assert(attrs == 0 && "Unhandled attribute!");
-      Out << ";";
+      if (attrs.contains(Attribute::StackAlignment))
+        Out << "    B.addStackAlignmentAttr(" << attrs.getStackAlignment() << ")\n";
+      attrs.removeAttribute(Attribute::StackAlignment);
+      assert(!attrs.hasAttributes() && "Unhandled attribute!");
+      Out << "    PAWI.Attrs = Attribute::get(mod->getContext(), B);\n }";
       nl(Out);
       Out << "Attrs.push_back(PAWI);";
       nl(Out);
     }
-    Out << name << "_PAL = AttrListPtr::get(Attrs);";
+    Out << name << "_PAL = AttributeSet::get(mod->getContext(), Attrs);";
     nl(Out);
     out(); nl(Out);
     Out << '}'; nl(Out);
@@ -1940,14 +1941,6 @@ void CppWriter::printModule(const std::string& fname,
   }
   nl(Out);
 
-  // Loop over the dependent libraries and emit them.
-  Module::lib_iterator LI = TheModule->lib_begin();
-  Module::lib_iterator LE = TheModule->lib_end();
-  while (LI != LE) {
-    Out << "mod->addLibrary(\"" << *LI << "\");";
-    nl(Out);
-    ++LI;
-  }
   printModuleBody();
   nl(Out) << "return mod;";
   nl(Out,-1) << "}";

@@ -20,16 +20,16 @@
 #ifndef LLVM_CODEGEN_LIVEINTERVAL_ANALYSIS_H
 #define LLVM_CODEGEN_LIVEINTERVAL_ANALYSIS_H
 
-#include "llvm/Target/TargetRegisterInfo.h"
-#include "llvm/CodeGen/MachineBasicBlock.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/LiveInterval.h"
-#include "llvm/CodeGen/SlotIndexes.h"
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/IndexedMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/CodeGen/LiveInterval.h"
+#include "llvm/CodeGen/MachineBasicBlock.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/SlotIndexes.h"
 #include "llvm/Support/Allocator.h"
+#include "llvm/Target/TargetRegisterInfo.h"
 #include <cmath>
 #include <iterator>
 
@@ -64,12 +64,6 @@ namespace llvm {
 
     /// Live interval pointers for all the virtual registers.
     IndexedMap<LiveInterval*, VirtReg2IndexFunctor> VirtRegIntervals;
-
-    /// AllocatableRegs - A bit vector of allocatable registers.
-    BitVector AllocatableRegs;
-
-    /// ReservedRegs - A bit vector of reserved registers.
-    BitVector ReservedRegs;
 
     /// RegMaskSlots - Sorted list of instructions with register mask operands.
     /// Always use the 'r' slot, RegMasks are normal clobbers, not early
@@ -123,18 +117,6 @@ namespace llvm {
       return VirtRegIntervals.inBounds(Reg) && VirtRegIntervals[Reg];
     }
 
-    /// isAllocatable - is the physical register reg allocatable in the current
-    /// function?
-    bool isAllocatable(unsigned reg) const {
-      return AllocatableRegs.test(reg);
-    }
-
-    /// isReserved - is the physical register reg reserved in the current
-    /// function
-    bool isReserved(unsigned reg) const {
-      return ReservedRegs.test(reg);
-    }
-
     // Interval creation.
     LiveInterval &getOrCreateInterval(unsigned Reg) {
       if (!hasInterval(Reg)) {
@@ -164,6 +146,26 @@ namespace llvm {
     /// connected components.
     bool shrinkToUses(LiveInterval *li,
                       SmallVectorImpl<MachineInstr*> *dead = 0);
+
+    /// extendToIndices - Extend the live range of LI to reach all points in
+    /// Indices. The points in the Indices array must be jointly dominated by
+    /// existing defs in LI. PHI-defs are added as needed to maintain SSA form.
+    ///
+    /// If a SlotIndex in Indices is the end index of a basic block, LI will be
+    /// extended to be live out of the basic block.
+    ///
+    /// See also LiveRangeCalc::extend().
+    void extendToIndices(LiveInterval *LI, ArrayRef<SlotIndex> Indices);
+
+    /// pruneValue - If an LI value is live at Kill, prune its live range by
+    /// removing any liveness reachable from Kill. Add live range end points to
+    /// EndPoints such that extendToIndices(LI, EndPoints) will reconstruct the
+    /// value's live range.
+    ///
+    /// Calling pruneValue() and extendToIndices() can be used to reconstruct
+    /// SSA form after adding defs to a virtual register.
+    void pruneValue(LiveInterval *LI, SlotIndex Kill,
+                    SmallVectorImpl<SlotIndex> *EndPoints);
 
     SlotIndexes *getSlotIndexes() const {
       return Indexes;
@@ -258,15 +260,20 @@ namespace llvm {
     /// instruction 'mi' has been moved within a basic block. This will update
     /// the live intervals for all operands of mi. Moves between basic blocks
     /// are not supported.
-    void handleMove(MachineInstr* MI);
+    ///
+    /// \param UpdateFlags Update live intervals for nonallocatable physregs.
+    void handleMove(MachineInstr* MI, bool UpdateFlags = false);
 
     /// moveIntoBundle - Update intervals for operands of MI so that they
     /// begin/end on the SlotIndex for BundleStart.
     ///
+    /// \param UpdateFlags Update live intervals for nonallocatable physregs.
+    ///
     /// Requires MI and BundleStart to have SlotIndexes, and assumes
     /// existing liveness is accurate. BundleStart should be the first
     /// instruction in the Bundle.
-    void handleMoveIntoBundle(MachineInstr* MI, MachineInstr* BundleStart);
+    void handleMoveIntoBundle(MachineInstr* MI, MachineInstr* BundleStart,
+                              bool UpdateFlags = false);
 
     // Register mask functions.
     //
@@ -337,6 +344,10 @@ namespace llvm {
     /// getCachedRegUnit - Return the live range for Unit if it has already
     /// been computed, or NULL if it hasn't been computed yet.
     LiveInterval *getCachedRegUnit(unsigned Unit) {
+      return RegUnitIntervals[Unit];
+    }
+
+    const LiveInterval *getCachedRegUnit(unsigned Unit) const {
       return RegUnitIntervals[Unit];
     }
 

@@ -13,20 +13,20 @@
 
 #define DEBUG_TYPE "loop-rotate"
 #include "llvm/Transforms/Scalar.h"
-#include "llvm/Function.h"
-#include "llvm/IntrinsicInst.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/CodeMetrics.h"
-#include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/Analysis/LoopPass.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ValueTracking.h"
-#include "llvm/Transforms/Utils/Local.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
-#include "llvm/Transforms/Utils/SSAUpdater.h"
-#include "llvm/Transforms/Utils/ValueMapper.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/Support/CFG.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/ADT/Statistic.h"
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
+#include "llvm/Transforms/Utils/Local.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
+#include "llvm/Transforms/Utils/ValueMapper.h"
 using namespace llvm;
 
 #define MAX_HEADER_SIZE 16
@@ -274,10 +274,16 @@ bool LoopRotate::rotateLoop(Loop *L) {
   if (OrigLatch == 0 || L->isLoopExiting(OrigLatch))
     return false;
 
-  // Check size of original header and reject loop if it is very big.
+  // Check size of original header and reject loop if it is very big or we can't
+  // duplicate blocks inside it.
   {
     CodeMetrics Metrics;
     Metrics.analyzeBasicBlock(OrigHeader);
+    if (Metrics.notDuplicatable) {
+      DEBUG(dbgs() << "LoopRotation: NOT rotating - contains non duplicatable"
+            << " instructions: "; L->dump());
+      return false;
+    }
     if (Metrics.NumInsts > MAX_HEADER_SIZE)
       return false;
   }

@@ -14,12 +14,12 @@
 #ifndef LLVM_MC_MCSTREAMER_H
 #define LLVM_MC_MCSTREAMER_H
 
-#include "llvm/Support/DataTypes.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCWin64EH.h"
-#include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/DataTypes.h"
 
 namespace llvm {
   class MCAsmBackend;
@@ -55,6 +55,7 @@ namespace llvm {
 
     std::vector<MCDwarfFrameInfo> FrameInfos;
     MCDwarfFrameInfo *getCurrentFrameInfo();
+    MCSymbol *EmitCFICommon();
     void EnsureValidFrame();
 
     std::vector<MCWin64EHUnwindInfo *> W64UnwindInfos;
@@ -68,6 +69,8 @@ namespace llvm {
     /// values saved by PushSection.
     SmallVector<std::pair<const MCSection *,
                 const MCSection *>, 4> SectionStack;
+
+    bool AutoInitSections;
 
   protected:
     MCStreamer(MCContext &Ctx);
@@ -88,6 +91,10 @@ namespace llvm {
 
   public:
     virtual ~MCStreamer();
+
+    /// State management
+    ///
+    virtual void reset();
 
     MCContext &getContext() const { return Context; }
 
@@ -213,6 +220,17 @@ namespace llvm {
         SectionStack.back().first = Section;
     }
 
+    /// Initialize the streamer.
+    void InitStreamer() {
+      if (AutoInitSections)
+        InitSections();
+    }
+
+    /// Tell this MCStreamer to call InitSections upon initialization.
+    void setAutoInitSections(bool AutoInitSections) {
+      this->AutoInitSections = AutoInitSections;
+    }
+
     /// InitSections - Create the default sections and set the initial one.
     virtual void InitSections() = 0;
 
@@ -225,6 +243,8 @@ namespace llvm {
     /// emitted as a label once, and symbols emitted as a label should never be
     /// used in an assignment.
     virtual void EmitLabel(MCSymbol *Symbol);
+
+    virtual void EmitDebugLabel(MCSymbol *Symbol);
 
     virtual void EmitEHSymAttributes(const MCSymbol *Symbol,
                                      MCSymbol *EHSymbol);
@@ -342,7 +362,7 @@ namespace llvm {
     /// @name Generating Data
     /// @{
 
-    /// EmitBytes - Emit the bytes in \arg Data into the output.
+    /// EmitBytes - Emit the bytes in \p Data into the output.
     ///
     /// This is used to implement assembler directives such as .byte, .ascii,
     /// etc.
@@ -416,7 +436,6 @@ namespace llvm {
     void EmitZeros(uint64_t NumBytes, unsigned AddrSpace) {
       EmitFill(NumBytes, 0, AddrSpace);
     }
-
 
     /// EmitValueToAlignment - Emit some number of copies of @p Value until
     /// the byte alignment @p ByteAlignment is reached.
@@ -515,6 +534,8 @@ namespace llvm {
     virtual void EmitCFIAdjustCfaOffset(int64_t Adjustment);
     virtual void EmitCFIEscape(StringRef Values);
     virtual void EmitCFISignalFrame();
+    virtual void EmitCFIUndefined(int64_t Register);
+    virtual void EmitCFIRegister(int64_t Register1, int64_t Register2);
 
     virtual void EmitWin64EHStartProc(const MCSymbol *Symbol);
     virtual void EmitWin64EHEndProc();
@@ -535,6 +556,20 @@ namespace llvm {
     /// section.
     virtual void EmitInstruction(const MCInst &Inst) = 0;
 
+    /// \brief Set the bundle alignment mode from now on in the section.
+    /// The argument is the power of 2 to which the alignment is set. The
+    /// value 0 means turn the bundle alignment off.
+    virtual void EmitBundleAlignMode(unsigned AlignPow2) = 0;
+
+    /// \brief The following instructions are a bundle-locked group.
+    ///
+    /// \param AlignToEnd - If true, the bundle-locked group will be aligned to
+    ///                     the end of a bundle.
+    virtual void EmitBundleLock(bool AlignToEnd) = 0;
+
+    /// \brief Ends a bundle-locked group.
+    virtual void EmitBundleUnlock() = 0;
+
     /// EmitRawText - If this file is backed by a assembly streamer, this dumps
     /// the specified string in the output .s file.  This capability is
     /// indicated by the hasRawTextSupport() predicate.  By default this aborts.
@@ -553,6 +588,11 @@ namespace llvm {
     virtual void EmitPad(int64_t Offset);
     virtual void EmitRegSave(const SmallVectorImpl<unsigned> &RegList,
                              bool isVector);
+
+    /// PPC-related methods.
+    /// FIXME: Eventually replace it with some "target MC streamer" and move
+    /// these methods there.
+    virtual void EmitTCEntry(const MCSymbol &S);
 
     /// FinishImpl - Streamer specific finalization.
     virtual void FinishImpl() = 0;
@@ -573,11 +613,11 @@ namespace llvm {
   /// InstPrint.
   ///
   /// \param CE - If given, a code emitter to use to show the instruction
-  /// encoding inline with the assembly. This method takes ownership of \arg CE.
+  /// encoding inline with the assembly. This method takes ownership of \p CE.
   ///
   /// \param TAB - If given, a target asm backend to use to show the fixup
   /// information in conjunction with encoding information. This method takes
-  /// ownership of \arg TAB.
+  /// ownership of \p TAB.
   ///
   /// \param ShowInst - Whether to show the MCInst representation inline with
   /// the assembly.
@@ -594,7 +634,7 @@ namespace llvm {
   /// createMachOStreamer - Create a machine code streamer which will generate
   /// Mach-O format object files.
   ///
-  /// Takes ownership of \arg TAB and \arg CE.
+  /// Takes ownership of \p TAB and \p CE.
   MCStreamer *createMachOStreamer(MCContext &Ctx, MCAsmBackend &TAB,
                                   raw_ostream &OS, MCCodeEmitter *CE,
                                   bool RelaxAll = false);
@@ -602,7 +642,7 @@ namespace llvm {
   /// createWinCOFFStreamer - Create a machine code streamer which will
   /// generate Microsoft COFF format object files.
   ///
-  /// Takes ownership of \arg TAB and \arg CE.
+  /// Takes ownership of \p TAB and \p CE.
   MCStreamer *createWinCOFFStreamer(MCContext &Ctx,
                                     MCAsmBackend &TAB,
                                     MCCodeEmitter &CE, raw_ostream &OS,
@@ -617,7 +657,7 @@ namespace llvm {
   /// createPureStreamer - Create a machine code streamer which will generate
   /// "pure" MC object files, for use with MC-JIT and testing tools.
   ///
-  /// Takes ownership of \arg TAB and \arg CE.
+  /// Takes ownership of \p TAB and \p CE.
   MCStreamer *createPureStreamer(MCContext &Ctx, MCAsmBackend &TAB,
                                  raw_ostream &OS, MCCodeEmitter *CE);
 

@@ -12,10 +12,13 @@
 //
 // The blacklist disables instrumentation of various functions and global
 // variables.  Each line contains a prefix, followed by a wild card expression.
+// Empty lines and lines starting with "#" are ignored.
 // ---
+// # Blacklisted items:
 // fun:*_ZN4base6subtle*
 // global:*global_with_bad_access_or_initialization*
 // global-init:*global_with_initialization_issues*
+// global-init-type:*Namespace::ClassName*
 // src:file_with_tricky_code.cc
 // ---
 // Note that the wild card is in fact an llvm::Regex, but * is automatically

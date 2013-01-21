@@ -7,14 +7,26 @@ User Guides
    :hidden:
 
    CMake
+   HowToBuildOnARM
    CommandGuide/index
    DeveloperPolicy
+   GettingStarted
    GettingStartedVS
    FAQ
    Lexicon
    Packaging
+   HowToAddABuilder
+   yaml2obj
+   HowToSubmitABug
+   SphinxQuickstartTemplate
+   Phabricator
+   TestingGuide
+   tutorial/index
+   ReleaseNotes
+   Passes
+   YamlIO
 
-* `The LLVM Getting Started Guide <GettingStarted.html>`_
+* :ref:`getting_started`
     
    Discusses how to get up and running quickly with the LLVM infrastructure.
    Everything from unpacking and compilation of the distribution to execution
@@ -24,14 +36,17 @@ User Guides
 
    An addendum to the main Getting Started guide for those using the `CMake
    build system <http://www.cmake.org>`_.
-    
-* `Getting Started with the LLVM System using Microsoft Visual Studio
-  <GettingStartedVS.html>`_
+
+* :ref:`how_to_build_on_arm`
+
+   Notes on building and testing LLVM/Clang on ARM.
+
+* :doc:`GettingStartedVS`
 
    An addendum to the main Getting Started guide for those using Visual Studio
    on Windows.
     
-* `LLVM Tutorial <tutorial/>`_
+* :doc:`tutorial/index`
 
    A walk through the process of using LLVM for a custom language, and the
    facilities LLVM offers in tutorial form.
@@ -45,24 +60,28 @@ User Guides
    A reference manual for the LLVM command line utilities ("man" pages for LLVM
    tools).
     
-* `LLVM's Analysis and Transform Passes <Passes.html>`_
+* :doc:`Passes`
 
    A list of optimizations and analyses implemented in LLVM.
-    
+
 * :ref:`faq`
 
    A list of common questions and problems and their solutions.
     
-* `Release notes for the current release <ReleaseNotes.html>`_
+* :doc:`Release notes for the current release <ReleaseNotes>`
 
    This describes new features, known bugs, and other limitations.
 
-* `How to Submit A Bug Report <HowToSubmitABug.html>`_
+* :ref:`how-to-submit-a-bug-report`
     
    Instructions for properly submitting information about any bugs you run into
    in the LLVM system.
+* :doc:`SphinxQuickstartTemplate`
+
+  A template + tutorial for writing new Sphinx documentation. It is meant
+  to be read in source form.
     
-* `LLVM Testing Infrastructure Guide <TestingGuide.html>`_
+* :doc:`LLVM Testing Infrastructure Guide <TestingGuide>`
 
    A reference manual for using the LLVM testing infrastructure.
     
@@ -78,10 +97,14 @@ User Guides
 
    Definition of acronyms, terms and concepts used in LLVM.
 
-* `How To Add Your Build Configuration To LLVM Buildbot Infrastructure <HowToAddABuilder.html>`_
+* :ref:`how_to_add_a_builder`
 
    Instructions for adding new builder to LLVM buildbot master.
     
+* :ref:`yamlio`
+
+   A reference guide for using LLVM's YAML I/O library.
+
 * **IRC** -- You can probably find help on the unofficial LLVM IRC.
 
    We often are on irc.oftc.net in the #llvm channel.  If you are using the

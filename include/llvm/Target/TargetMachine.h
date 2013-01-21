@@ -14,10 +14,10 @@
 #ifndef LLVM_TARGET_TARGETMACHINE_H
 #define LLVM_TARGET_TARGETMACHINE_H
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/ADT/StringRef.h"
 #include <cassert>
 #include <string>
 
@@ -31,8 +31,7 @@ class MCCodeGenInfo;
 class MCContext;
 class PassManagerBase;
 class Target;
-class TargetData;
-class TargetELFWriterInfo;
+class DataLayout;
 class TargetFrameLowering;
 class TargetInstrInfo;
 class TargetIntrinsicInfo;
@@ -42,6 +41,8 @@ class TargetPassConfig;
 class TargetRegisterInfo;
 class TargetSelectionDAGInfo;
 class TargetSubtargetInfo;
+class ScalarTargetTransformInfo;
+class VectorTargetTransformInfo;
 class formatted_raw_ostream;
 class raw_ostream;
 
@@ -52,8 +53,8 @@ class raw_ostream;
 /// through this interface.
 ///
 class TargetMachine {
-  TargetMachine(const TargetMachine &);   // DO NOT IMPLEMENT
-  void operator=(const TargetMachine &);  // DO NOT IMPLEMENT
+  TargetMachine(const TargetMachine &) LLVM_DELETED_FUNCTION;
+  void operator=(const TargetMachine &) LLVM_DELETED_FUNCTION;
 protected: // Can only create subclasses.
   TargetMachine(const Target &T, StringRef TargetTriple,
                 StringRef CPU, StringRef FS, const TargetOptions &Options);
@@ -106,7 +107,7 @@ public:
   virtual const TargetFrameLowering *getFrameLowering() const { return 0; }
   virtual const TargetLowering    *getTargetLowering() const { return 0; }
   virtual const TargetSelectionDAGInfo *getSelectionDAGInfo() const{ return 0; }
-  virtual const TargetData             *getTargetData() const { return 0; }
+  virtual const DataLayout             *getDataLayout() const { return 0; }
 
   /// getMCAsmInfo - Return target specific asm information.
   ///
@@ -141,11 +142,6 @@ public:
   virtual const InstrItineraryData *getInstrItineraryData() const {
     return 0;
   }
-
-  /// getELFWriterInfo - If this target supports an ELF writer, return
-  /// information for it, otherwise return null.
-  ///
-  virtual const TargetELFWriterInfo *getELFWriterInfo() const { return 0; }
 
   /// hasMCRelaxAll - Check whether all machine code instructions should be
   /// relaxed.
@@ -232,6 +228,9 @@ public:
   /// sections.
   static void setFunctionSections(bool);
 
+  /// \brief Register analysis passes for this target with a pass manager.
+  virtual void addAnalysisPasses(PassManagerBase &) {}
+
   /// CodeGenFileType - These enums are meant to be passed into
   /// addPassesToEmitFile to indicate what type of file to emit, and returned by
   /// it to indicate what type of file could actually be made.
@@ -290,6 +289,11 @@ protected: // Can only create subclasses.
                     CodeGenOpt::Level OL);
 
 public:
+  /// \brief Register analysis passes for this target with a pass manager.
+  ///
+  /// This registers target independent analysis passes.
+  virtual void addAnalysisPasses(PassManagerBase &PM);
+
   /// createPassConfig - Create a pass configuration object to be used by
   /// addPassToEmitX methods for generating a pipeline of CodeGen passes.
   virtual TargetPassConfig *createPassConfig(PassManagerBase &PM);

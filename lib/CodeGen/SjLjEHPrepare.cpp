@@ -13,24 +13,24 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "sjljehprepare"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/IRBuilder.h"
-#include "llvm/Instructions.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
-#include "llvm/Pass.h"
+#include "llvm/CodeGen/Passes.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
-#include "llvm/CodeGen/Passes.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
@@ -191,7 +191,7 @@ setupFunctionContext(Function &F, ArrayRef<LandingPadInst*> LPads) {
   // that needs to be restored on all exits from the function. This is an alloca
   // because the value needs to be added to the global context list.
   unsigned Align =
-    TLI->getTargetData()->getPrefTypeAlignment(FunctionContextTy);
+    TLI->getDataLayout()->getPrefTypeAlignment(FunctionContextTy);
   FuncCtx =
     new AllocaInst(FunctionContextTy, 0, Align, "fn_context", EntryBB->begin());
 

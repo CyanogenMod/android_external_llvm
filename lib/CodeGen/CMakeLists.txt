@@ -2,6 +2,7 @@ add_llvm_library(LLVMCodeGen
   AggressiveAntiDepBreaker.cpp
   AllocationOrder.cpp
   Analysis.cpp
+  BasicTargetTransformInfo.cpp
   BranchFolding.cpp
   CalcSpillWeights.cpp
   CallingConvLower.cpp
@@ -45,6 +46,7 @@ add_llvm_library(LLVMCodeGen
   MachineCopyPropagation.cpp
   MachineCSE.cpp
   MachineDominators.cpp
+  MachinePostDominators.cpp
   MachineFunction.cpp
   MachineFunctionAnalysis.cpp
   MachineFunctionPass.cpp
@@ -53,7 +55,6 @@ add_llvm_library(LLVMCodeGen
   MachineInstrBundle.cpp
   MachineLICM.cpp
   MachineLoopInfo.cpp
-  MachineLoopRanges.cpp
   MachineModuleInfo.cpp
   MachineModuleInfoImpls.cpp
   MachinePassRegistry.cpp
@@ -99,9 +100,11 @@ add_llvm_library(LLVMCodeGen
   StrongPHIElimination.cpp
   TailDuplication.cpp
   TargetFrameLoweringImpl.cpp
-  TargetInstrInfoImpl.cpp
+  TargetInstrInfo.cpp
   TargetLoweringObjectFileImpl.cpp
   TargetOptionsImpl.cpp
+  TargetRegisterInfo.cpp
+  TargetSchedule.cpp
   TwoAddressInstructionPass.cpp
   UnreachableBlockElim.cpp
   VirtRegMap.cpp

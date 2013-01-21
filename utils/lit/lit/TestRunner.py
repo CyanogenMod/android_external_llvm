@@ -77,7 +77,7 @@ def executeShCmd(cmd, cfg, cwd, results):
     # output. This is null until we have seen some output using
     # stderr.
     for i,j in enumerate(cmd.commands):
-        # Apply the redirections, we use (N,) as a sentinal to indicate stdin,
+        # Apply the redirections, we use (N,) as a sentinel to indicate stdin,
         # stdout, stderr for N equal to 0, 1, or 2 respectively. Redirects to or
         # from a file are represented with a list [file, mode, file-object]
         # where file-object is initially None.
@@ -241,11 +241,16 @@ def executeShCmd(cmd, cfg, cwd, results):
     return exitCode
 
 def executeScriptInternal(test, litConfig, tmpBase, commands, cwd):
-    ln = ' &&\n'.join(commands)
-    try:
-        cmd = ShUtil.ShParser(ln, litConfig.isWindows).parse()
-    except:
-        return (Test.FAIL, "shell parser error on: %r" % ln)
+    cmds = []
+    for ln in commands:
+        try:
+            cmds.append(ShUtil.ShParser(ln, litConfig.isWindows).parse())
+        except:
+            return (Test.FAIL, "shell parser error on: %r" % ln)
+
+    cmd = cmds[0]
+    for c in cmds[1:]:
+        cmd = ShUtil.Seq(cmd, '&&', c)
 
     results = []
     try:
@@ -352,7 +357,7 @@ def executeScript(test, litConfig, tmpBase, commands, cwd):
     if isWin32CMDEXE:
         f.write('\nif %ERRORLEVEL% NEQ 0 EXIT\n'.join(commands))
     else:
-        f.write(' &&\n'.join(commands))
+        f.write('{ ' + '; } &&\n{ '.join(commands) + '; }')
     f.write('\n')
     f.close()
 
@@ -370,27 +375,27 @@ def executeScript(test, litConfig, tmpBase, commands, cwd):
 
     return executeCommand(command, cwd=cwd, env=test.config.environment)
 
-def isExpectedFail(xfails, xtargets, target_triple):
-    # Check if any xfail matches this target.
+def isExpectedFail(test, xfails):
+    # Check if any of the xfails match an available feature or the target.
     for item in xfails:
-        if item == '*' or item in target_triple:
-            break
-    else:
-        return False
+        # If this is the wildcard, it always fails.
+        if item == '*':
+            return True
 
-    # If so, see if it is expected to pass on this target.
-    #
-    # FIXME: Rename XTARGET to something that makes sense, like XPASS.
-    for item in xtargets:
-        if item == '*' or item in target_triple:
-            return False
+        # If this is an exact match for one of the features, it fails.
+        if item in test.config.available_features:
+            return True
 
-    return True
+        # If this is a part of the target triple, it fails.
+        if item in test.suite.config.target_triple:
+            return True
+
+    return False
 
 def parseIntegratedTestScript(test, normalize_slashes=False,
                               extra_substitutions=[]):
     """parseIntegratedTestScript - Scan an LLVM/Clang style integrated test
-    script and extract the lines to 'RUN' as well as 'XFAIL' and 'XTARGET'
+    script and extract the lines to 'RUN' as well as 'XFAIL' and 'REQUIRES'
     information. The RUN lines also will have variable substitution performed.
     """
 
@@ -431,9 +436,10 @@ def parseIntegratedTestScript(test, normalize_slashes=False,
     # Collect the test lines from the script.
     script = []
     xfails = []
-    xtargets = []
     requires = []
+    line_number = 0
     for ln in open(sourcepath):
+        line_number += 1
         if 'RUN:' in ln:
             # Isolate the command to run.
             index = ln.index('RUN:')
@@ -441,6 +447,15 @@ def parseIntegratedTestScript(test, normalize_slashes=False,
 
             # Trim trailing whitespace.
             ln = ln.rstrip()
+
+            # Substitute line number expressions
+            ln = re.sub('%\(line\)', str(line_number), ln)
+            def replace_line_number(match):
+                if match.group(1) == '+':
+                    return str(line_number + int(match.group(2)))
+                if match.group(1) == '-':
+                    return str(line_number - int(match.group(2)))
+            ln = re.sub('%\(line *([\+-]) *(\d+)\)', replace_line_number, ln)
 
             # Collapse lines with trailing '\\'.
             if script and script[-1][-1] == '\\':
@@ -450,9 +465,6 @@ def parseIntegratedTestScript(test, normalize_slashes=False,
         elif 'XFAIL:' in ln:
             items = ln[ln.index('XFAIL:') + 6:].split(',')
             xfails.extend([s.strip() for s in items])
-        elif 'XTARGET:' in ln:
-            items = ln[ln.index('XTARGET:') + 8:].split(',')
-            xtargets.extend([s.strip() for s in items])
         elif 'REQUIRES:' in ln:
             items = ln[ln.index('REQUIRES:') + 9:].split(',')
             requires.extend([s.strip() for s in items])
@@ -491,7 +503,7 @@ def parseIntegratedTestScript(test, normalize_slashes=False,
         return (Test.UNSUPPORTED,
                 "Test requires the following features: %s" % msg)
 
-    isXFail = isExpectedFail(xfails, xtargets, test.suite.config.target_triple)
+    isXFail = isExpectedFail(test, xfails)
     return script,isXFail,tmpBase,execdir
 
 def formatTestOutput(status, out, err, exitCode, failDueToStderr, script):

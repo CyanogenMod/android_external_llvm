@@ -13,9 +13,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "RemoteTarget.h"
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/DataTypes.h>
-#include <llvm/Support/Memory.h>
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/DataTypes.h"
+#include "llvm/Support/Memory.h"
 #include <stdlib.h>
 #include <string>
 using namespace llvm;
@@ -36,13 +36,13 @@ bool RemoteTarget::allocateSpace(size_t Size, unsigned Alignment,
 
 bool RemoteTarget::loadData(uint64_t Address, const void *Data, size_t Size) {
   memcpy ((void*)Address, Data, Size);
-  sys::MemoryBlock Mem((void*)Address, Size);
-  sys::Memory::setExecutable(Mem, &ErrorMsg);
   return false;
 }
 
 bool RemoteTarget::loadCode(uint64_t Address, const void *Data, size_t Size) {
   memcpy ((void*)Address, Data, Size);
+  sys::MemoryBlock Mem((void*)Address, Size);
+  sys::Memory::setExecutable(Mem, &ErrorMsg);
   return false;
 }
 

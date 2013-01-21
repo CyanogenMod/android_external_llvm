@@ -8,16 +8,16 @@
 //===----------------------------------------------------------------------===//
 //
 // Data structures for DWARF info entries.
-// 
+//
 //===----------------------------------------------------------------------===//
 
 #include "DIE.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/CodeGen/AsmPrinter.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCStreamer.h"
 #include "llvm/MC/MCSymbol.h"
-#include "llvm/Target/TargetData.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -197,9 +197,11 @@ void DIEInteger::EmitValue(AsmPrinter *Asm, unsigned Form) const {
   case dwarf::DW_FORM_data4: Size = 4; break;
   case dwarf::DW_FORM_ref8:  // Fall thru
   case dwarf::DW_FORM_data8: Size = 8; break;
+  case dwarf::DW_FORM_GNU_str_index: Asm->EmitULEB128(Integer); return;
   case dwarf::DW_FORM_udata: Asm->EmitULEB128(Integer); return;
   case dwarf::DW_FORM_sdata: Asm->EmitSLEB128(Integer); return;
-  case dwarf::DW_FORM_addr:  Size = Asm->getTargetData().getPointerSize(); break;
+  case dwarf::DW_FORM_addr:
+    Size = Asm->getDataLayout().getPointerSize(); break;
   default: llvm_unreachable("DIE Value form not supported yet");
   }
   Asm->OutStreamer.EmitIntValue(Integer, Size, 0/*addrspace*/);
@@ -219,9 +221,10 @@ unsigned DIEInteger::SizeOf(AsmPrinter *AP, unsigned Form) const {
   case dwarf::DW_FORM_data4: return sizeof(int32_t);
   case dwarf::DW_FORM_ref8:  // Fall thru
   case dwarf::DW_FORM_data8: return sizeof(int64_t);
+  case dwarf::DW_FORM_GNU_str_index: return MCAsmInfo::getULEB128Size(Integer);
   case dwarf::DW_FORM_udata: return MCAsmInfo::getULEB128Size(Integer);
   case dwarf::DW_FORM_sdata: return MCAsmInfo::getSLEB128Size(Integer);
-  case dwarf::DW_FORM_addr:  return AP->getTargetData().getPointerSize();
+  case dwarf::DW_FORM_addr:  return AP->getDataLayout().getPointerSize();
   default: llvm_unreachable("DIE Value form not supported yet");
   }
 }
@@ -248,7 +251,7 @@ void DIELabel::EmitValue(AsmPrinter *AP, unsigned Form) const {
 unsigned DIELabel::SizeOf(AsmPrinter *AP, unsigned Form) const {
   if (Form == dwarf::DW_FORM_data4) return 4;
   if (Form == dwarf::DW_FORM_strp) return 4;
-  return AP->getTargetData().getPointerSize();
+  return AP->getDataLayout().getPointerSize();
 }
 
 #ifndef NDEBUG
@@ -272,7 +275,7 @@ void DIEDelta::EmitValue(AsmPrinter *AP, unsigned Form) const {
 unsigned DIEDelta::SizeOf(AsmPrinter *AP, unsigned Form) const {
   if (Form == dwarf::DW_FORM_data4) return 4;
   if (Form == dwarf::DW_FORM_strp) return 4;
-  return AP->getTargetData().getPointerSize();
+  return AP->getDataLayout().getPointerSize();
 }
 
 #ifndef NDEBUG

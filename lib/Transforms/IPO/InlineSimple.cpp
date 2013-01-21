@@ -12,17 +12,17 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "inline"
-#include "llvm/CallingConv.h"
-#include "llvm/Instructions.h"
-#include "llvm/IntrinsicInst.h"
-#include "llvm/Module.h"
-#include "llvm/Type.h"
+#include "llvm/Transforms/IPO.h"
 #include "llvm/Analysis/CallGraph.h"
 #include "llvm/Analysis/InlineCost.h"
+#include "llvm/IR/CallingConv.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IR/Type.h"
 #include "llvm/Support/CallSite.h"
-#include "llvm/Transforms/IPO.h"
 #include "llvm/Transforms/IPO/InlinerPass.h"
-#include "llvm/Target/TargetData.h"
 
 using namespace llvm;
 
@@ -42,6 +42,7 @@ namespace {
     InlineCost getInlineCost(CallSite CS) {
       return CA.getInlineCost(CS, getInlineThreshold(CS));
     }
+    using llvm::Pass::doInitialization;
     virtual bool doInitialization(CallGraph &CG);
   };
 }
@@ -62,7 +63,7 @@ Pass *llvm::createFunctionInliningPass(int Threshold) {
 // doInitialization - Initializes the vector of functions that have been
 // annotated with the noinline attribute.
 bool SimpleInliner::doInitialization(CallGraph &CG) {
-  CA.setTargetData(getAnalysisIfAvailable<TargetData>());
+  CA.setDataLayout(getAnalysisIfAvailable<DataLayout>());
   return false;
 }
 

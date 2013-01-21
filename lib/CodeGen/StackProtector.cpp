@@ -16,20 +16,20 @@
 
 #define DEBUG_TYPE "stack-protector"
 #include "llvm/CodeGen/Passes.h"
+#include "llvm/ADT/Triple.h"
 #include "llvm/Analysis/Dominators.h"
-#include "llvm/Attributes.h"
-#include "llvm/Constants.h"
-#include "llvm/DerivedTypes.h"
-#include "llvm/Function.h"
-#include "llvm/Instructions.h"
-#include "llvm/Intrinsics.h"
-#include "llvm/Module.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Target/TargetData.h"
 #include "llvm/Target/TargetLowering.h"
 #include "llvm/Target/TargetOptions.h"
-#include "llvm/ADT/Triple.h"
 using namespace llvm;
 
 namespace {
@@ -117,7 +117,7 @@ bool StackProtector::ContainsProtectableArray(Type *Ty, bool InStruct) const {
 
     // If an array has more than SSPBufferSize bytes of allocated space, then we
     // emit stack protectors.
-    if (TM.Options.SSPBufferSize <= TLI->getTargetData()->getTypeAllocSize(AT))
+    if (TM.Options.SSPBufferSize <= TLI->getDataLayout()->getTypeAllocSize(AT))
       return true;
   }
 
@@ -137,10 +137,12 @@ bool StackProtector::ContainsProtectableArray(Type *Ty, bool InStruct) const {
 /// add a guard variable to functions that call alloca, and functions with
 /// buffers larger than SSPBufferSize bytes.
 bool StackProtector::RequiresStackProtector() const {
-  if (F->hasFnAttr(Attribute::StackProtectReq))
+  if (F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                      Attribute::StackProtectReq))
     return true;
 
-  if (!F->hasFnAttr(Attribute::StackProtect))
+  if (!F->getAttributes().hasAttribute(AttributeSet::FunctionIndex,
+                                       Attribute::StackProtect))
     return false;
 
   for (Function::iterator I = F->begin(), E = F->end(); I != E; ++I) {

@@ -1,12 +1,13 @@
-/**************************************
-** Created by Kevin from config.h.in **
-***************************************/
+/* include/llvm/Config/config.h.cmake corresponding to config.h.in. */
 
 #ifndef CONFIG_H
 #define CONFIG_H
 
 /* Bug report URL. */
 #define BUG_REPORT_URL "${BUG_REPORT_URL}"
+
+/* Define if we have libxml2 */
+#cmakedefine CLANG_HAVE_LIBXML ${CLANG_HAVE_LIBXML}
 
 /* Relative directory for resource files */
 #define CLANG_RESOURCE_DIR "${CLANG_RESOURCE_DIR}"
@@ -16,6 +17,9 @@
 
 /* Default <path> to all compiler invocations for --sysroot=<path>. */
 #undef DEFAULT_SYSROOT
+
+/* Define if you want backtraces on crash */
+#cmakedefine ENABLE_BACKTRACES
 
 /* Define if position independent code is enabled */
 #cmakedefine ENABLE_PIC

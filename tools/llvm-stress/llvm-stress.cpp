@@ -11,25 +11,25 @@
 // different components in LLVM.
 //
 //===----------------------------------------------------------------------===//
-#include "llvm/LLVMContext.h"
-#include "llvm/Module.h"
-#include "llvm/PassManager.h"
-#include "llvm/Constants.h"
-#include "llvm/Instruction.h"
-#include "llvm/CallGraphSCCPass.h"
-#include "llvm/Assembly/PrintModulePass.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/Analysis/CallGraphSCCPass.h"
 #include "llvm/Analysis/Verifier.h"
-#include "llvm/Support/PassNameParser.h"
+#include "llvm/Assembly/PrintModulePass.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Instruction.h"
+#include "llvm/IR/Module.h"
+#include "llvm/PassManager.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ManagedStatic.h"
+#include "llvm/Support/PassNameParser.h"
 #include "llvm/Support/PluginLoader.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include <memory>
-#include <sstream>
-#include <set>
-#include <vector>
 #include <algorithm>
+#include <memory>
+#include <set>
+#include <sstream>
+#include <vector>
 using namespace llvm;
 
 static cl::opt<unsigned> SeedCL("seed",
@@ -126,6 +126,10 @@ public:
   /// C'tor
   Modifier(BasicBlock *Block, PieceTable *PT, Random *R):
     BB(Block),PT(PT),Ran(R),Context(BB->getContext()) {}
+
+  /// virtual D'tor to silence warnings.
+  virtual ~Modifier() {}
+
   /// Add a new instruction.
   virtual void Act() = 0;
   /// Add N new instructions,

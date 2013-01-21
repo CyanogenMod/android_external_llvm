@@ -17,8 +17,8 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
-#include <vector>
 #include <set>
+#include <vector>
 
 namespace llvm {
   class Value;
@@ -130,9 +130,9 @@ class SparseSolver {
   /// PHI nodes retriggered.
   typedef std::pair<BasicBlock*,BasicBlock*> Edge;
   std::set<Edge> KnownFeasibleEdges;
-  
-  SparseSolver(const SparseSolver&);    // DO NOT IMPLEMENT
-  void operator=(const SparseSolver&);  // DO NOT IMPLEMENT
+
+  SparseSolver(const SparseSolver&) LLVM_DELETED_FUNCTION;
+  void operator=(const SparseSolver&) LLVM_DELETED_FUNCTION;
 public:
   explicit SparseSolver(AbstractLatticeFunction *Lattice)
     : LatticeFunc(Lattice) {}
