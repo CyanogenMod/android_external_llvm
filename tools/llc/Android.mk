@@ -30,6 +30,7 @@ llvm_llc_arm_STATIC_LIBRARIES := \
   libLLVMARMCodeGen \
   libLLVMARMDisassembler \
   libLLVMARMAsmParser \
+  libLLVMARMAsmPrinter \
   libLLVMARMDesc \
   libLLVMARMInfo
 

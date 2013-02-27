@@ -38,7 +38,6 @@ arm_codegen_SRC_FILES := \
   ARMTargetMachine.cpp \
   ARMTargetObjectFile.cpp \
   ARMTargetTransformInfo.cpp \
-  InstPrinter/ARMInstPrinter.cpp \
   MLxExpansionPass.cpp \
   Thumb1FrameLowering.cpp \
   Thumb1InstrInfo.cpp \
