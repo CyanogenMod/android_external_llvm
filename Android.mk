@@ -70,5 +70,5 @@ subdirs += tools/llvm-link
 
 
 include $(LOCAL_PATH)/llvm.mk
-include $(LOCAL_PATH)/host_shared_llvm.mk
+include $(LOCAL_PATH)/shared_llvm.mk
 include $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, $(subdirs)))
