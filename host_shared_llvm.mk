@@ -46,7 +46,11 @@ LOCAL_WHOLE_STATIC_LIBRARIES := \
 	libLLVMSupport \
 	libLLVMVectorize
 
-LOCAL_LDLIBS := -ldl -lpthread
+ifeq ($(HOST_OS),windows)
+  LOCAL_LDLIBS := -limagehlp -lpsapi
+else
+  LOCAL_LDLIBS := -ldl -lpthread
+endif
 
 include $(LLVM_HOST_BUILD_MK)
 #include $(LLVM_GEN_INTRINSICS_MK)
