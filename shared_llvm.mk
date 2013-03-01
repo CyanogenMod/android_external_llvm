@@ -11,7 +11,8 @@ llvm_arm_static_libraries := \
   libLLVMARMAsmParser \
   libLLVMARMAsmPrinter \
   libLLVMARMInfo \
-  libLLVMARMDesc
+  libLLVMARMDesc \
+  libLLVMARMDisassembler
 
 llvm_x86_static_libraries := \
   libLLVMX86CodeGen \
@@ -19,14 +20,16 @@ llvm_x86_static_libraries := \
   libLLVMX86Desc \
   libLLVMX86AsmParser \
   libLLVMX86AsmPrinter \
-  libLLVMX86Utils
+  libLLVMX86Utils \
+  libLLVMX86Disassembler
 
 llvm_mips_static_libraries := \
   libLLVMMipsCodeGen \
   libLLVMMipsInfo \
   libLLVMMipsDesc \
   libLLVMMipsAsmParser \
-  libLLVMMipsAsmPrinter
+  libLLVMMipsAsmPrinter \
+  libLLVMMipsDisassembler
 
 llvm_post_static_libraries := \
   libLLVMAsmPrinter \
