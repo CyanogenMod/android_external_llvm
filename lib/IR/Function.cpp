@@ -123,16 +123,25 @@ bool Argument::hasStructRetAttr() const {
     hasAttribute(1, Attribute::StructRet);
 }
 
-/// addAttr - Add a Attribute to an argument
-void Argument::addAttr(Attribute attr) {
-  getParent()->addAttribute(getArgNo() + 1, attr);
+/// addAttr - Add attributes to an argument.
+void Argument::addAttr(AttributeSet AS) {
+  assert(AS.getNumSlots() <= 1 &&
+         "Trying to add more than one attribute set to an argument!");
+  AttrBuilder B(AS, AS.getSlotIndex(0));
+  getParent()->addAttributes(getArgNo() + 1,
+                             AttributeSet::get(Parent->getContext(),
+                                               getArgNo() + 1, B));
 }
 
-/// removeAttr - Remove a Attribute from an argument
-void Argument::removeAttr(Attribute attr) {
-  getParent()->removeAttribute(getArgNo() + 1, attr);
+/// removeAttr - Remove attributes from an argument.
+void Argument::removeAttr(AttributeSet AS) {
+  assert(AS.getNumSlots() <= 1 &&
+         "Trying to remove more than one attribute set from an argument!");
+  AttrBuilder B(AS, AS.getSlotIndex(0));
+  getParent()->removeAttributes(getArgNo() + 1,
+                                AttributeSet::get(Parent->getContext(),
+                                                  getArgNo() + 1, B));
 }
-
 
 //===----------------------------------------------------------------------===//
 // Helper Methods in Function
@@ -248,15 +257,21 @@ void Function::dropAllReferences() {
     BasicBlocks.begin()->eraseFromParent();
 }
 
-void Function::addAttribute(unsigned i, Attribute attr) {
+void Function::addAttribute(unsigned i, Attribute::AttrKind attr) {
   AttributeSet PAL = getAttributes();
-  PAL = PAL.addAttr(getContext(), i, attr);
+  PAL = PAL.addAttribute(getContext(), i, attr);
   setAttributes(PAL);
 }
 
-void Function::removeAttribute(unsigned i, Attribute attr) {
+void Function::addAttributes(unsigned i, AttributeSet attrs) {
   AttributeSet PAL = getAttributes();
-  PAL = PAL.removeAttr(getContext(), i, attr);
+  PAL = PAL.addAttributes(getContext(), i, attrs);
+  setAttributes(PAL);
+}
+
+void Function::removeAttributes(unsigned i, AttributeSet attrs) {
+  AttributeSet PAL = getAttributes();
+  PAL = PAL.removeAttributes(getContext(), i, attrs);
   setAttributes(PAL);
 }
 
@@ -372,27 +387,28 @@ enum IIT_Info {
   IIT_I16  = 3,
   IIT_I32  = 4,
   IIT_I64  = 5,
-  IIT_F32  = 6,
-  IIT_F64  = 7,
-  IIT_V2   = 8,
-  IIT_V4   = 9,
-  IIT_V8   = 10,
-  IIT_V16  = 11,
-  IIT_V32  = 12,
-  IIT_MMX  = 13,
+  IIT_F16  = 6,
+  IIT_F32  = 7,
+  IIT_F64  = 8,
+  IIT_V2   = 9,
+  IIT_V4   = 10,
+  IIT_V8   = 11,
+  IIT_V16  = 12,
+  IIT_V32  = 13,
   IIT_PTR  = 14,
   IIT_ARG  = 15,
 
   // Values from 16+ are only encodable with the inefficient encoding.
-  IIT_METADATA = 16,
-  IIT_EMPTYSTRUCT = 17,
-  IIT_STRUCT2 = 18,
-  IIT_STRUCT3 = 19,
-  IIT_STRUCT4 = 20,
-  IIT_STRUCT5 = 21,
-  IIT_EXTEND_VEC_ARG = 22,
-  IIT_TRUNC_VEC_ARG = 23,
-  IIT_ANYPTR = 24
+  IIT_MMX  = 16,
+  IIT_METADATA = 17,
+  IIT_EMPTYSTRUCT = 18,
+  IIT_STRUCT2 = 19,
+  IIT_STRUCT3 = 20,
+  IIT_STRUCT4 = 21,
+  IIT_STRUCT5 = 22,
+  IIT_EXTEND_VEC_ARG = 23,
+  IIT_TRUNC_VEC_ARG = 24,
+  IIT_ANYPTR = 25
 };
 
 
@@ -411,6 +427,9 @@ static void DecodeIITType(unsigned &NextElt, ArrayRef<unsigned char> Infos,
     return;
   case IIT_METADATA:
     OutputTable.push_back(IITDescriptor::get(IITDescriptor::Metadata, 0));
+    return;
+  case IIT_F16:
+    OutputTable.push_back(IITDescriptor::get(IITDescriptor::Half, 0));
     return;
   case IIT_F32:
     OutputTable.push_back(IITDescriptor::get(IITDescriptor::Float, 0));
@@ -546,6 +565,7 @@ static Type *DecodeFixedType(ArrayRef<Intrinsic::IITDescriptor> &Infos,
   case IITDescriptor::Void: return Type::getVoidTy(Context);
   case IITDescriptor::MMX: return Type::getX86_MMXTy(Context);
   case IITDescriptor::Metadata: return Type::getMetadataTy(Context);
+  case IITDescriptor::Half: return Type::getHalfTy(Context);
   case IITDescriptor::Float: return Type::getFloatTy(Context);
   case IITDescriptor::Double: return Type::getDoubleTy(Context);
 

@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_ANALYSIS_SCALAREVOLUTION_EXPANDER_H
-#define LLVM_ANALYSIS_SCALAREVOLUTION_EXPANDER_H
+#ifndef LLVM_ANALYSIS_SCALAREVOLUTIONEXPANDER_H
+#define LLVM_ANALYSIS_SCALAREVOLUTIONEXPANDER_H
 
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/ScalarEvolutionNormalization.h"
@@ -40,8 +40,10 @@ namespace llvm {
     // New instructions receive a name to identifies them with the current pass.
     const char* IVName;
 
-    std::map<std::pair<const SCEV *, Instruction *>, AssertingVH<Value> >
+    // InsertedExpressions caches Values for reuse, so must track RAUW.
+    std::map<std::pair<const SCEV *, Instruction *>, TrackingVH<Value> >
       InsertedExpressions;
+    // InsertedValues only flags inserted instructions so needs no RAUW.
     std::set<AssertingVH<Value> > InsertedValues;
     std::set<AssertingVH<Value> > InsertedPostIncValues;
 

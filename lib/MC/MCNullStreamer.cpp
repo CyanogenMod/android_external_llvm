@@ -19,10 +19,13 @@ namespace {
 
   class MCNullStreamer : public MCStreamer {
   public:
-    MCNullStreamer(MCContext &Context) : MCStreamer(Context) {}
+    MCNullStreamer(MCContext &Context) : MCStreamer(SK_NullStreamer, Context) {}
 
     /// @name MCStreamer Interface
     /// @{
+
+    virtual void InitToTextSection() {
+    }
 
     virtual void InitSections() {
     }
@@ -106,6 +109,11 @@ namespace {
     }
 
     /// @}
+
+    static bool classof(const MCStreamer *S) {
+      return S->getKind() == SK_NullStreamer;
+    }
+
   };
 
 }

@@ -158,7 +158,7 @@ class ObjectSizeOffsetVisitor
   bool RoundToAlign;
   unsigned IntTyBits;
   APInt Zero;
-  SmallPtrSet<Value*, 8> SeenInsts;
+  SmallPtrSet<Instruction *, 8> SeenInsts;
 
   APInt align(APInt Size, uint64_t Align);
 

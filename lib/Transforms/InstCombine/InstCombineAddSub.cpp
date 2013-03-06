@@ -66,10 +66,12 @@ namespace {
     bool insaneIntVal(int V) { return V > 4 || V < -4; }
     APFloat *getFpValPtr(void)
       { return reinterpret_cast<APFloat*>(&FpValBuf.buffer[0]); }
+    const APFloat *getFpValPtr(void) const
+      { return reinterpret_cast<const APFloat*>(&FpValBuf.buffer[0]); }
 
     const APFloat &getFpVal(void) const {
       assert(IsFp && BufHasFpVal && "Incorret state");
-      return *reinterpret_cast<const APFloat*>(&FpValBuf.buffer[0]);
+      return *getFpValPtr();
     }
 
     APFloat &getFpVal(void)
@@ -1248,6 +1250,16 @@ Instruction *InstCombiner::visitSub(BinaryOperator &I) {
 
     if (SimplifyDemandedInstructionBits(I))
       return &I;
+
+    // Fold (sub 0, (zext bool to B)) --> (sext bool to B)
+    if (C->isZero() && match(Op1, m_ZExt(m_Value(X))))
+      if (X->getType()->isIntegerTy(1))
+        return CastInst::CreateSExtOrBitCast(X, Op1->getType());
+
+    // Fold (sub 0, (sext bool to B)) --> (zext bool to B)
+    if (C->isZero() && match(Op1, m_SExt(m_Value(X))))
+      if (X->getType()->isIntegerTy(1))
+        return CastInst::CreateZExtOrBitCast(X, Op1->getType());
   }
 
 

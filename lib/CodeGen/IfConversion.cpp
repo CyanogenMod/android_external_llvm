@@ -151,7 +151,7 @@ namespace {
     /// basic block number.
     std::vector<BBInfo> BBAnalysis;
 
-    const TargetLowering *TLI;
+    const TargetLoweringBase *TLI;
     const TargetInstrInfo *TII;
     const TargetRegisterInfo *TRI;
     const InstrItineraryData *InstrItins;
@@ -1557,7 +1557,7 @@ void IfConverter::MergeBlocks(BBInfo &ToBBI, BBInfo &FromBBI, bool AddEdges) {
     if (Succ == FallThrough)
       continue;
     FromBBI.BB->removeSuccessor(Succ);
-    if (AddEdges)
+    if (AddEdges && !ToBBI.BB->isSuccessor(Succ))
       ToBBI.BB->addSuccessor(Succ);
   }
 

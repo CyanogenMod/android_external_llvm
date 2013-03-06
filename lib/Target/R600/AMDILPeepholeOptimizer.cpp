@@ -366,7 +366,7 @@ AMDGPUPeepholeOpt::optimizeCallInst(BasicBlock::iterator *bbb)  {
     std::string buffer(F->getName().str() + "_noret");
     F = dyn_cast<Function>(
           F->getParent()->getOrInsertFunction(buffer, F->getFunctionType()));
-    atomicFuncs.push_back(std::make_pair <CallInst*, Function*>(CI, F));
+    atomicFuncs.push_back(std::make_pair(CI, F));
   }
   
   if (!mSTM->device()->isSupported(AMDGPUDeviceInfo::ArenaSegment)
@@ -613,7 +613,7 @@ AMDGPUPeepholeOpt::optimizeBitInsert(Instruction *inst)  {
   if (isVector) { name += "_v" + itostr(numEle) + "u32"; } else { name += "_u32"; }
   Function *Func = 
     dyn_cast<Function>(inst->getParent()->getParent()->getParent()->
-        getOrInsertFunction(llvm::StringRef(name), funcType));
+        getOrInsertFunction(StringRef(name), funcType));
   Value *Operands[4] = {
     width,
     offset,
@@ -777,7 +777,7 @@ AMDGPUPeepholeOpt::optimizeBitExtract(Instruction *inst)  {
   // Lets create the function.
   Function *Func = 
     dyn_cast<Function>(inst->getParent()->getParent()->getParent()->
-                       getOrInsertFunction(llvm::StringRef(name), funcType));
+                       getOrInsertFunction(StringRef(name), funcType));
   Value *Operands[3] = {
     ShiftInst->getOperand(0),
     shiftValConst,
@@ -967,7 +967,7 @@ AMDGPUPeepholeOpt::expandSigned24BitOps(CallInst *CI)  {
     }
     Function *Func = dyn_cast<Function>(
                        CI->getParent()->getParent()->getParent()->
-                       getOrInsertFunction(llvm::StringRef(name), funcType));
+                       getOrInsertFunction(StringRef(name), funcType));
     Value *Operands[3] = {
       CI->getOperand(0),
       CI->getOperand(1),
@@ -999,7 +999,7 @@ AMDGPUPeepholeOpt::expandSigned24BitOps(CallInst *CI)  {
     }
     Function *Func = dyn_cast<Function>(
                        CI->getParent()->getParent()->getParent()->
-                       getOrInsertFunction(llvm::StringRef(name), funcType));
+                       getOrInsertFunction(StringRef(name), funcType));
     Value *Operands[2] = {
       CI->getOperand(0),
       CI->getOperand(1)

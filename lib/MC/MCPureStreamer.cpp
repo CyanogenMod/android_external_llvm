@@ -28,14 +28,15 @@ private:
   virtual void EmitInstToData(const MCInst &Inst);
 
 public:
-  MCPureStreamer(MCContext &Context, MCAsmBackend &TAB,
-                 raw_ostream &OS, MCCodeEmitter *Emitter)
-    : MCObjectStreamer(Context, TAB, OS, Emitter) {}
+  MCPureStreamer(MCContext &Context, MCAsmBackend &TAB, raw_ostream &OS,
+                 MCCodeEmitter *Emitter)
+      : MCObjectStreamer(SK_PureStreamer, Context, TAB, OS, Emitter) {}
 
   /// @name MCStreamer Interface
   /// @{
 
   virtual void InitSections();
+  virtual void InitToTextSection();
   virtual void EmitLabel(MCSymbol *Symbol);
   virtual void EmitDebugLabel(MCSymbol *Symbol);
   virtual void EmitZerofill(const MCSection *Section, MCSymbol *Symbol = 0,
@@ -99,16 +100,23 @@ public:
   }
 
   /// @}
+
+  static bool classof(const MCStreamer *S) {
+    return S->getKind() == SK_PureStreamer;
+  }
 };
 
 } // end anonymous namespace.
 
 void MCPureStreamer::InitSections() {
+  InitToTextSection();
+}
+
+void MCPureStreamer::InitToTextSection() {
   // FIMXE: To what!?
   SwitchSection(getContext().getMachOSection("__TEXT", "__text",
                                     MCSectionMachO::S_ATTR_PURE_INSTRUCTIONS,
                                     0, SectionKind::getText()));
-
 }
 
 void MCPureStreamer::EmitLabel(MCSymbol *Symbol) {

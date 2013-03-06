@@ -385,21 +385,16 @@ ObjectSizeOffsetVisitor::ObjectSizeOffsetVisitor(const DataLayout *TD,
 
 SizeOffsetType ObjectSizeOffsetVisitor::compute(Value *V) {
   V = V->stripPointerCasts();
-
-  if (isa<Instruction>(V) || isa<GEPOperator>(V)) {
-    // If we have already seen this instruction, bail out.
-    if (!SeenInsts.insert(V))
+  if (Instruction *I = dyn_cast<Instruction>(V)) {
+    // If we have already seen this instruction, bail out. Cycles can happen in
+    // unreachable code after constant propagation.
+    if (!SeenInsts.insert(I))
       return unknown();
 
-    SizeOffsetType Ret;
     if (GEPOperator *GEP = dyn_cast<GEPOperator>(V))
-      Ret = visitGEPOperator(*GEP);
-    else
-      Ret = visit(cast<Instruction>(*V));
-    SeenInsts.erase(V);
-    return Ret;
+      return visitGEPOperator(*GEP);
+    return visit(*I);
   }
-
   if (Argument *A = dyn_cast<Argument>(V))
     return visitArgument(*A);
   if (ConstantPointerNull *P = dyn_cast<ConstantPointerNull>(V))
@@ -413,6 +408,8 @@ SizeOffsetType ObjectSizeOffsetVisitor::compute(Value *V) {
   if (ConstantExpr *CE = dyn_cast<ConstantExpr>(V)) {
     if (CE->getOpcode() == Instruction::IntToPtr)
       return unknown(); // clueless
+    if (CE->getOpcode() == Instruction::GetElementPtr)
+      return visitGEPOperator(cast<GEPOperator>(*CE));
   }
 
   DEBUG(dbgs() << "ObjectSizeOffsetVisitor::compute() unhandled value: " << *V
@@ -546,21 +543,9 @@ SizeOffsetType ObjectSizeOffsetVisitor::visitLoadInst(LoadInst&) {
   return unknown();
 }
 
-SizeOffsetType ObjectSizeOffsetVisitor::visitPHINode(PHINode &PHI) {
-  if (PHI.getNumIncomingValues() == 0)
-    return unknown();
-
-  SizeOffsetType Ret = compute(PHI.getIncomingValue(0));
-  if (!bothKnown(Ret))
-    return unknown();
-
-  // verify that all PHI incoming pointers have the same size and offset
-  for (unsigned i = 1, e = PHI.getNumIncomingValues(); i != e; ++i) {
-    SizeOffsetType EdgeData = compute(PHI.getIncomingValue(i));
-    if (!bothKnown(EdgeData) || EdgeData != Ret)
-      return unknown();
-  }
-  return Ret;
+SizeOffsetType ObjectSizeOffsetVisitor::visitPHINode(PHINode&) {
+  // too complex to analyze statically.
+  return unknown();
 }
 
 SizeOffsetType ObjectSizeOffsetVisitor::visitSelectInst(SelectInst &I) {

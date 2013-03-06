@@ -313,11 +313,11 @@ public:
   /// The second argument indicates whether the query should look inside
   /// instruction bundles.
   bool hasProperty(unsigned MCFlag, QueryType Type = AnyInBundle) const {
-    // Inline the fast path.
-    if (Type == IgnoreBundle || !isBundle())
+    // Inline the fast path for unbundled or bundle-internal instructions.
+    if (Type == IgnoreBundle || !isBundled() || isBundledWithPred())
       return getDesc().getFlags() & (1 << MCFlag);
 
-    // If we have a bundle, take the slow path.
+    // If this is the first instruction in a bundle, take the slow path.
     return hasPropertyInBundle(1 << MCFlag, Type);
   }
 
@@ -642,6 +642,9 @@ public:
   bool isKill() const { return getOpcode() == TargetOpcode::KILL; }
   bool isImplicitDef() const { return getOpcode()==TargetOpcode::IMPLICIT_DEF; }
   bool isInlineAsm() const { return getOpcode() == TargetOpcode::INLINEASM; }
+  bool isMSInlineAsm() const { 
+    return getOpcode() == TargetOpcode::INLINEASM && getInlineAsmDialect();
+  }
   bool isStackAligningInlineAsm() const;
   InlineAsm::AsmDialect getInlineAsmDialect() const;
   bool isInsertSubreg() const {
@@ -699,7 +702,11 @@ public:
     }
   }
 
-  /// getBundleSize - Return the number of instructions inside the MI bundle.
+  /// Return the number of instructions inside the MI bundle, excluding the
+  /// bundle header.
+  ///
+  /// This is the number of instructions that MachineBasicBlock::iterator
+  /// skips, 0 for unbundled instructions.
   unsigned getBundleSize() const;
 
   /// readsRegister - Return true if the MachineInstr reads the specified
@@ -944,7 +951,8 @@ public:
   //
   // Debugging support
   //
-  void print(raw_ostream &OS, const TargetMachine *TM = 0) const;
+  void print(raw_ostream &OS, const TargetMachine *TM = 0,
+             bool SkipOpers = false) const;
   void dump() const;
 
   //===--------------------------------------------------------------------===//

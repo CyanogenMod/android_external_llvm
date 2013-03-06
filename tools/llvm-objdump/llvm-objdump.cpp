@@ -11,6 +11,9 @@
 // dumps out a plethora of information about an object file depending on the
 // flags.
 //
+// The flags and output of this program should be near identical to those of
+// binutils objdump.
+//
 //===----------------------------------------------------------------------===//
 
 #include "llvm-objdump.h"
@@ -28,7 +31,6 @@
 #include "llvm/MC/MCSubtargetInfo.h"
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/COFF.h"
-#include "llvm/Object/ELF.h"
 #include "llvm/Object/MachO.h"
 #include "llvm/Object/ObjectFile.h"
 #include "llvm/Support/Casting.h"
@@ -442,7 +444,7 @@ static void PrintSectionHeaders(const ObjectFile *o) {
     if (error(si->isBSS(BSS))) return;
     std::string Type = (std::string(Text ? "TEXT " : "") +
                         (Data ? "DATA " : "") + (BSS ? "BSS" : ""));
-    outs() << format("%3d %-13s %09" PRIx64 " %017" PRIx64 " %s\n",
+    outs() << format("%3d %-13s %08" PRIx64 " %016" PRIx64 " %s\n",
                      i, Name.str().c_str(), Size, Address, Type.c_str());
     ++i;
   }
@@ -479,7 +481,7 @@ static void PrintSectionContents(const ObjectFile *o) {
       // Print ascii.
       outs() << "  ";
       for (std::size_t i = 0; i < 16 && addr + i < end; ++i) {
-        if (std::isprint(Contents[addr + i] & 0xFF))
+        if (std::isprint(static_cast<unsigned char>(Contents[addr + i]) & 0xFF))
           outs() << Contents[addr + i];
         else
           outs() << ".";
@@ -572,7 +574,10 @@ static void PrintSymbolTable(const ObjectFile *o) {
       else if (Type == SymbolRef::ST_Function)
         FileFunc = 'F';
 
-      outs() << format("%08" PRIx64, Address) << " "
+      const char *Fmt = o->getBytesInAddress() > 4 ? "%016" PRIx64 :
+                                                     "%08" PRIx64;
+
+      outs() << format(Fmt, Address) << " "
              << GlobLoc // Local -> 'l', Global -> 'g', Neither -> ' '
              << (Weak ? 'w' : ' ') // Weak?
              << ' ' // Constructor. Not supported yet.

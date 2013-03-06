@@ -752,20 +752,19 @@ void MachineInstr::addMemOperand(MachineFunction &MF,
 }
 
 bool MachineInstr::hasPropertyInBundle(unsigned Mask, QueryType Type) const {
-  const MachineBasicBlock *MBB = getParent();
-  MachineBasicBlock::const_instr_iterator MII = *this; ++MII;
-  while (MII != MBB->end() && MII->isInsideBundle()) {
+  assert(!isBundledWithPred() && "Must be called on bundle header");
+  for (MachineBasicBlock::const_instr_iterator MII = this;; ++MII) {
     if (MII->getDesc().getFlags() & Mask) {
       if (Type == AnyInBundle)
         return true;
     } else {
-      if (Type == AllInBundle)
+      if (Type == AllInBundle && !MII->isBundle())
         return false;
     }
-    ++MII;
+    // This was the last instruction in the bundle.
+    if (!MII->isBundledWithSucc())
+      return Type == AllInBundle;
   }
-
-  return Type == AllInBundle;
 }
 
 bool MachineInstr::isIdenticalTo(const MachineInstr *Other,
@@ -897,7 +896,7 @@ void MachineInstr::unbundleFromSucc() {
   assert(isBundledWithSucc() && "MI isn't bundled with its successor");
   clearFlag(BundledSucc);
   MachineBasicBlock::instr_iterator Succ = this;
-  --Succ;
+  ++Succ;
   assert(Succ->isBundledWithPred() && "Inconsistent bundle flags");
   Succ->clearFlag(BundledPred);
 }
@@ -982,18 +981,13 @@ MachineInstr::getRegClassConstraint(unsigned OpIdx,
   return NULL;
 }
 
-/// getBundleSize - Return the number of instructions inside the MI bundle.
+/// Return the number of instructions inside the MI bundle, not counting the
+/// header instruction.
 unsigned MachineInstr::getBundleSize() const {
-  assert(isBundle() && "Expecting a bundle");
-
-  const MachineBasicBlock *MBB = getParent();
-  MachineBasicBlock::const_instr_iterator I = *this, E = MBB->instr_end();
+  MachineBasicBlock::const_instr_iterator I = this;
   unsigned Size = 0;
-  while ((++I != E) && I->isInsideBundle()) {
-    ++Size;
-  }
-  assert(Size > 1 && "Malformed bundle");
-
+  while (I->isBundledWithSucc())
+    ++Size, ++I;
   return Size;
 }
 
@@ -1434,7 +1428,8 @@ static void printDebugLoc(DebugLoc DL, const MachineFunction *MF,
   }
 }
 
-void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM) const {
+void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM,
+                         bool SkipOpers) const {
   // We can be a bit tidier if we know the TargetMachine and/or MachineFunction.
   const MachineFunction *MF = 0;
   const MachineRegisterInfo *MRI = 0;
@@ -1471,6 +1466,9 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM) const {
   else
     OS << "UNKNOWN";
 
+  if (SkipOpers)
+    return;
+
   // Print the rest of the operands.
   bool OmittedAnyCallClobbers = false;
   bool FirstOp = true;
@@ -1482,10 +1480,14 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM) const {
     OS << " ";
     getOperand(InlineAsm::MIOp_AsmString).print(OS, TM);
 
-    // Print HasSideEffects, IsAlignStack
+    // Print HasSideEffects, MayLoad, MayStore, IsAlignStack
     unsigned ExtraInfo = getOperand(InlineAsm::MIOp_ExtraInfo).getImm();
     if (ExtraInfo & InlineAsm::Extra_HasSideEffects)
       OS << " [sideeffect]";
+    if (ExtraInfo & InlineAsm::Extra_MayLoad)
+      OS << " [mayload]";
+    if (ExtraInfo & InlineAsm::Extra_MayStore)
+      OS << " [maystore]";
     if (ExtraInfo & InlineAsm::Extra_IsAlignStack)
       OS << " [alignstack]";
     if (getInlineAsmDialect() == InlineAsm::AD_ATT)
@@ -1513,12 +1515,12 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM) const {
       unsigned Reg = MO.getReg();
       if (TargetRegisterInfo::isPhysicalRegister(Reg)) {
         const MachineRegisterInfo &MRI = MF->getRegInfo();
-        if (MRI.use_empty(Reg) && !MRI.isLiveOut(Reg)) {
+        if (MRI.use_empty(Reg)) {
           bool HasAliasLive = false;
           for (MCRegAliasIterator AI(Reg, TM->getRegisterInfo(), true);
                AI.isValid(); ++AI) {
             unsigned AliasReg = *AI;
-            if (!MRI.use_empty(AliasReg) || MRI.isLiveOut(AliasReg)) {
+            if (!MRI.use_empty(AliasReg)) {
               HasAliasLive = true;
               break;
             }
@@ -1590,7 +1592,8 @@ void MachineInstr::print(raw_ostream &OS, const TargetMachine *TM) const {
   }
 
   bool HaveSemi = false;
-  if (Flags) {
+  const unsigned PrintableFlags = FrameSetup;
+  if (Flags & PrintableFlags) {
     if (!HaveSemi) OS << ";"; HaveSemi = true;
     OS << " flags: ";
 

@@ -1,4 +1,5 @@
-; RUN: %lli -mtriple=%mcjit_triple -use-mcjit %s > /dev/null
+; RUN: %lli_mcjit %s > /dev/null
+; XFAIL: armv5
 
 declare void @exit(i32)
 

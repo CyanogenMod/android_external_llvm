@@ -38,9 +38,9 @@ class MCObjectStreamer : public MCStreamer {
   virtual void EmitCFIEndProcImpl(MCDwarfFrameInfo &Frame);
 
 protected:
-  MCObjectStreamer(MCContext &Context, MCAsmBackend &TAB,
+  MCObjectStreamer(StreamerKind Kind, MCContext &Context, MCAsmBackend &TAB,
                    raw_ostream &_OS, MCCodeEmitter *_Emitter);
-  MCObjectStreamer(MCContext &Context, MCAsmBackend &TAB,
+  MCObjectStreamer(StreamerKind Kind, MCContext &Context, MCAsmBackend &TAB,
                    raw_ostream &_OS, MCCodeEmitter *_Emitter,
                    MCAssembler *_Assembler);
   ~MCObjectStreamer();
@@ -86,7 +86,7 @@ public:
   virtual void EmitBundleAlignMode(unsigned AlignPow2);
   virtual void EmitBundleLock(bool AlignToEnd);
   virtual void EmitBundleUnlock();
-  virtual void EmitBytes(StringRef Data, unsigned AddrSpace);
+  virtual void EmitBytes(StringRef Data, unsigned AddrSpace = 0);
   virtual void EmitValueToAlignment(unsigned ByteAlignment,
                                     int64_t Value = 0,
                                     unsigned ValueSize = 1,
@@ -103,10 +103,14 @@ public:
   virtual void EmitGPRel32Value(const MCExpr *Value);
   virtual void EmitGPRel64Value(const MCExpr *Value);
   virtual void EmitFill(uint64_t NumBytes, uint8_t FillValue,
-                        unsigned AddrSpace);
+                        unsigned AddrSpace = 0);
   virtual void FinishImpl();
 
   /// @}
+
+  static bool classof(const MCStreamer *S) {
+    return S->getKind() >= SK_ELFStreamer && S->getKind() <= SK_WinCOFFStreamer;
+  }
 };
 
 } // end namespace llvm

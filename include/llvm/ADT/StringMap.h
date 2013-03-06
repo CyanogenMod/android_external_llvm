@@ -237,6 +237,10 @@ public:
   explicit StringMap(AllocatorTy A)
     : StringMapImpl(static_cast<unsigned>(sizeof(MapEntryTy))), Allocator(A) {}
 
+  StringMap(unsigned InitialSize, AllocatorTy A)
+    : StringMapImpl(InitialSize, static_cast<unsigned>(sizeof(MapEntryTy))),
+      Allocator(A) {}
+
   StringMap(const StringMap &RHS)
     : StringMapImpl(static_cast<unsigned>(sizeof(MapEntryTy))) {
     assert(RHS.empty() &&
@@ -334,8 +338,8 @@ public:
       StringMapEntryBase *&Bucket = TheTable[I];
       if (Bucket && Bucket != getTombstoneVal()) {
         static_cast<MapEntryTy*>(Bucket)->Destroy(Allocator);
-        Bucket = 0;
       }
+      Bucket = 0;
     }
 
     NumItems = 0;

@@ -22,8 +22,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_USE_H
-#define LLVM_USE_H
+#ifndef LLVM_IR_USE_H
+#define LLVM_IR_USE_H
 
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/Support/Compiler.h"
@@ -66,7 +66,6 @@ public:
   typedef PointerIntPair<User*, 1, unsigned> UserRef;
 
 private:
-  /// Copy ctor - do not implement
   Use(const Use &U) LLVM_DELETED_FUNCTION;
 
   /// Destructor - Only for zap()

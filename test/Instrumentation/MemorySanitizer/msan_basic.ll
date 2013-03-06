@@ -362,6 +362,41 @@ define zeroext i1 @ICmpSLE(i32 %x) nounwind uwtable readnone {
 ; CHECK: ret i1
 
 
+; Check that we propagate shadow for x<0, x>=0, etc (i.e. sign bit tests)
+; of the vector arguments.
+
+define <2 x i1> @ICmpSLT_vector(<2 x i32*> %x) nounwind uwtable readnone {
+  %1 = icmp slt <2 x i32*> %x, zeroinitializer
+  ret <2 x i1> %1
+}
+
+; CHECK: @ICmpSLT_vector
+; CHECK: icmp slt <2 x i64>
+; CHECK-NOT: call void @__msan_warning
+; CHECK: icmp slt <2 x i32*>
+; CHECK-NOT: call void @__msan_warning
+; CHECK: ret <2 x i1>
+
+
+; Check that we propagate shadow for unsigned relational comparisons with
+; constants
+
+define zeroext i1 @ICmpUGTConst(i32 %x) nounwind uwtable readnone {
+entry:
+  %cmp = icmp ugt i32 %x, 7
+  ret i1 %cmp
+}
+
+; CHECK: @ICmpUGTConst
+; CHECK: icmp ugt i32
+; CHECK-NOT: call void @__msan_warning
+; CHECK: icmp ugt i32
+; CHECK-NOT: call void @__msan_warning
+; CHECK: icmp ugt i32
+; CHECK-NOT: call void @__msan_warning
+; CHECK: ret i1
+
+
 ; Check that loads of shadow have the same aligment as the original loads.
 ; Check that loads of origin have the aligment of max(4, original alignment).
 
@@ -534,3 +569,30 @@ define <8 x i8*> @VectorOfPointers(<8 x i8*>* %p) nounwind uwtable {
 ; CHECK: load <8 x i8*>*
 ; CHECK: store <8 x i64> {{.*}} @__msan_retval_tls
 ; CHECK: ret <8 x i8*>
+
+; Test handling of va_copy.
+
+declare void @llvm.va_copy(i8*, i8*) nounwind
+
+define void @VACopy(i8* %p1, i8* %p2) nounwind uwtable {
+  call void @llvm.va_copy(i8* %p1, i8* %p2) nounwind
+  ret void
+}
+
+; CHECK: @VACopy
+; CHECK: call void @llvm.memset.p0i8.i64({{.*}}, i8 0, i64 24, i32 8, i1 false)
+; CHECK: ret void
+
+
+; Test handling of volatile stores.
+; Check that MemorySanitizer does not add a check of the value being stored.
+
+define void @VolatileStore(i32* nocapture %p, i32 %x) nounwind uwtable {
+entry:
+  store volatile i32 %x, i32* %p, align 4
+  ret void
+}
+
+; CHECK: @VolatileStore
+; CHECK-NOT: @__msan_warning
+; CHECK: ret void
