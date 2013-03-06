@@ -1,3 +1,6 @@
+# Don't build the library in unbundled branches.
+ifeq (,$(TARGET_BUILD_APPS))
+
 LOCAL_PATH:= $(call my-dir)
 
 llvm_pre_static_libraries := \
@@ -109,3 +112,5 @@ LOCAL_SHARED_LIBRARIES := libcutils libdl libstlport
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_SHARED_LIBRARY)
+
+endif # don't build in unbundled branches
