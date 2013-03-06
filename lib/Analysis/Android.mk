@@ -20,7 +20,6 @@ analysis_SRC_FILES := \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
   IVUsers.cpp \
-  InlineCost.cpp \
   InstCount.cpp \
   InstructionSimplify.cpp \
   Interval.cpp \

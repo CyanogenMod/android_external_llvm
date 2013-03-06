@@ -27,6 +27,7 @@ subdirs := \
   lib/Transforms/IPO \
   lib/Transforms/InstCombine \
   lib/Transforms/Instrumentation \
+  lib/Transforms/ObjCARC \
   lib/Transforms/Scalar \
   lib/Transforms/Utils \
   lib/Transforms/Vectorize \

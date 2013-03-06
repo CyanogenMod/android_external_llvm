@@ -26,6 +26,7 @@ codegen_SRC_FILES := \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
   IntrinsicLowering.cpp \
+  JITCodeEmitter.cpp \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
   LiveDebugVariables.cpp \
@@ -44,6 +45,7 @@ codegen_SRC_FILES := \
   MachineBlockPlacement.cpp \
   MachineBranchProbabilityInfo.cpp \
   MachineCSE.cpp \
+  MachineCodeEmitter.cpp \
   MachineCopyPropagation.cpp \
   MachineDominators.cpp \
   MachineFunction.cpp \
@@ -101,6 +103,7 @@ codegen_SRC_FILES := \
   TailDuplication.cpp \
   TargetFrameLoweringImpl.cpp \
   TargetInstrInfo.cpp \
+  TargetLoweringBase.cpp \
   TargetLoweringObjectFileImpl.cpp \
   TargetOptionsImpl.cpp \
   TargetRegisterInfo.cpp \

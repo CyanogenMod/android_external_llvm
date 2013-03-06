@@ -1,17 +1,22 @@
 LOCAL_PATH:= $(call my-dir)
 
-bitcode_reader_SRC_FILES := \
-	BitReader.cpp	\
-	BitcodeReader.cpp \
-	BitstreamReader.cpp
+transforms_objcarc_SRC_FILES := \
+  DependencyAnalysis.cpp \
+  ObjCARCAliasAnalysis.cpp \
+  ObjCARCAPElim.cpp \
+  ObjCARCContract.cpp \
+  ObjCARC.cpp \
+  ObjCARCExpand.cpp \
+  ObjCARCOpts.cpp \
+  ObjCARCUtil.cpp \
+  ProvenanceAnalysis.cpp
 
 # For the host
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(bitcode_reader_SRC_FILES)
-
-LOCAL_MODULE:= libLLVMBitReader
+LOCAL_SRC_FILES := $(transforms_objcarc_SRC_FILES)
+LOCAL_MODULE:= libLLVMTransformObjCARC
 
 LOCAL_MODULE_TAGS := optional
 
@@ -23,9 +28,8 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(bitcode_reader_SRC_FILES)
-
-LOCAL_MODULE:= libLLVMBitReader
+LOCAL_SRC_FILES := $(transforms_objcarc_SRC_FILES)
+LOCAL_MODULE:= libLLVMTransformObjCARC
 
 LOCAL_MODULE_TAGS := optional
 

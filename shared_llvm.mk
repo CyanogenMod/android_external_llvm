@@ -38,6 +38,7 @@ llvm_post_static_libraries := \
   libLLVMScalarOpts \
   libLLVMInstCombine \
   libLLVMInstrumentation \
+  libLLVMTransformObjCARC \
   libLLVMTransformUtils \
   libLLVMipa \
   libLLVMAnalysis \

@@ -1,18 +1,15 @@
 LOCAL_PATH:= $(call my-dir)
 
 linker_SRC_FILES := \
-  LinkModules.cpp
+  LinkModules.cpp \
+  Linker.cpp
 
 # For the host
 # =====================================================
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
-LOCAL_SRC_FILES :=      \
-     $(linker_SRC_FILES)\
-     LinkArchives.cpp   \
-     Linker.cpp         \
-     LinkItems.cpp
+LOCAL_SRC_FILES := $(linker_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMLinker 
 LOCAL_MODULE_TAGS := optional
