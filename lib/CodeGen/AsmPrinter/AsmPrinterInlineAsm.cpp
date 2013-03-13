@@ -70,7 +70,6 @@ static void srcMgrDiagHandler(const SMDiagnostic &Diag, void *diagInfo) {
 /// EmitInlineAsm - Emit a blob of inline asm to the output streamer.
 void AsmPrinter::EmitInlineAsm(StringRef Str, const MDNode *LocMDNode,
                                InlineAsm::AsmDialect Dialect) const {
-#ifndef ANDROID_TARGET_BUILD
   assert(!Str.empty() && "Can't emit empty inline asm block");
 
   // Remember if the buffer is nul terminated or not so we can avoid a copy.
@@ -136,14 +135,12 @@ void AsmPrinter::EmitInlineAsm(StringRef Str, const MDNode *LocMDNode,
                         /*NoFinalize*/ true);
   if (Res && !HasDiagHandler)
     report_fatal_error("Error parsing inline asm\n");
-#endif // ANDROID_TARGET_BUILD
 }
 
 static void EmitMSInlineAsmStr(const char *AsmStr, const MachineInstr *MI,
                                MachineModuleInfo *MMI, int InlineAsmVariant,
                                AsmPrinter *AP, unsigned LocCookie,
                                raw_ostream &OS) {
-#ifndef ANDROID_TARGET_BUILD
   // Switch to the inline assembly variant.
   OS << "\t.intel_syntax\n\t";
 
@@ -236,14 +233,12 @@ static void EmitMSInlineAsmStr(const char *AsmStr, const MachineInstr *MI,
     }
   }
   OS << "\n\t.att_syntax\n" << (char)0;  // null terminate string.
-#endif // ANDROID_TARGET_BUILD
 }
 
 static void EmitGCCInlineAsmStr(const char *AsmStr, const MachineInstr *MI,
                                 MachineModuleInfo *MMI, int InlineAsmVariant,
                                 int AsmPrinterVariant, AsmPrinter *AP,
                                 unsigned LocCookie, raw_ostream &OS) {
-#ifndef ANDROID_TARGET_BUILD
   int CurVariant = -1;            // The number of the {.|.|.} region we are in.
   const char *LastEmitted = AsmStr; // One past the last character emitted.
   unsigned NumOperands = MI->getNumOperands();
@@ -411,13 +406,11 @@ static void EmitGCCInlineAsmStr(const char *AsmStr, const MachineInstr *MI,
     }
   }
   OS << '\n' << (char)0;  // null terminate string.
-#endif // ANDROID_TARGET_BUILD
 }
 
 /// EmitInlineAsm - This method formats and emits the specified machine
 /// instruction that is an inline asm.
 void AsmPrinter::EmitInlineAsm(const MachineInstr *MI) const {
-#ifndef ANDROID_TARGET_BUILD
   assert(MI->isInlineAsm() && "printInlineAsm only works on inline asms");
 
   // Count the number of register definitions to find the asm string.
@@ -487,7 +480,6 @@ void AsmPrinter::EmitInlineAsm(const MachineInstr *MI) const {
   if (OutStreamer.hasRawTextSupport())
     OutStreamer.EmitRawText(Twine("\t")+MAI->getCommentString()+
                             MAI->getInlineAsmEnd());
-#endif // ANDROID_TARGET_BUILD
 }
 
 
