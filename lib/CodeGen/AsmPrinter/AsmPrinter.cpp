@@ -668,9 +668,9 @@ void AsmPrinter::EmitFunctionBody() {
       if (!II->isLabel() && !II->isImplicitDef() && !II->isKill() &&
           !II->isDebugValue()) {
         HasAnyRealCode = true;
-
         ++EmittedInsts;
       }
+
       if (ShouldPrintDebugScopes) {
         NamedRegionTimer T(DbgTimerName, DWARFGroupName, TimePassesIsEnabled);
         DD->beginInstruction(II);
