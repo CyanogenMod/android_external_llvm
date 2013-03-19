@@ -15,6 +15,7 @@ arm_codegen_TBLGEN_TABLES := \
   ARMGenDisassemblerTables.inc
 
 arm_codegen_SRC_FILES := \
+  A15SDOptimizer.cpp \
   ARMAsmPrinter.cpp \
   ARMBaseInstrInfo.cpp \
   ARMBaseRegisterInfo.cpp \
