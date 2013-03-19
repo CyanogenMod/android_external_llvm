@@ -2654,7 +2654,7 @@ void SelectionDAGBuilder::visitShift(const User &I, unsigned Opcode) {
   SDValue Op1 = getValue(I.getOperand(0));
   SDValue Op2 = getValue(I.getOperand(1));
 
-  MVT ShiftTy = TLI.getShiftAmountTy(Op2.getValueType());
+  EVT ShiftTy = TLI.getShiftAmountTy(Op2.getValueType());
 
   // Coerce the shift amount to the right type if we can.
   if (!I.getType()->isVectorTy() && Op2.getValueType() != ShiftTy) {
@@ -6161,6 +6161,7 @@ void SelectionDAGBuilder::visitInlineAsm(ImmutableCallSite CS) {
             Ctx.emitError(CS.getInstruction(),  "inline asm not supported yet:"
                           " don't know how to handle tied "
                           "indirect register inputs");
+            report_fatal_error("Cannot handle indirect register inputs!");
           }
 
           RegsForValue MatchedRegs;
@@ -6589,9 +6590,7 @@ static bool isOnlyUsedInEntryBlock(const Argument *A, bool FastISel) {
   return true;
 }
 
-void SelectionDAGISel::LowerArguments(const BasicBlock *LLVMBB) {
-  // If this is the entry block, emit arguments.
-  const Function &F = *LLVMBB->getParent();
+void SelectionDAGISel::LowerArguments(const Function &F) {
   SelectionDAG &DAG = SDB->DAG;
   DebugLoc dl = SDB->getCurDebugLoc();
   const DataLayout *TD = TLI.getDataLayout();
