@@ -15,7 +15,6 @@ analysis_SRC_FILES := \
   CodeMetrics.cpp \
   ConstantFolding.cpp \
   CostModel.cpp \
-  DbgInfoPrinter.cpp \
   DependenceAnalysis.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
