@@ -57,6 +57,9 @@ cl::desc("disable preincrement load/store generation on PPC"), cl::Hidden);
 static cl::opt<bool> DisableILPPref("disable-ppc-ilp-pref",
 cl::desc("disable setting the node scheduling preference to ILP on PPC"), cl::Hidden);
 
+static cl::opt<bool> DisablePPCUnaligned("disable-ppc-unaligned",
+cl::desc("disable unaligned load/store generation on PPC"), cl::Hidden);
+
 static TargetLoweringObjectFile *CreateTLOF(const PPCTargetMachine &TM) {
   if (TM.getSubtargetImpl()->isDarwin())
     return new TargetLoweringObjectFileMachO();
@@ -1180,13 +1183,15 @@ bool PPCTargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
 
   SDValue Ptr;
   EVT VT;
+  unsigned Alignment;
   if (LoadSDNode *LD = dyn_cast<LoadSDNode>(N)) {
     Ptr = LD->getBasePtr();
     VT = LD->getMemoryVT();
-
+    Alignment = LD->getAlignment();
   } else if (StoreSDNode *ST = dyn_cast<StoreSDNode>(N)) {
     Ptr = ST->getBasePtr();
     VT  = ST->getMemoryVT();
+    Alignment = ST->getAlignment();
   } else
     return false;
 
@@ -1205,6 +1210,10 @@ bool PPCTargetLowering::getPreIndexedAddressParts(SDNode *N, SDValue &Base,
     if (!SelectAddressRegImm(Ptr, Offset, Base, DAG))
       return false;
   } else {
+    // LDU/STU need an address with at least 4-byte alignment.
+    if (Alignment < 4)
+      return false;
+
     // reg + imm * 4.
     if (!SelectAddressRegImmShift(Ptr, Offset, Base, DAG))
       return false;
@@ -4786,12 +4795,13 @@ SDValue PPCTargetLowering::LowerFLT_ROUNDS_(SDValue Op,
   MachineFunction &MF = DAG.getMachineFunction();
   EVT VT = Op.getValueType();
   EVT PtrVT = DAG.getTargetLoweringInfo().getPointerTy();
-  std::vector<EVT> NodeTys;
   SDValue MFFSreg, InFlag;
 
   // Save FP Control Word to register
-  NodeTys.push_back(MVT::f64);    // return register
-  NodeTys.push_back(MVT::Glue);   // unused in this context
+  EVT NodeTys[] = {
+    MVT::f64,    // return register
+    MVT::Glue    // unused in this context
+  };
   SDValue Chain = DAG.getNode(PPCISD::MFFS, dl, NodeTys, &InFlag, 0);
 
   // Save FP register to stack slot
@@ -5408,9 +5418,7 @@ SDValue PPCTargetLowering::LowerINTRINSIC_WO_CHAIN(SDValue Op,
     Op.getOperand(3),  // RHS
     DAG.getConstant(CompareOpc, MVT::i32)
   };
-  std::vector<EVT> VTs;
-  VTs.push_back(Op.getOperand(2).getValueType());
-  VTs.push_back(MVT::Glue);
+  EVT VTs[] = { Op.getOperand(2).getValueType(), MVT::Glue };
   SDValue CompNode = DAG.getNode(PPCISD::VCMPo, dl, VTs, Ops, 3);
 
   // Now that we have the comparison, emit a copy from the CR to a GPR.
@@ -6466,14 +6474,12 @@ SDValue PPCTargetLowering::PerformDAGCombine(SDNode *N,
       bool BranchOnWhenPredTrue = (CC == ISD::SETEQ) ^ (Val == 0);
 
       // Create the PPCISD altivec 'dot' comparison node.
-      std::vector<EVT> VTs;
       SDValue Ops[] = {
         LHS.getOperand(2),  // LHS of compare
         LHS.getOperand(3),  // RHS of compare
         DAG.getConstant(CompareOpc, MVT::i32)
       };
-      VTs.push_back(LHS.getOperand(2).getValueType());
-      VTs.push_back(MVT::Glue);
+      EVT VTs[] = { LHS.getOperand(2).getValueType(), MVT::Glue };
       SDValue CompNode = DAG.getNode(PPCISD::VCMPo, dl, VTs, Ops, 3);
 
       // Unpack the result based on how the target uses it.
@@ -6852,6 +6858,32 @@ EVT PPCTargetLowering::getOptimalMemOpType(uint64_t Size,
   } else {
     return MVT::i32;
   }
+}
+
+bool PPCTargetLowering::allowsUnalignedMemoryAccesses(EVT VT,
+                                                      bool *Fast) const {
+  if (DisablePPCUnaligned)
+    return false;
+
+  // PowerPC supports unaligned memory access for simple non-vector types.
+  // Although accessing unaligned addresses is not as efficient as accessing
+  // aligned addresses, it is generally more efficient than manual expansion,
+  // and generally only traps for software emulation when crossing page
+  // boundaries.
+
+  if (!VT.isSimple())
+    return false;
+
+  if (VT.getSimpleVT().isVector())
+    return false;
+
+  if (VT == MVT::ppcf128)
+    return false;
+
+  if (Fast)
+    *Fast = true;
+
+  return true;
 }
 
 /// isFMAFasterThanMulAndAdd - Return true if an FMA operation is faster than
