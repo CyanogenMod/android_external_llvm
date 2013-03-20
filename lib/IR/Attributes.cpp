@@ -645,7 +645,15 @@ AttributeSet AttributeSet::get(LLVMContext &C, ArrayRef<AttributeSet> Attrs) {
 
 AttributeSet AttributeSet::addAttribute(LLVMContext &C, unsigned Idx,
                                         Attribute::AttrKind Attr) const {
+  if (hasAttribute(Idx, Attr)) return *this;
   return addAttributes(C, Idx, AttributeSet::get(C, Idx, Attr));
+}
+
+AttributeSet AttributeSet::addAttribute(LLVMContext &C, unsigned Idx,
+                                        StringRef Kind) const {
+  llvm::AttrBuilder B;
+  B.addAttribute(Kind);
+  return addAttributes(C, Idx, AttributeSet::get(C, Idx, B));
 }
 
 AttributeSet AttributeSet::addAttributes(LLVMContext &C, unsigned Idx,
@@ -699,6 +707,7 @@ AttributeSet AttributeSet::addAttributes(LLVMContext &C, unsigned Idx,
 
 AttributeSet AttributeSet::removeAttribute(LLVMContext &C, unsigned Idx,
                                            Attribute::AttrKind Attr) const {
+  if (!hasAttribute(Idx, Attr)) return *this;
   return removeAttributes(C, Idx, AttributeSet::get(C, Idx, Attr));
 }
 

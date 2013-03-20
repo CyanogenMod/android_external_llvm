@@ -47,13 +47,18 @@ public:
 
   BitVector getReservedRegs(const MachineFunction &MF) const;
 
-  virtual bool avoidWriteAfterWrite(const TargetRegisterClass *RC) const;
+  /// We require the register scavenger.
+  bool requiresRegisterScavenging(const MachineFunction &MF) const {
+    return true;
+  }
 
-  /// requiresRegisterScavenging - We require a register scavenger.
-  /// FIXME (64-bit): Should be inlined.
-  bool requiresRegisterScavenging(const MachineFunction &MF) const;
+  bool requiresFrameIndexScavenging(const MachineFunction &MF) const {
+    return true;
+  }
 
-  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const;
+  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const {
+    return true;
+  }
 
   void lowerDynamicAlloc(MachineBasicBlock::iterator II,
                          int SPAdj, RegScavenger *RS) const;
