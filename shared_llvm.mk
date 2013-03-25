@@ -38,6 +38,7 @@ llvm_post_static_libraries := \
   libLLVMAsmPrinter \
   libLLVMSelectionDAG \
   libLLVMCodeGen \
+  libLLVMObject \
   libLLVMScalarOpts \
   libLLVMInstCombine \
   libLLVMInstrumentation \
