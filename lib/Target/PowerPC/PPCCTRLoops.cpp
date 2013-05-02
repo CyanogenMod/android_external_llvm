@@ -396,7 +396,7 @@ CountValue *PPCCTRLoops::getTripCount(MachineLoop *L,
         // Here we need to look for an immediate load (an li or lis/ori pair).
         if (DefInstr && (DefInstr->getOpcode() == PPC::ORI8 ||
                          DefInstr->getOpcode() == PPC::ORI)) {
-          int64_t start = (short) DefInstr->getOperand(2).getImm();
+          int64_t start = DefInstr->getOperand(2).getImm();
           MachineInstr *DefInstr2 =
             MRI->getVRegDef(DefInstr->getOperand(1).getReg());
           if (DefInstr2 && (DefInstr2->getOpcode() == PPC::LIS8 ||
@@ -685,7 +685,7 @@ bool PPCCTRLoops::convertToCTRLoop(MachineLoop *L) {
     const TargetRegisterClass *SrcRC =
       MF->getRegInfo().getRegClass(TripCount->getReg());
     CountReg = MF->getRegInfo().createVirtualRegister(RC);
-    unsigned CopyOp = (isPPC64 && SrcRC == GPRC) ?
+    unsigned CopyOp = (isPPC64 && GPRC->hasSubClassEq(SrcRC)) ?
                         (unsigned) PPC::EXTSW_32_64 :
                         (unsigned) TargetOpcode::COPY;
     BuildMI(*Preheader, InsertPos, dl,

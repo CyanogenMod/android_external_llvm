@@ -68,6 +68,16 @@ namespace llvm {
 
       EH_RETURN,
 
+      // Node used to extract integer from accumulator.
+      ExtractLOHI,
+
+      // Node used to insert integers to accumulator.
+      InsertLOHI,
+
+      // Mult nodes.
+      Mult,
+      Multu,
+
       // MAdd/Sub nodes
       MAdd,
       MAddu,
@@ -77,6 +87,8 @@ namespace llvm {
       // DivRem(u)
       DivRem,
       DivRemU,
+      DivRem16,
+      DivRemU16,
 
       BuildPairF64,
       ExtractElementF64,
@@ -130,6 +142,15 @@ namespace llvm {
       MADDU_DSP,
       MSUB_DSP,
       MSUBU_DSP,
+
+      // DSP shift nodes.
+      SHLL_DSP,
+      SHRA_DSP,
+      SHRL_DSP,
+
+      // DSP setcc and select_cc nodes.
+      SETCC_DSP,
+      SELECT_CC_DSP,
 
       // Load/Store Left/Right nodes.
       LWL = ISD::FIRST_TARGET_MEMORY_OPCODE,
@@ -326,15 +347,12 @@ namespace llvm {
     SDValue lowerFRAMEADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerRETURNADDR(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerEH_RETURN(SDValue Op, SelectionDAG &DAG) const;
-    SDValue lowerMEMBARRIER(SDValue Op, SelectionDAG& DAG) const;
     SDValue lowerATOMIC_FENCE(SDValue Op, SelectionDAG& DAG) const;
     SDValue lowerShiftLeftParts(SDValue Op, SelectionDAG& DAG) const;
     SDValue lowerShiftRightParts(SDValue Op, SelectionDAG& DAG,
                                  bool IsSRA) const;
     SDValue lowerLOAD(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerSTORE(SDValue Op, SelectionDAG &DAG) const;
-    SDValue lowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const;
-    SDValue lowerINTRINSIC_W_CHAIN(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerADD(SDValue Op, SelectionDAG &DAG) const;
 
     /// isEligibleForTailCallOptimization - Check whether the call is eligible

@@ -91,7 +91,6 @@ void initializeCFGViewerPass(PassRegistry&);
 void initializeCalculateSpillWeightsPass(PassRegistry&);
 void initializeCallGraphAnalysisGroup(PassRegistry&);
 void initializeCodeGenPreparePass(PassRegistry&);
-void initializeCodePlacementOptPass(PassRegistry&);
 void initializeConstantMergePass(PassRegistry&);
 void initializeConstantPropagationPass(PassRegistry&);
 void initializeMachineCopyPropagationPass(PassRegistry&);
@@ -272,6 +271,7 @@ void initializeInstSimplifierPass(PassRegistry&);
 void initializeUnpackMachineBundlesPass(PassRegistry&);
 void initializeFinalizeMachineBundlesPass(PassRegistry&);
 void initializeLoopVectorizePass(PassRegistry&);
+void initializeSLPVectorizerPass(PassRegistry&);
 void initializeBBVectorizePass(PassRegistry&);
 void initializeMachineFunctionPrinterPassPass(PassRegistry&);
 }

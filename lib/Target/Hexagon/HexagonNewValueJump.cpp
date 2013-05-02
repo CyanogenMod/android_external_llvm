@@ -68,6 +68,7 @@ namespace {
     HexagonNewValueJump() : MachineFunctionPass(ID) { }
 
     virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+      AU.addRequired<MachineBranchProbabilityInfo>();
       MachineFunctionPass::getAnalysisUsage(AU);
     }
 
@@ -78,6 +79,8 @@ namespace {
     virtual bool runOnMachineFunction(MachineFunction &Fn);
 
   private:
+    /// \brief A handle to the branch probability pass.
+    const MachineBranchProbabilityInfo *MBPI;
 
   };
 
@@ -208,19 +211,15 @@ static bool canCompareBeNewValueJump(const HexagonInstrInfo *QII,
   // range specified by the arch.
   if (!secondReg) {
     int64_t v = MI->getOperand(2).getImm();
-    if (MI->getOpcode() == Hexagon::CMPGEri ||
-       (MI->getOpcode() == Hexagon::CMPGEUri && v > 0))
-      --v;
 
     if (!(isUInt<5>(v) ||
          ((MI->getOpcode() == Hexagon::CMPEQri ||
-           MI->getOpcode() == Hexagon::CMPGTri ||
-           MI->getOpcode() == Hexagon::CMPGEri) &&
+           MI->getOpcode() == Hexagon::CMPGTri) &&
           (v == -1))))
       return false;
   }
 
-  unsigned cmpReg1, cmpOp2 = 0; // cmpOp2 assignment silences compiler warning.
+  unsigned cmpReg1, cmpOp2;
   cmpReg1 = MI->getOperand(1).getReg();
 
   if (secondReg) {
@@ -271,58 +270,58 @@ static bool canCompareBeNewValueJump(const HexagonInstrInfo *QII,
 // Given a compare operator, return a matching New Value Jump
 // compare operator. Make sure that MI here is included in
 // HexagonInstrInfo.cpp::isNewValueJumpCandidate
-static unsigned getNewValueJumpOpcode(const MachineInstr *MI, int reg,
-                                      bool secondRegNewified) {
+static unsigned getNewValueJumpOpcode(MachineInstr *MI, int reg,
+                                      bool secondRegNewified,
+                                      MachineBasicBlock *jmpTarget,
+                                      const MachineBranchProbabilityInfo
+                                      *MBPI) {
+  bool taken = false;
+  MachineBasicBlock *Src = MI->getParent();
+  const BranchProbability Prediction =
+    MBPI->getEdgeProbability(Src, jmpTarget);
+
+  if (Prediction >= BranchProbability(1,2))
+    taken = true;
+
   switch (MI->getOpcode()) {
     case Hexagon::CMPEQrr:
-      return Hexagon::JMP_EQrrPt_nv_V4;
+      return taken ? Hexagon::JMP_EQrrPt_nv_V4 : Hexagon::JMP_EQrrPnt_nv_V4;
 
     case Hexagon::CMPEQri: {
       if (reg >= 0)
-        return Hexagon::JMP_EQriPt_nv_V4;
+        return taken ? Hexagon::JMP_EQriPt_nv_V4 : Hexagon::JMP_EQriPnt_nv_V4;
       else
-        return Hexagon::JMP_EQriPtneg_nv_V4;
+        return taken ? Hexagon::JMP_EQriPtneg_nv_V4
+                     : Hexagon::JMP_EQriPntneg_nv_V4;
     }
 
-    case Hexagon::CMPLTrr:
     case Hexagon::CMPGTrr: {
       if (secondRegNewified)
-        return Hexagon::JMP_GTrrdnPt_nv_V4;
+        return taken ? Hexagon::JMP_GTrrdnPt_nv_V4
+                     : Hexagon::JMP_GTrrdnPnt_nv_V4;
       else
-        return Hexagon::JMP_GTrrPt_nv_V4;
-    }
-
-    case Hexagon::CMPGEri: {
-      if (reg >= 1)
-        return Hexagon::JMP_GTriPt_nv_V4;
-      else
-        return Hexagon::JMP_GTriPtneg_nv_V4;
+        return taken ? Hexagon::JMP_GTrrPt_nv_V4
+                     : Hexagon::JMP_GTrrPnt_nv_V4;
     }
 
     case Hexagon::CMPGTri: {
       if (reg >= 0)
-        return Hexagon::JMP_GTriPt_nv_V4;
+        return taken ? Hexagon::JMP_GTriPt_nv_V4 : Hexagon::JMP_GTriPnt_nv_V4;
       else
-        return Hexagon::JMP_GTriPtneg_nv_V4;
+        return taken ? Hexagon::JMP_GTriPtneg_nv_V4
+                     : Hexagon::JMP_GTriPntneg_nv_V4;
     }
 
-    case Hexagon::CMPLTUrr:
     case Hexagon::CMPGTUrr: {
       if (secondRegNewified)
-        return Hexagon::JMP_GTUrrdnPt_nv_V4;
+        return taken ? Hexagon::JMP_GTUrrdnPt_nv_V4
+                     : Hexagon::JMP_GTUrrdnPnt_nv_V4;
       else
-        return Hexagon::JMP_GTUrrPt_nv_V4;
+        return taken ? Hexagon::JMP_GTUrrPt_nv_V4 : Hexagon::JMP_GTUrrPnt_nv_V4;
     }
 
     case Hexagon::CMPGTUri:
-      return Hexagon::JMP_GTUriPt_nv_V4;
-
-    case Hexagon::CMPGEUri: {
-      if (reg == 0)
-        return Hexagon::JMP_EQrrPt_nv_V4;
-      else
-        return Hexagon::JMP_GTUriPt_nv_V4;
-    }
+      return taken ? Hexagon::JMP_GTUriPt_nv_V4 : Hexagon::JMP_GTUriPnt_nv_V4;
 
     default:
        llvm_unreachable("Could not find matching New Value Jump instruction.");
@@ -346,6 +345,7 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
   QII = static_cast<const HexagonInstrInfo *>(MF.getTarget().getInstrInfo());
   QRI =
     static_cast<const HexagonRegisterInfo *>(MF.getTarget().getRegisterInfo());
+  MBPI = &getAnalysis<MachineBranchProbabilityInfo>();
 
   if (!QRI->Subtarget.hasV4TOps() ||
       DisableNewValueJumps) {
@@ -393,12 +393,12 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
       DEBUG(dbgs() << "Instr: "; MI->dump(); dbgs() << "\n");
 
       if (!foundJump &&
-         (MI->getOpcode() == Hexagon::JMP_c ||
-          MI->getOpcode() == Hexagon::JMP_cNot ||
-          MI->getOpcode() == Hexagon::JMP_cdnPt ||
-          MI->getOpcode() == Hexagon::JMP_cdnPnt ||
-          MI->getOpcode() == Hexagon::JMP_cdnNotPt ||
-          MI->getOpcode() == Hexagon::JMP_cdnNotPnt)) {
+         (MI->getOpcode() == Hexagon::JMP_t ||
+          MI->getOpcode() == Hexagon::JMP_f ||
+          MI->getOpcode() == Hexagon::JMP_tnew_t ||
+          MI->getOpcode() == Hexagon::JMP_tnew_nt ||
+          MI->getOpcode() == Hexagon::JMP_fnew_t ||
+          MI->getOpcode() == Hexagon::JMP_fnew_nt)) {
         // This is where you would insert your compare and
         // instr that feeds compare
         jmpPos = MII;
@@ -434,9 +434,9 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
 
         jmpTarget = MI->getOperand(1).getMBB();
         foundJump = true;
-        if (MI->getOpcode() == Hexagon::JMP_cNot ||
-            MI->getOpcode() == Hexagon::JMP_cdnNotPt ||
-            MI->getOpcode() == Hexagon::JMP_cdnNotPnt) {
+        if (MI->getOpcode() == Hexagon::JMP_f ||
+            MI->getOpcode() == Hexagon::JMP_fnew_t ||
+            MI->getOpcode() == Hexagon::JMP_fnew_nt) {
           invertPredicate = true;
         }
         continue;
@@ -525,10 +525,8 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
           if (isSecondOpReg) {
             // In case of CMPLT, or CMPLTU, or EQ with the second register
             // to newify, swap the operands.
-            if (cmpInstr->getOpcode() == Hexagon::CMPLTrr  ||
-                cmpInstr->getOpcode() == Hexagon::CMPLTUrr ||
-                (cmpInstr->getOpcode() == Hexagon::CMPEQrr &&
-                                     feederReg == (unsigned) cmpOp2)) {
+            if (cmpInstr->getOpcode() == Hexagon::CMPEQrr &&
+                                     feederReg == (unsigned) cmpOp2) {
               unsigned tmp = cmpReg1;
               bool tmpIsKill = MO1IsKill;
               cmpReg1 = cmpOp2;
@@ -582,42 +580,34 @@ bool HexagonNewValueJump::runOnMachineFunction(MachineFunction &MF) {
            assert((QII->isNewValueJumpCandidate(cmpInstr)) &&
                       "This compare is not a New Value Jump candidate.");
           unsigned opc = getNewValueJumpOpcode(cmpInstr, cmpOp2,
-                                               isSecondOpNewified);
+                                               isSecondOpNewified,
+                                               jmpTarget, MBPI);
           if (invertPredicate)
             opc = QII->getInvertedPredicatedOpcode(opc);
 
-          // Manage the conversions from CMPGEUri to either CMPEQrr
-          // or CMPGTUri properly. See Arch spec for CMPGEUri instructions.
-          // This has to be after the getNewValueJumpOpcode function call as
-          // second operand of the compare could be modified in this logic.
-          if (cmpInstr->getOpcode() == Hexagon::CMPGEUri) {
-            if (cmpOp2 == 0) {
-              cmpOp2 = cmpReg1;
-              MO2IsKill = MO1IsKill;
-              isSecondOpReg = true;
-            } else
-              --cmpOp2;
-          }
-
-          // Manage the conversions from CMPGEri to CMPGTUri properly.
-          // See Arch spec for CMPGEri instructions.
-          if (cmpInstr->getOpcode() == Hexagon::CMPGEri)
-            --cmpOp2;
-
-          if (isSecondOpReg) {
+          if (isSecondOpReg)
             NewMI = BuildMI(*MBB, jmpPos, dl,
                                   QII->get(opc))
                                     .addReg(cmpReg1, getKillRegState(MO1IsKill))
                                     .addReg(cmpOp2, getKillRegState(MO2IsKill))
                                     .addMBB(jmpTarget);
-          }
-          else {
+
+          else if ((cmpInstr->getOpcode() == Hexagon::CMPEQri ||
+                    cmpInstr->getOpcode() == Hexagon::CMPGTri) &&
+                    cmpOp2 == -1 )
+            // Corresponding new-value compare jump instructions don't have the
+            // operand for -1 immediate value.
+            NewMI = BuildMI(*MBB, jmpPos, dl,
+                                  QII->get(opc))
+                                    .addReg(cmpReg1, getKillRegState(MO1IsKill))
+                                    .addMBB(jmpTarget);
+
+          else
             NewMI = BuildMI(*MBB, jmpPos, dl,
                                   QII->get(opc))
                                     .addReg(cmpReg1, getKillRegState(MO1IsKill))
                                     .addImm(cmpOp2)
                                     .addMBB(jmpTarget);
-          }
 
           assert(NewMI && "New Value Jump Instruction Not created!");
           if (cmpInstr->getOperand(0).isReg() &&

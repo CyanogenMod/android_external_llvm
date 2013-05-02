@@ -9,6 +9,9 @@
 
 #include "DWARFContext.h"
 #include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/Compression.h"
 #include "llvm/Support/Dwarf.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/Path.h"
@@ -482,6 +485,22 @@ DIInliningInfo DWARFContext::getInliningInfoForAddress(uint64_t Address,
   return InliningInfo;
 }
 
+static bool consumeCompressedDebugSectionHeader(StringRef &data,
+                                                uint64_t &OriginalSize) {
+  // Consume "ZLIB" prefix.
+  if (!data.startswith("ZLIB"))
+    return false;
+  data = data.substr(4);
+  // Consume uncompressed section size (big-endian 8 bytes).
+  DataExtractor extractor(data, false, 8);
+  uint32_t Offset = 0;
+  OriginalSize = extractor.getU64(&Offset);
+  if (Offset == 0)
+    return false;
+  data = data.substr(Offset);
+  return true;
+}
+
 DWARFContextInMemory::DWARFContextInMemory(object::ObjectFile *Obj) :
   IsLittleEndian(Obj->isLittleEndian()),
   AddressSize(Obj->getBytesInAddress()) {
@@ -495,49 +514,55 @@ DWARFContextInMemory::DWARFContextInMemory(object::ObjectFile *Obj) :
     i->getContents(data);
 
     name = name.substr(name.find_first_not_of("._")); // Skip . and _ prefixes.
-    if (name == "debug_info")
-      InfoSection = data;
-    else if (name == "debug_abbrev")
-      AbbrevSection = data;
-    else if (name == "debug_line")
-      LineSection = data;
-    else if (name == "debug_aranges")
-      ARangeSection = data;
-    else if (name == "debug_frame")
-      DebugFrameSection = data;
-    else if (name == "debug_str")
-      StringSection = data;
-    else if (name == "debug_ranges") {
+
+    // Check if debug info section is compressed with zlib.
+    if (name.startswith("zdebug_")) {
+      uint64_t OriginalSize;
+      if (!zlib::isAvailable() ||
+          !consumeCompressedDebugSectionHeader(data, OriginalSize))
+        continue;
+      OwningPtr<MemoryBuffer> UncompressedSection;
+      if (zlib::uncompress(data, UncompressedSection, OriginalSize) !=
+          zlib::StatusOK)
+        continue;
+      // Make data point to uncompressed section contents and save its contents.
+      name = name.substr(1);
+      data = UncompressedSection->getBuffer();
+      UncompressedSections.push_back(UncompressedSection.take());
+    }
+
+    StringRef *Section = StringSwitch<StringRef*>(name)
+        .Case("debug_info", &InfoSection)
+        .Case("debug_abbrev", &AbbrevSection)
+        .Case("debug_line", &LineSection)
+        .Case("debug_aranges", &ARangeSection)
+        .Case("debug_frame", &DebugFrameSection)
+        .Case("debug_str", &StringSection)
+        .Case("debug_ranges", &RangeSection)
+        .Case("debug_pubnames", &PubNamesSection)
+        .Case("debug_info.dwo", &InfoDWOSection)
+        .Case("debug_abbrev.dwo", &AbbrevDWOSection)
+        .Case("debug_str.dwo", &StringDWOSection)
+        .Case("debug_str_offsets.dwo", &StringOffsetDWOSection)
+        .Case("debug_addr", &AddrSection)
+        // Any more debug info sections go here.
+        .Default(0);
+    if (!Section)
+      continue;
+    *Section = data;
+    if (name == "debug_ranges") {
       // FIXME: Use the other dwo range section when we emit it.
       RangeDWOSection = data;
-      RangeSection = data;
     }
-    else if (name == "debug_pubnames")
-      PubNamesSection = data;
-    else if (name == "debug_info.dwo")
-      InfoDWOSection = data;
-    else if (name == "debug_abbrev.dwo")
-      AbbrevDWOSection = data;
-    else if (name == "debug_str.dwo")
-      StringDWOSection = data;
-    else if (name == "debug_str_offsets.dwo")
-      StringOffsetDWOSection = data;
-    else if (name == "debug_addr")
-      AddrSection = data;
-    // Any more debug info sections go here.
-    else
-      continue;
 
     // TODO: Add support for relocations in other sections as needed.
     // Record relocations for the debug_info and debug_line sections.
-    RelocAddrMap *Map;
-    if (name == "debug_info")
-      Map = &InfoRelocMap;
-    else if (name == "debug_info.dwo")
-      Map = &InfoDWORelocMap;
-    else if (name == "debug_line")
-      Map = &LineRelocMap;
-    else
+    RelocAddrMap *Map = StringSwitch<RelocAddrMap*>(name)
+        .Case("debug_info", &InfoRelocMap)
+        .Case("debug_info.dwo", &InfoDWORelocMap)
+        .Case("debug_line", &LineRelocMap)
+        .Default(0);
+    if (!Map)
       continue;
 
     if (i->begin_relocations() != i->end_relocations()) {
@@ -547,7 +572,7 @@ DWARFContextInMemory::DWARFContextInMemory(object::ObjectFile *Obj) :
              reloc_e = i->end_relocations();
            reloc_i != reloc_e; reloc_i.increment(ec)) {
         uint64_t Address;
-        reloc_i->getAddress(Address);
+        reloc_i->getOffset(Address);
         uint64_t Type;
         reloc_i->getType(Type);
         uint64_t SymAddr = 0;
@@ -591,6 +616,10 @@ DWARFContextInMemory::DWARFContextInMemory(object::ObjectFile *Obj) :
       }
     }
   }
+}
+
+DWARFContextInMemory::~DWARFContextInMemory() {
+  DeleteContainerPointers(UncompressedSections);
 }
 
 void DWARFContextInMemory::anchor() { }

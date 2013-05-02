@@ -466,6 +466,7 @@ enum {
 
 // ELF Relocation types for PPC64
 enum {
+  R_PPC64_NONE                = 0,
   R_PPC64_ADDR32              = 1,
   R_PPC64_ADDR16_LO           = 4,
   R_PPC64_ADDR16_HI           = 5,
@@ -480,10 +481,13 @@ enum {
   R_PPC64_TOC16_LO            = 48,
   R_PPC64_TOC16_HA            = 50,
   R_PPC64_TOC                 = 51,
+  R_PPC64_ADDR16_DS           = 56,
+  R_PPC64_ADDR16_LO_DS        = 57,
   R_PPC64_TOC16_DS            = 63,
   R_PPC64_TOC16_LO_DS         = 64,
   R_PPC64_TLS                 = 67,
   R_PPC64_TPREL16_LO          = 70,
+  R_PPC64_TPREL16_HA          = 72,
   R_PPC64_DTPREL16_LO         = 75,
   R_PPC64_DTPREL16_HA         = 77,
   R_PPC64_GOT_TLSGD16_LO      = 80,

@@ -64,6 +64,12 @@ Non-comprehensive list of changes in this release
   attributes, which are useful for passing information to code generation. See
   :doc:`HowToUseAttributes` for more details.
 
+* TableGen's syntax for instruction selection patterns has been simplified.
+  Instead of specifying types indirectly with register classes, you should now
+  specify types directly in the input patterns. See ``SparcInstrInfo.td`` for
+  examples of the new syntax. The old syntax using register classes still
+  works, but it will be removed in a future LLVM release.
+
 * ... next change ...
 
 .. NOTE
@@ -103,15 +109,25 @@ Loop Vectorizer
 We've continued the work on the loop vectorizer. The loop vectorizer now
 has the following features:
 
-- Loops with unknown trip count.
-- Runtime checks of pointers
-- Reductions, Inductions
-- If Conversion
-- Pointer induction variables
-- Reverse iterators
-- Vectorization of mixed types
-- Vectorization of function calls
-- Partial unrolling during vectorization
+- Loops with unknown trip counts.
+- Runtime checks of pointers.
+- Reductions, Inductions.
+- Min/Max reductions of integers.
+- If Conversion.
+- Pointer induction variables.
+- Reverse iterators.
+- Vectorization of mixed types.
+- Vectorization of function calls.
+- Partial unrolling during vectorization.
+
+The loop vectorizer is now enabled by default for -O3.
+
+SLP Vectorizer
+--------------
+
+LLVM now has a new SLP vectorizer. The new SLP vectorizer is not enabled by
+default but can be enabled using the clang flag -fslp-vectorize. The BB-vectorizer
+can also be enabled using the command line flag -fslp-vectorize-aggressive.
 
 R600 Backend
 ------------

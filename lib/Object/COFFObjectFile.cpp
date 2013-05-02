@@ -431,7 +431,7 @@ relocation_iterator COFFObjectFile::getSectionRelEnd(DataRefImpl Sec) const {
 }
 
 COFFObjectFile::COFFObjectFile(MemoryBuffer *Object, error_code &ec)
-  : ObjectFile(Binary::ID_COFF, Object, ec)
+  : ObjectFile(Binary::ID_COFF, Object)
   , Header(0)
   , SectionTable(0)
   , SymbolTable(0)
@@ -707,8 +707,7 @@ error_code COFFObjectFile::getRelocationNext(DataRefImpl Rel,
 }
 error_code COFFObjectFile::getRelocationAddress(DataRefImpl Rel,
                                                 uint64_t &Res) const {
-  Res = toRel(Rel)->VirtualAddress;
-  return object_error::success;
+  report_fatal_error("getRelocationAddress not implemented in COFFObjectFile");
 }
 error_code COFFObjectFile::getRelocationOffset(DataRefImpl Rel,
                                                uint64_t &Res) const {

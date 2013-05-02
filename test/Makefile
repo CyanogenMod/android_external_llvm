@@ -60,6 +60,11 @@ endif
 
 ifeq ($(shell test -f $(PROJ_OBJ_DIR)/../tools/clang/tools/extra/Makefile && echo OK), OK)
 LIT_ALL_TESTSUITES += $(PROJ_OBJ_DIR)/../tools/clang/tools/extra/test
+
+# Force creation of Clang Tools' lit.site.cfg.
+clang-tools-site-cfg: FORCE
+	$(MAKE) -C $(PROJ_OBJ_DIR)/../tools/clang/tools/extra/test lit.site.cfg
+extra-site-cfgs:: clang-tools-site-cfg
 endif
 endif
 endif
@@ -94,13 +99,6 @@ check-local-all:: lit.site.cfg Unit/lit.site.cfg extra-site-cfgs
 
 clean::
 	$(RM) -rf `find $(LLVM_OBJ_ROOT)/test -name Output -type d -print`
-
-# dsymutil is used on the Darwin to manipulate DWARF debugging information.
-ifeq ($(TARGET_OS),Darwin)
-DSYMUTIL=dsymutil
-else
-DSYMUTIL=true
-endif
 
 ifneq ($(OCAMLOPT),)
 CC_FOR_OCAMLOPT := $(shell $(OCAMLOPT) -config | grep native_c_compiler | sed -e 's/native_c_compiler: //')
@@ -143,6 +141,7 @@ lit.site.cfg: FORCE
 	@$(ECHOPATH) s=@LLVM_BINDINGS@=$(BINDINGS_TO_BUILD)=g >> lit.tmp
 	@$(ECHOPATH) s=@HOST_OS@=$(HOST_OS)=g >> lit.tmp
 	@$(ECHOPATH) s=@HOST_ARCH@=$(HOST_ARCH)=g >> lit.tmp
+	@$(ECHOPATH) s=@HAVE_LIBZ@=$(HAVE_LIBZ)=g >> lit.tmp
 	@sed -f lit.tmp $(PROJ_SRC_DIR)/lit.site.cfg.in > $@
 	@-rm -f lit.tmp
 

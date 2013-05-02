@@ -17,12 +17,13 @@
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
-#include "llvm/Support/IRReader.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/PrettyStackTrace.h"
 #include "llvm/Support/Signals.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/SystemUtils.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include <memory>
@@ -52,13 +53,12 @@ DumpAsm("d", cl::desc("Print assembly as linked"), cl::Hidden);
 // LoadFile - Read the specified bitcode file in and return it.  This routine
 // searches the link path for the specified file to try to find it...
 //
-static inline std::auto_ptr<Module> LoadFile(const char *argv0,
-                                             const std::string &FN, 
-                                             LLVMContext& Context) {
+static inline Module *LoadFile(const char *argv0, const std::string &FN,
+                               LLVMContext& Context) {
   sys::Path Filename;
   if (!Filename.set(FN)) {
     errs() << "Invalid file name: '" << FN << "'\n";
-    return std::auto_ptr<Module>();
+    return NULL;
   }
 
   SMDiagnostic Err;
@@ -67,10 +67,10 @@ static inline std::auto_ptr<Module> LoadFile(const char *argv0,
   
   const std::string &FNStr = Filename.str();
   Result = ParseIRFile(FNStr, Err, Context);
-  if (Result) return std::auto_ptr<Module>(Result);   // Load successful!
+  if (Result) return Result;   // Load successful!
 
   Err.print(argv0, errs());
-  return std::auto_ptr<Module>();
+  return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -85,8 +85,8 @@ int main(int argc, char **argv) {
   unsigned BaseArg = 0;
   std::string ErrorMessage;
 
-  std::auto_ptr<Module> Composite(LoadFile(argv[0],
-                                           InputFilenames[BaseArg], Context));
+  OwningPtr<Module> Composite(LoadFile(argv[0],
+                                       InputFilenames[BaseArg], Context));
   if (Composite.get() == 0) {
     errs() << argv[0] << ": error loading file '"
            << InputFilenames[BaseArg] << "'\n";
@@ -94,8 +94,7 @@ int main(int argc, char **argv) {
   }
 
   for (unsigned i = BaseArg+1; i < InputFilenames.size(); ++i) {
-    std::auto_ptr<Module> M(LoadFile(argv[0],
-                                     InputFilenames[i], Context));
+    OwningPtr<Module> M(LoadFile(argv[0], InputFilenames[i], Context));
     if (M.get() == 0) {
       errs() << argv[0] << ": error loading file '" <<InputFilenames[i]<< "'\n";
       return 1;
@@ -110,9 +109,6 @@ int main(int argc, char **argv) {
       return 1;
     }
   }
-
-  // TODO: Iterate over the -l list and link in any modules containing
-  // global symbols that have not been resolved so far.
 
   if (DumpAsm) errs() << "Here's the assembly:\n" << *Composite;
 

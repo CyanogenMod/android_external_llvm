@@ -685,7 +685,7 @@ bool CompileUnit::addConstantValue(DIE *Die, const APInt &Val,
   return true;
 }
 
-/// addTemplateParams - Add template parameters in buffer.
+/// addTemplateParams - Add template parameters into buffer.
 void CompileUnit::addTemplateParams(DIE &Buffer, DIArray TParams) {
   // Add template parameters.
   for (unsigned i = 0, e = TParams.getNumElements(); i != e; ++i) {
@@ -707,7 +707,7 @@ DIE *CompileUnit::getOrCreateContextDIE(DIDescriptor Context) {
     return getOrCreateNameSpace(DINameSpace(Context));
   else if (Context.isSubprogram())
     return getOrCreateSubprogramDIE(DISubprogram(Context));
-  else 
+  else
     return getDIE(Context);
 }
 
@@ -1366,7 +1366,7 @@ void CompileUnit::createGlobalVariableDIE(const MDNode *N) {
     }
   } else if (const ConstantInt *CI =
              dyn_cast_or_null<ConstantInt>(GV.getConstant())) {
-    // AT_const_value was added when the static memeber was created. To avoid
+    // AT_const_value was added when the static member was created. To avoid
     // emitting AT_const_value multiple times, we only add AT_const_value when
     // it is not a static member.
     if (!IsStaticMember)
