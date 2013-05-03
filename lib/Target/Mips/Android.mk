@@ -30,6 +30,8 @@ mips_codegen_SRC_FILES := \
   MipsLongBranch.cpp \
   MipsMachineFunction.cpp \
   MipsMCInstLower.cpp \
+  MipsModuleISelDAGToDAG.cpp \
+  MipsOs16.cpp \
   MipsRegisterInfo.cpp \
   MipsSEFrameLowering.cpp \
   MipsSEISelDAGToDAG.cpp \

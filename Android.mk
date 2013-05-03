@@ -17,6 +17,7 @@ subdirs := \
   lib/CodeGen/AsmPrinter \
   lib/CodeGen/SelectionDAG \
   lib/IR \
+  lib/IRReader \
   lib/Linker \
   lib/MC \
   lib/MC/MCParser \

@@ -5,6 +5,7 @@ llvm_link_SRC_FILES := \
 
 llvm_link_STATIC_LIBRARIES := \
   libLLVMLinker \
+  libLLVMIRReader \
   libLLVMBitReader \
   libLLVMBitWriter \
   libLLVMAsmParser \

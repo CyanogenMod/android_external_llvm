@@ -9,13 +9,13 @@ codegen_SRC_FILES := \
   CalcSpillWeights.cpp \
   CallingConvLower.cpp \
   CodeGen.cpp \
-  CodePlacementOpt.cpp \
   CriticalAntiDepBreaker.cpp \
-  DFAPacketizer.cpp \
   DeadMachineInstructionElim.cpp \
+  DFAPacketizer.cpp \
   DwarfEHPrepare.cpp \
   EarlyIfConversion.cpp \
   EdgeBundles.cpp \
+  ErlangGC.cpp \
   ExecutionDepsFix.cpp \
   ExpandISelPseudos.cpp \
   ExpandPostRAPseudos.cpp \
@@ -30,8 +30,8 @@ codegen_SRC_FILES := \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
   LiveDebugVariables.cpp \
-  LiveInterval.cpp \
   LiveIntervalAnalysis.cpp \
+  LiveInterval.cpp \
   LiveIntervalUnion.cpp \
   LiveRangeCalc.cpp \
   LiveRangeEdit.cpp \
@@ -44,16 +44,16 @@ codegen_SRC_FILES := \
   MachineBlockFrequencyInfo.cpp \
   MachineBlockPlacement.cpp \
   MachineBranchProbabilityInfo.cpp \
-  MachineCSE.cpp \
   MachineCodeEmitter.cpp \
   MachineCopyPropagation.cpp \
+  MachineCSE.cpp \
   MachineDominators.cpp \
-  MachineFunction.cpp \
   MachineFunctionAnalysis.cpp \
+  MachineFunction.cpp \
   MachineFunctionPass.cpp \
   MachineFunctionPrinterPass.cpp \
-  MachineInstr.cpp \
   MachineInstrBundle.cpp \
+  MachineInstr.cpp \
   MachineLICM.cpp \
   MachineLoopInfo.cpp \
   MachineModuleInfo.cpp \
@@ -61,17 +61,17 @@ codegen_SRC_FILES := \
   MachinePassRegistry.cpp \
   MachinePostDominators.cpp \
   MachineRegisterInfo.cpp \
-  MachineSSAUpdater.cpp \
   MachineScheduler.cpp \
   MachineSink.cpp \
+  MachineSSAUpdater.cpp \
   MachineTraceMetrics.cpp \
   MachineVerifier.cpp \
   OcamlGC.cpp \
   OptimizePHIs.cpp \
-  PHIElimination.cpp \
-  PHIEliminationUtils.cpp \
   Passes.cpp \
   PeepholeOptimizer.cpp \
+  PHIElimination.cpp \
+  PHIEliminationUtils.cpp \
   PostRASchedulerList.cpp \
   ProcessImplicitDefs.cpp \
   PrologEpilogInserter.cpp \
@@ -93,8 +93,8 @@ codegen_SRC_FILES := \
   ShrinkWrapping.cpp \
   SjLjEHPrepare.cpp \
   SlotIndexes.cpp \
-  SpillPlacement.cpp \
   Spiller.cpp \
+  SpillPlacement.cpp \
   SplitKit.cpp \
   StackColoring.cpp \
   StackProtector.cpp \

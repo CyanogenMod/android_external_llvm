@@ -36,6 +36,7 @@ llvm_llc_arm_STATIC_LIBRARIES := \
 
 llvm_llc_STATIC_LIBRARIES := \
   libLLVMAsmPrinter \
+  libLLVMIRReader \
   libLLVMAsmParser \
   libLLVMBitReader \
   libLLVMBitWriter \

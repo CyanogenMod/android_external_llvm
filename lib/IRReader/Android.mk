@@ -1,18 +1,17 @@
 LOCAL_PATH:= $(call my-dir)
 
-transforms_vectorize_SRC_FILES := \
-  BBVectorize.cpp \
-  LoopVectorize.cpp \
-  SLPVectorizer.cpp \
-  Vectorize.cpp \
-  VecUtils.cpp
+irreader_SRC_FILES := \
+  IRReader.cpp
 
 # For the host
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(transforms_vectorize_SRC_FILES)
-LOCAL_MODULE:= libLLVMVectorize
+REQUIRES_RTTI := 1
+
+LOCAL_SRC_FILES := $(irreader_SRC_FILES)
+
+LOCAL_MODULE:= libLLVMIRReader
 
 LOCAL_MODULE_TAGS := optional
 
@@ -24,8 +23,11 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(transforms_vectorize_SRC_FILES)
-LOCAL_MODULE:= libLLVMVectorize
+REQUIRES_RTTI := 1
+
+LOCAL_SRC_FILES := $(irreader_SRC_FILES)
+
+LOCAL_MODULE:= libLLVMIRReader
 
 LOCAL_MODULE_TAGS := optional
 

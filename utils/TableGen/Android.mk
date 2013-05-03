@@ -12,6 +12,7 @@ tablegen_SRC_FILES := \
   CodeGenRegisters.cpp \
   CodeGenSchedule.cpp \
   CodeGenTarget.cpp \
+  CTagsEmitter.cpp \
   DAGISelEmitter.cpp \
   DAGISelMatcherEmitter.cpp \
   DAGISelMatcherGen.cpp \

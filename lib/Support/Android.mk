@@ -69,6 +69,7 @@ support_SRC_FILES := \
   Triple.cpp \
   Twine.cpp \
   Valgrind.cpp \
+  Watchdog.cpp \
   circular_raw_ostream.cpp \
   raw_os_ostream.cpp \
   raw_ostream.cpp \
