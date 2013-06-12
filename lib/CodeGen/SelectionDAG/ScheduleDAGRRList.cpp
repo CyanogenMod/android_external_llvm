@@ -1692,7 +1692,7 @@ public:
   unsigned getNodeOrdering(const SUnit *SU) const {
     if (!SU->getNode()) return 0;
 
-    return scheduleDAG->DAG->GetOrdering(SU->getNode());
+    return SU->getNode()->getIROrder();
   }
 
   bool empty() const { return Queue.empty(); }
@@ -3013,7 +3013,7 @@ llvm::createHybridListDAGScheduler(SelectionDAGISel *IS,
   const TargetMachine &TM = IS->TM;
   const TargetInstrInfo *TII = TM.getInstrInfo();
   const TargetRegisterInfo *TRI = TM.getRegisterInfo();
-  const TargetLowering *TLI = &IS->getTargetLowering();
+  const TargetLowering *TLI = IS->getTargetLowering();
 
   HybridBURRPriorityQueue *PQ =
     new HybridBURRPriorityQueue(*IS->MF, true, false, TII, TRI, TLI);
@@ -3029,7 +3029,7 @@ llvm::createILPListDAGScheduler(SelectionDAGISel *IS,
   const TargetMachine &TM = IS->TM;
   const TargetInstrInfo *TII = TM.getInstrInfo();
   const TargetRegisterInfo *TRI = TM.getRegisterInfo();
-  const TargetLowering *TLI = &IS->getTargetLowering();
+  const TargetLowering *TLI = IS->getTargetLowering();
 
   ILPBURRPriorityQueue *PQ =
     new ILPBURRPriorityQueue(*IS->MF, true, false, TII, TRI, TLI);

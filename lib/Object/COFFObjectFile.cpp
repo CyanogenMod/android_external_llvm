@@ -714,13 +714,11 @@ error_code COFFObjectFile::getRelocationOffset(DataRefImpl Rel,
   Res = toRel(Rel)->VirtualAddress;
   return object_error::success;
 }
-error_code COFFObjectFile::getRelocationSymbol(DataRefImpl Rel,
-                                               SymbolRef &Res) const {
+symbol_iterator COFFObjectFile::getRelocationSymbol(DataRefImpl Rel) const {
   const coff_relocation* R = toRel(Rel);
   DataRefImpl Symb;
   Symb.p = reinterpret_cast<uintptr_t>(SymbolTable + R->SymbolTableIndex);
-  Res = SymbolRef(Symb, this);
-  return object_error::success;
+  return symbol_iterator(SymbolRef(Symb, this));
 }
 error_code COFFObjectFile::getRelocationType(DataRefImpl Rel,
                                              uint64_t &Res) const {
@@ -800,11 +798,6 @@ error_code COFFObjectFile::getRelocationTypeName(DataRefImpl Rel,
 
 #undef LLVM_COFF_SWITCH_RELOC_TYPE_NAME
 
-error_code COFFObjectFile::getRelocationAdditionalInfo(DataRefImpl Rel,
-                                                       int64_t &Res) const {
-  Res = 0;
-  return object_error::success;
-}
 error_code COFFObjectFile::getRelocationValueString(DataRefImpl Rel,
                                           SmallVectorImpl<char> &Result) const {
   const coff_relocation *reloc = toRel(Rel);

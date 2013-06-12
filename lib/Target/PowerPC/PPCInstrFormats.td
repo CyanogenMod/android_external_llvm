@@ -145,6 +145,19 @@ class BForm_2<bits<6> opcode, bits<5> bo, bits<5> bi, bit aa, bit lk,
   let Inst{31}    = lk;
 }
 
+// 1.7.3 SC-Form
+class SCForm<bits<6> opcode, bits<1> xo,
+                     dag OOL, dag IOL, string asmstr, InstrItinClass itin,
+                     list<dag> pattern>
+  : I<opcode, OOL, IOL, asmstr, itin> {
+  bits<7>  LEV;
+
+  let Pattern = pattern;
+
+  let Inst{20-26} = LEV;
+  let Inst{30}    = xo;
+}
+
 // 1.7.4 D-Form
 class DForm_base<bits<6> opcode, dag OOL, dag IOL, string asmstr,
                  InstrItinClass itin, list<dag> pattern> 
@@ -364,6 +377,12 @@ class XForm_base_r3xo_swapped
 class XForm_1<bits<6> opcode, bits<10> xo, dag OOL, dag IOL, string asmstr,
               InstrItinClass itin, list<dag> pattern> 
   : XForm_base_r3xo<opcode, xo, OOL, IOL, asmstr, itin, pattern>;
+
+class XForm_1a<bits<6> opcode, bits<10> xo, dag OOL, dag IOL, string asmstr,
+              InstrItinClass itin, list<dag> pattern>
+  : XForm_base_r3xo<opcode, xo, OOL, IOL, asmstr, itin, pattern> {
+  let RST = 0;
+}
 
 class XForm_6<bits<6> opcode, bits<10> xo, dag OOL, dag IOL, string asmstr,
               InstrItinClass itin, list<dag> pattern> 

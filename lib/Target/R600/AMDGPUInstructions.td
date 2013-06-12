@@ -90,6 +90,10 @@ def zextloadi8_global : PatFrag<(ops node:$ptr), (zextloadi8 node:$ptr), [{
     return isGlobalLoad(dyn_cast<LoadSDNode>(N));
 }]>;
 
+def zextloadi8_constant : PatFrag<(ops node:$ptr), (zextloadi8 node:$ptr), [{
+    return isGlobalLoad(dyn_cast<LoadSDNode>(N));
+}]>;
+
 class Constants {
 int TWO_PI = 0x40c90fdb;
 int PI = 0x40490fdb;
@@ -275,6 +279,31 @@ multiclass BFIPatterns <Instruction BFI_INT> {
   >;
 
 }
+
+// SHA-256 Ma patterns
+
+// ((x & z) | (y & (x | z))) -> BFI_INT (XOR x, y), z, y
+class SHA256MaPattern <Instruction BFI_INT, Instruction XOR> : Pat <
+  (or (and i32:$x, i32:$z), (and i32:$y, (or i32:$x, i32:$z))),
+  (BFI_INT (XOR i32:$x, i32:$y), i32:$z, i32:$y)
+>;
+
+// Bitfield extract patterns
+
+def legalshift32 : ImmLeaf <i32, [{return Imm >=0 && Imm < 32;}]>;
+def bfemask : PatLeaf <(imm), [{return isMask_32(N->getZExtValue());}],
+                            SDNodeXForm<imm, [{ return CurDAG->getTargetConstant(CountTrailingOnes_32(N->getZExtValue()), MVT::i32);}]>>;
+
+class BFEPattern <Instruction BFE> : Pat <
+  (and (srl i32:$x, legalshift32:$y), bfemask:$z),
+  (BFE $x, $y, $z)
+>;
+
+// rotr pattern
+class ROTRPattern <Instruction BIT_ALIGN> : Pat <
+  (rotr i32:$src0, i32:$src1),
+  (BIT_ALIGN $src0, $src0, $src1)
+>;
 
 include "R600Instructions.td"
 

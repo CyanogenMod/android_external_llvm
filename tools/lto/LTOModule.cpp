@@ -29,6 +29,7 @@
 #include "llvm/MC/SubtargetFeature.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Host.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
@@ -158,17 +159,20 @@ SSPBufferSize("stack-protector-buffer-size", cl::init(8),
 LTOModule::LTOModule(llvm::Module *m, llvm::TargetMachine *t)
   : _module(m), _target(t),
     _context(*_target->getMCAsmInfo(), *_target->getRegisterInfo(), NULL),
-    _mangler(_context, *_target->getDataLayout()) {}
+    _mangler(_context, t) {}
 
 /// isBitcodeFile - Returns 'true' if the file (or memory contents) is LLVM
 /// bitcode.
 bool LTOModule::isBitcodeFile(const void *mem, size_t length) {
-  return llvm::sys::IdentifyFileType((const char*)mem, length)
-    == llvm::sys::Bitcode_FileType;
+  return sys::fs::identify_magic(StringRef((const char *)mem, length)) ==
+         sys::fs::file_magic::bitcode;
 }
 
 bool LTOModule::isBitcodeFile(const char *path) {
-  return llvm::sys::Path(path).isBitcodeFile();
+  sys::fs::file_magic type;
+  if (sys::fs::identify_magic(path, type))
+    return false;
+  return type == sys::fs::file_magic::bitcode;
 }
 
 /// isBitcodeFileForTarget - Returns 'true' if the file (or memory contents) is
@@ -487,7 +491,7 @@ void LTOModule::addDefinedSymbol(const GlobalValue *def, bool isFunction) {
 
   // set alignment part log2() can have rounding errors
   uint32_t align = def->getAlignment();
-  uint32_t attr = align ? CountTrailingZeros_32(def->getAlignment()) : 0;
+  uint32_t attr = align ? countTrailingZeros(def->getAlignment()) : 0;
 
   // set permissions part
   if (isFunction) {

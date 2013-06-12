@@ -219,7 +219,9 @@ private:
     const MCExpr *getSym() { return Sym; }
     StringRef getSymName() { return SymName; }
     int64_t getImm() { return Imm + IC.execute(); }
-    bool isValidEndState() { return State == IES_RBRAC; }
+    bool isValidEndState() {
+      return State == IES_RBRAC || State == IES_INTEGER;
+    }
     bool getStopOnLBrac() { return StopOnLBrac; }
     bool getAddImmPrefix() { return AddImmPrefix; }
     bool hadError() { return State == IES_ERROR; }
@@ -477,7 +479,7 @@ private:
   MCAsmLexer &getLexer() const { return Parser.getLexer(); }
 
   bool Error(SMLoc L, const Twine &Msg,
-             ArrayRef<SMRange> Ranges = ArrayRef<SMRange>(),
+             ArrayRef<SMRange> Ranges = None,
              bool MatchingInlineAsm = false) {
     if (MatchingInlineAsm) return true;
     return Parser.Error(L, Msg, Ranges);
@@ -500,7 +502,8 @@ private:
   X86Operand *ParseIntelBracExpression(unsigned SegReg, SMLoc Start,
                                        int64_t ImmDisp, unsigned Size);
   X86Operand *ParseIntelIdentifier(const MCExpr *&Val, StringRef &Identifier,
-                                   InlineAsmIdentifierInfo &Info, SMLoc &End);
+                                   InlineAsmIdentifierInfo &Info,
+                                   bool IsUnevaluatedOperand, SMLoc &End);
 
   X86Operand *ParseMemOperand(unsigned SegReg, SMLoc StartLoc);
 
@@ -1193,6 +1196,7 @@ RewriteIntelBracExpression(SmallVectorImpl<AsmRewrite> *AsmRewrites,
         }
       }
       assert (Found && "Unable to rewrite ImmDisp.");
+      (void)Found;
     } else {
       // We have a symbolic and an immediate displacement, but no displacement
       // before the bracketed expression.  Put the immediate displacement
@@ -1267,7 +1271,8 @@ X86AsmParser::ParseIntelExpression(IntelExprStateMachine &SM, SMLoc &End) {
             return ErrorOperand(Tok.getLoc(), "Unexpected identifier!");
         } else {
           InlineAsmIdentifierInfo &Info = SM.getIdentifierInfo();
-          if (X86Operand *Err = ParseIntelIdentifier(Val, Identifier, Info, End))
+          if (X86Operand *Err = ParseIntelIdentifier(Val, Identifier, Info,
+                                                     /*Unevaluated*/ false, End))
             return Err;
         }
         SM.onIdentifierExpr(Val, Identifier);
@@ -1367,27 +1372,26 @@ X86Operand *X86AsmParser::ParseIntelBracExpression(unsigned SegReg, SMLoc Start,
 X86Operand *X86AsmParser::ParseIntelIdentifier(const MCExpr *&Val,
                                                StringRef &Identifier,
                                                InlineAsmIdentifierInfo &Info,
+                                               bool IsUnevaluatedOperand,
                                                SMLoc &End) {
   assert (isParsingInlineAsm() && "Expected to be parsing inline assembly.");
   Val = 0;
 
   StringRef LineBuf(Identifier.data());
-  SemaCallback->LookupInlineAsmIdentifier(LineBuf, Info);
-  unsigned BufLen = LineBuf.size();
-  assert (BufLen && "Expected a non-zero length identifier.");
+  SemaCallback->LookupInlineAsmIdentifier(LineBuf, Info, IsUnevaluatedOperand);
 
-  // Advance the token stream based on what the frontend parsed.
   const AsmToken &Tok = Parser.getTok();
-  AsmToken IdentEnd = Tok;
-  while (BufLen > 0) {
-    IdentEnd = Tok;
-    BufLen -= Tok.getString().size();
-    getLexer().Lex(); // Consume the token.
+
+  // Advance the token stream until the end of the current token is
+  // after the end of what the frontend claimed.
+  const char *EndPtr = Tok.getLoc().getPointer() + LineBuf.size();
+  while (true) {
+    End = Tok.getEndLoc();
+    getLexer().Lex();
+
+    assert(End.getPointer() <= EndPtr && "frontend claimed part of a token?");
+    if (End.getPointer() == EndPtr) break;
   }
-  if (BufLen != 0)
-    return ErrorOperand(IdentEnd.getLoc(),
-                        "Frontend parser mismatch with asm lexer!");
-  End = IdentEnd.getEndLoc();
 
   // Create the symbol reference.
   Identifier = LineBuf;
@@ -1447,7 +1451,8 @@ X86Operand *X86AsmParser::ParseIntelMemOperand(unsigned SegReg,
 
   InlineAsmIdentifierInfo Info;
   StringRef Identifier = Tok.getString();
-  if (X86Operand *Err = ParseIntelIdentifier(Val, Identifier, Info, End))
+  if (X86Operand *Err = ParseIntelIdentifier(Val, Identifier, Info,
+                                             /*Unevaluated*/ false, End))
     return Err;
   return CreateMemForInlineAsm(/*SegReg=*/0, Val, /*BaseReg=*/0,/*IndexReg=*/0,
                                /*Scale=*/1, Start, End, Size, Identifier, Info);
@@ -1506,7 +1511,8 @@ X86Operand *X86AsmParser::ParseIntelOffsetOfOperator() {
   InlineAsmIdentifierInfo Info;
   SMLoc Start = Tok.getLoc(), End;
   StringRef Identifier = Tok.getString();
-  if (X86Operand *Err = ParseIntelIdentifier(Val, Identifier, Info, End))
+  if (X86Operand *Err = ParseIntelIdentifier(Val, Identifier, Info,
+                                             /*Unevaluated*/ false, End))
     return Err;
 
   // Don't emit the offset operator.
@@ -1541,7 +1547,8 @@ X86Operand *X86AsmParser::ParseIntelOperator(unsigned OpKind) {
   InlineAsmIdentifierInfo Info;
   SMLoc Start = Tok.getLoc(), End;
   StringRef Identifier = Tok.getString();
-  if (X86Operand *Err = ParseIntelIdentifier(Val, Identifier, Info, End))
+  if (X86Operand *Err = ParseIntelIdentifier(Val, Identifier, Info,
+                                             /*Unevaluated*/ true, End))
     return Err;
 
   unsigned CVal = 0;
@@ -2200,7 +2207,7 @@ MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   assert(!Operands.empty() && "Unexpect empty operand list!");
   X86Operand *Op = static_cast<X86Operand*>(Operands[0]);
   assert(Op->isToken() && "Leading operand should always be a mnemonic!");
-  ArrayRef<SMRange> EmptyRanges = ArrayRef<SMRange>();
+  ArrayRef<SMRange> EmptyRanges = None;
 
   // First, handle aliases that expand to multiple instructions.
   // FIXME: This should be replaced with a real .td file alias mechanism.
@@ -2302,25 +2309,25 @@ MatchAndEmitInstruction(SMLoc IDLoc, unsigned &Opcode,
   unsigned Match1, Match2, Match3, Match4;
 
   Match1 = MatchInstructionImpl(Operands, Inst, ErrorInfoIgnore,
-                                isParsingIntelSyntax());
+                                MatchingInlineAsm, isParsingIntelSyntax());
   // If this returned as a missing feature failure, remember that.
   if (Match1 == Match_MissingFeature)
     ErrorInfoMissingFeature = ErrorInfoIgnore;
   Tmp[Base.size()] = Suffixes[1];
   Match2 = MatchInstructionImpl(Operands, Inst, ErrorInfoIgnore,
-                                isParsingIntelSyntax());
+                                MatchingInlineAsm, isParsingIntelSyntax());
   // If this returned as a missing feature failure, remember that.
   if (Match2 == Match_MissingFeature)
     ErrorInfoMissingFeature = ErrorInfoIgnore;
   Tmp[Base.size()] = Suffixes[2];
   Match3 = MatchInstructionImpl(Operands, Inst, ErrorInfoIgnore,
-                                isParsingIntelSyntax());
+                                MatchingInlineAsm, isParsingIntelSyntax());
   // If this returned as a missing feature failure, remember that.
   if (Match3 == Match_MissingFeature)
     ErrorInfoMissingFeature = ErrorInfoIgnore;
   Tmp[Base.size()] = Suffixes[3];
   Match4 = MatchInstructionImpl(Operands, Inst, ErrorInfoIgnore,
-                                isParsingIntelSyntax());
+                                MatchingInlineAsm, isParsingIntelSyntax());
   // If this returned as a missing feature failure, remember that.
   if (Match4 == Match_MissingFeature)
     ErrorInfoMissingFeature = ErrorInfoIgnore;

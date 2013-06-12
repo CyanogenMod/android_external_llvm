@@ -14,22 +14,21 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef R600PACKETIZER_CPP
-#define R600PACKETIZER_CPP
-
 #define DEBUG_TYPE "packets"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/raw_ostream.h"
-#include "llvm/CodeGen/DFAPacketizer.h"
-#include "llvm/CodeGen/Passes.h"
-#include "llvm/CodeGen/MachineFunctionPass.h"
-#include "llvm/CodeGen/MachineDominators.h"
-#include "llvm/CodeGen/MachineLoopInfo.h"
-#include "llvm/CodeGen/ScheduleDAG.h"
 #include "AMDGPU.h"
 #include "R600InstrInfo.h"
+#include "llvm/CodeGen/DFAPacketizer.h"
+#include "llvm/CodeGen/MachineDominators.h"
+#include "llvm/CodeGen/MachineFunctionPass.h"
+#include "llvm/CodeGen/MachineLoopInfo.h"
+#include "llvm/CodeGen/Passes.h"
+#include "llvm/CodeGen/ScheduleDAG.h"
+#include "llvm/Support/raw_ostream.h"
 
-namespace llvm {
+using namespace llvm;
+
+namespace {
 
 class R600Packetizer : public MachineFunctionPass {
 
@@ -60,37 +59,59 @@ private:
   const R600InstrInfo *TII;
   const R600RegisterInfo &TRI;
 
-  enum BankSwizzle {
-    ALU_VEC_012 = 0,
-    ALU_VEC_021,
-    ALU_VEC_120,
-    ALU_VEC_102,
-    ALU_VEC_201,
-    ALU_VEC_210
-  };
-
   unsigned getSlot(const MachineInstr *MI) const {
     return TRI.getHWRegChan(MI->getOperand(0).getReg());
   }
 
-  std::vector<unsigned> getPreviousVector(MachineBasicBlock::iterator I) const {
-    std::vector<unsigned> Result;
+  /// \returns register to PV chan mapping for bundle/single instructions that
+  /// immediatly precedes I.
+  DenseMap<unsigned, unsigned> getPreviousVector(MachineBasicBlock::iterator I)
+      const {
+    DenseMap<unsigned, unsigned> Result;
     I--;
     if (!TII->isALUInstr(I->getOpcode()) && !I->isBundle())
       return Result;
     MachineBasicBlock::instr_iterator BI = I.getInstrIterator();
     if (I->isBundle())
       BI++;
-    while (BI->isBundledWithPred() && !TII->isPredicated(BI)) {
+    do {
+      if (TII->isPredicated(BI))
+        continue;
+      if (TII->isTransOnly(BI))
+        continue;
       int OperandIdx = TII->getOperandIdx(BI->getOpcode(), R600Operands::WRITE);
-      if (OperandIdx > -1 && BI->getOperand(OperandIdx).getImm())
-        Result.push_back(BI->getOperand(0).getReg());
-      BI++;
-    }
+      if (OperandIdx > -1 && BI->getOperand(OperandIdx).getImm() == 0)
+        continue;
+      unsigned Dst = BI->getOperand(0).getReg();
+      if (BI->getOpcode() == AMDGPU::DOT4_r600 ||
+          BI->getOpcode() == AMDGPU::DOT4_eg) {
+        Result[Dst] = AMDGPU::PV_X;
+        continue;
+      }
+      unsigned PVReg = 0;
+      switch (TRI.getHWRegChan(Dst)) {
+      case 0:
+        PVReg = AMDGPU::PV_X;
+        break;
+      case 1:
+        PVReg = AMDGPU::PV_Y;
+        break;
+      case 2:
+        PVReg = AMDGPU::PV_Z;
+        break;
+      case 3:
+        PVReg = AMDGPU::PV_W;
+        break;
+      default:
+        llvm_unreachable("Invalid Chan");
+      }
+      Result[Dst] = PVReg;
+    } while ((++BI)->isBundledWithPred());
     return Result;
   }
 
-  void substitutePV(MachineInstr *MI, const std::vector<unsigned> &PV) const {
+  void substitutePV(MachineInstr *MI, const DenseMap<unsigned, unsigned> &PVs)
+      const {
     R600Operands::Ops Ops[] = {
       R600Operands::SRC0,
       R600Operands::SRC1,
@@ -101,30 +122,9 @@ private:
       if (OperandIdx < 0)
         continue;
       unsigned Src = MI->getOperand(OperandIdx).getReg();
-      for (unsigned j = 0, e = PV.size(); j < e; j++) {
-        if (Src == PV[j]) {
-          unsigned Chan = TRI.getHWRegChan(Src);
-          unsigned PVReg;
-          switch (Chan) {
-          case 0:
-            PVReg = AMDGPU::PV_X;
-            break;
-          case 1:
-            PVReg = AMDGPU::PV_Y;
-            break;
-          case 2:
-            PVReg = AMDGPU::PV_Z;
-            break;
-          case 3:
-            PVReg = AMDGPU::PV_W;
-            break;
-          default:
-            llvm_unreachable("Invalid Chan");
-          }
-          MI->getOperand(OperandIdx).setReg(PVReg);
-          break;
-        }
-      }
+      const DenseMap<unsigned, unsigned>::const_iterator It = PVs.find(Src);
+      if (It != PVs.end())
+        MI->getOperand(OperandIdx).setReg(It->second);
     }
   }
 public:
@@ -209,8 +209,11 @@ public:
         }
         dbgs() << "because of Consts read limitations\n";
       });
-    const std::vector<unsigned> &PV = getPreviousVector(MI);
-    bool FitsReadPortLimits = fitsReadPortLimitation(CurrentPacketMIs, PV);
+    const DenseMap<unsigned, unsigned> &PV =
+        getPreviousVector(CurrentPacketMIs.front());
+    std::vector<R600InstrInfo::BankSwizzle> BS;
+    bool FitsReadPortLimits =
+        TII->fitsReadPortLimitations(CurrentPacketMIs, PV, BS);
     DEBUG(
       if (!FitsReadPortLimits) {
         dbgs() << "Couldn't pack :\n";
@@ -223,6 +226,14 @@ public:
         dbgs() << "because of Read port limitations\n";
       });
     bool isBundlable = FitsConstLimits && FitsReadPortLimits;
+    if (isBundlable) {
+      for (unsigned i = 0, e = CurrentPacketMIs.size(); i < e; i++) {
+        MachineInstr *MI = CurrentPacketMIs[i];
+            unsigned Op = TII->getOperandIdx(MI->getOpcode(),
+                R600Operands::BANK_SWIZZLE);
+            MI->getOperand(Op).setImm(BS[i]);
+      }
+    }
     CurrentPacketMIs.pop_back();
     if (!isBundlable) {
       endPacket(MI->getParent(), MI);
@@ -233,133 +244,6 @@ public:
       setIsLastBit(CurrentPacketMIs.back(), 0);
     substitutePV(MI, PV);
     return VLIWPacketizerList::addToPacket(MI);
-  }
-private:
-  std::vector<std::pair<int, unsigned> >
-  ExtractSrcs(const MachineInstr *MI, const std::vector<unsigned> &PV) const {
-    R600Operands::Ops Ops[] = {
-      R600Operands::SRC0,
-      R600Operands::SRC1,
-      R600Operands::SRC2
-    };
-    std::vector<std::pair<int, unsigned> > Result;
-    for (unsigned i = 0; i < 3; i++) {
-      int OperandIdx = TII->getOperandIdx(MI->getOpcode(), Ops[i]);
-      if (OperandIdx < 0){
-        Result.push_back(std::pair<int, unsigned>(-1,0));
-        continue;
-      }
-      unsigned Src = MI->getOperand(OperandIdx).getReg();
-      if (std::find(PV.begin(), PV.end(), Src) != PV.end()) {
-        Result.push_back(std::pair<int, unsigned>(-1,0));
-        continue;
-      }
-      unsigned Reg = TRI.getEncodingValue(Src) & 0xff;
-      if (Reg > 127) {
-        Result.push_back(std::pair<int, unsigned>(-1,0));
-        continue;
-      }
-      unsigned Chan = TRI.getHWRegChan(Src);
-      Result.push_back(std::pair<int, unsigned>(Reg, Chan));
-    }
-    return Result;
-  }
-
-  std::vector<std::pair<int, unsigned> >
-  Swizzle(std::vector<std::pair<int, unsigned> > Src,
-  BankSwizzle Swz) const {
-    switch (Swz) {
-    case ALU_VEC_012:
-      break;
-    case ALU_VEC_021:
-      std::swap(Src[1], Src[2]);
-      break;
-    case ALU_VEC_102:
-      std::swap(Src[0], Src[1]);
-      break;
-    case ALU_VEC_120:
-      std::swap(Src[0], Src[1]);
-      std::swap(Src[0], Src[2]);
-      break;
-    case ALU_VEC_201:
-      std::swap(Src[0], Src[2]);
-      std::swap(Src[0], Src[1]);
-      break;
-    case ALU_VEC_210:
-      std::swap(Src[0], Src[2]);
-      break;
-    }
-    return Src;
-  }
-
-  bool isLegal(const std::vector<MachineInstr *> &IG,
-      const std::vector<BankSwizzle> &Swz,
-      const std::vector<unsigned> &PV) const {
-    assert (Swz.size() == IG.size());
-    int Vector[4][3];
-    memset(Vector, -1, sizeof(Vector));
-    for (unsigned i = 0, e = IG.size(); i < e; i++) {
-      const std::vector<std::pair<int, unsigned> > &Srcs =
-          Swizzle(ExtractSrcs(IG[i], PV), Swz[i]);
-      for (unsigned j = 0; j < 3; j++) {
-        const std::pair<int, unsigned> &Src = Srcs[j];
-        if (Src.first < 0)
-          continue;
-        if (Vector[Src.second][j] < 0)
-          Vector[Src.second][j] = Src.first;
-        if (Vector[Src.second][j] != Src.first)
-          return false;
-      }
-    }
-    return true;
-  }
-
-  bool recursiveFitsFPLimitation(
-  std::vector<MachineInstr *> IG,
-  const std::vector<unsigned> &PV,
-  std::vector<BankSwizzle> &SwzCandidate,
-  std::vector<MachineInstr *> CurrentlyChecked)
-      const {
-    if (!isLegal(CurrentlyChecked, SwzCandidate, PV))
-      return false;
-    if (IG.size() == CurrentlyChecked.size()) {
-      return true;
-    }
-    BankSwizzle AvailableSwizzle[] = {
-      ALU_VEC_012,
-      ALU_VEC_021,
-      ALU_VEC_120,
-      ALU_VEC_102,
-      ALU_VEC_201,
-      ALU_VEC_210
-    };
-    CurrentlyChecked.push_back(IG[CurrentlyChecked.size()]);
-    for (unsigned i = 0; i < 6; i++) {
-      SwzCandidate.push_back(AvailableSwizzle[i]);
-      if (recursiveFitsFPLimitation(IG, PV, SwzCandidate, CurrentlyChecked))
-        return true;
-      SwzCandidate.pop_back();
-    }
-    return false;
-  }
-
-  bool fitsReadPortLimitation(
-  std::vector<MachineInstr *> IG,
-  const std::vector<unsigned> &PV)
-      const {
-    //Todo : support shared src0 - src1 operand
-    std::vector<BankSwizzle> SwzCandidate;
-    bool Result = recursiveFitsFPLimitation(IG, PV, SwzCandidate,
-        std::vector<MachineInstr *>());
-    if (!Result)
-      return false;
-    for (unsigned i = 0, e = IG.size(); i < e; i++) {
-      MachineInstr *MI = IG[i];
-      unsigned Op = TII->getOperandIdx(MI->getOpcode(),
-          R600Operands::BANK_SWIZZLE);
-      MI->getOperand(Op).setImm(SwzCandidate[i]);
-    }
-    return true;
   }
 };
 
@@ -437,10 +321,8 @@ bool R600Packetizer::runOnMachineFunction(MachineFunction &Fn) {
 
 }
 
-}
+} // end anonymous namespace
 
 llvm::FunctionPass *llvm::createR600Packetizer(TargetMachine &tm) {
   return new R600Packetizer(tm);
 }
-
-#endif // R600PACKETIZER_CPP

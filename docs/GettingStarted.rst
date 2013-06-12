@@ -81,7 +81,7 @@ Here's the short story for getting up and running quickly with LLVM:
 
    * ``make [-j]`` --- The ``-j`` specifies the number of jobs (commands) to run
      simultaneously.  This builds both LLVM and Clang for Debug+Asserts mode.
-     The ``--enabled-optimized`` configure option is used to specify a Release
+     The ``--enable-optimized`` configure option is used to specify a Release
      build.
 
    * ``make check-all`` --- This run the regression tests to ensure everything
@@ -759,7 +759,7 @@ The following options can be used to set or enable LLVM specific options:
   case. The current set of targets is:
 
     ``arm, cpp, hexagon, mblaze, mips, mipsel, msp430, powerpc, ptx, sparc, spu,
-    x86, x86_64, xcore``.
+    systemz, x86, x86_64, xcore``.
 
 ``--enable-doxygen``
 
@@ -1074,7 +1074,7 @@ different `tools`_.
   This directory holds the source code for the LLVM assembly language parser
   library.
 
-``llvm/lib/BitCode/``
+``llvm/lib/Bitcode/``
 
   This directory holds code for reading and write LLVM bitcode.
 

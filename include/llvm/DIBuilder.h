@@ -37,7 +37,7 @@ namespace llvm {
   class DIType;
   class DIArray;
   class DIGlobalVariable;
-  class DIImportedModule;
+  class DIImportedEntity;
   class DINameSpace;
   class DIVariable;
   class DISubrange;
@@ -110,7 +110,7 @@ namespace llvm {
     DIEnumerator createEnumerator(StringRef Name, uint64_t Val);
 
     /// createNullPtrType - Create C++0x nullptr type.
-    DIType createNullPtrType(StringRef Name);
+    DIBasicType createNullPtrType(StringRef Name);
 
     /// createBasicType - Create debugging information entry for a basic
     /// type.
@@ -155,7 +155,7 @@ namespace llvm {
                                 unsigned LineNo, DIDescriptor Context);
 
     /// createFriend - Create debugging information entry for a 'friend'.
-    DIType createFriend(DIType Ty, DIType FriendTy);
+    DIDerivedType createFriend(DIType Ty, DIType FriendTy);
 
     /// createInheritance - Create debugging information entry to establish
     /// inheritance relationship between two types.
@@ -191,9 +191,10 @@ namespace llvm {
     /// @param Ty         Type of the static member.
     /// @param Flags      Flags to encode member attribute, e.g. private.
     /// @param Val        Const initializer of the member.
-    DIType createStaticMemberType(DIDescriptor Scope, StringRef Name,
-                                  DIFile File, unsigned LineNo, DIType Ty,
-                                  unsigned Flags, llvm::Value *Val);
+    DIDerivedType
+    createStaticMemberType(DIDescriptor Scope, StringRef Name,
+                           DIFile File, unsigned LineNo, DIType Ty,
+                           unsigned Flags, llvm::Value *Val);
 
     /// createObjCIVar - Create debugging information entry for Objective-C
     /// instance variable.
@@ -212,14 +213,14 @@ namespace llvm {
     /// @param PropertySetterName Name of the Objective C property setter
     ///                           selector.
     /// @param PropertyAttributes Objective C property attributes.
-    DIType createObjCIVar(StringRef Name, DIFile File,
-                          unsigned LineNo, uint64_t SizeInBits,
-                          uint64_t AlignInBits, uint64_t OffsetInBits,
-                          unsigned Flags, DIType Ty,
-                          StringRef PropertyName = StringRef(),
-                          StringRef PropertyGetterName = StringRef(),
-                          StringRef PropertySetterName = StringRef(),
-                          unsigned PropertyAttributes = 0);
+    DIDerivedType createObjCIVar(StringRef Name, DIFile File,
+                                 unsigned LineNo, uint64_t SizeInBits,
+                                 uint64_t AlignInBits, uint64_t OffsetInBits,
+                                 unsigned Flags, DIType Ty,
+                                 StringRef PropertyName = StringRef(),
+                                 StringRef PropertyGetterName = StringRef(),
+                                 StringRef PropertySetterName = StringRef(),
+                                 unsigned PropertyAttributes = 0);
 
     /// createObjCIVar - Create debugging information entry for Objective-C
     /// instance variable.
@@ -232,11 +233,11 @@ namespace llvm {
     /// @param Flags        Flags to encode member attribute, e.g. private
     /// @param Ty           Parent type.
     /// @param PropertyNode Property associated with this ivar.
-    DIType createObjCIVar(StringRef Name, DIFile File,
-                          unsigned LineNo, uint64_t SizeInBits,
-                          uint64_t AlignInBits, uint64_t OffsetInBits,
-                          unsigned Flags, DIType Ty,
-                          MDNode *PropertyNode);
+    DIDerivedType createObjCIVar(StringRef Name, DIFile File,
+                                 unsigned LineNo, uint64_t SizeInBits,
+                                 uint64_t AlignInBits, uint64_t OffsetInBits,
+                                 unsigned Flags, DIType Ty,
+                                 MDNode *PropertyNode);
 
     /// createObjCProperty - Create debugging information entry for Objective-C
     /// property.
@@ -327,15 +328,14 @@ namespace llvm {
     /// @param Scope        Scope in which this type is defined.
     /// @param Name         Value parameter name.
     /// @param Ty           Parameter type.
-    /// @param Value        Constant parameter value.
+    /// @param Val          Constant parameter value.
     /// @param File         File where this type parameter is defined.
     /// @param LineNo       Line number.
     /// @param ColumnNo     Column Number.
     DITemplateValueParameter
-    createTemplateValueParameter(DIDescriptor Scope, StringRef Name, DIType Ty,
-                                 uint64_t Value,
-                                 MDNode *File = 0, unsigned LineNo = 0,
-                                 unsigned ColumnNo = 0);
+    createTemplateValueParameter(DIDescriptor Scope, StringRef Name,
+                                 DIType Ty, Value *Val, MDNode *File = 0,
+                                 unsigned LineNo = 0, unsigned ColumnNo = 0);
 
     /// createArrayType - Create debugging information entry for an array.
     /// @param Size         Array size.
@@ -350,8 +350,8 @@ namespace llvm {
     /// @param AlignInBits  Alignment.
     /// @param Ty           Element type.
     /// @param Subscripts   Subscripts.
-    DIType createVectorType(uint64_t Size, uint64_t AlignInBits,
-                            DIType Ty, DIArray Subscripts);
+    DICompositeType createVectorType(uint64_t Size, uint64_t AlignInBits,
+                                     DIType Ty, DIArray Subscripts);
 
     /// createEnumerationType - Create debugging information entry for an
     /// enumeration.
@@ -506,7 +506,7 @@ namespace llvm {
     DISubprogram createFunction(DIDescriptor Scope, StringRef Name,
                                 StringRef LinkageName,
                                 DIFile File, unsigned LineNo,
-                                DIType Ty, bool isLocalToUnit,
+                                DICompositeType Ty, bool isLocalToUnit,
                                 bool isDefinition,
                                 unsigned ScopeLine,
                                 unsigned Flags = 0,
@@ -537,7 +537,7 @@ namespace llvm {
     DISubprogram createMethod(DIDescriptor Scope, StringRef Name,
                               StringRef LinkageName,
                               DIFile File, unsigned LineNo,
-                              DIType Ty, bool isLocalToUnit,
+                              DICompositeType Ty, bool isLocalToUnit,
                               bool isDefinition,
                               unsigned Virtuality = 0, unsigned VTableIndex = 0,
                               MDNode *VTableHolder = 0,
@@ -577,8 +577,25 @@ namespace llvm {
     /// @param Context The scope this module is imported into
     /// @param NS The namespace being imported here
     /// @param Line Line number
-    DIImportedModule createImportedModule(DIScope Context, DINameSpace NS,
-                                          unsigned Line);
+    DIImportedEntity createImportedModule(DIScope Context, DINameSpace NS,
+                                          unsigned Line,
+                                          StringRef Name = StringRef());
+
+    /// \brief Create a descriptor for an imported module.
+    /// @param Context The scope this module is imported into
+    /// @param NS An aliased namespace
+    /// @param Line Line number
+    DIImportedEntity createImportedModule(DIScope Context, DIImportedEntity NS,
+                                          unsigned Line, StringRef Name);
+
+    /// \brief Create a descriptor for an imported function.
+    /// @param Context The scope this module is imported into
+    /// @param Decl The declaration (or definition) of a function, type, or
+    ///             variable
+    /// @param Line Line number
+    DIImportedEntity createImportedDeclaration(DIScope Context,
+                                               DIDescriptor Decl,
+                                               unsigned Line);
 
     /// insertDeclare - Insert a new llvm.dbg.declare intrinsic call.
     /// @param Storage     llvm::Value of the variable

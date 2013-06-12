@@ -36,21 +36,20 @@ public:
                                       CallingConv::ID CallConv,
                                       bool isVarArg,
                                       const SmallVectorImpl<ISD::InputArg> &Ins,
-                                      DebugLoc DL, SelectionDAG &DAG,
+                                      SDLoc DL, SelectionDAG &DAG,
                                       SmallVectorImpl<SDValue> &InVals) const;
-  virtual EVT getSetCCResultType(EVT VT) const;
+  virtual EVT getSetCCResultType(LLVMContext &, EVT VT) const;
 private:
-  const R600InstrInfo * TII;
-
   /// Each OpenCL kernel has nine implicit parameters that are stored in the
   /// first nine dwords of a Vertex Buffer.  These implicit parameters are
   /// lowered to load instructions which retreive the values from the Vertex
   /// Buffer.
   SDValue LowerImplicitParameter(SelectionDAG &DAG, EVT VT,
-                                 DebugLoc DL, unsigned DwordOffset) const;
+                                 SDLoc DL, unsigned DwordOffset) const;
 
   void lowerImplicitParameter(MachineInstr *MI, MachineBasicBlock &BB,
       MachineRegisterInfo & MRI, unsigned dword_offset) const;
+  SDValue OptimizeSwizzle(SDValue BuildVector, SDValue Swz[], SelectionDAG &DAG) const;
 
   /// \brief Lower ROTL opcode to BITALIGN
   SDValue LowerROTL(SDValue Op, SelectionDAG &DAG) const;

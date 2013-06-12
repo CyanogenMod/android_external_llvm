@@ -463,11 +463,11 @@ void Verifier::visitGlobalVariable(GlobalVariable &GV) {
         Assert1(InitArray, "wrong initalizer for intrinsic global variable",
                 Init);
         for (unsigned i = 0, e = InitArray->getNumOperands(); i != e; ++i) {
-          Value *V = Init->getOperand(i)->stripPointerCasts();
-          // stripPointerCasts strips aliases, so we only need to check for
-          // variables and functions.
-          Assert1(isa<GlobalVariable>(V) || isa<Function>(V),
-                  "invalid llvm.used member", V);
+          Value *V = Init->getOperand(i)->stripPointerCastsNoFollowAliases();
+          Assert1(
+              isa<GlobalVariable>(V) || isa<Function>(V) || isa<GlobalAlias>(V),
+              "invalid llvm.used member", V);
+          Assert1(V->hasName(), "members of llvm.used must be named", V);
         }
       }
     }
@@ -692,7 +692,8 @@ void Verifier::VerifyAttributeTypes(AttributeSet Attrs, unsigned Idx,
         I->getKindAsEnum() == Attribute::SanitizeMemory ||
         I->getKindAsEnum() == Attribute::MinSize ||
         I->getKindAsEnum() == Attribute::NoDuplicate ||
-        I->getKindAsEnum() == Attribute::NoBuiltin) {
+        I->getKindAsEnum() == Attribute::NoBuiltin ||
+        I->getKindAsEnum() == Attribute::Cold) {
       if (!isFunction)
           CheckFailed("Attribute '" + I->getKindAsString() +
                       "' only applies to functions!", V);

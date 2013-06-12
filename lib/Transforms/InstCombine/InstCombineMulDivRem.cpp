@@ -95,6 +95,25 @@ static bool MultiplyOverflows(ConstantInt *C1, ConstantInt *C2, bool sign) {
   return MulExt.slt(Min) || MulExt.sgt(Max);
 }
 
+/// \brief A helper routine of InstCombiner::visitMul().
+///
+/// If C is a vector of known powers of 2, then this function returns
+/// a new vector obtained from C replacing each element with its logBase2.
+/// Return a null pointer otherwise.
+static Constant *getLogBase2Vector(ConstantDataVector *CV) {
+  const APInt *IVal;
+  SmallVector<Constant *, 4> Elts;
+
+  for (unsigned I = 0, E = CV->getNumElements(); I != E; ++I) {
+    Constant *Elt = CV->getElementAsConstant(I);
+    if (!match(Elt, m_APInt(IVal)) || !IVal->isPowerOf2())
+      return 0;
+    Elts.push_back(ConstantInt::get(Elt->getType(), IVal->logBase2()));
+  }
+
+  return ConstantVector::get(Elts);
+}
+
 Instruction *InstCombiner::visitMul(BinaryOperator &I) {
   bool Changed = SimplifyAssociativeOrCommutative(I);
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
@@ -108,24 +127,37 @@ Instruction *InstCombiner::visitMul(BinaryOperator &I) {
   if (match(Op1, m_AllOnes()))  // X * -1 == 0 - X
     return BinaryOperator::CreateNeg(Op0, I.getName());
 
-  if (ConstantInt *CI = dyn_cast<ConstantInt>(Op1)) {
+  // Also allow combining multiply instructions on vectors.
+  {
+    Value *NewOp;
+    Constant *C1, *C2;
+    const APInt *IVal;
+    if (match(&I, m_Mul(m_Shl(m_Value(NewOp), m_Constant(C2)),
+                        m_Constant(C1))) &&
+        match(C1, m_APInt(IVal)))
+      // ((X << C1)*C2) == (X * (C2 << C1))
+      return BinaryOperator::CreateMul(NewOp, ConstantExpr::getShl(C1, C2));
 
-    // ((X << C1)*C2) == (X * (C2 << C1))
-    if (BinaryOperator *SI = dyn_cast<BinaryOperator>(Op0))
-      if (SI->getOpcode() == Instruction::Shl)
-        if (Constant *ShOp = dyn_cast<Constant>(SI->getOperand(1)))
-          return BinaryOperator::CreateMul(SI->getOperand(0),
-                                           ConstantExpr::getShl(CI, ShOp));
+    if (match(&I, m_Mul(m_Value(NewOp), m_Constant(C1)))) {
+      Constant *NewCst = 0;
+      if (match(C1, m_APInt(IVal)) && IVal->isPowerOf2())
+        // Replace X*(2^C) with X << C, where C is either a scalar or a splat.
+        NewCst = ConstantInt::get(NewOp->getType(), IVal->logBase2());
+      else if (ConstantDataVector *CV = dyn_cast<ConstantDataVector>(C1))
+        // Replace X*(2^C) with X << C, where C is a vector of known
+        // constant powers of 2.
+        NewCst = getLogBase2Vector(CV);
 
-    const APInt &Val = CI->getValue();
-    if (Val.isPowerOf2()) {          // Replace X*(2^C) with X << C
-      Constant *NewCst = ConstantInt::get(Op0->getType(), Val.logBase2());
-      BinaryOperator *Shl = BinaryOperator::CreateShl(Op0, NewCst);
-      if (I.hasNoSignedWrap()) Shl->setHasNoSignedWrap();
-      if (I.hasNoUnsignedWrap()) Shl->setHasNoUnsignedWrap();
-      return Shl;
+      if (NewCst) {
+        BinaryOperator *Shl = BinaryOperator::CreateShl(NewOp, NewCst);
+        if (I.hasNoSignedWrap()) Shl->setHasNoSignedWrap();
+        if (I.hasNoUnsignedWrap()) Shl->setHasNoUnsignedWrap();
+        return Shl;
+      }
     }
+  }
 
+  if (ConstantInt *CI = dyn_cast<ConstantInt>(Op1)) {
     // Canonicalize (X+C1)*CI -> X*CI+C1*CI.
     { Value *X; ConstantInt *C1;
       if (Op0->hasOneUse() &&
@@ -584,8 +616,7 @@ bool InstCombiner::SimplifyDivRemOfSelect(BinaryOperator &I) {
         *I = SI->getOperand(NonNullOperand);
         Worklist.Add(BBI);
       } else if (*I == SelectCond) {
-        *I = NonNullOperand == 1 ? ConstantInt::getTrue(BBI->getContext()) :
-                                   ConstantInt::getFalse(BBI->getContext());
+        *I = Builder->getInt1(NonNullOperand == 1);
         Worklist.Add(BBI);
       }
     }
@@ -817,7 +848,7 @@ Instruction *InstCombiner::visitSDiv(BinaryOperator &I) {
 /// FP value and:
 ///    1) 1/C is exact, or
 ///    2) reciprocal is allowed.
-/// If the convertion was successful, the simplified expression "X * 1/C" is
+/// If the conversion was successful, the simplified expression "X * 1/C" is
 /// returned; otherwise, NULL is returned.
 ///
 static Instruction *CvtFDivConstToReciprocal(Value *Dividend,
@@ -998,36 +1029,18 @@ Instruction *InstCombiner::visitURem(BinaryOperator &I) {
   if (Instruction *common = commonIRemTransforms(I))
     return common;
 
-  // X urem C^2 -> X and C-1
-  { const APInt *C;
-    if (match(Op1, m_Power2(C)))
-      return BinaryOperator::CreateAnd(Op0,
-                                       ConstantInt::get(I.getType(), *C-1));
-  }
-
-  // Turn A % (C << N), where C is 2^k, into A & ((C << N)-1)
-  if (match(Op1, m_Shl(m_Power2(), m_Value()))) {
-    Constant *N1 = Constant::getAllOnesValue(I.getType());
-    Value *Add = Builder->CreateAdd(Op1, N1);
-    return BinaryOperator::CreateAnd(Op0, Add);
-  }
-
-  // urem X, (select Cond, 2^C1, 2^C2) -->
-  //    select Cond, (and X, C1-1), (and X, C2-1)
-  // when C1&C2 are powers of two.
-  { Value *Cond; const APInt *C1, *C2;
-    if (match(Op1, m_Select(m_Value(Cond), m_Power2(C1), m_Power2(C2)))) {
-      Value *TrueAnd = Builder->CreateAnd(Op0, *C1-1, Op1->getName()+".t");
-      Value *FalseAnd = Builder->CreateAnd(Op0, *C2-1, Op1->getName()+".f");
-      return SelectInst::Create(Cond, TrueAnd, FalseAnd);
-    }
-  }
-
   // (zext A) urem (zext B) --> zext (A urem B)
   if (ZExtInst *ZOp0 = dyn_cast<ZExtInst>(Op0))
     if (Value *ZOp1 = dyn_castZExtVal(Op1, ZOp0->getSrcTy()))
       return new ZExtInst(Builder->CreateURem(ZOp0->getOperand(0), ZOp1),
                           I.getType());
+
+  // X urem Y -> X and Y-1, where Y is a power of 2,
+  if (isKnownToBeAPowerOfTwo(Op1, /*OrZero*/true)) {
+    Constant *N1 = Constant::getAllOnesValue(I.getType());
+    Value *Add = Builder->CreateAdd(Op1, N1);
+    return BinaryOperator::CreateAnd(Op0, Add);
+  }
 
   return 0;
 }

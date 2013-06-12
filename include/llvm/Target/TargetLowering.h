@@ -30,7 +30,6 @@
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/Support/CallSite.h"
-#include "llvm/Support/DebugLoc.h"
 #include "llvm/Target/TargetCallingConv.h"
 #include "llvm/Target/TargetMachine.h"
 #include <climits>
@@ -149,7 +148,7 @@ public:
   // Return the pointer type for the given address space, defaults to
   // the pointer type from the data layout.
   // FIXME: The default needs to be removed once all the code is updated.
-  virtual MVT getPointerTy(uint32_t AS = 0) const { return PointerTy; }
+  virtual MVT getPointerTy(uint32_t /*AS*/ = 0) const { return PointerTy; }
   virtual MVT getScalarShiftAmountTy(EVT LHSTy) const;
 
   EVT getShiftAmountTy(EVT LHSTy) const;
@@ -158,12 +157,14 @@ public:
   /// this target.
   bool isSelectExpensive() const { return SelectIsExpensive; }
 
-  virtual bool isSelectSupported(SelectSupportKind kind) const { return true; }
+  virtual bool isSelectSupported(SelectSupportKind /*kind*/) const {
+    return true;
+  }
 
   /// shouldSplitVectorElementType - Return true if a vector of the given type
   /// should be split (TypeSplitVector) instead of promoted
   /// (TypePromoteInteger) during type legalization.
-  virtual bool shouldSplitVectorElementType(EVT VT) const { return false; }
+  virtual bool shouldSplitVectorElementType(EVT /*VT*/) const { return false; }
 
   /// isIntDivCheap() - Return true if integer divide is usually cheaper than
   /// a sequence of several shifts, adds, and multiplies for this target.
@@ -198,7 +199,7 @@ public:
   /// the condition operand of SELECT and BRCOND nodes.  In the case of
   /// BRCOND the argument passed is MVT::Other since there are no other
   /// operands to get a type hint from.
-  virtual EVT getSetCCResultType(EVT VT) const;
+  virtual EVT getSetCCResultType(LLVMContext &Context, EVT VT) const;
 
   /// getCmpLibcallReturnType - Return the ValueType for comparison
   /// libcalls. Comparions libcalls include floating point comparion calls,
@@ -695,7 +696,7 @@ public:
   /// replacements don't generate code that causes an alignment error  (trap) on
   /// the target machine.
   /// @brief Determine if the target supports unaligned memory accesses.
-  virtual bool allowsUnalignedMemoryAccesses(EVT, bool *Fast = 0) const {
+  virtual bool allowsUnalignedMemoryAccesses(EVT, bool * /*Fast*/ = 0) const {
     return false;
   }
 
@@ -725,9 +726,7 @@ public:
   /// targets without SSE2 f64 load / store are done with fldl / fstpl which
   /// also does type conversion. Note the specified type doesn't have to be
   /// legal as the hook is used before type legalization.
-  virtual bool isSafeMemOpType(MVT VT) const {
-    return true;
-  }
+  virtual bool isSafeMemOpType(MVT /*VT*/) const { return true; }
 
   /// usesUnderscoreSetJmp - Determine if we should use _setjmp or setjmp
   /// to implement llvm.setjmp.
@@ -1111,9 +1110,9 @@ public:
   /// much computation as possible to be done in the address mode for that
   /// operand.  This hook lets targets also pass back when this should be done
   /// on intrinsics which load/store.
-  virtual bool GetAddrModeArguments(IntrinsicInst *I,
-                                    SmallVectorImpl<Value*> &Ops,
-                                    Type *&AccessTy) const {
+  virtual bool GetAddrModeArguments(IntrinsicInst * /*I*/,
+                                    SmallVectorImpl<Value*> &/*Ops*/,
+                                    Type *&/*AccessTy*/) const {
     return false;
   }
 
@@ -1139,6 +1138,18 @@ public:
   /// mode is legal for a load/store of any legal type.
   /// TODO: Handle pre/postinc as well.
   virtual bool isLegalAddressingMode(const AddrMode &AM, Type *Ty) const;
+
+  /// \brief Return the cost of the scaling factor used in the addressing
+  /// mode represented by AM for this target, for a load/store
+  /// of the specified type.
+  /// If the AM is supported, the return value must be >= 0.
+  /// If the AM is not supported, it returns a negative value.
+  /// TODO: Handle pre/postinc as well.
+  virtual int getScalingFactorCost(const AddrMode &AM, Type *Ty) const {
+    // Default: assume that any scaling factor used in a legal AM is free.
+    if (isLegalAddressingMode(AM, Ty)) return 0;
+    return -1;
+  }
 
   /// isLegalICmpImmediate - Return true if the specified immediate is legal
   /// icmp immediate, that is the target has icmp instructions which can compare
@@ -1717,11 +1728,11 @@ public:
 
   void softenSetCCOperands(SelectionDAG &DAG, EVT VT,
                            SDValue &NewLHS, SDValue &NewRHS,
-                           ISD::CondCode &CCCode, DebugLoc DL) const;
+                           ISD::CondCode &CCCode, SDLoc DL) const;
 
   SDValue makeLibCall(SelectionDAG &DAG, RTLIB::Libcall LC, EVT RetVT,
                       const SDValue *Ops, unsigned NumOps,
-                      bool isSigned, DebugLoc dl) const;
+                      bool isSigned, SDLoc dl) const;
 
   //===--------------------------------------------------------------------===//
   // TargetLowering Optimization Methods
@@ -1761,7 +1772,7 @@ public:
     /// cast, but it could be generalized for targets with other types of
     /// implicit widening casts.
     bool ShrinkDemandedOp(SDValue Op, unsigned BitWidth, const APInt &Demanded,
-                          DebugLoc dl);
+                          SDLoc dl);
   };
 
   /// SimplifyDemandedBits - Look at Op.  At this point, we know that only the
@@ -1823,7 +1834,7 @@ public:
   /// and cc. If it is unable to simplify it, return a null SDValue.
   SDValue SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
                           ISD::CondCode Cond, bool foldBooleans,
-                          DAGCombinerInfo &DCI, DebugLoc dl) const;
+                          DAGCombinerInfo &DCI, SDLoc dl) const;
 
   /// isGAPlusOffset - Returns true (and the GlobalValue and the offset) if the
   /// node is a GlobalAddress + offset.
@@ -1884,7 +1895,7 @@ public:
     LowerFormalArguments(SDValue /*Chain*/, CallingConv::ID /*CallConv*/,
                          bool /*isVarArg*/,
                          const SmallVectorImpl<ISD::InputArg> &/*Ins*/,
-                         DebugLoc /*dl*/, SelectionDAG &/*DAG*/,
+                         SDLoc /*dl*/, SelectionDAG &/*DAG*/,
                          SmallVectorImpl<SDValue> &/*InVals*/) const {
     llvm_unreachable("Not Implemented");
   }
@@ -1930,7 +1941,7 @@ public:
     SDValue Callee;
     ArgListTy &Args;
     SelectionDAG &DAG;
-    DebugLoc DL;
+    SDLoc DL;
     ImmutableCallSite *CS;
     SmallVector<ISD::OutputArg, 32> Outs;
     SmallVector<SDValue, 32> OutVals;
@@ -1941,7 +1952,7 @@ public:
     /// ImmutableCallSite \p cs.
     CallLoweringInfo(SDValue chain, Type *retTy,
                      FunctionType *FTy, bool isTailCall, SDValue callee,
-                     ArgListTy &args, SelectionDAG &dag, DebugLoc dl,
+                     ArgListTy &args, SelectionDAG &dag, SDLoc dl,
                      ImmutableCallSite &cs)
     : Chain(chain), RetTy(retTy), RetSExt(cs.paramHasAttr(0, Attribute::SExt)),
       RetZExt(cs.paramHasAttr(0, Attribute::ZExt)), IsVarArg(FTy->isVarArg()),
@@ -1958,7 +1969,7 @@ public:
                      bool isVarArg, bool isInReg, unsigned numFixedArgs,
                      CallingConv::ID callConv, bool isTailCall,
                      bool doesNotReturn, bool isReturnValueUsed, SDValue callee,
-                     ArgListTy &args, SelectionDAG &dag, DebugLoc dl)
+                     ArgListTy &args, SelectionDAG &dag, SDLoc dl)
     : Chain(chain), RetTy(retTy), RetSExt(retSExt), RetZExt(retZExt),
       IsVarArg(isVarArg), IsInReg(isInReg), DoesNotReturn(doesNotReturn),
       IsReturnValueUsed(isReturnValueUsed), IsTailCall(isTailCall),
@@ -2011,7 +2022,7 @@ public:
                 bool /*isVarArg*/,
                 const SmallVectorImpl<ISD::OutputArg> &/*Outs*/,
                 const SmallVectorImpl<SDValue> &/*OutVals*/,
-                DebugLoc /*dl*/, SelectionDAG &/*DAG*/) const {
+                SDLoc /*dl*/, SelectionDAG &/*DAG*/) const {
     llvm_unreachable("Not Implemented");
   }
 
@@ -2020,7 +2031,7 @@ public:
   /// tail call.
   /// This is used to determine whether it is possible
   /// to codegen a libcall as tail call at legalization time.
-  virtual bool isUsedByReturnOnly(SDNode *, SDValue &Chain) const {
+  virtual bool isUsedByReturnOnly(SDNode *, SDValue &/*Chain*/) const {
     return false;
   }
 
@@ -2235,7 +2246,7 @@ public:
   //===--------------------------------------------------------------------===//
   // Div utility functions
   //
-  SDValue BuildExactSDIV(SDValue Op1, SDValue Op2, DebugLoc dl,
+  SDValue BuildExactSDIV(SDValue Op1, SDValue Op2, SDLoc dl,
                          SelectionDAG &DAG) const;
   SDValue BuildSDIV(SDNode *N, SelectionDAG &DAG, bool IsAfterLegalization,
                       std::vector<SDNode*> *Created) const;

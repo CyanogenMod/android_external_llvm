@@ -166,6 +166,7 @@ typedef enum {
        and the path forward agreed upon.
     LLVMAddressSafety = 1ULL << 32,
     LLVMStackProtectStrongAttribute = 1ULL<<33
+    LLVMCold = 1ULL << 34
     */
 } LLVMAttribute;
 
@@ -411,6 +412,7 @@ void LLVMShutdown();
 
 /*===-- Error handling ----------------------------------------------------===*/
 
+char *LLVMCreateMessage(const char *Message);
 void LLVMDisposeMessage(char *Message);
 
 
@@ -1102,24 +1104,24 @@ LLVMTypeRef LLVMX86MMXType(void);
         macro(SwitchInst)                   \
         macro(UnreachableInst)              \
         macro(ResumeInst)                   \
-    macro(UnaryInstruction)                 \
-      macro(AllocaInst)                     \
-      macro(CastInst)                       \
-        macro(BitCastInst)                  \
-        macro(FPExtInst)                    \
-        macro(FPToSIInst)                   \
-        macro(FPToUIInst)                   \
-        macro(FPTruncInst)                  \
-        macro(IntToPtrInst)                 \
-        macro(PtrToIntInst)                 \
-        macro(SExtInst)                     \
-        macro(SIToFPInst)                   \
-        macro(TruncInst)                    \
-        macro(UIToFPInst)                   \
-        macro(ZExtInst)                     \
-      macro(ExtractValueInst)               \
-      macro(LoadInst)                       \
-      macro(VAArgInst)
+      macro(UnaryInstruction)               \
+        macro(AllocaInst)                   \
+        macro(CastInst)                     \
+          macro(BitCastInst)                \
+          macro(FPExtInst)                  \
+          macro(FPToSIInst)                 \
+          macro(FPToUIInst)                 \
+          macro(FPTruncInst)                \
+          macro(IntToPtrInst)               \
+          macro(PtrToIntInst)               \
+          macro(SExtInst)                   \
+          macro(SIToFPInst)                 \
+          macro(TruncInst)                  \
+          macro(UIToFPInst)                 \
+          macro(ZExtInst)                   \
+        macro(ExtractValueInst)             \
+        macro(LoadInst)                     \
+        macro(VAArgInst)
 
 /**
  * @defgroup LLVMCCoreValueGeneral General APIs

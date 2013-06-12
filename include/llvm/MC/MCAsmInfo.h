@@ -17,6 +17,7 @@
 #define LLVM_MC_MCASMINFO_H
 
 #include "llvm/MC/MCDirectives.h"
+#include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MachineLocation.h"
 #include <cassert>
 #include <vector>
@@ -87,6 +88,10 @@ namespace llvm {
     /// MaxInstLength - This is the maximum possible length of an instruction,
     /// which is needed to compute the size of an inline asm.
     unsigned MaxInstLength;                  // Defaults to 4.
+
+    /// MinInstAlignment - Every possible instruction length is a multiple of
+    /// this value.  Factored out in .debug_frame and .debug_line.
+    unsigned MinInstAlignment;                  // Defaults to 1.
 
     /// PCSymbol - The symbol used to represent the current PC.  Used in PC
     /// relative expressions.
@@ -332,7 +337,7 @@ namespace llvm {
 
     //===--- Prologue State ----------------------------------------------===//
 
-    std::vector<MachineMove> InitialFrameState;
+    std::vector<MCCFIInstruction> InitialFrameState;
 
   public:
     explicit MCAsmInfo();
@@ -427,6 +432,9 @@ namespace llvm {
     }
     unsigned getMaxInstLength() const {
       return MaxInstLength;
+    }
+    unsigned getMinInstAlignment() const {
+      return MinInstAlignment;
     }
     const char *getPCSymbol() const {
       return PCSymbol;
@@ -567,11 +575,11 @@ namespace llvm {
       return DwarfRegNumForCFI;
     }
 
-    void addInitialFrameState(MCSymbol *label, const MachineLocation &D,
-                              const MachineLocation &S) {
-      InitialFrameState.push_back(MachineMove(label, D, S));
+    void addInitialFrameState(const MCCFIInstruction &Inst) {
+      InitialFrameState.push_back(Inst);
     }
-    const std::vector<MachineMove> &getInitialFrameState() const {
+
+    const std::vector<MCCFIInstruction> &getInitialFrameState() const {
       return InitialFrameState;
     }
   };

@@ -29,7 +29,7 @@ using namespace llvm;
 
 SparcInstrInfo::SparcInstrInfo(SparcSubtarget &ST)
   : SparcGenInstrInfo(SP::ADJCALLSTACKDOWN, SP::ADJCALLSTACKUP),
-    RI(ST, *this), Subtarget(ST) {
+    RI(ST), Subtarget(ST) {
 }
 
 /// isLoadFromStackSlot - If the specified machine instruction is a direct
@@ -40,6 +40,7 @@ SparcInstrInfo::SparcInstrInfo(SparcSubtarget &ST)
 unsigned SparcInstrInfo::isLoadFromStackSlot(const MachineInstr *MI,
                                              int &FrameIndex) const {
   if (MI->getOpcode() == SP::LDri ||
+      MI->getOpcode() == SP::LDXri ||
       MI->getOpcode() == SP::LDFri ||
       MI->getOpcode() == SP::LDDFri) {
     if (MI->getOperand(1).isFI() && MI->getOperand(2).isImm() &&
@@ -59,6 +60,7 @@ unsigned SparcInstrInfo::isLoadFromStackSlot(const MachineInstr *MI,
 unsigned SparcInstrInfo::isStoreToStackSlot(const MachineInstr *MI,
                                             int &FrameIndex) const {
   if (MI->getOpcode() == SP::STri ||
+      MI->getOpcode() == SP::STXri ||
       MI->getOpcode() == SP::STFri ||
       MI->getOpcode() == SP::STDFri) {
     if (MI->getOperand(0).isFI() && MI->getOperand(1).isImm() &&
@@ -139,15 +141,15 @@ bool SparcInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
     if (I->isDebugValue())
       continue;
 
-    //When we see a non-terminator, we are done
+    // When we see a non-terminator, we are done.
     if (!isUnpredicatedTerminator(I))
       break;
 
-    //Terminator is not a branch
+    // Terminator is not a branch.
     if (!I->isBranch())
       return true;
 
-    //Handle Unconditional branches
+    // Handle Unconditional branches.
     if (I->getOpcode() == SP::BA) {
       UnCondBrIter = I;
 
@@ -176,7 +178,7 @@ bool SparcInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
 
     unsigned Opcode = I->getOpcode();
     if (Opcode != SP::BCOND && Opcode != SP::FBCOND)
-      return true; //Unknown Opcode
+      return true; // Unknown Opcode.
 
     SPCC::CondCodes BranchCode = (SPCC::CondCodes)I->getOperand(1).getImm();
 
@@ -185,7 +187,7 @@ bool SparcInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
       if (AllowModify && UnCondBrIter != MBB.end() &&
           MBB.isLayoutSuccessor(TargetBB)) {
 
-        //Transform the code
+        // Transform the code
         //
         //    brCC L1
         //    ba L2
@@ -219,8 +221,8 @@ bool SparcInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
       Cond.push_back(MachineOperand::CreateImm(BranchCode));
       continue;
     }
-    //FIXME: Handle subsequent conditional branches
-    //For now, we can't handle multiple conditional branches
+    // FIXME: Handle subsequent conditional branches.
+    // For now, we can't handle multiple conditional branches.
     return true;
   }
   return false;
@@ -241,7 +243,7 @@ SparcInstrInfo::InsertBranch(MachineBasicBlock &MBB,MachineBasicBlock *TBB,
     return 1;
   }
 
-  //Conditional branch
+  // Conditional branch
   unsigned CC = Cond[0].getImm();
 
   if (IsIntegerCC(CC))
@@ -287,10 +289,28 @@ void SparcInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
   else if (SP::FPRegsRegClass.contains(DestReg, SrcReg))
     BuildMI(MBB, I, DL, get(SP::FMOVS), DestReg)
       .addReg(SrcReg, getKillRegState(KillSrc));
-  else if (SP::DFPRegsRegClass.contains(DestReg, SrcReg))
-    BuildMI(MBB, I, DL, get(Subtarget.isV9() ? SP::FMOVD : SP::FpMOVD), DestReg)
-      .addReg(SrcReg, getKillRegState(KillSrc));
-  else
+  else if (SP::DFPRegsRegClass.contains(DestReg, SrcReg)) {
+    if (Subtarget.isV9()) {
+      BuildMI(MBB, I, DL, get(SP::FMOVD), DestReg)
+        .addReg(SrcReg, getKillRegState(KillSrc));
+    } else {
+      // Use two FMOVS instructions.
+      const TargetRegisterInfo *TRI = &getRegisterInfo();
+      MachineInstr *MovMI = 0;
+      unsigned subRegIdx[] = {SP::sub_even, SP::sub_odd};
+      for (unsigned i = 0; i != 2; ++i) {
+        unsigned Dst = TRI->getSubReg(DestReg, subRegIdx[i]);
+        unsigned Src = TRI->getSubReg(SrcReg,  subRegIdx[i]);
+        assert(Dst && Src && "Bad sub-register");
+
+        MovMI = BuildMI(MBB, I, DL, get(SP::FMOVS), Dst).addReg(Src);
+      }
+      // Add implicit super-register defs and kills to the last MovMI.
+      MovMI->addRegisterDefined(DestReg, TRI);
+      if (KillSrc)
+        MovMI->addRegisterKilled(SrcReg, TRI);
+    }
+  } else
     llvm_unreachable("Impossible reg-to-reg copy");
 }
 
@@ -303,7 +323,10 @@ storeRegToStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
   if (I != MBB.end()) DL = I->getDebugLoc();
 
   // On the order of operands here: think "[FrameIdx + 0] = SrcReg".
-  if (RC == &SP::IntRegsRegClass)
+  if (RC == &SP::I64RegsRegClass)
+    BuildMI(MBB, I, DL, get(SP::STXri)).addFrameIndex(FI).addImm(0)
+      .addReg(SrcReg, getKillRegState(isKill));
+  else if (RC == &SP::IntRegsRegClass)
     BuildMI(MBB, I, DL, get(SP::STri)).addFrameIndex(FI).addImm(0)
       .addReg(SrcReg, getKillRegState(isKill));
   else if (RC == &SP::FPRegsRegClass)
@@ -324,7 +347,9 @@ loadRegFromStackSlot(MachineBasicBlock &MBB, MachineBasicBlock::iterator I,
   DebugLoc DL;
   if (I != MBB.end()) DL = I->getDebugLoc();
 
-  if (RC == &SP::IntRegsRegClass)
+  if (RC == &SP::I64RegsRegClass)
+    BuildMI(MBB, I, DL, get(SP::LDXri), DestReg).addFrameIndex(FI).addImm(0);
+  else if (RC == &SP::IntRegsRegClass)
     BuildMI(MBB, I, DL, get(SP::LDri), DestReg).addFrameIndex(FI).addImm(0);
   else if (RC == &SP::FPRegsRegClass)
     BuildMI(MBB, I, DL, get(SP::LDFri), DestReg).addFrameIndex(FI).addImm(0);

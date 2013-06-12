@@ -38,7 +38,8 @@ def FeatureNEON : SubtargetFeature<"neon", "HasNEON", "true",
 def FeatureThumb2 : SubtargetFeature<"thumb2", "HasThumb2", "true",
                                      "Enable Thumb2 instructions">;
 def FeatureNoARM  : SubtargetFeature<"noarm", "NoARM", "true",
-                                     "Does not support ARM mode execution">;
+                                     "Does not support ARM mode execution",
+                                     [ModeThumb]>;
 def FeatureFP16   : SubtargetFeature<"fp16", "HasFP16", "true",
                                      "Enable half-precision floating point">;
 def FeatureVFP4   : SubtargetFeature<"vfp4", "HasVFPv4", "true",
@@ -59,6 +60,8 @@ def FeatureSlowFPBrcc : SubtargetFeature<"slow-fp-brcc", "SlowFPBrcc", "true",
                                          "FP compare + branch is slow">;
 def FeatureVFPOnlySP : SubtargetFeature<"fp-only-sp", "FPOnlySP", "true",
                           "Floating point unit supports single precision only">;
+def FeaturePerfMon : SubtargetFeature<"perfmon", "HasPerfMon", "true",
+                           "Enable support for Performance Monitor extensions">;
 def FeatureTrustZone : SubtargetFeature<"trustzone", "HasTrustZone", "true",
                           "Enable support for TrustZone security extensions">;
 
@@ -134,7 +137,7 @@ def HasV6T2Ops  : SubtargetFeature<"v6t2", "HasV6T2Ops", "true",
                                    [HasV6Ops, FeatureThumb2]>;
 def HasV7Ops    : SubtargetFeature<"v7", "HasV7Ops", "true",
                                    "Support ARM v7 instructions",
-                                   [HasV6T2Ops]>;
+                                   [HasV6T2Ops, FeaturePerfMon]>;
 
 //===----------------------------------------------------------------------===//
 // ARM Processors supported.
@@ -175,7 +178,8 @@ def ProcA15      : SubtargetFeature<"a15", "ARMProcFamily", "CortexA15",
                                     FeatureTrustZone]>;
 def ProcR5      : SubtargetFeature<"r5", "ARMProcFamily", "CortexR5",
                                    "Cortex-R5 ARM processors",
-                                   [FeatureSlowFPBrcc, FeatureHWDivARM,
+                                   [FeatureSlowFPBrcc,
+                                    FeatureHWDiv, FeatureHWDivARM,
                                     FeatureHasSlowFPVMLx,
                                     FeatureAvoidPartialCPSR,
                                     FeatureT2XtPk]>;

@@ -94,6 +94,12 @@ static cl::opt<DefaultOnOff> SplitDwarf("split-dwarf", cl::Hidden,
 namespace {
   const char *DWARFGroupName = "DWARF Emission";
   const char *DbgTimerName = "DWARF Debug Writer";
+
+  struct CompareFirst {
+    template <typename T> bool operator()(const T &lhs, const T &rhs) const {
+      return lhs.first < rhs.first;
+    }
+  };
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -271,16 +277,6 @@ void DwarfUnits::assignAbbrevNumber(DIEAbbrev &Abbrev) {
     // Assign existing abbreviation number.
     Abbrev.setNumber(InSet->getNumber());
   }
-}
-
-// If special LLVM prefix that is used to inform the asm
-// printer to not emit usual symbol prefix before the symbol name is used then
-// return linkage name after skipping this special LLVM prefix.
-static StringRef getRealLinkageName(StringRef LinkageName) {
-  char One = '\1';
-  if (LinkageName.startswith(StringRef(&One, 1)))
-    return LinkageName.substr(1);
-  return LinkageName;
 }
 
 static bool isObjCClass(StringRef Name) {
@@ -597,9 +593,16 @@ DIE *DwarfDebug::constructScopeDIE(CompileUnit *TheCU, LexicalScope *Scope) {
   }
   else {
     // There is no need to emit empty lexical block DIE.
-    if (Children.empty())
+    std::pair<ImportedEntityMap::const_iterator,
+              ImportedEntityMap::const_iterator> Range = std::equal_range(
+        ScopesWithImportedEntities.begin(), ScopesWithImportedEntities.end(),
+        std::pair<const MDNode *, const MDNode *>(DS, (const MDNode*)0),
+        CompareFirst());
+    if (Children.empty() && Range.first == Range.second)
       return NULL;
     ScopeDIE = constructLexicalScopeDIE(TheCU, Scope);
+    for (ImportedEntityMap::const_iterator i = Range.first; i != Range.second; ++i)
+      constructImportedEntityDIE(TheCU, i->second, ScopeDIE);
   }
 
   if (!ScopeDIE) return NULL;
@@ -670,7 +673,7 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
 
   DIE *Die = new DIE(dwarf::DW_TAG_compile_unit);
   CompileUnit *NewCU = new CompileUnit(GlobalCUIndexCount++,
-                                       DIUnit.getLanguage(), Die, Asm,
+                                       DIUnit.getLanguage(), Die, N, Asm,
                                        this, &InfoHolder);
 
   FileIDCUMap[NewCU->getUniqueID()] = 0;
@@ -695,6 +698,12 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   Asm->OutStreamer.getContext().setMCLineTableSymbol(LineTableStartSym,
                                                      NewCU->getUniqueID());
 
+  // Use a single line table if we are using .loc and generating assembly.
+  bool UseTheFirstCU =
+    (Asm->TM.hasMCUseLoc() &&
+     Asm->OutStreamer.getKind() == MCStreamer::SK_AsmStreamer) ||
+    (NewCU->getUniqueID() == 0);
+
   // DW_AT_stmt_list is a offset of line number information for this
   // compile unit in debug_line section. For split dwarf this is
   // left in the skeleton CU and so not included.
@@ -703,9 +712,9 @@ CompileUnit *DwarfDebug::constructCompileUnit(const MDNode *N) {
   if (!useSplitDwarf()) {
     if (Asm->MAI->doesDwarfUseRelocationsAcrossSections())
       NewCU->addLabel(Die, dwarf::DW_AT_stmt_list, dwarf::DW_FORM_data4,
-                      NewCU->getUniqueID() == 0 ?
+                      UseTheFirstCU ?
                       Asm->GetTempSymbol("section_line") : LineTableStartSym);
-    else if (NewCU->getUniqueID() == 0)
+    else if (UseTheFirstCU)
       NewCU->addUInt(Die, dwarf::DW_AT_stmt_list, dwarf::DW_FORM_data4, 0);
     else
       NewCU->addDelta(Die, dwarf::DW_AT_stmt_list, dwarf::DW_FORM_data4,
@@ -763,21 +772,51 @@ void DwarfDebug::constructSubprogramDIE(CompileUnit *TheCU,
     TheCU->addGlobalName(SP.getName(), SubprogramDie);
 }
 
-void DwarfDebug::constructImportedModuleDIE(CompileUnit *TheCU,
+void DwarfDebug::constructImportedEntityDIE(CompileUnit *TheCU,
                                             const MDNode *N) {
-  DIImportedModule Module(N);
+  DIImportedEntity Module(N);
   if (!Module.Verify())
     return;
-  DIE *IMDie = new DIE(dwarf::DW_TAG_imported_module);
+  if (DIE *D = TheCU->getOrCreateContextDIE(Module.getContext()))
+    constructImportedEntityDIE(TheCU, Module, D);
+}
+
+void DwarfDebug::constructImportedEntityDIE(CompileUnit *TheCU, const MDNode *N,
+                                            DIE *Context) {
+  DIImportedEntity Module(N);
+  if (!Module.Verify())
+    return;
+  return constructImportedEntityDIE(TheCU, Module, Context);
+}
+
+void DwarfDebug::constructImportedEntityDIE(CompileUnit *TheCU,
+                                            const DIImportedEntity &Module,
+                                            DIE *Context) {
+  assert(Module.Verify() &&
+         "Use one of the MDNode * overloads to handle invalid metadata");
+  assert(Context && "Should always have a context for an imported_module");
+  DIE *IMDie = new DIE(Module.getTag());
   TheCU->insertDIE(Module, IMDie);
-  DIE *NSDie = TheCU->getOrCreateNameSpace(Module.getNameSpace());
+  DIE *EntityDie;
+  DIDescriptor Entity = Module.getEntity();
+  if (Entity.isNameSpace())
+    EntityDie = TheCU->getOrCreateNameSpace(DINameSpace(Entity));
+  else if (Entity.isSubprogram())
+    EntityDie = TheCU->getOrCreateSubprogramDIE(DISubprogram(Entity));
+  else if (Entity.isType())
+    EntityDie = TheCU->getOrCreateTypeDIE(DIType(Entity));
+  else
+    EntityDie = TheCU->getDIE(Entity);
   unsigned FileID = getOrCreateSourceID(Module.getContext().getFilename(),
                                         Module.getContext().getDirectory(),
                                         TheCU->getUniqueID());
   TheCU->addUInt(IMDie, dwarf::DW_AT_decl_file, 0, FileID);
   TheCU->addUInt(IMDie, dwarf::DW_AT_decl_line, 0, Module.getLineNumber());
-  TheCU->addDIEEntry(IMDie, dwarf::DW_AT_import, dwarf::DW_FORM_ref4, NSDie);
-  TheCU->addToContextOwner(IMDie, Module.getContext());
+  TheCU->addDIEEntry(IMDie, dwarf::DW_AT_import, dwarf::DW_FORM_ref4, EntityDie);
+  StringRef Name = Module.getName();
+  if (!Name.empty())
+    TheCU->addString(IMDie, dwarf::DW_AT_name, Name);
+  Context->addChild(IMDie);
 }
 
 // Emit all Dwarf sections that should come prior to the content. Create
@@ -801,6 +840,13 @@ void DwarfDebug::beginModule() {
   for (unsigned i = 0, e = CU_Nodes->getNumOperands(); i != e; ++i) {
     DICompileUnit CUNode(CU_Nodes->getOperand(i));
     CompileUnit *CU = constructCompileUnit(CUNode);
+    DIArray ImportedEntities = CUNode.getImportedEntities();
+    for (unsigned i = 0, e = ImportedEntities.getNumElements(); i != e; ++i)
+      ScopesWithImportedEntities.push_back(std::make_pair(
+          DIImportedEntity(ImportedEntities.getElement(i)).getContext(),
+          ImportedEntities.getElement(i)));
+    std::sort(ScopesWithImportedEntities.begin(),
+              ScopesWithImportedEntities.end(), CompareFirst());
     DIArray GVs = CUNode.getGlobalVariables();
     for (unsigned i = 0, e = GVs.getNumElements(); i != e; ++i)
       CU->createGlobalVariableDIE(GVs.getElement(i));
@@ -815,9 +861,8 @@ void DwarfDebug::beginModule() {
       CU->getOrCreateTypeDIE(RetainedTypes.getElement(i));
     // Emit imported_modules last so that the relevant context is already
     // available.
-    DIArray ImportedModules = CUNode.getImportedModules();
-    for (unsigned i = 0, e = ImportedModules.getNumElements(); i != e; ++i)
-      constructImportedModuleDIE(CU, ImportedModules.getElement(i));
+    for (unsigned i = 0, e = ImportedEntities.getNumElements(); i != e; ++i)
+      constructImportedEntityDIE(CU, ImportedEntities.getElement(i));
     // If we're splitting the dwarf out now that we've got the entire
     // CU then construct a skeleton CU based upon it.
     if (useSplitDwarf()) {
@@ -1404,7 +1449,12 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
   LexicalScope *FnScope = LScopes.getCurrentFunctionScope();
   CompileUnit *TheCU = SPMap.lookup(FnScope->getScopeNode());
   assert(TheCU && "Unable to find compile unit!");
-  Asm->OutStreamer.getContext().setDwarfCompileUnitID(TheCU->getUniqueID());
+  if (Asm->TM.hasMCUseLoc() &&
+      Asm->OutStreamer.getKind() == MCStreamer::SK_AsmStreamer)
+    // Use a single line table if we are using .loc and generating assembly.
+    Asm->OutStreamer.getContext().setDwarfCompileUnitID(0);
+  else
+    Asm->OutStreamer.getContext().setDwarfCompileUnitID(TheCU->getUniqueID());
 
   FunctionBeginSym = Asm->GetTempSymbol("func_begin",
                                         Asm->getFunctionNumber());
@@ -1576,9 +1626,34 @@ void DwarfDebug::beginFunction(const MachineFunction *MF) {
 }
 
 void DwarfDebug::addScopeVariable(LexicalScope *LS, DbgVariable *Var) {
-//  SmallVector<DbgVariable *, 8> &Vars = ScopeVariables.lookup(LS);
-  ScopeVariables[LS].push_back(Var);
-//  Vars.push_back(Var);
+  SmallVectorImpl<DbgVariable *> &Vars = ScopeVariables[LS];
+  DIVariable DV = Var->getVariable();
+  // Variables with positive arg numbers are parameters.
+  if (unsigned ArgNum = DV.getArgNumber()) {
+    // Keep all parameters in order at the start of the variable list to ensure
+    // function types are correct (no out-of-order parameters)
+    //
+    // This could be improved by only doing it for optimized builds (unoptimized
+    // builds have the right order to begin with), searching from the back (this
+    // would catch the unoptimized case quickly), or doing a binary search
+    // rather than linear search.
+    SmallVectorImpl<DbgVariable *>::iterator I = Vars.begin();
+    while (I != Vars.end()) {
+      unsigned CurNum = (*I)->getVariable().getArgNumber();
+      // A local (non-parameter) variable has been found, insert immediately
+      // before it.
+      if (CurNum == 0)
+        break;
+      // A later indexed parameter has been found, insert immediately before it.
+      if (CurNum > ArgNum)
+        break;
+      ++I;
+    }
+    Vars.insert(I, Var);
+    return;
+  }
+
+  Vars.push_back(Var);
 }
 
 // Gather and emit post-function debug information.
@@ -1630,9 +1705,6 @@ void DwarfDebug::endFunction(const MachineFunction *MF) {
 
   if (!MF->getTarget().Options.DisableFramePointerElim(*MF))
     TheCU->addFlag(CurFnDIE, dwarf::DW_AT_APPLE_omit_frame_ptr);
-
-  DebugFrames.push_back(FunctionDebugFrameInfo(Asm->getFunctionNumber(),
-                                               MMI->getFrameMoves()));
 
   // Clear debug info
   for (DenseMap<LexicalScope *, SmallVector<DbgVariable *, 8> >::iterator
@@ -1737,10 +1809,10 @@ DwarfUnits::computeSizeAndOffset(DIE *Die, unsigned Offset) {
 // Compute the size and offset of all the DIEs.
 void DwarfUnits::computeSizeAndOffsets() {
   // Offset from the beginning of debug info section.
-  unsigned AccuOffset = 0;
+  unsigned SecOffset = 0;
   for (SmallVectorImpl<CompileUnit *>::iterator I = CUs.begin(),
          E = CUs.end(); I != E; ++I) {
-    (*I)->setDebugInfoOffset(AccuOffset);
+    (*I)->setDebugInfoOffset(SecOffset);
     unsigned Offset =
       sizeof(int32_t) + // Length of Compilation Unit Info
       sizeof(int16_t) + // DWARF version number
@@ -1748,7 +1820,7 @@ void DwarfUnits::computeSizeAndOffsets() {
       sizeof(int8_t);   // Pointer Size (in bytes)
 
     unsigned EndOffset = computeSizeAndOffset((*I)->getCUDie(), Offset);
-    AccuOffset += EndOffset;
+    SecOffset += EndOffset;
   }
 }
 
@@ -2023,7 +2095,7 @@ void DwarfDebug::emitAccelNames() {
     const StringMap<std::vector<DIE*> > &Names = TheCU->getAccelNames();
     for (StringMap<std::vector<DIE*> >::const_iterator
            GI = Names.begin(), GE = Names.end(); GI != GE; ++GI) {
-      const char *Name = GI->getKeyData();
+      StringRef Name = GI->getKey();
       const std::vector<DIE *> &Entities = GI->second;
       for (std::vector<DIE *>::const_iterator DI = Entities.begin(),
              DE = Entities.end(); DI != DE; ++DI)
@@ -2052,7 +2124,7 @@ void DwarfDebug::emitAccelObjC() {
     const StringMap<std::vector<DIE*> > &Names = TheCU->getAccelObjC();
     for (StringMap<std::vector<DIE*> >::const_iterator
            GI = Names.begin(), GE = Names.end(); GI != GE; ++GI) {
-      const char *Name = GI->getKeyData();
+      StringRef Name = GI->getKey();
       const std::vector<DIE *> &Entities = GI->second;
       for (std::vector<DIE *>::const_iterator DI = Entities.begin(),
              DE = Entities.end(); DI != DE; ++DI)
@@ -2080,7 +2152,7 @@ void DwarfDebug::emitAccelNamespaces() {
     const StringMap<std::vector<DIE*> > &Names = TheCU->getAccelNamespace();
     for (StringMap<std::vector<DIE*> >::const_iterator
            GI = Names.begin(), GE = Names.end(); GI != GE; ++GI) {
-      const char *Name = GI->getKeyData();
+      StringRef Name = GI->getKey();
       const std::vector<DIE *> &Entities = GI->second;
       for (std::vector<DIE *>::const_iterator DI = Entities.begin(),
              DE = Entities.end(); DI != DE; ++DI)
@@ -2115,7 +2187,7 @@ void DwarfDebug::emitAccelTypes() {
       = TheCU->getAccelTypes();
     for (StringMap<std::vector<std::pair<DIE*, unsigned> > >::const_iterator
            GI = Names.begin(), GE = Names.end(); GI != GE; ++GI) {
-      const char *Name = GI->getKeyData();
+      StringRef Name = GI->getKey();
       const std::vector<std::pair<DIE *, unsigned> > &Entities = GI->second;
       for (std::vector<std::pair<DIE *, unsigned> >::const_iterator DI
              = Entities.begin(), DE = Entities.end(); DI !=DE; ++DI)
@@ -2179,7 +2251,7 @@ void DwarfDebug::emitDebugPubnames() {
 
       if (Asm->isVerbose())
         Asm->OutStreamer.AddComment("External Name");
-      Asm->OutStreamer.EmitBytes(StringRef(Name, strlen(Name)+1), 0);
+      Asm->OutStreamer.EmitBytes(StringRef(Name, GI->getKeyLength()+1), 0);
     }
 
     Asm->OutStreamer.AddComment("End Mark");
@@ -2507,9 +2579,9 @@ void DwarfDebug::emitDebugInlineInfo() {
       Asm->EmitSectionOffset(InfoHolder.getStringPoolEntry(Name),
                              DwarfStrSectionSym);
     else
-      Asm->EmitSectionOffset(InfoHolder
-                             .getStringPoolEntry(getRealLinkageName(LName)),
-                             DwarfStrSectionSym);
+      Asm->EmitSectionOffset(
+          InfoHolder.getStringPoolEntry(Function::getRealLinkageName(LName)),
+          DwarfStrSectionSym);
 
     Asm->OutStreamer.AddComment("Function name");
     Asm->EmitSectionOffset(InfoHolder.getStringPoolEntry(Name),
@@ -2542,7 +2614,7 @@ CompileUnit *DwarfDebug::constructSkeletonCU(const MDNode *N) {
 
   DIE *Die = new DIE(dwarf::DW_TAG_compile_unit);
   CompileUnit *NewCU = new CompileUnit(GlobalCUIndexCount++,
-                                       DIUnit.getLanguage(), Die, Asm,
+                                       DIUnit.getLanguage(), Die, N, Asm,
                                        this, &SkeletonHolder);
 
   NewCU->addLocalString(Die, dwarf::DW_AT_GNU_dwo_name,

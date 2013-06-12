@@ -39,12 +39,8 @@ static TargetLoweringObjectFile *createTLOF(AArch64TargetMachine &TM) {
   llvm_unreachable("unknown subtarget type");
 }
 
-
 AArch64TargetLowering::AArch64TargetLowering(AArch64TargetMachine &TM)
-  : TargetLowering(TM, createTLOF(TM)),
-    Subtarget(&TM.getSubtarget<AArch64Subtarget>()),
-    RegInfo(TM.getRegisterInfo()),
-    Itins(TM.getInstrItineraryData()) {
+  : TargetLowering(TM, createTLOF(TM)), Itins(TM.getInstrItineraryData()) {
 
   // SIMD compares set the entire lane's bits to 1
   setBooleanVectorContents(ZeroOrNegativeOneBooleanContent);
@@ -260,7 +256,7 @@ AArch64TargetLowering::AArch64TargetLowering(AArch64TargetMachine &TM)
   setExceptionSelectorRegister(AArch64::X1);
 }
 
-EVT AArch64TargetLowering::getSetCCResultType(EVT VT) const {
+EVT AArch64TargetLowering::getSetCCResultType(LLVMContext &, EVT VT) const {
   // It's reasonably important that this value matches the "natural" legal
   // promotion from i1 for scalar types. Otherwise LegalizeTypes can get itself
   // in a twist (e.g. inserting an any_extend which then becomes i64 -> i64).
@@ -781,6 +777,7 @@ const char *AArch64TargetLowering::getTargetNodeName(unsigned Opcode) const {
   case AArch64ISD::TC_RETURN:      return "AArch64ISD::TC_RETURN";
   case AArch64ISD::THREAD_POINTER: return "AArch64ISD::THREAD_POINTER";
   case AArch64ISD::TLSDESCCALL:    return "AArch64ISD::TLSDESCCALL";
+  case AArch64ISD::WrapperLarge:   return "AArch64ISD::WrapperLarge";
   case AArch64ISD::WrapperSmall:   return "AArch64ISD::WrapperSmall";
 
   default:                       return NULL;
@@ -825,7 +822,7 @@ CCAssignFn *AArch64TargetLowering::CCAssignFnForNode(CallingConv::ID CC) const {
 
 void
 AArch64TargetLowering::SaveVarArgRegisters(CCState &CCInfo, SelectionDAG &DAG,
-                                           DebugLoc DL, SDValue &Chain) const {
+                                           SDLoc DL, SDValue &Chain) const {
   MachineFunction &MF = DAG.getMachineFunction();
   MachineFrameInfo *MFI = MF.getFrameInfo();
   AArch64MachineFunctionInfo *FuncInfo
@@ -896,7 +893,7 @@ SDValue
 AArch64TargetLowering::LowerFormalArguments(SDValue Chain,
                                       CallingConv::ID CallConv, bool isVarArg,
                                       const SmallVectorImpl<ISD::InputArg> &Ins,
-                                      DebugLoc dl, SelectionDAG &DAG,
+                                      SDLoc dl, SelectionDAG &DAG,
                                       SmallVectorImpl<SDValue> &InVals) const {
   MachineFunction &MF = DAG.getMachineFunction();
   AArch64MachineFunctionInfo *FuncInfo
@@ -1011,7 +1008,7 @@ AArch64TargetLowering::LowerReturn(SDValue Chain,
                                    CallingConv::ID CallConv, bool isVarArg,
                                    const SmallVectorImpl<ISD::OutputArg> &Outs,
                                    const SmallVectorImpl<SDValue> &OutVals,
-                                   DebugLoc dl, SelectionDAG &DAG) const {
+                                   SDLoc dl, SelectionDAG &DAG) const {
   // CCValAssign - represent the assignment of the return value to a location.
   SmallVector<CCValAssign, 16> RVLocs;
 
@@ -1084,7 +1081,7 @@ SDValue
 AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
                                  SmallVectorImpl<SDValue> &InVals) const {
   SelectionDAG &DAG                     = CLI.DAG;
-  DebugLoc &dl                          = CLI.DL;
+  SDLoc &dl                             = CLI.DL;
   SmallVector<ISD::OutputArg, 32> &Outs = CLI.Outs;
   SmallVector<SDValue, 32> &OutVals     = CLI.OutVals;
   SmallVector<ISD::InputArg, 32> &Ins   = CLI.Ins;
@@ -1150,7 +1147,8 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   }
 
   if (!IsSibCall)
-    Chain = DAG.getCALLSEQ_START(Chain, DAG.getIntPtrConstant(NumBytes, true));
+    Chain = DAG.getCALLSEQ_START(Chain, DAG.getIntPtrConstant(NumBytes, true),
+                                 dl);
 
   SDValue StackPtr = DAG.getCopyFromReg(Chain, dl, AArch64::XSP,
                                         getPointerTy());
@@ -1281,7 +1279,7 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
   // in the correct location.
   if (IsTailCall && !IsSibCall) {
     Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, true),
-                               DAG.getIntPtrConstant(0, true), InFlag);
+                               DAG.getIntPtrConstant(0, true), InFlag, dl);
     InFlag = Chain.getValue(1);
   }
 
@@ -1335,7 +1333,7 @@ AArch64TargetLowering::LowerCall(CallLoweringInfo &CLI,
 
     Chain = DAG.getCALLSEQ_END(Chain, DAG.getIntPtrConstant(NumBytes, true),
                                DAG.getIntPtrConstant(CalleePopBytes, true),
-                               InFlag);
+                               InFlag, dl);
     InFlag = Chain.getValue(1);
   }
 
@@ -1347,7 +1345,7 @@ SDValue
 AArch64TargetLowering::LowerCallResult(SDValue Chain, SDValue InFlag,
                                       CallingConv::ID CallConv, bool IsVarArg,
                                       const SmallVectorImpl<ISD::InputArg> &Ins,
-                                      DebugLoc dl, SelectionDAG &DAG,
+                                      SDLoc dl, SelectionDAG &DAG,
                                       SmallVectorImpl<SDValue> &InVals) const {
   // Assign locations to each value returned by this call.
   SmallVector<CCValAssign, 16> RVLocs;
@@ -1536,7 +1534,7 @@ SDValue AArch64TargetLowering::addTokenForArgument(SDValue Chain,
         }
 
    // Build a tokenfactor for all the chains.
-   return DAG.getNode(ISD::TokenFactor, Chain.getDebugLoc(), MVT::Other,
+   return DAG.getNode(ISD::TokenFactor, SDLoc(Chain), MVT::Other,
                       &ArgChains[0], ArgChains.size());
 }
 
@@ -1569,7 +1567,7 @@ bool AArch64TargetLowering::isLegalICmpImmediate(int64_t Val) const {
 
 SDValue AArch64TargetLowering::getSelectableIntSetCC(SDValue LHS, SDValue RHS,
                                         ISD::CondCode CC, SDValue &A64cc,
-                                        SelectionDAG &DAG, DebugLoc &dl) const {
+                                        SelectionDAG &DAG, SDLoc &dl) const {
   if (ConstantSDNode *RHSC = dyn_cast<ConstantSDNode>(RHS.getNode())) {
     int64_t C = 0;
     EVT VT = RHSC->getValueType(0);
@@ -1662,28 +1660,37 @@ static A64CC::CondCodes FPCCToA64CC(ISD::CondCode CC,
 
 SDValue
 AArch64TargetLowering::LowerBlockAddress(SDValue Op, SelectionDAG &DAG) const {
-  DebugLoc DL = Op.getDebugLoc();
+  SDLoc DL(Op);
   EVT PtrVT = getPointerTy();
   const BlockAddress *BA = cast<BlockAddressSDNode>(Op)->getBlockAddress();
 
-  assert(getTargetMachine().getCodeModel() == CodeModel::Small
-         && "Only small code model supported at the moment");
-
-  // The most efficient code is PC-relative anyway for the small memory model,
-  // so we don't need to worry about relocation model.
-  return DAG.getNode(AArch64ISD::WrapperSmall, DL, PtrVT,
-                     DAG.getTargetBlockAddress(BA, PtrVT, 0,
-                                               AArch64II::MO_NO_FLAG),
-                     DAG.getTargetBlockAddress(BA, PtrVT, 0,
-                                               AArch64II::MO_LO12),
-                     DAG.getConstant(/*Alignment=*/ 4, MVT::i32));
+  switch(getTargetMachine().getCodeModel()) {
+  case CodeModel::Small:
+    // The most efficient code is PC-relative anyway for the small memory model,
+    // so we don't need to worry about relocation model.
+    return DAG.getNode(AArch64ISD::WrapperSmall, DL, PtrVT,
+                       DAG.getTargetBlockAddress(BA, PtrVT, 0,
+                                                 AArch64II::MO_NO_FLAG),
+                       DAG.getTargetBlockAddress(BA, PtrVT, 0,
+                                                 AArch64II::MO_LO12),
+                       DAG.getConstant(/*Alignment=*/ 4, MVT::i32));
+  case CodeModel::Large:
+    return DAG.getNode(
+      AArch64ISD::WrapperLarge, DL, PtrVT,
+      DAG.getTargetBlockAddress(BA, PtrVT, 0, AArch64II::MO_ABS_G3),
+      DAG.getTargetBlockAddress(BA, PtrVT, 0, AArch64II::MO_ABS_G2_NC),
+      DAG.getTargetBlockAddress(BA, PtrVT, 0, AArch64II::MO_ABS_G1_NC),
+      DAG.getTargetBlockAddress(BA, PtrVT, 0, AArch64II::MO_ABS_G0_NC));
+  default:
+    llvm_unreachable("Only small and large code models supported now");
+  }
 }
 
 
 // (BRCOND chain, val, dest)
 SDValue
 AArch64TargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) const {
-  DebugLoc dl = Op.getDebugLoc();
+  SDLoc dl(Op);
   SDValue Chain = Op.getOperand(0);
   SDValue TheBit = Op.getOperand(1);
   SDValue DestBB = Op.getOperand(2);
@@ -1706,7 +1713,7 @@ AArch64TargetLowering::LowerBRCOND(SDValue Op, SelectionDAG &DAG) const {
 // (BR_CC chain, condcode, lhs, rhs, dest)
 SDValue
 AArch64TargetLowering::LowerBR_CC(SDValue Op, SelectionDAG &DAG) const {
-  DebugLoc dl = Op.getDebugLoc();
+  SDLoc dl(Op);
   SDValue Chain = Op.getOperand(0);
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(1))->get();
   SDValue LHS = Op.getOperand(2);
@@ -1792,7 +1799,7 @@ AArch64TargetLowering::LowerF128ToCall(SDValue Op, SelectionDAG &DAG,
   CallLoweringInfo CLI(InChain, RetTy, false, false, false, false,
                     0, getLibcallCallingConv(Call), isTailCall,
                     /*doesNotReturn=*/false, /*isReturnValueUsed=*/true,
-                    Callee, Args, DAG, Op->getDebugLoc());
+                    Callee, Args, DAG, SDLoc(Op));
   std::pair<SDValue, SDValue> CallInfo = LowerCallTo(CLI);
 
   if (!CallInfo.second.getNode())
@@ -1814,7 +1821,7 @@ AArch64TargetLowering::LowerFP_ROUND(SDValue Op, SelectionDAG &DAG) const {
 
   SDValue SrcVal = Op.getOperand(0);
   return makeLibCall(DAG, LC, Op.getValueType(), &SrcVal, 1,
-                     /*isSigned*/ false, Op.getDebugLoc());
+                     /*isSigned*/ false, SDLoc(Op));
 }
 
 SDValue
@@ -1845,16 +1852,37 @@ AArch64TargetLowering::LowerFP_TO_INT(SDValue Op, SelectionDAG &DAG,
 }
 
 SDValue
-AArch64TargetLowering::LowerGlobalAddressELF(SDValue Op,
-                                             SelectionDAG &DAG) const {
-  // TableGen doesn't have easy access to the CodeModel or RelocationModel, so
-  // we make that distinction here.
+AArch64TargetLowering::LowerGlobalAddressELFLarge(SDValue Op,
+                                                  SelectionDAG &DAG) const {
+  assert(getTargetMachine().getCodeModel() == CodeModel::Large);
+  assert(getTargetMachine().getRelocationModel() == Reloc::Static);
 
-  // We support the small memory model for now.
+  EVT PtrVT = getPointerTy();
+  SDLoc dl(Op);
+  const GlobalAddressSDNode *GN = cast<GlobalAddressSDNode>(Op);
+  const GlobalValue *GV = GN->getGlobal();
+
+  SDValue GlobalAddr = DAG.getNode(
+      AArch64ISD::WrapperLarge, dl, PtrVT,
+      DAG.getTargetGlobalAddress(GV, dl, PtrVT, 0, AArch64II::MO_ABS_G3),
+      DAG.getTargetGlobalAddress(GV, dl, PtrVT, 0, AArch64II::MO_ABS_G2_NC),
+      DAG.getTargetGlobalAddress(GV, dl, PtrVT, 0, AArch64II::MO_ABS_G1_NC),
+      DAG.getTargetGlobalAddress(GV, dl, PtrVT, 0, AArch64II::MO_ABS_G0_NC));
+
+  if (GN->getOffset() != 0)
+    return DAG.getNode(ISD::ADD, dl, PtrVT, GlobalAddr,
+                       DAG.getConstant(GN->getOffset(), PtrVT));
+
+  return GlobalAddr;
+}
+
+SDValue
+AArch64TargetLowering::LowerGlobalAddressELFSmall(SDValue Op,
+                                                  SelectionDAG &DAG) const {
   assert(getTargetMachine().getCodeModel() == CodeModel::Small);
 
   EVT PtrVT = getPointerTy();
-  DebugLoc dl = Op.getDebugLoc();
+  SDLoc dl(Op);
   const GlobalAddressSDNode *GN = cast<GlobalAddressSDNode>(Op);
   const GlobalValue *GV = GN->getGlobal();
   unsigned Alignment = GV->getAlignment();
@@ -1896,7 +1924,7 @@ AArch64TargetLowering::LowerGlobalAddressELF(SDValue Op,
   }
 
   unsigned char HiFixup, LoFixup;
-  bool UseGOT = Subtarget->GVIsIndirectSymbol(GV, RelocM);
+  bool UseGOT = getSubtarget()->GVIsIndirectSymbol(GV, RelocM);
 
   if (UseGOT) {
     HiFixup = AArch64II::MO_GOT;
@@ -1929,9 +1957,25 @@ AArch64TargetLowering::LowerGlobalAddressELF(SDValue Op,
   return GlobalRef;
 }
 
+SDValue
+AArch64TargetLowering::LowerGlobalAddressELF(SDValue Op,
+                                             SelectionDAG &DAG) const {
+  // TableGen doesn't have easy access to the CodeModel or RelocationModel, so
+  // we make those distinctions here.
+
+  switch (getTargetMachine().getCodeModel()) {
+  case CodeModel::Small:
+    return LowerGlobalAddressELFSmall(Op, DAG);
+  case CodeModel::Large:
+    return LowerGlobalAddressELFLarge(Op, DAG);
+  default:
+    llvm_unreachable("Only small and large code models supported now");
+  }
+}
+
 SDValue AArch64TargetLowering::LowerTLSDescCall(SDValue SymAddr,
                                                 SDValue DescAddr,
-                                                DebugLoc DL,
+                                                SDLoc DL,
                                                 SelectionDAG &DAG) const {
   EVT PtrVT = getPointerTy();
 
@@ -1976,15 +2020,17 @@ SDValue AArch64TargetLowering::LowerTLSDescCall(SDValue SymAddr,
 SDValue
 AArch64TargetLowering::LowerGlobalTLSAddress(SDValue Op,
                                              SelectionDAG &DAG) const {
-  assert(Subtarget->isTargetELF() &&
+  assert(getSubtarget()->isTargetELF() &&
          "TLS not implemented for non-ELF targets");
+  assert(getTargetMachine().getCodeModel() == CodeModel::Small
+         && "TLS only supported in small memory model");
   const GlobalAddressSDNode *GA = cast<GlobalAddressSDNode>(Op);
 
   TLSModel::Model Model = getTargetMachine().getTLSModel(GA->getGlobal());
 
   SDValue TPOff;
   EVT PtrVT = getPointerTy();
-  DebugLoc DL = Op.getDebugLoc();
+  SDLoc DL(Op);
   const GlobalValue *GV = GA->getGlobal();
 
   SDValue ThreadBase = DAG.getNode(AArch64ISD::THREAD_POINTER, DL, PtrVT);
@@ -2085,21 +2131,34 @@ AArch64TargetLowering::LowerINT_TO_FP(SDValue Op, SelectionDAG &DAG,
 SDValue
 AArch64TargetLowering::LowerJumpTable(SDValue Op, SelectionDAG &DAG) const {
   JumpTableSDNode *JT = cast<JumpTableSDNode>(Op);
-  DebugLoc dl = JT->getDebugLoc();
+  SDLoc dl(JT);
+  EVT PtrVT = getPointerTy();
 
   // When compiling PIC, jump tables get put in the code section so a static
   // relocation-style is acceptable for both cases.
-  return DAG.getNode(AArch64ISD::WrapperSmall, dl, getPointerTy(),
-                     DAG.getTargetJumpTable(JT->getIndex(), getPointerTy()),
-                     DAG.getTargetJumpTable(JT->getIndex(), getPointerTy(),
-                                            AArch64II::MO_LO12),
-                     DAG.getConstant(1, MVT::i32));
+  switch (getTargetMachine().getCodeModel()) {
+  case CodeModel::Small:
+    return DAG.getNode(AArch64ISD::WrapperSmall, dl, PtrVT,
+                       DAG.getTargetJumpTable(JT->getIndex(), PtrVT),
+                       DAG.getTargetJumpTable(JT->getIndex(), PtrVT,
+                                              AArch64II::MO_LO12),
+                       DAG.getConstant(1, MVT::i32));
+  case CodeModel::Large:
+    return DAG.getNode(
+      AArch64ISD::WrapperLarge, dl, PtrVT,
+      DAG.getTargetJumpTable(JT->getIndex(), PtrVT, AArch64II::MO_ABS_G3),
+      DAG.getTargetJumpTable(JT->getIndex(), PtrVT, AArch64II::MO_ABS_G2_NC),
+      DAG.getTargetJumpTable(JT->getIndex(), PtrVT, AArch64II::MO_ABS_G1_NC),
+      DAG.getTargetJumpTable(JT->getIndex(), PtrVT, AArch64II::MO_ABS_G0_NC));
+  default:
+    llvm_unreachable("Only small and large code models supported now");
+  }
 }
 
 // (SELECT_CC lhs, rhs, iftrue, iffalse, condcode)
 SDValue
 AArch64TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
-  DebugLoc dl = Op.getDebugLoc();
+  SDLoc dl(Op);
   SDValue LHS = Op.getOperand(0);
   SDValue RHS = Op.getOperand(1);
   SDValue IfTrue = Op.getOperand(2);
@@ -2155,7 +2214,7 @@ AArch64TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const {
 // (SELECT testbit, iftrue, iffalse)
 SDValue
 AArch64TargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const {
-  DebugLoc dl = Op.getDebugLoc();
+  SDLoc dl(Op);
   SDValue TheBit = Op.getOperand(0);
   SDValue IfTrue = Op.getOperand(1);
   SDValue IfFalse = Op.getOperand(2);
@@ -2177,7 +2236,7 @@ AArch64TargetLowering::LowerSELECT(SDValue Op, SelectionDAG &DAG) const {
 // (SETCC lhs, rhs, condcode)
 SDValue
 AArch64TargetLowering::LowerSETCC(SDValue Op, SelectionDAG &DAG) const {
-  DebugLoc dl = Op.getDebugLoc();
+  SDLoc dl(Op);
   SDValue LHS = Op.getOperand(0);
   SDValue RHS = Op.getOperand(1);
   ISD::CondCode CC = cast<CondCodeSDNode>(Op.getOperand(2))->get();
@@ -2236,7 +2295,7 @@ AArch64TargetLowering::LowerVACOPY(SDValue Op, SelectionDAG &DAG) const {
 
   // We have to make sure we copy the entire structure: 8+8+8+4+4 = 32 bytes
   // rather than just 8.
-  return DAG.getMemcpy(Op.getOperand(0), Op.getDebugLoc(),
+  return DAG.getMemcpy(Op.getOperand(0), SDLoc(Op),
                        Op.getOperand(1), Op.getOperand(2),
                        DAG.getConstant(32, MVT::i32), 8, false, false,
                        MachinePointerInfo(DestSV), MachinePointerInfo(SrcSV));
@@ -2249,7 +2308,7 @@ AArch64TargetLowering::LowerVASTART(SDValue Op, SelectionDAG &DAG) const {
   MachineFunction &MF = DAG.getMachineFunction();
   AArch64MachineFunctionInfo *FuncInfo
     = MF.getInfo<AArch64MachineFunctionInfo>();
-  DebugLoc DL = Op.getDebugLoc();
+  SDLoc DL(Op);
 
   SDValue Chain = Op.getOperand(0);
   SDValue VAList = Op.getOperand(1);
@@ -2348,7 +2407,7 @@ static SDValue PerformANDCombine(SDNode *N,
                                  TargetLowering::DAGCombinerInfo &DCI) {
 
   SelectionDAG &DAG = DCI.DAG;
-  DebugLoc DL = N->getDebugLoc();
+  SDLoc DL(N);
   EVT VT = N->getValueType(0);
 
   // We're looking for an SRA/SHL pair which form an SBFX.
@@ -2386,7 +2445,7 @@ static SDValue PerformANDCombine(SDNode *N,
 /// a compatible SHL operation (unless they're already low). This function
 /// checks that condition and returns the least-significant bit that's
 /// intended. If the operation not a field preparation, -1 is returned.
-static int32_t getLSBForBFI(SelectionDAG &DAG, DebugLoc DL, EVT VT,
+static int32_t getLSBForBFI(SelectionDAG &DAG, SDLoc DL, EVT VT,
                             SDValue &MaskedVal, uint64_t Mask) {
   if (!isShiftedMask_64(Mask))
     return -1;
@@ -2402,7 +2461,7 @@ static int32_t getLSBForBFI(SelectionDAG &DAG, DebugLoc DL, EVT VT,
   // cases (e.g. bitfield to bitfield copy) may still need a real shift before
   // the BFI.
 
-  uint64_t LSB = CountTrailingZeros_64(Mask);
+  uint64_t LSB = countTrailingZeros(Mask);
   int64_t ShiftRightRequired = LSB;
   if (MaskedVal.getOpcode() == ISD::SHL &&
       isa<ConstantSDNode>(MaskedVal.getOperand(1))) {
@@ -2462,7 +2521,7 @@ static SDValue tryCombineToBFI(SDNode *N,
                                TargetLowering::DAGCombinerInfo &DCI,
                                const AArch64Subtarget *Subtarget) {
   SelectionDAG &DAG = DCI.DAG;
-  DebugLoc DL = N->getDebugLoc();
+  SDLoc DL(N);
   EVT VT = N->getValueType(0);
 
   assert(N->getOpcode() == ISD::OR && "Unexpected root");
@@ -2543,7 +2602,7 @@ static SDValue tryCombineToLargerBFI(SDNode *N,
                                      TargetLowering::DAGCombinerInfo &DCI,
                                      const AArch64Subtarget *Subtarget) {
   SelectionDAG &DAG = DCI.DAG;
-  DebugLoc DL = N->getDebugLoc();
+  SDLoc DL(N);
   EVT VT = N->getValueType(0);
 
   // First job is to hunt for a MaskedBFI on either the left or right. Swap
@@ -2625,7 +2684,7 @@ static bool findEXTRHalf(SDValue N, SDValue &Src, uint32_t &ShiftAmount,
 static SDValue tryCombineToEXTR(SDNode *N,
                                 TargetLowering::DAGCombinerInfo &DCI) {
   SelectionDAG &DAG = DCI.DAG;
-  DebugLoc DL = N->getDebugLoc();
+  SDLoc DL(N);
   EVT VT = N->getValueType(0);
 
   assert(N->getOpcode() == ISD::OR && "Unexpected root");
@@ -2697,7 +2756,7 @@ static SDValue PerformSRACombine(SDNode *N,
                                  TargetLowering::DAGCombinerInfo &DCI) {
 
   SelectionDAG &DAG = DCI.DAG;
-  DebugLoc DL = N->getDebugLoc();
+  SDLoc DL(N);
   EVT VT = N->getValueType(0);
 
   // We're looking for an SRA/SHL pair which form an SBFX.
@@ -2736,7 +2795,7 @@ AArch64TargetLowering::PerformDAGCombine(SDNode *N,
   switch (N->getOpcode()) {
   default: break;
   case ISD::AND: return PerformANDCombine(N, DCI);
-  case ISD::OR: return PerformORCombine(N, DCI, Subtarget);
+  case ISD::OR: return PerformORCombine(N, DCI, getSubtarget());
   case ISD::SRA: return PerformSRACombine(N, DCI);
   }
   return SDValue();
@@ -2837,7 +2896,7 @@ AArch64TargetLowering::LowerAsmOperandForConstraint(SDValue Op,
   case 'S': {
     // An absolute symbolic address or label reference.
     if (const GlobalAddressSDNode *GA = dyn_cast<GlobalAddressSDNode>(Op)) {
-      Result = DAG.getTargetGlobalAddress(GA->getGlobal(), Op.getDebugLoc(),
+      Result = DAG.getTargetGlobalAddress(GA->getGlobal(), SDLoc(Op),
                                           GA->getValueType(0));
     } else if (const BlockAddressSDNode *BA
                  = dyn_cast<BlockAddressSDNode>(Op)) {

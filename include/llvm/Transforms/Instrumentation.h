@@ -78,6 +78,12 @@ FunctionPass *createThreadSanitizerPass(StringRef BlacklistFile = StringRef());
 // checking on loads, stores, and other memory intrinsics.
 FunctionPass *createBoundsCheckingPass();
 
+/// createDebugIRPass - Create and return a pass that modifies a module's
+/// debug metadata to point back to IR instead of the original source file
+ModulePass *createDebugIRPass(StringRef FilenamePostfix,
+                              bool hideDebugIntrinsics = true,
+                              bool hideDebugMetadata = true);
+
 } // End llvm namespace
 
 #endif

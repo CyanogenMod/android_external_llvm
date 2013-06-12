@@ -16,7 +16,6 @@
 #define R600INSTRUCTIONINFO_H_
 
 #include "AMDGPUInstrInfo.h"
-#include "AMDIL.h"
 #include "R600Defines.h"
 #include "R600RegisterInfo.h"
 #include <map>
@@ -36,8 +35,19 @@ namespace llvm {
   const AMDGPUSubtarget &ST;
 
   int getBranchInstr(const MachineOperand &op) const;
+  std::vector<std::pair<int, unsigned> >
+  ExtractSrcs(MachineInstr *MI, const DenseMap<unsigned, unsigned> &PV) const;
 
   public:
+  enum BankSwizzle {
+    ALU_VEC_012 = 0,
+    ALU_VEC_021,
+    ALU_VEC_120,
+    ALU_VEC_102,
+    ALU_VEC_201,
+    ALU_VEC_210
+  };
+
   explicit R600InstrInfo(AMDGPUTargetMachine &tm);
 
   const R600RegisterInfo &getRegisterInfo() const;
@@ -62,6 +72,23 @@ namespace llvm {
   bool usesTextureCache(unsigned Opcode) const;
   bool usesTextureCache(const MachineInstr *MI) const;
 
+  /// \returns a pair for each src of an ALU instructions.
+  /// The first member of a pair is the register id.
+  /// If register is ALU_CONST, second member is SEL.
+  /// If register is ALU_LITERAL, second member is IMM.
+  /// Otherwise, second member value is undefined.
+  SmallVector<std::pair<MachineOperand *, int64_t>, 3>
+      getSrcs(MachineInstr *MI) const;
+
+  /// Given the order VEC_012 < VEC_021 < VEC_120 < VEC_102 < VEC_201 < VEC_210
+  /// returns true and the first (in lexical order) BankSwizzle affectation
+  /// starting from the one already provided in the Instruction Group MIs that
+  /// fits Read Port limitations in BS if available. Otherwise returns false
+  /// and undefined content in BS.
+  /// PV holds GPR to PV registers in the Instruction Group MIs.
+  bool fitsReadPortLimitations(const std::vector<MachineInstr *> &MIs,
+                               const DenseMap<unsigned, unsigned> &PV,
+                               std::vector<BankSwizzle> &BS) const;
   bool fitsConstReadLimitations(const std::vector<unsigned>&) const;
   bool canBundle(const std::vector<MachineInstr *> &) const;
 
@@ -170,6 +197,11 @@ namespace llvm {
                                               unsigned Src0Reg,
                                               unsigned Src1Reg = 0) const;
 
+  MachineInstr *buildSlotOfVectorInstruction(MachineBasicBlock &MBB,
+                                             MachineInstr *MI,
+                                             unsigned Slot,
+                                             unsigned DstReg) const;
+
   MachineInstr *buildMovImm(MachineBasicBlock &BB,
                                   MachineBasicBlock::iterator I,
                                   unsigned DstReg,
@@ -179,11 +211,13 @@ namespace llvm {
   ///
   /// \returns -1 if the Instruction does not contain the specified \p Op.
   int getOperandIdx(const MachineInstr &MI, R600Operands::Ops Op) const;
+  int getOperandIdx(const MachineInstr &MI, R600Operands::VecOps Op) const;
 
   /// \brief Get the index of \p Op for the given Opcode.
   ///
   /// \returns -1 if the Instruction does not contain the specified \p Op.
   int getOperandIdx(unsigned Opcode, R600Operands::Ops Op) const;
+  int getOperandIdx(unsigned Opcode, R600Operands::VecOps Op) const;
 
   /// \brief Helper function for setting instruction flag values.
   void setImmOperand(MachineInstr *MI, R600Operands::Ops Op, int64_t Imm) const;

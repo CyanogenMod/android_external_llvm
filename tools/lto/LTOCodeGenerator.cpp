@@ -69,7 +69,7 @@ const char* LTOCodeGenerator::getVersionString() {
 
 LTOCodeGenerator::LTOCodeGenerator()
   : _context(getGlobalContext()),
-    _linker("LinkTimeOptimizer", "ld-temp.o", _context), _target(NULL),
+    _linker(new Module("ld-temp.o", _context)), _target(NULL),
     _emitDwarfDebugInfo(false), _scopeRestrictionsDone(false),
     _codeModel(LTO_CODEGEN_PIC_MODEL_DYNAMIC),
     _nativeObjectFile(NULL) {
@@ -81,6 +81,7 @@ LTOCodeGenerator::LTOCodeGenerator()
 LTOCodeGenerator::~LTOCodeGenerator() {
   delete _target;
   delete _nativeObjectFile;
+  delete _linker.getModule();
 
   for (std::vector<char*>::iterator I = _codegenOptions.begin(),
          E = _codegenOptions.end(); I != E; ++I)
@@ -88,7 +89,7 @@ LTOCodeGenerator::~LTOCodeGenerator() {
 }
 
 bool LTOCodeGenerator::addModule(LTOModule* mod, std::string& errMsg) {
-  bool ret = _linker.LinkInModule(mod->getLLVVMModule(), &errMsg);
+  bool ret = _linker.linkInModule(mod->getLLVVMModule(), &errMsg);
 
   const std::vector<const char*> &undefs = mod->getAsmUndefinedRefs();
   for (int i = 0, e = undefs.size(); i != e; ++i)
@@ -219,9 +220,14 @@ const void* LTOCodeGenerator::compile(size_t* length, std::string& errMsg) {
   return _nativeObjectFile->getBufferStart();
 }
 
-bool LTOCodeGenerator::determineTarget(std::string& errMsg) {
+bool LTOCodeGenerator::determineTarget(std::string &errMsg) {
   if (_target != NULL)
     return false;
+
+  // if options were requested, set them
+  if (!_codegenOptions.empty())
+    cl::ParseCommandLineOptions(_codegenOptions.size(),
+                                const_cast<char **>(&_codegenOptions[0]));
 
   std::string TripleStr = _linker.getModule()->getTargetTriple();
   if (TripleStr.empty())
@@ -304,7 +310,7 @@ void LTOCodeGenerator::applyScopeRestrictions() {
 
   // mark which symbols can not be internalized
   MCContext Context(*_target->getMCAsmInfo(), *_target->getRegisterInfo(),NULL);
-  Mangler mangler(Context, *_target->getDataLayout());
+  Mangler mangler(Context, _target);
   std::vector<const char*> mustPreserveList;
   SmallPtrSet<GlobalValue*, 8> asmUsed;
 
@@ -360,12 +366,7 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
 
   Module* mergedModule = _linker.getModule();
 
-  // if options were requested, set them
-  if (!_codegenOptions.empty())
-    cl::ParseCommandLineOptions(_codegenOptions.size(),
-                                const_cast<char **>(&_codegenOptions[0]));
-
-  // mark which symbols can not be internalized
+  // Mark which symbols can not be internalized
   this->applyScopeRestrictions();
 
   // Instantiate the pass manager to organize the passes.
@@ -381,12 +382,11 @@ bool LTOCodeGenerator::generateObjectFile(raw_ostream &out,
   // Enabling internalize here would use its AllButMain variant. It
   // keeps only main if it exists and does nothing for libraries. Instead
   // we create the pass ourselves with the symbol list provided by the linker.
-  if (!DisableOpt) {
+  if (!DisableOpt)
     PassManagerBuilder().populateLTOPassManager(passes,
                                               /*Internalize=*/false,
                                               !DisableInline,
                                               DisableGVNLoadPRE);
-  }
 
   // Make sure everything is still good.
   passes.add(createVerifierPass());

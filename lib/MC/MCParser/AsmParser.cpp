@@ -201,9 +201,9 @@ public:
   }
 
   virtual bool Warning(SMLoc L, const Twine &Msg,
-                       ArrayRef<SMRange> Ranges = ArrayRef<SMRange>());
+                       ArrayRef<SMRange> Ranges = None);
   virtual bool Error(SMLoc L, const Twine &Msg,
-                     ArrayRef<SMRange> Ranges = ArrayRef<SMRange>());
+                     ArrayRef<SMRange> Ranges = None);
 
   virtual const AsmToken &Lex();
 
@@ -286,7 +286,7 @@ private:
 
   void PrintMacroInstantiations();
   void PrintMessage(SMLoc Loc, SourceMgr::DiagKind Kind, const Twine &Msg,
-                    ArrayRef<SMRange> Ranges = ArrayRef<SMRange>()) const {
+                    ArrayRef<SMRange> Ranges = None) const {
     SrcMgr.PrintMessage(Loc, Kind, Msg, Ranges);
   }
   static void DiagHandler(const SMDiagnostic &Diag, void *Context);
@@ -545,7 +545,7 @@ bool AsmParser::EnterIncludeFile(const std::string &Filename) {
   return false;
 }
 
-/// Process the specified .incbin file by seaching for it in the include paths
+/// Process the specified .incbin file by searching for it in the include paths
 /// then just emitting the byte contents of the file to the streamer. This
 /// returns true on failure.
 bool AsmParser::ProcessIncbinFile(const std::string &Filename) {
@@ -1092,7 +1092,7 @@ bool AsmParser::ParseBinOpRHS(unsigned Precedence, const MCExpr *&Res,
     MCBinaryExpr::Opcode Dummy;
     unsigned NextTokPrec = getBinOpPrecedence(Lexer.getKind(), Dummy);
     if (TokPrec < NextTokPrec) {
-      if (ParseBinOpRHS(Precedence+1, RHS, EndLoc)) return true;
+      if (ParseBinOpRHS(TokPrec+1, RHS, EndLoc)) return true;
     }
 
     // Merge LHS and RHS according to operator.

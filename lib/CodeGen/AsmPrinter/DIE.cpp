@@ -55,11 +55,9 @@ void DIEAbbrev::Profile(FoldingSetNodeID &ID) const {
 ///
 void DIEAbbrev::Emit(AsmPrinter *AP) const {
   // Emit its Dwarf tag type.
-  // FIXME: Doing work even in non-asm-verbose runs.
   AP->EmitULEB128(Tag, dwarf::TagString(Tag));
 
   // Emit whether it has children DIEs.
-  // FIXME: Doing work even in non-asm-verbose runs.
   AP->EmitULEB128(ChildrenFlag, dwarf::ChildrenString(ChildrenFlag));
 
   // For each attribute description.
@@ -67,12 +65,10 @@ void DIEAbbrev::Emit(AsmPrinter *AP) const {
     const DIEAbbrevData &AttrData = Data[i];
 
     // Emit attribute type.
-    // FIXME: Doing work even in non-asm-verbose runs.
     AP->EmitULEB128(AttrData.getAttribute(),
                     dwarf::AttributeString(AttrData.getAttribute()));
 
     // Emit form type.
-    // FIXME: Doing work even in non-asm-verbose runs.
     AP->EmitULEB128(AttrData.getForm(),
                     dwarf::FormEncodingString(AttrData.getForm()));
   }
@@ -112,9 +108,10 @@ DIE::~DIE() {
     delete Children[i];
 }
 
-/// Climb up the parent chain to get the compile unit DIE this DIE belongs to.
-DIE *DIE::getCompileUnit() const{
-  DIE *p = getParent();
+/// Climb up the parent chain to get the compile unit DIE to which this DIE
+/// belongs.
+DIE *DIE::getCompileUnit() {
+  DIE *p = this;
   while (p) {
     if (p->getTag() == dwarf::DW_TAG_compile_unit)
       return p;
@@ -124,8 +121,7 @@ DIE *DIE::getCompileUnit() const{
 }
 
 #ifndef NDEBUG
-void DIE::print(raw_ostream &O, unsigned IncIndent) {
-  IndentCount += IncIndent;
+void DIE::print(raw_ostream &O, unsigned IndentCount) const {
   const std::string Indent(IndentCount, ' ');
   bool isBlock = Abbrev.getTag() == 0;
 
@@ -164,11 +160,10 @@ void DIE::print(raw_ostream &O, unsigned IncIndent) {
   IndentCount -= 2;
 
   for (unsigned j = 0, M = Children.size(); j < M; ++j) {
-    Children[j]->print(O, 4);
+    Children[j]->print(O, IndentCount+4);
   }
 
   if (!isBlock) O << "\n";
-  IndentCount -= IncIndent;
 }
 
 void DIE::dump() {
@@ -179,7 +174,7 @@ void DIE::dump() {
 void DIEValue::anchor() { }
 
 #ifndef NDEBUG
-void DIEValue::dump() {
+void DIEValue::dump() const {
   print(dbgs());
 }
 #endif
@@ -245,7 +240,7 @@ unsigned DIEInteger::SizeOf(AsmPrinter *AP, unsigned Form) const {
 }
 
 #ifndef NDEBUG
-void DIEInteger::print(raw_ostream &O) {
+void DIEInteger::print(raw_ostream &O) const {
   O << "Int: " << (int64_t)Integer << "  0x";
   O.write_hex(Integer);
 }
@@ -271,7 +266,7 @@ unsigned DIELabel::SizeOf(AsmPrinter *AP, unsigned Form) const {
 }
 
 #ifndef NDEBUG
-void DIELabel::print(raw_ostream &O) {
+void DIELabel::print(raw_ostream &O) const {
   O << "Lbl: " << Label->getName();
 }
 #endif
@@ -295,7 +290,7 @@ unsigned DIEDelta::SizeOf(AsmPrinter *AP, unsigned Form) const {
 }
 
 #ifndef NDEBUG
-void DIEDelta::print(raw_ostream &O) {
+void DIEDelta::print(raw_ostream &O) const {
   O << "Del: " << LabelHi->getName() << "-" << LabelLo->getName();
 }
 #endif
@@ -311,7 +306,7 @@ void DIEEntry::EmitValue(AsmPrinter *AP, unsigned Form) const {
 }
 
 #ifndef NDEBUG
-void DIEEntry::print(raw_ostream &O) {
+void DIEEntry::print(raw_ostream &O) const {
   O << format("Die: 0x%lx", (long)(intptr_t)Entry);
 }
 #endif
@@ -361,7 +356,7 @@ unsigned DIEBlock::SizeOf(AsmPrinter *AP, unsigned Form) const {
 }
 
 #ifndef NDEBUG
-void DIEBlock::print(raw_ostream &O) {
+void DIEBlock::print(raw_ostream &O) const {
   O << "Blk: ";
   DIE::print(O, 5);
 }

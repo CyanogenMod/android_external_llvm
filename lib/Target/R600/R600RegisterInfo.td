@@ -35,7 +35,7 @@ foreach Index = 0-127 in {
                                                 Chan>;
   }
   // 128-bit Temporary Registers
-  def T#Index#_XYZW : R600Reg_128 <"T"#Index#".XYZW",
+  def T#Index#_XYZW : R600Reg_128 <"T"#Index#"",
                                    [!cast<Register>("T"#Index#"_X"),
                                     !cast<Register>("T"#Index#"_Y"),
                                     !cast<Register>("T"#Index#"_Z"),
@@ -89,13 +89,13 @@ def ONE_INT : R600Reg<"1", 250>;
 def HALF : R600Reg<"0.5", 252>;
 def NEG_HALF : R600Reg<"-0.5", 252>;
 def ALU_LITERAL_X : R600RegWithChan<"literal.x", 253, "X">;
-def ALU_LITERAL_Y : R600RegWithChan<"literal.x", 253, "Y">;
-def ALU_LITERAL_Z : R600RegWithChan<"literal.x", 253, "Z">;
-def ALU_LITERAL_W : R600RegWithChan<"literal.x", 253, "W">;
-def PV_X : R600RegWithChan<"PV.x", 254, "X">;
-def PV_Y : R600RegWithChan<"PV.y", 254, "Y">;
-def PV_Z : R600RegWithChan<"PV.z", 254, "Z">;
-def PV_W : R600RegWithChan<"PV.w", 254, "W">;
+def ALU_LITERAL_Y : R600RegWithChan<"literal.y", 253, "Y">;
+def ALU_LITERAL_Z : R600RegWithChan<"literal.z", 253, "Z">;
+def ALU_LITERAL_W : R600RegWithChan<"literal.w", 253, "W">;
+def PV_X : R600RegWithChan<"PV.X", 254, "X">;
+def PV_Y : R600RegWithChan<"PV.Y", 254, "Y">;
+def PV_Z : R600RegWithChan<"PV.Z", 254, "Z">;
+def PV_W : R600RegWithChan<"PV.W", 254, "W">;
 def PREDICATE_BIT : R600Reg<"PredicateBit", 0>;
 def PRED_SEL_OFF: R600Reg<"Pred_sel_off", 0>;
 def PRED_SEL_ZERO : R600Reg<"Pred_sel_zero", 2>;

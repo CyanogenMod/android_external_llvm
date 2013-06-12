@@ -65,7 +65,7 @@ bool DIDescriptor::Verify() const {
           DIObjCProperty(DbgNode).Verify() ||
           DITemplateTypeParameter(DbgNode).Verify() ||
           DITemplateValueParameter(DbgNode).Verify() ||
-          DIImportedModule(DbgNode).Verify());
+          DIImportedEntity(DbgNode).Verify());
 }
 
 static Value *getField(const MDNode *DbgNode, unsigned Elt) {
@@ -338,9 +338,11 @@ bool DIDescriptor::isObjCProperty() const {
   return DbgNode && getTag() == dwarf::DW_TAG_APPLE_property;
 }
 
-/// \brief Return true if the specified tag is DW_TAG_imported_module.
-bool DIDescriptor::isImportedModule() const {
-  return DbgNode && getTag() == dwarf::DW_TAG_imported_module;
+/// \brief Return true if the specified tag is DW_TAG_imported_module or
+/// DW_TAG_imported_declaration.
+bool DIDescriptor::isImportedEntity() const {
+  return DbgNode && (getTag() == dwarf::DW_TAG_imported_module ||
+                     getTag() == dwarf::DW_TAG_imported_declaration);
 }
 
 //===----------------------------------------------------------------------===//
@@ -349,9 +351,8 @@ bool DIDescriptor::isImportedModule() const {
 
 DIType::DIType(const MDNode *N) : DIScope(N) {
   if (!N) return;
-  if (!isBasicType() && !isDerivedType() && !isCompositeType()) {
+  if (!isType())
     DbgNode = 0;
-  }
 }
 
 unsigned DIArray::getNumElements() const {
@@ -588,8 +589,9 @@ bool DITemplateValueParameter::Verify() const {
 }
 
 /// \brief Verify that the imported module descriptor is well formed.
-bool DIImportedModule::Verify() const {
-  return isImportedModule() && DbgNode->getNumOperands() == 4;
+bool DIImportedEntity::Verify() const {
+  return isImportedEntity() &&
+         (DbgNode->getNumOperands() == 4 || DbgNode->getNumOperands() == 5);
 }
 
 /// getOriginalTypeSize - If this type is derived from a base type then
@@ -693,6 +695,17 @@ DIArray DISubprogram::getVariables() const {
   return DIArray();
 }
 
+Value *DITemplateValueParameter::getValue() const {
+  return getField(DbgNode, 4);
+}
+
+void DIScope::setFilename(StringRef Name, LLVMContext &Context) {
+  if (!DbgNode)
+    return;
+  MDString *MDName(MDString::get(Context, Name));
+  const_cast<MDNode*>(getNodeField(DbgNode, 1))->replaceOperandWith(0, MDName);
+}
+
 StringRef DIScope::getFilename() const {
   if (!DbgNode)
     return StringRef();
@@ -742,7 +755,7 @@ DIArray DICompileUnit::getGlobalVariables() const {
   return DIArray();
 }
 
-DIArray DICompileUnit::getImportedModules() const {
+DIArray DICompileUnit::getImportedEntities() const {
   if (!DbgNode || DbgNode->getNumOperands() < 13)
     return DIArray();
 
@@ -751,12 +764,20 @@ DIArray DICompileUnit::getImportedModules() const {
   return DIArray();
 }
 
-/// fixupObjcLikeName - Replace contains special characters used
+/// fixupSubprogramName - Replace contains special characters used
 /// in a typical Objective-C names with '.' in a given string.
-static void fixupObjcLikeName(StringRef Str, SmallVectorImpl<char> &Out) {
+static void fixupSubprogramName(DISubprogram Fn, SmallVectorImpl<char> &Out) {
+  StringRef FName =
+      Fn.getFunction() ? Fn.getFunction()->getName() : Fn.getName();
+  FName = Function::getRealLinkageName(FName);
+
+  StringRef Prefix("llvm.dbg.lv.");
+  Out.reserve(FName.size() + Prefix.size());
+  Out.append(Prefix.begin(), Prefix.end());
+
   bool isObjCLike = false;
-  for (size_t i = 0, e = Str.size(); i < e; ++i) {
-    char C = Str[i];
+  for (size_t i = 0, e = FName.size(); i < e; ++i) {
+    char C = FName[i];
     if (C == '[')
       isObjCLike = true;
 
@@ -771,33 +792,16 @@ static void fixupObjcLikeName(StringRef Str, SmallVectorImpl<char> &Out) {
 /// getFnSpecificMDNode - Return a NameMDNode, if available, that is
 /// suitable to hold function specific information.
 NamedMDNode *llvm::getFnSpecificMDNode(const Module &M, DISubprogram Fn) {
-  SmallString<32> Name = StringRef("llvm.dbg.lv.");
-  StringRef FName = "fn";
-  if (Fn.getFunction())
-    FName = Fn.getFunction()->getName();
-  else
-    FName = Fn.getName();
-  char One = '\1';
-  if (FName.startswith(StringRef(&One, 1)))
-    FName = FName.substr(1);
-  fixupObjcLikeName(FName, Name);
+  SmallString<32> Name;
+  fixupSubprogramName(Fn, Name);
   return M.getNamedMetadata(Name.str());
 }
 
 /// getOrInsertFnSpecificMDNode - Return a NameMDNode that is suitable
 /// to hold function specific information.
 NamedMDNode *llvm::getOrInsertFnSpecificMDNode(Module &M, DISubprogram Fn) {
-  SmallString<32> Name = StringRef("llvm.dbg.lv.");
-  StringRef FName = "fn";
-  if (Fn.getFunction())
-    FName = Fn.getFunction()->getName();
-  else
-    FName = Fn.getName();
-  char One = '\1';
-  if (FName.startswith(StringRef(&One, 1)))
-    FName = FName.substr(1);
-  fixupObjcLikeName(FName, Name);
-
+  SmallString<32> Name;
+  fixupSubprogramName(Fn, Name);
   return M.getOrInsertNamedMetadata(Name.str());
 }
 

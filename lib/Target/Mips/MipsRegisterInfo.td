@@ -11,11 +11,16 @@
 //  Declarations that describe the MIPS register file
 //===----------------------------------------------------------------------===//
 let Namespace = "Mips" in {
-def sub_fpeven : SubRegIndex;
-def sub_fpodd  : SubRegIndex;
-def sub_32     : SubRegIndex;
-def sub_lo     : SubRegIndex;
-def sub_hi     : SubRegIndex;
+def sub_fpeven : SubRegIndex<32>;
+def sub_fpodd  : SubRegIndex<32, 32>;
+def sub_32     : SubRegIndex<32>;
+def sub_lo     : SubRegIndex<32>;
+def sub_hi     : SubRegIndex<32, 32>;
+def sub_dsp16_19 : SubRegIndex<4, 16>;
+def sub_dsp20    : SubRegIndex<1, 20>;
+def sub_dsp21    : SubRegIndex<1, 21>;
+def sub_dsp22    : SubRegIndex<1, 22>;
+def sub_dsp23    : SubRegIndex<1, 23>;
 }
 
 class Unallocatable {
@@ -264,8 +269,23 @@ let Namespace = "Mips" in {
 
   def AC0_64 : ACC<0, "ac0", [LO64, HI64]>;
 
-  def DSPCtrl : Register<"dspctrl">;
+  // DSP-ASE control register fields.
+  def DSPPos : Register<"">;
+  def DSPSCount : Register<"">;
+  def DSPCarry : Register<"">;
+  def DSPEFI : Register<"">;
+  def DSPOutFlag16_19 : Register<"">;
+  def DSPOutFlag20 : Register<"">;
+  def DSPOutFlag21 : Register<"">;
+  def DSPOutFlag22 : Register<"">;
+  def DSPOutFlag23 : Register<"">;
   def DSPCCond : Register<"">;
+
+  let SubRegIndices = [sub_dsp16_19, sub_dsp20, sub_dsp21, sub_dsp22,
+                       sub_dsp23] in
+  def DSPOutFlag : RegisterWithSubRegs<"", [DSPOutFlag16_19, DSPOutFlag20,
+                                            DSPOutFlag21, DSPOutFlag22,
+                                            DSPOutFlag23]>;
 }
 
 //===----------------------------------------------------------------------===//

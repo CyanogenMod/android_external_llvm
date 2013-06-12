@@ -252,8 +252,8 @@ public:
                                    formatted_raw_ostream &,
                                    CodeGenFileType,
                                    bool /*DisableVerify*/ = true,
-                                   AnalysisID StartAfter = 0,
-                                   AnalysisID StopAfter = 0) {
+                                   AnalysisID /*StartAfter*/ = 0,
+                                   AnalysisID /*StopAfter*/ = 0) {
     return true;
   }
 
@@ -292,6 +292,7 @@ protected: // Can only create subclasses.
                     Reloc::Model RM, CodeModel::Model CM,
                     CodeGenOpt::Level OL);
 
+  void initAsmInfo();
 public:
   /// \brief Register analysis passes for this target with a pass manager.
   ///

@@ -66,6 +66,15 @@ clang-tools-site-cfg: FORCE
 	$(MAKE) -C $(PROJ_OBJ_DIR)/../tools/clang/tools/extra/test lit.site.cfg
 extra-site-cfgs:: clang-tools-site-cfg
 endif
+
+ifeq ($(shell test -f $(PROJ_OBJ_DIR)/../tools/polly/Makefile && echo OK), OK)
+LIT_ALL_TESTSUITES += $(PROJ_OBJ_DIR)/../tools/polly/test
+
+# Force creation of Polly's lit.site.cfg.
+polly-tools-site-cfg: FORCE
+	$(MAKE) -C $(PROJ_OBJ_DIR)/../tools/polly/test lit.site.cfg
+extra-site-cfgs:: polly-tools-site-cfg
+endif
 endif
 endif
 
@@ -125,7 +134,7 @@ endif
 
 lit.site.cfg: FORCE
 	@echo "Making LLVM 'lit.site.cfg' file..."
-	@$(ECHOPATH) s=@LLVM_HOSTTRIPLE@=$(HOST_TRIPLE)=g > lit.tmp
+	@$(ECHOPATH) s=@LLVM_HOST_TRIPLE@=$(HOST_TRIPLE)=g > lit.tmp
 	@$(ECHOPATH) s=@TARGET_TRIPLE@=$(TARGET_TRIPLE)=g >> lit.tmp
 	@$(ECHOPATH) s=@LLVM_SOURCE_DIR@=$(LLVM_SRC_ROOT)=g >> lit.tmp
 	@$(ECHOPATH) s=@LLVM_BINARY_DIR@=$(LLVM_OBJ_ROOT)=g >> lit.tmp

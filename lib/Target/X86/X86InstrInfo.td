@@ -523,8 +523,7 @@ def i64i8imm   : Operand<i64> {
 
 def lea64_32mem : Operand<i32> {
   let PrintMethod = "printi32mem";
-  let AsmOperandLowerMethod = "lower_lea64_32mem";
-  let MIOperandInfo = (ops GR32, i8imm, GR32_NOSP, i32imm, i8imm);
+  let MIOperandInfo = (ops GR64, i8imm, GR64_NOSP, i32imm, i8imm);
   let ParserMatchClass = X86MemAsmOperand;
 }
 
@@ -546,7 +545,7 @@ def lea32addr : ComplexPattern<i32, 5, "SelectLEAAddr",
                                [add, sub, mul, X86mul_imm, shl, or, frameindex],
                                []>;
 // In 64-bit mode 32-bit LEAs can use RIP-relative addressing.
-def lea64_32addr : ComplexPattern<i32, 5, "SelectLEAAddr",
+def lea64_32addr : ComplexPattern<i32, 5, "SelectLEA64_32Addr",
                                   [add, sub, mul, X86mul_imm, shl, or,
                                    frameindex, X86WrapperRIP],
                                   []>;
@@ -884,12 +883,12 @@ def PUSHF64    : I<0x9C, RawFrm, (outs), (ins), "pushfq", [], IIC_PUSH_F>,
 
 let Defs = [EDI, ESI, EBP, EBX, EDX, ECX, EAX, ESP], Uses = [ESP],
     mayLoad = 1, neverHasSideEffects = 1, SchedRW = [WriteLoad] in {
-def POPA32   : I<0x61, RawFrm, (outs), (ins), "popa{l|d}", [], IIC_POP_A>,
+def POPA32   : I<0x61, RawFrm, (outs), (ins), "popa{l}", [], IIC_POP_A>,
                Requires<[In32BitMode]>;
 }
 let Defs = [ESP], Uses = [EDI, ESI, EBP, EBX, EDX, ECX, EAX, ESP],
     mayStore = 1, neverHasSideEffects = 1, SchedRW = [WriteStore] in {
-def PUSHA32  : I<0x60, RawFrm, (outs), (ins), "pusha{l|d}", [], IIC_PUSH_A>,
+def PUSHA32  : I<0x60, RawFrm, (outs), (ins), "pusha{l}", [], IIC_PUSH_A>,
                Requires<[In32BitMode]>;
 }
 
@@ -1866,6 +1865,9 @@ def : MnemonicAlias<"push",   "pushq",  "att">, Requires<[In64BitMode]>;
 def : MnemonicAlias<"pushf",  "pushfl", "att">, Requires<[In32BitMode]>;
 def : MnemonicAlias<"pushf",  "pushfq", "att">, Requires<[In64BitMode]>;
 def : MnemonicAlias<"pushfd", "pushfl", "att">;
+
+def : MnemonicAlias<"popad",   "popa", "intel">, Requires<[In32BitMode]>;
+def : MnemonicAlias<"pushad",  "pusha", "intel">, Requires<[In32BitMode]>;
 
 def : MnemonicAlias<"repe",  "rep",   "att">;
 def : MnemonicAlias<"repz",  "rep",   "att">;

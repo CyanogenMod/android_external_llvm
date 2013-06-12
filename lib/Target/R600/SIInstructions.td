@@ -22,8 +22,8 @@ def InterpSlot : Operand<i32> {
   let PrintMethod = "printInterpSlot";
 }
 
-def isSI : Predicate<"Subtarget.device()"
-                            "->getGeneration() == AMDGPUDeviceInfo::HD7XXX">;
+def isSI : Predicate<"Subtarget.getGeneration() "
+                      "== AMDGPUSubtarget::SOUTHERN_ISLANDS">;
 
 let Predicates = [isSI] in {
 
@@ -394,18 +394,18 @@ defm V_CMPX_CLASS_F64 : VOPC_64 <0x000000b8, "V_CMPX_CLASS_F64">;
 //def BUFFER_LOAD_FORMAT_X : MUBUF_ <0x00000000, "BUFFER_LOAD_FORMAT_X", []>;
 //def BUFFER_LOAD_FORMAT_XY : MUBUF_ <0x00000001, "BUFFER_LOAD_FORMAT_XY", []>;
 //def BUFFER_LOAD_FORMAT_XYZ : MUBUF_ <0x00000002, "BUFFER_LOAD_FORMAT_XYZ", []>;
-def BUFFER_LOAD_FORMAT_XYZW : MUBUF_Load_Helper <0x00000003, "BUFFER_LOAD_FORMAT_XYZW", VReg_128>;
+defm BUFFER_LOAD_FORMAT_XYZW : MUBUF_Load_Helper <0x00000003, "BUFFER_LOAD_FORMAT_XYZW", VReg_128>;
 //def BUFFER_STORE_FORMAT_X : MUBUF_ <0x00000004, "BUFFER_STORE_FORMAT_X", []>;
 //def BUFFER_STORE_FORMAT_XY : MUBUF_ <0x00000005, "BUFFER_STORE_FORMAT_XY", []>;
 //def BUFFER_STORE_FORMAT_XYZ : MUBUF_ <0x00000006, "BUFFER_STORE_FORMAT_XYZ", []>;
 //def BUFFER_STORE_FORMAT_XYZW : MUBUF_ <0x00000007, "BUFFER_STORE_FORMAT_XYZW", []>;
-//def BUFFER_LOAD_UBYTE : MUBUF_ <0x00000008, "BUFFER_LOAD_UBYTE", []>;
+defm BUFFER_LOAD_UBYTE : MUBUF_Load_Helper <0x00000008, "BUFFER_LOAD_UBYTE", VReg_32>;
 //def BUFFER_LOAD_SBYTE : MUBUF_ <0x00000009, "BUFFER_LOAD_SBYTE", []>;
 //def BUFFER_LOAD_USHORT : MUBUF_ <0x0000000a, "BUFFER_LOAD_USHORT", []>;
 //def BUFFER_LOAD_SSHORT : MUBUF_ <0x0000000b, "BUFFER_LOAD_SSHORT", []>;
-def BUFFER_LOAD_DWORD : MUBUF_Load_Helper <0x0000000c, "BUFFER_LOAD_DWORD", VReg_32>;
-def BUFFER_LOAD_DWORDX2 : MUBUF_Load_Helper <0x0000000d, "BUFFER_LOAD_DWORDX2", VReg_64>;
-def BUFFER_LOAD_DWORDX4 : MUBUF_Load_Helper <0x0000000e, "BUFFER_LOAD_DWORDX4", VReg_128>;
+defm BUFFER_LOAD_DWORD : MUBUF_Load_Helper <0x0000000c, "BUFFER_LOAD_DWORD", VReg_32>;
+defm BUFFER_LOAD_DWORDX2 : MUBUF_Load_Helper <0x0000000d, "BUFFER_LOAD_DWORDX2", VReg_64>;
+defm BUFFER_LOAD_DWORDX4 : MUBUF_Load_Helper <0x0000000e, "BUFFER_LOAD_DWORDX4", VReg_128>;
 //def BUFFER_STORE_BYTE : MUBUF_ <0x00000018, "BUFFER_STORE_BYTE", []>;
 //def BUFFER_STORE_SHORT : MUBUF_ <0x0000001a, "BUFFER_STORE_SHORT", []>;
 
@@ -416,7 +416,10 @@ def BUFFER_STORE_DWORD : MUBUF_Store_Helper <
 def BUFFER_STORE_DWORDX2 : MUBUF_Store_Helper <
   0x0000001d, "BUFFER_STORE_DWORDX2", VReg_64, i64
 >;
-//def BUFFER_STORE_DWORDX4 : MUBUF_DWORDX4 <0x0000001e, "BUFFER_STORE_DWORDX4", []>;
+
+def BUFFER_STORE_DWORDX4 : MUBUF_Store_Helper <
+  0x0000001e, "BUFFER_STORE_DWORDX4", VReg_128, v4i32
+>;
 //def BUFFER_ATOMIC_SWAP : MUBUF_ <0x00000030, "BUFFER_ATOMIC_SWAP", []>;
 //def BUFFER_ATOMIC_CMPSWAP : MUBUF_ <0x00000031, "BUFFER_ATOMIC_CMPSWAP", []>;
 //def BUFFER_ATOMIC_ADD : MUBUF_ <0x00000032, "BUFFER_ATOMIC_ADD", []>;
@@ -495,7 +498,7 @@ defm S_BUFFER_LOAD_DWORDX16 : SMRD_Helper <
 //def S_MEMTIME : SMRD_ <0x0000001e, "S_MEMTIME", []>;
 //def S_DCACHE_INV : SMRD_ <0x0000001f, "S_DCACHE_INV", []>;
 //def IMAGE_LOAD : MIMG_NoPattern_ <"IMAGE_LOAD", 0x00000000>;
-//def IMAGE_LOAD_MIP : MIMG_NoPattern_ <"IMAGE_LOAD_MIP", 0x00000001>;
+def IMAGE_LOAD_MIP : MIMG_NoSampler_Helper <0x00000001, "IMAGE_LOAD_MIP">;
 //def IMAGE_LOAD_PCK : MIMG_NoPattern_ <"IMAGE_LOAD_PCK", 0x00000002>;
 //def IMAGE_LOAD_PCK_SGN : MIMG_NoPattern_ <"IMAGE_LOAD_PCK_SGN", 0x00000003>;
 //def IMAGE_LOAD_MIP_PCK : MIMG_NoPattern_ <"IMAGE_LOAD_MIP_PCK", 0x00000004>;
@@ -504,7 +507,7 @@ defm S_BUFFER_LOAD_DWORDX16 : SMRD_Helper <
 //def IMAGE_STORE_MIP : MIMG_NoPattern_ <"IMAGE_STORE_MIP", 0x00000009>;
 //def IMAGE_STORE_PCK : MIMG_NoPattern_ <"IMAGE_STORE_PCK", 0x0000000a>;
 //def IMAGE_STORE_MIP_PCK : MIMG_NoPattern_ <"IMAGE_STORE_MIP_PCK", 0x0000000b>;
-//def IMAGE_GET_RESINFO : MIMG_NoPattern_ <"IMAGE_GET_RESINFO", 0x0000000e>;
+def IMAGE_GET_RESINFO : MIMG_NoSampler_Helper <0x0000000e, "IMAGE_GET_RESINFO">;
 //def IMAGE_ATOMIC_SWAP : MIMG_NoPattern_ <"IMAGE_ATOMIC_SWAP", 0x0000000f>;
 //def IMAGE_ATOMIC_CMPSWAP : MIMG_NoPattern_ <"IMAGE_ATOMIC_CMPSWAP", 0x00000010>;
 //def IMAGE_ATOMIC_ADD : MIMG_NoPattern_ <"IMAGE_ATOMIC_ADD", 0x00000011>;
@@ -522,20 +525,20 @@ defm S_BUFFER_LOAD_DWORDX16 : SMRD_Helper <
 //def IMAGE_ATOMIC_FCMPSWAP : MIMG_NoPattern_ <"IMAGE_ATOMIC_FCMPSWAP", 0x0000001d>;
 //def IMAGE_ATOMIC_FMIN : MIMG_NoPattern_ <"IMAGE_ATOMIC_FMIN", 0x0000001e>;
 //def IMAGE_ATOMIC_FMAX : MIMG_NoPattern_ <"IMAGE_ATOMIC_FMAX", 0x0000001f>;
-def IMAGE_SAMPLE : MIMG_Load_Helper <0x00000020, "IMAGE_SAMPLE">; 
+def IMAGE_SAMPLE : MIMG_Sampler_Helper <0x00000020, "IMAGE_SAMPLE">; 
 //def IMAGE_SAMPLE_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_CL", 0x00000021>;
-def IMAGE_SAMPLE_D : MIMG_Load_Helper <0x00000022, "IMAGE_SAMPLE_D">;
+def IMAGE_SAMPLE_D : MIMG_Sampler_Helper <0x00000022, "IMAGE_SAMPLE_D">;
 //def IMAGE_SAMPLE_D_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_D_CL", 0x00000023>;
-def IMAGE_SAMPLE_L : MIMG_Load_Helper <0x00000024, "IMAGE_SAMPLE_L">;
-def IMAGE_SAMPLE_B : MIMG_Load_Helper <0x00000025, "IMAGE_SAMPLE_B">;
+def IMAGE_SAMPLE_L : MIMG_Sampler_Helper <0x00000024, "IMAGE_SAMPLE_L">;
+def IMAGE_SAMPLE_B : MIMG_Sampler_Helper <0x00000025, "IMAGE_SAMPLE_B">;
 //def IMAGE_SAMPLE_B_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_B_CL", 0x00000026>;
 //def IMAGE_SAMPLE_LZ : MIMG_NoPattern_ <"IMAGE_SAMPLE_LZ", 0x00000027>;
-def IMAGE_SAMPLE_C : MIMG_Load_Helper <0x00000028, "IMAGE_SAMPLE_C">;
+def IMAGE_SAMPLE_C : MIMG_Sampler_Helper <0x00000028, "IMAGE_SAMPLE_C">;
 //def IMAGE_SAMPLE_C_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_CL", 0x00000029>;
 //def IMAGE_SAMPLE_C_D : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_D", 0x0000002a>;
 //def IMAGE_SAMPLE_C_D_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_D_CL", 0x0000002b>;
-def IMAGE_SAMPLE_C_L : MIMG_Load_Helper <0x0000002c, "IMAGE_SAMPLE_C_L">;
-def IMAGE_SAMPLE_C_B : MIMG_Load_Helper <0x0000002d, "IMAGE_SAMPLE_C_B">;
+def IMAGE_SAMPLE_C_L : MIMG_Sampler_Helper <0x0000002c, "IMAGE_SAMPLE_C_L">;
+def IMAGE_SAMPLE_C_B : MIMG_Sampler_Helper <0x0000002d, "IMAGE_SAMPLE_C_B">;
 //def IMAGE_SAMPLE_C_B_CL : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_B_CL", 0x0000002e>;
 //def IMAGE_SAMPLE_C_LZ : MIMG_NoPattern_ <"IMAGE_SAMPLE_C_LZ", 0x0000002f>;
 //def IMAGE_SAMPLE_O : MIMG_NoPattern_ <"IMAGE_SAMPLE_O", 0x00000030>;
@@ -602,7 +605,9 @@ defm V_READFIRSTLANE_B32 : VOP1_32 <0x00000002, "V_READFIRSTLANE_B32", []>;
 defm V_CVT_F32_I32 : VOP1_32 <0x00000005, "V_CVT_F32_I32",
   [(set f32:$dst, (sint_to_fp i32:$src0))]
 >;
-defm V_CVT_F32_U32 : VOP1_32 <0x00000006, "V_CVT_F32_U32", []>;
+defm V_CVT_F32_U32 : VOP1_32 <0x00000006, "V_CVT_F32_U32",
+  [(set f32:$dst, (uint_to_fp i32:$src0))]
+>;
 defm V_CVT_U32_F32 : VOP1_32 <0x00000007, "V_CVT_U32_F32", []>;
 defm V_CVT_I32_F32 : VOP1_32 <0x00000008, "V_CVT_I32_F32",
   [(set i32:$dst, (fp_to_sint f32:$src0))]
@@ -624,7 +629,9 @@ defm V_MOV_FED_B32 : VOP1_32 <0x00000009, "V_MOV_FED_B32", []>;
 defm V_FRACT_F32 : VOP1_32 <0x00000020, "V_FRACT_F32",
   [(set f32:$dst, (AMDGPUfract f32:$src0))]
 >;
-defm V_TRUNC_F32 : VOP1_32 <0x00000021, "V_TRUNC_F32", []>;
+defm V_TRUNC_F32 : VOP1_32 <0x00000021, "V_TRUNC_F32",
+  [(set f32:$dst, (int_AMDGPU_trunc f32:$src0))]
+>;
 defm V_CEIL_F32 : VOP1_32 <0x00000022, "V_CEIL_F32",
   [(set f32:$dst, (fceil f32:$src0))]
 >;
@@ -848,10 +855,18 @@ defm V_MAX_LEGACY_F32 : VOP2_32 <0x0000000e, "V_MAX_LEGACY_F32",
 
 defm V_MIN_F32 : VOP2_32 <0x0000000f, "V_MIN_F32", []>;
 defm V_MAX_F32 : VOP2_32 <0x00000010, "V_MAX_F32", []>;
-defm V_MIN_I32 : VOP2_32 <0x00000011, "V_MIN_I32", []>;
-defm V_MAX_I32 : VOP2_32 <0x00000012, "V_MAX_I32", []>;
-defm V_MIN_U32 : VOP2_32 <0x00000013, "V_MIN_U32", []>;
-defm V_MAX_U32 : VOP2_32 <0x00000014, "V_MAX_U32", []>;
+defm V_MIN_I32 : VOP2_32 <0x00000011, "V_MIN_I32",
+  [(set i32:$dst, (AMDGPUsmin i32:$src0, i32:$src1))]
+>;
+defm V_MAX_I32 : VOP2_32 <0x00000012, "V_MAX_I32",
+  [(set i32:$dst, (AMDGPUsmax i32:$src0, i32:$src1))]
+>;
+defm V_MIN_U32 : VOP2_32 <0x00000013, "V_MIN_U32",
+  [(set i32:$dst, (AMDGPUumin i32:$src0, i32:$src1))]
+>;
+defm V_MAX_U32 : VOP2_32 <0x00000014, "V_MAX_U32",
+  [(set i32:$dst, (AMDGPUumax i32:$src0, i32:$src1))]
+>;
 
 defm V_LSHR_B32 : VOP2_32 <0x00000015, "V_LSHR_B32",
   [(set i32:$dst, (srl i32:$src0, i32:$src1))]
@@ -952,6 +967,8 @@ def V_FMA_F32 : VOP3_32 <0x0000014b, "V_FMA_F32", []>;
 def V_FMA_F64 : VOP3_64 <0x0000014c, "V_FMA_F64", []>;
 //def V_LERP_U8 : VOP3_U8 <0x0000014d, "V_LERP_U8", []>;
 def V_ALIGNBIT_B32 : VOP3_32 <0x0000014e, "V_ALIGNBIT_B32", []>;
+def : ROTRPattern <V_ALIGNBIT_B32>;
+
 def V_ALIGNBYTE_B32 : VOP3_32 <0x0000014f, "V_ALIGNBYTE_B32", []>;
 def V_MULLIT_F32 : VOP3_32 <0x00000150, "V_MULLIT_F32", []>;
 ////def V_MIN3_F32 : VOP3_MIN3 <0x00000151, "V_MIN3_F32", []>;
@@ -970,9 +987,15 @@ def V_SAD_U32 : VOP3_32 <0x0000015d, "V_SAD_U32", []>;
 ////def V_CVT_PK_U8_F32 : VOP3_U8 <0x0000015e, "V_CVT_PK_U8_F32", []>;
 def V_DIV_FIXUP_F32 : VOP3_32 <0x0000015f, "V_DIV_FIXUP_F32", []>;
 def V_DIV_FIXUP_F64 : VOP3_64 <0x00000160, "V_DIV_FIXUP_F64", []>;
-def V_LSHL_B64 : VOP3_64 <0x00000161, "V_LSHL_B64", []>;
-def V_LSHR_B64 : VOP3_64 <0x00000162, "V_LSHR_B64", []>;
-def V_ASHR_I64 : VOP3_64 <0x00000163, "V_ASHR_I64", []>;
+
+def V_LSHL_B64 : VOP3_64_Shift <0x00000161, "V_LSHL_B64",
+  [(set i64:$dst, (shl i64:$src0, i32:$src1))]
+>;
+def V_LSHR_B64 : VOP3_64_Shift <0x00000162, "V_LSHR_B64",
+  [(set i64:$dst, (srl i64:$src0, i32:$src1))]
+>;
+def V_ASHR_I64 : VOP3_64_Shift <0x00000163, "V_ASHR_I64", []>;
+
 def V_ADD_F64 : VOP3_64 <0x00000164, "V_ADD_F64", []>;
 def V_MUL_F64 : VOP3_64 <0x00000165, "V_MUL_F64", []>;
 def V_MIN_F64 : VOP3_64 <0x00000166, "V_MIN_F64", []>;
@@ -1180,6 +1203,19 @@ def SI_INDIRECT_DST_V16 : SI_INDIRECT_DST<VReg_512>;
 
 } // Uses = [EXEC,VCC,M0], Defs = [EXEC,VCC,M0]
 
+// This psuedo instruction takes a pointer as input and outputs a resource
+// constant that can be used with the ADDR64 MUBUF instructions.
+
+let usesCustomInserter = 1 in {
+
+def SI_ADDR64_RSRC : InstSI <
+  (outs SReg_128:$srsrc),
+  (ins SReg_64:$ptr),
+  "", []
+>;
+
+} // end usesCustomInserter
+
 } // end IsCodeGenOnly, isPseudo
 
 def : Pat<
@@ -1194,10 +1230,8 @@ def : Pat <
 
 /* int_SI_vs_load_input */
 def : Pat<
-  (int_SI_vs_load_input v16i8:$tlst, IMM12bit:$attr_offset,
-                        i32:$buf_idx_vgpr),
-  (BUFFER_LOAD_FORMAT_XYZW imm:$attr_offset, 0, 1, 0, 0, 0,
-                           $buf_idx_vgpr, $tlst, 0, 0, 0)
+  (int_SI_vs_load_input v16i8:$tlst, IMM12bit:$attr_offset, i32:$buf_idx_vgpr),
+  (BUFFER_LOAD_FORMAT_XYZW_IDXEN $tlst, $buf_idx_vgpr, imm:$attr_offset)
 >;
 
 /* int_SI_export */
@@ -1268,6 +1302,36 @@ defm : SamplePatterns<v2i32>;
 defm : SamplePatterns<v4i32>;
 defm : SamplePatterns<v8i32>;
 defm : SamplePatterns<v16i32>;
+
+/* int_SI_imageload for texture fetches consuming varying address parameters */
+class ImageLoadPattern<Intrinsic name, MIMG opcode, ValueType addr_type> : Pat <
+    (name addr_type:$addr, v32i8:$rsrc, imm),
+    (opcode 0xf, 0, 0, 0, 0, 0, 0, 0, $addr, $rsrc)
+>;
+
+class ImageLoadArrayPattern<Intrinsic name, MIMG opcode, ValueType addr_type> : Pat <
+    (name addr_type:$addr, v32i8:$rsrc, TEX_ARRAY),
+    (opcode 0xf, 0, 0, 1, 0, 0, 0, 0, $addr, $rsrc)
+>;
+
+multiclass ImageLoadPatterns<ValueType addr_type> {
+  def : ImageLoadPattern <int_SI_imageload, IMAGE_LOAD_MIP, addr_type>;
+  def : ImageLoadArrayPattern <int_SI_imageload, IMAGE_LOAD_MIP, addr_type>;
+}
+
+defm : ImageLoadPatterns<v2i32>;
+defm : ImageLoadPatterns<v4i32>;
+
+/* Image resource information */
+def : Pat <
+  (int_SI_resinfo i32:$mipid, v32i8:$rsrc, imm),
+  (IMAGE_GET_RESINFO 0xf, 0, 0, 0, 0, 0, 0, 0, (V_MOV_B32_e32 $mipid), $rsrc)
+>;
+
+def : Pat <
+  (int_SI_resinfo i32:$mipid, v32i8:$rsrc, TEX_ARRAY),
+  (IMAGE_GET_RESINFO 0xf, 0, 0, 1, 0, 0, 0, 0, (V_MOV_B32_e32 $mipid), $rsrc)
+>;
 
 /********** ============================================ **********/
 /********** Extraction, Insertion, Building and Casting  **********/
@@ -1492,7 +1556,7 @@ def : Pat <
 // 3. Offset in an 32Bit VGPR
 def : Pat <
   (int_SI_load_const v16i8:$sbase, i32:$voff),
-  (BUFFER_LOAD_DWORD 0, 1, 0, 0, 0, 0, $voff, $sbase, 0, 0, 0)
+  (BUFFER_LOAD_DWORD_OFFEN $sbase, $voff)
 >;
 
 // The multiplication scales from [0,1] to the unsigned integer range
@@ -1539,8 +1603,58 @@ multiclass SMRD_Pattern <SMRD Instr_IMM, SMRD Instr_SGPR, ValueType vt> {
 
 defm : SMRD_Pattern <S_LOAD_DWORD_IMM, S_LOAD_DWORD_SGPR, f32>;
 defm : SMRD_Pattern <S_LOAD_DWORD_IMM, S_LOAD_DWORD_SGPR, i32>;
+defm : SMRD_Pattern <S_LOAD_DWORDX2_IMM, S_LOAD_DWORDX2_SGPR, i64>;
 defm : SMRD_Pattern <S_LOAD_DWORDX4_IMM, S_LOAD_DWORDX4_SGPR, v16i8>;
 defm : SMRD_Pattern <S_LOAD_DWORDX8_IMM, S_LOAD_DWORDX8_SGPR, v32i8>;
+
+//===----------------------------------------------------------------------===//
+// MUBUF Patterns
+//===----------------------------------------------------------------------===//
+
+multiclass MUBUFLoad_Pattern <MUBUF Instr_ADDR64, ValueType vt,
+                              PatFrag global_ld, PatFrag constant_ld> {
+  def : Pat <
+    (vt (global_ld (add i64:$ptr, (i64 IMM12bit:$offset)))),
+    (Instr_ADDR64 (SI_ADDR64_RSRC (i64 0)), $ptr, (as_i16imm $offset))
+  >;
+
+  def : Pat <
+    (vt (global_ld i64:$ptr)),
+    (Instr_ADDR64 (SI_ADDR64_RSRC (i64 0)), $ptr, 0)
+  >;
+
+  def : Pat <
+     (vt (global_ld (add i64:$ptr, i64:$offset))),
+     (Instr_ADDR64 (SI_ADDR64_RSRC $ptr), $offset, 0)
+  >;
+
+  def : Pat <
+     (vt (constant_ld (add i64:$ptr, i64:$offset))),
+     (Instr_ADDR64 (SI_ADDR64_RSRC $ptr), $offset, 0)
+  >;
+}
+
+defm : MUBUFLoad_Pattern <BUFFER_LOAD_DWORD_ADDR64, i32,
+                          global_load, constant_load>;
+defm : MUBUFLoad_Pattern <BUFFER_LOAD_UBYTE_ADDR64, i32,
+                          zextloadi8_global, zextloadi8_constant>;
+
+multiclass MUBUFStore_Pattern <MUBUF Instr, ValueType vt> {
+
+  def : Pat <
+    (global_store vt:$value, i64:$ptr),
+    (Instr $value, (SI_ADDR64_RSRC (i64 0)), $ptr, 0)
+  >;
+
+  def : Pat <
+    (global_store vt:$value, (add i64:$ptr, i64:$offset)),
+    (Instr $value, (SI_ADDR64_RSRC $ptr), $offset, 0)
+   >;
+}
+
+defm : MUBUFStore_Pattern <BUFFER_STORE_DWORD, i32>;
+defm : MUBUFStore_Pattern <BUFFER_STORE_DWORDX2, i64>;
+defm : MUBUFStore_Pattern <BUFFER_STORE_DWORDX4, v4i32>;
 
 /********** ====================== **********/
 /**********   Indirect adressing   **********/
@@ -1591,5 +1705,11 @@ def : Pat<
   (i1 (setcc f32:$src0, f32:$src1, SETUO)),
   (V_CMP_U_F32_e64 $src0, $src1)
 >;
+
+//============================================================================//
+// Miscellaneous Optimization Patterns
+//============================================================================//
+
+def : SHA256MaPattern <V_BFI_B32, V_XOR_B32_e32>;
 
 } // End isSI predicate

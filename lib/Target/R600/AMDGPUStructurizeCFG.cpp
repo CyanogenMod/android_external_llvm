@@ -16,14 +16,14 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPU.h"
-#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SCCIterator.h"
 #include "llvm/Analysis/RegionInfo.h"
 #include "llvm/Analysis/RegionIterator.h"
 #include "llvm/Analysis/RegionPass.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Transforms/Utils/SSAUpdater.h"
 #include "llvm/Support/PatternMatch.h"
+#include "llvm/Transforms/Utils/SSAUpdater.h"
 
 using namespace llvm;
 using namespace llvm::PatternMatch;
@@ -353,7 +353,7 @@ Value *AMDGPUStructurizeCFG::buildCondition(BranchInst *Term, unsigned Idx,
   if (Term->isConditional()) {
     Cond = Term->getCondition();
 
-    if (Idx != Invert)
+    if (Idx != (unsigned)Invert)
       Cond = invert(Cond);
   }
   return Cond;

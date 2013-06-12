@@ -181,7 +181,7 @@ public:
 /// file_magic - An "enum class" enumeration of file types based on magic (the first
 ///         N bytes of the file).
 struct file_magic {
-  enum _ {
+  enum Impl {
     unknown = 0,              ///< Unrecognized file
     bitcode,                  ///< Bitcode file
     archive,                  ///< ar style archive file
@@ -193,7 +193,7 @@ struct file_magic {
     macho_executable,         ///< Mach-O Executable
     macho_fixed_virtual_memory_shared_lib, ///< Mach-O Shared Lib, FVM
     macho_core,               ///< Mach-O Core File
-    macho_preload_executabl,  ///< Mach-O Preloaded Executable
+    macho_preload_executable, ///< Mach-O Preloaded Executable
     macho_dynamically_linked_shared_lib, ///< Mach-O dynlinked shared lib
     macho_dynamic_linker,     ///< The Mach-O dynamic linker
     macho_bundle,             ///< Mach-O Bundle file
@@ -204,16 +204,15 @@ struct file_magic {
   };
 
   bool is_object() const {
-    return v_ == unknown ? false : true;
+    return V == unknown ? false : true;
   }
 
-  file_magic() : v_(unknown) {}
-  file_magic(_ v) : v_(v) {}
-  explicit file_magic(int v) : v_(_(v)) {}
-  operator int() const {return v_;}
+  file_magic() : V(unknown) {}
+  file_magic(Impl V) : V(V) {}
+  operator Impl() const { return V; }
 
 private:
-  int v_;
+  Impl V;
 };
 
 /// @}
@@ -534,7 +533,7 @@ file_magic identify_magic(StringRef magic);
 /// @brief Get and identify \a path's type based on its content.
 ///
 /// @param path Input path.
-/// @param result Set to the type of file, or LLVMFileType::Unknown_FileType.
+/// @param result Set to the type of file, or file_magic::unknown.
 /// @returns errc::success if result has been successfully set, otherwise a
 ///          platform specific error_code.
 error_code identify_magic(const Twine &path, file_magic &result);

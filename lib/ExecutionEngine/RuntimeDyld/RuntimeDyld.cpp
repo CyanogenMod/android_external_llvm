@@ -17,17 +17,21 @@
 #include "RuntimeDyldELF.h"
 #include "RuntimeDyldImpl.h"
 #include "RuntimeDyldMachO.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MathExtras.h"
-#include "llvm/Support/Path.h"
+#include "llvm/Object/ELF.h"
 
 using namespace llvm;
 using namespace llvm::object;
 
 // Empty out-of-line virtual destructor as the key function.
-RTDyldMemoryManager::~RTDyldMemoryManager() {}
 RuntimeDyldImpl::~RuntimeDyldImpl() {}
 
 namespace llvm {
+
+StringRef RuntimeDyldImpl::getEHFrameSection() {
+  return StringRef();
+}
 
 // Resolve the relocations for all symbols we currently know about.
 void RuntimeDyldImpl::resolveRelocations() {
@@ -143,6 +147,7 @@ ObjectImage *RuntimeDyldImpl::loadObject(ObjectBuffer *InputBuffer) {
     bool isFirstRelocation = true;
     unsigned SectionID = 0;
     StubMap Stubs;
+    section_iterator RelocatedSection = si->getRelocatedSection();
 
     for (relocation_iterator i = si->begin_relocations(),
          e = si->end_relocations(); i != e; i.increment(err)) {
@@ -150,7 +155,8 @@ ObjectImage *RuntimeDyldImpl::loadObject(ObjectBuffer *InputBuffer) {
 
       // If it's the first relocation in this section, find its SectionID
       if (isFirstRelocation) {
-        SectionID = findOrEmitSection(*obj, *si, true, LocalSections);
+        SectionID =
+            findOrEmitSection(*obj, *RelocatedSection, true, LocalSections);
         DEBUG(dbgs() << "\tSectionID: " << SectionID << "\n");
         isFirstRelocation = false;
       }
@@ -174,7 +180,7 @@ void RuntimeDyldImpl::emitCommonSymbols(ObjectImage &Obj,
   if (!Addr)
     report_fatal_error("Unable to allocate memory for common symbols!");
   uint64_t Offset = 0;
-  Sections.push_back(SectionEntry(StringRef(), Addr, TotalSize, TotalSize, 0));
+  Sections.push_back(SectionEntry(StringRef(), Addr, TotalSize, 0));
   memset(Addr, 0, TotalSize);
 
   DEBUG(dbgs() << "emitCommonSection SectionID: " << SectionID
@@ -211,11 +217,25 @@ unsigned RuntimeDyldImpl::emitSection(ObjectImage &Obj,
   unsigned StubBufSize = 0,
            StubSize = getMaxStubSize();
   error_code err;
+  const ObjectFile *ObjFile = Obj.getObjectFile();
+  // FIXME: this is an inefficient way to handle this. We should computed the
+  // necessary section allocation size in loadObject by walking all the sections
+  // once.
   if (StubSize > 0) {
-    for (relocation_iterator i = Section.begin_relocations(),
-         e = Section.end_relocations(); i != e; i.increment(err), Check(err))
-      StubBufSize += StubSize;
+    for (section_iterator SI = ObjFile->begin_sections(),
+           SE = ObjFile->end_sections();
+         SI != SE; SI.increment(err), Check(err)) {
+      section_iterator RelSecI = SI->getRelocatedSection();
+      if (!(RelSecI == Section))
+        continue;
+
+      for (relocation_iterator I = SI->begin_relocations(),
+             E = SI->end_relocations(); I != E; I.increment(err), Check(err)) {
+        StubBufSize += StubSize;
+      }
+    }
   }
+
   StringRef data;
   uint64_t Alignment64;
   Check(Section.getContents(data));
@@ -234,6 +254,12 @@ unsigned RuntimeDyldImpl::emitSection(ObjectImage &Obj,
   Check(Section.isReadOnlyData(IsReadOnly));
   Check(Section.getSize(DataSize));
   Check(Section.getName(Name));
+  if (StubSize > 0) {
+    unsigned StubAlignment = getStubAlignment();
+    unsigned EndAlignment = (DataSize | Alignment) & -(DataSize | Alignment);
+    if (StubAlignment > EndAlignment)
+      StubBufSize += StubAlignment - EndAlignment;
+  }
 
   unsigned Allocate;
   unsigned SectionID = Sections.size();
@@ -286,8 +312,7 @@ unsigned RuntimeDyldImpl::emitSection(ObjectImage &Obj,
                  << "\n");
   }
 
-  Sections.push_back(SectionEntry(Name, Addr, Allocate, DataSize,
-				  (uintptr_t)pData));
+  Sections.push_back(SectionEntry(Name, Addr, DataSize, (uintptr_t)pData));
   return SectionID;
 }
 
@@ -330,7 +355,25 @@ void RuntimeDyldImpl::addRelocationForSymbol(const RelocationEntry &RE,
 }
 
 uint8_t *RuntimeDyldImpl::createStubFunction(uint8_t *Addr) {
-  if (Arch == Triple::arm) {
+  if (Arch == Triple::aarch64) {
+    // This stub has to be able to access the full address space,
+    // since symbol lookup won't necessarily find a handy, in-range,
+    // PLT stub for functions which could be anywhere.
+    uint32_t *StubAddr = (uint32_t*)Addr;
+
+    // Stub can use ip0 (== x16) to calculate address
+    *StubAddr = 0xd2e00010; // movz ip0, #:abs_g3:<addr>
+    StubAddr++;
+    *StubAddr = 0xf2c00010; // movk ip0, #:abs_g2_nc:<addr>
+    StubAddr++;
+    *StubAddr = 0xf2a00010; // movk ip0, #:abs_g1_nc:<addr>
+    StubAddr++;
+    *StubAddr = 0xf2800010; // movk ip0, #:abs_g0_nc:<addr>
+    StubAddr++;
+    *StubAddr = 0xd61f0200; // br ip0
+
+    return Addr;
+  } else if (Arch == Triple::arm) {
     // TODO: There is only ARM far stub now. We should add the Thumb stub,
     // and stubs for branches Thumb - ARM and ARM - Thumb.
     uint32_t *StubAddr = (uint32_t*)Addr;
@@ -370,6 +413,13 @@ uint8_t *RuntimeDyldImpl::createStubFunction(uint8_t *Addr) {
     writeInt32BE(Addr+36, 0xE96C0010); // ld    r11, 16(r2)
     writeInt32BE(Addr+40, 0x4E800420); // bctr
 
+    return Addr;
+  } else if (Arch == Triple::systemz) {
+    writeInt16BE(Addr,    0xC418);     // lgrl %r1,.+8
+    writeInt16BE(Addr+2,  0x0000);
+    writeInt16BE(Addr+4,  0x0004);
+    writeInt16BE(Addr+6,  0x07F1);     // brc 15,%r1
+    // 8-byte address stored at Addr + 8
     return Addr;
   }
   return Addr;
@@ -451,33 +501,33 @@ RuntimeDyld::~RuntimeDyld() {
 
 ObjectImage *RuntimeDyld::loadObject(ObjectBuffer *InputBuffer) {
   if (!Dyld) {
-    sys::LLVMFileType type = sys::IdentifyFileType(
-            InputBuffer->getBufferStart(),
-            static_cast<unsigned>(InputBuffer->getBufferSize()));
-    switch (type) {
-      case sys::ELF_Relocatable_FileType:
-      case sys::ELF_Executable_FileType:
-      case sys::ELF_SharedObject_FileType:
-      case sys::ELF_Core_FileType:
-        Dyld = new RuntimeDyldELF(MM);
-        break;
-      case sys::Mach_O_Object_FileType:
-      case sys::Mach_O_Executable_FileType:
-      case sys::Mach_O_FixedVirtualMemorySharedLib_FileType:
-      case sys::Mach_O_Core_FileType:
-      case sys::Mach_O_PreloadExecutable_FileType:
-      case sys::Mach_O_DynamicallyLinkedSharedLib_FileType:
-      case sys::Mach_O_DynamicLinker_FileType:
-      case sys::Mach_O_Bundle_FileType:
-      case sys::Mach_O_DynamicallyLinkedSharedLibStub_FileType:
-      case sys::Mach_O_DSYMCompanion_FileType:
-        Dyld = new RuntimeDyldMachO(MM);
-        break;
-      case sys::Unknown_FileType:
-      case sys::Bitcode_FileType:
-      case sys::Archive_FileType:
-      case sys::COFF_FileType:
-        report_fatal_error("Incompatible object format!");
+    sys::fs::file_magic Type =
+        sys::fs::identify_magic(InputBuffer->getBuffer());
+    switch (Type) {
+    case sys::fs::file_magic::elf_relocatable:
+    case sys::fs::file_magic::elf_executable:
+    case sys::fs::file_magic::elf_shared_object:
+    case sys::fs::file_magic::elf_core:
+      Dyld = new RuntimeDyldELF(MM);
+      break;
+    case sys::fs::file_magic::macho_object:
+    case sys::fs::file_magic::macho_executable:
+    case sys::fs::file_magic::macho_fixed_virtual_memory_shared_lib:
+    case sys::fs::file_magic::macho_core:
+    case sys::fs::file_magic::macho_preload_executable:
+    case sys::fs::file_magic::macho_dynamically_linked_shared_lib:
+    case sys::fs::file_magic::macho_dynamic_linker:
+    case sys::fs::file_magic::macho_bundle:
+    case sys::fs::file_magic::macho_dynamically_linked_shared_lib_stub:
+    case sys::fs::file_magic::macho_dsym_companion:
+      Dyld = new RuntimeDyldMachO(MM);
+      break;
+    case sys::fs::file_magic::unknown:
+    case sys::fs::file_magic::bitcode:
+    case sys::fs::file_magic::archive:
+    case sys::fs::file_magic::coff_object:
+    case sys::fs::file_magic::pecoff_executable:
+      report_fatal_error("Incompatible object format!");
     }
   } else {
     if (!Dyld->isCompatibleFormat(InputBuffer))
@@ -511,6 +561,10 @@ void RuntimeDyld::mapSectionAddress(const void *LocalAddress,
 
 StringRef RuntimeDyld::getErrorString() {
   return Dyld->getErrorString();
+}
+
+StringRef RuntimeDyld::getEHFrameSection() {
+  return Dyld->getEHFrameSection();
 }
 
 } // end namespace llvm

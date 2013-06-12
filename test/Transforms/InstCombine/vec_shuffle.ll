@@ -153,73 +153,35 @@ define <8 x i8> @test12a(<8 x i8> %tmp6, <8 x i8> %tmp2) nounwind {
   ret <8 x i8> %tmp3
 }
 
-; We should form a shuffle out of a select with constant condition.
-define <4 x i16> @test13a(<4 x i16> %lhs, <4 x i16> %rhs) {
+define <2 x i8> @test13a(i8 %x1, i8 %x2) {
 ; CHECK: @test13a
-; CHECK-NEXT: shufflevector <4 x i16> %lhs, <4 x i16> %rhs, <4 x i32> <i32 0, i32 5, i32 2, i32 7>
+; CHECK-NEXT: insertelement {{.*}} undef, i8 %x1, i32 1
+; CHECK-NEXT: insertelement {{.*}} i8 %x2, i32 0
+; CHECK-NEXT: add {{.*}} <i8 7, i8 5>
 ; CHECK-NEXT: ret
-  %A = select <4 x i1> <i1 true, i1 false, i1 true, i1 false>,
-           <4 x i16> %lhs, <4 x i16> %rhs
-  ret <4 x i16> %A
+  %A = insertelement <2 x i8> undef, i8 %x1, i32 0
+  %B = insertelement <2 x i8> %A, i8 %x2, i32 1
+  %C = add <2 x i8> %B, <i8 5, i8 7>
+  %D = shufflevector <2 x i8> %C, <2 x i8> undef, <2 x i32> <i32 1, i32 0>
+  ret <2 x i8> %D
 }
 
-define <4 x i16> @test13b(<4 x i16> %lhs, <4 x i16> %rhs) {
+define <2 x i8> @test13b(i8 %x) {
 ; CHECK: @test13b
-; CHECK-NEXT: ret <4 x i16> %lhs
-  %A = select <4 x i1> <i1 true, i1 undef, i1 true, i1 true>,
-           <4 x i16> %lhs, <4 x i16> %rhs
-  ret <4 x i16> %A
+; CHECK-NEXT: insertelement <2 x i8> undef, i8 %x, i32 1
+; CHECK-NEXT: ret
+  %A = insertelement <2 x i8> undef, i8 %x, i32 0
+  %B = shufflevector <2 x i8> %A, <2 x i8> undef, <2 x i32> <i32 undef, i32 0>
+  ret <2 x i8> %B
 }
 
-define <4 x i16> @test13c(<4 x i16> %lhs, <4 x i16> %rhs) {
+define <2 x i8> @test13c(i8 %x1, i8 %x2) {
 ; CHECK: @test13c
-; CHECK-NEXT: shufflevector <4 x i16> %lhs, <4 x i16> %rhs, <4 x i32> <i32 0, i32 undef, i32 2, i32 7>
+; CHECK-NEXT: insertelement <2 x i8> {{.*}}, i32 0
+; CHECK-NEXT: insertelement <2 x i8> {{.*}}, i32 1
 ; CHECK-NEXT: ret
-  %A = select <4 x i1> <i1 true, i1 undef, i1 true, i1 false>,
-           <4 x i16> %lhs, <4 x i16> %rhs
-  ret <4 x i16> %A
-}
-
-define <4 x i16> @test13d(<4 x i16> %lhs, <4 x i16> %rhs) {
-; CHECK: @test13d
-; CHECK: select
-; CHECK-NEXT: ret
-  %A = select <4 x i1> <i1 true, i1 icmp ugt (<4 x i16>(<4 x i16>, <4 x i16>)* @test13a, <4 x i16>(<4 x i16>, <4 x i16>)* @test13b), i1 true, i1 false>,
-           <4 x i16> %lhs, <4 x i16> %rhs
-  ret <4 x i16> %A
-}
-
-define <4 x i16> @test13e(<4 x i16> %lhs, <4 x i16> %rhs) {
-; CHECK: @test13e
-; CHECK-NEXT: ret <4 x i16> %rhs
-  %A = select <4 x i1> <i1 false, i1 false, i1 false, i1 false>,
-           <4 x i16> %lhs, <4 x i16> %rhs
-  ret <4 x i16> %A
-}
-
-; Check that sequences of insert/extract element are
-; collapsed into shuffle instruction with correct shuffle indexes.
-
-define <4 x float> @test14a(<4 x float> %LHS, <4 x float> %RHS) {
-; CHECK: @test14a
-; CHECK-NEXT: shufflevector <4 x float> %LHS, <4 x float> %RHS, <4 x i32> <i32 4, i32 0, i32 6, i32 6>
-; CHECK-NEXT: ret <4 x float> %tmp4
-        %tmp1 = extractelement <4 x float> %LHS, i32 0
-        %tmp2 = insertelement <4 x float> %RHS, float %tmp1, i32 1
-        %tmp3 = extractelement <4 x float> %RHS, i32 2
-        %tmp4 = insertelement <4 x float> %tmp2, float %tmp3, i32 3
-        ret <4 x float> %tmp4
-}
-
-define <4 x float> @test14b(<4 x float> %LHS, <4 x float> %RHS) {
-; CHECK: @test14b
-; CHECK-NEXT: shufflevector <4 x float> %LHS, <4 x float> %RHS, <4 x i32> <i32 4, i32 3, i32 6, i32 6>
-; CHECK-NEXT: ret <4 x float> %tmp5
-        %tmp0 = extractelement <4 x float> %LHS, i32 3
-        %tmp1 = insertelement <4 x float> %RHS, float %tmp0, i32 0
-        %tmp2 = extractelement <4 x float> %tmp1, i32 0
-        %tmp3 = insertelement <4 x float> %RHS, float %tmp2, i32 1
-        %tmp4 = extractelement <4 x float> %RHS, i32 2
-        %tmp5 = insertelement <4 x float> %tmp3, float %tmp4, i32 3
-        ret <4 x float> %tmp5
+  %A = insertelement <4 x i8> undef, i8 %x1, i32 0
+  %B = insertelement <4 x i8> %A, i8 %x2, i32 2
+  %C = shufflevector <4 x i8> %B, <4 x i8> undef, <2 x i32> <i32 0, i32 2>
+  ret <2 x i8> %C
 }

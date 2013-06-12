@@ -113,8 +113,7 @@ ScheduleHazardRecognizer *ARMBaseInstrInfo::
 CreateTargetPostRAHazardRecognizer(const InstrItineraryData *II,
                                    const ScheduleDAG *DAG) const {
   if (Subtarget.isThumb2() || Subtarget.hasVFP2())
-    return (ScheduleHazardRecognizer *)
-      new ARMHazardRecognizer(II, *this, getRegisterInfo(), Subtarget, DAG);
+    return (ScheduleHazardRecognizer *)new ARMHazardRecognizer(II, DAG);
   return TargetInstrInfo::CreateTargetPostRAHazardRecognizer(II, DAG);
 }
 
@@ -283,14 +282,20 @@ ARMBaseInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,MachineBasicBlock *&TBB,
       return false;
     --I;
   }
-  if (!isUnpredicatedTerminator(I))
-    return false;
 
   // Get the last instruction in the block.
   MachineInstr *LastInst = I;
+  unsigned LastOpc = LastInst->getOpcode();
+
+  // Check if it's an indirect branch first, this should return 'unanalyzable'
+  // even if it's predicated.
+  if (isIndirectBranchOpcode(LastOpc))
+    return true;
+
+  if (!isUnpredicatedTerminator(I))
+    return false;
 
   // If there is only one terminator instruction, process it.
-  unsigned LastOpc = LastInst->getOpcode();
   if (I == MBB.begin() || !isUnpredicatedTerminator(--I)) {
     if (isUncondBranchOpcode(LastOpc)) {
       TBB = LastInst->getOperand(0).getMBB();
@@ -4146,6 +4151,8 @@ bool ARMBaseInstrInfo::hasNOP() const {
 }
 
 bool ARMBaseInstrInfo::isSwiftFastImmShift(const MachineInstr *MI) const {
+  if (MI->getNumOperands() < 4)
+    return true;
   unsigned ShOpVal = MI->getOperand(3).getImm();
   unsigned ShImm = ARM_AM::getSORegOffset(ShOpVal);
   // Swift supports faster shifts for: lsl 2, lsl 1, and lsr 1.

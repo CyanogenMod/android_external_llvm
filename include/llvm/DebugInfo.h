@@ -125,7 +125,7 @@ namespace llvm {
     bool isTemplateTypeParameter() const;
     bool isTemplateValueParameter() const;
     bool isObjCProperty() const;
-    bool isImportedModule() const;
+    bool isImportedEntity() const;
 
     /// print - print descriptor.
     void print(raw_ostream &OS) const;
@@ -166,6 +166,9 @@ namespace llvm {
   public:
     explicit DIScope(const MDNode *N = 0) : DIDescriptor (N) {}
 
+    /// Set the filename by allocating a new string MDNode for
+    /// it and attaching it to the underlying node.
+    void setFilename(StringRef Name, LLVMContext &Context);
     StringRef getFilename() const;
     StringRef getDirectory() const;
   };
@@ -200,7 +203,7 @@ namespace llvm {
     DIArray getRetainedTypes() const;
     DIArray getSubprograms() const;
     DIArray getGlobalVariables() const;
-    DIArray getImportedModules() const;
+    DIArray getImportedEntities() const;
 
     StringRef getSplitDebugFilename() const { return getStringField(12); }
 
@@ -282,7 +285,7 @@ namespace llvm {
       return (getFlags() & FlagStaticMember) != 0;
     }
     bool isValid() const {
-      return DbgNode && (isBasicType() || isDerivedType() || isCompositeType());
+      return DbgNode && isType();
     }
 
     /// isUnsignedDIType - Return true if type encoding is unsigned.
@@ -398,7 +401,7 @@ namespace llvm {
     DIScope getContext() const       { return getFieldAs<DIScope>(1); }
     StringRef getName() const        { return getStringField(2); }
     DIType getType() const           { return getFieldAs<DIType>(3); }
-    uint64_t getValue() const         { return getUInt64Field(4); }
+    Value *getValue() const;
     StringRef getFilename() const    {
       return getFieldAs<DIFile>(5).getFilename();
     }
@@ -423,19 +426,6 @@ namespace llvm {
     StringRef getLinkageName() const  { return getStringField(5); }
     unsigned getLineNumber() const      { return getUnsignedField(6); }
     DICompositeType getType() const { return getFieldAs<DICompositeType>(7); }
-
-    /// getReturnTypeName - Subprogram return types are encoded either as
-    /// DIType or as DICompositeType.
-    StringRef getReturnTypeName() const {
-      DICompositeType DCT(getFieldAs<DICompositeType>(7));
-      if (DCT.Verify()) {
-        DIArray A = DCT.getTypeArray();
-        DIType T(A.getElement(0));
-        return T.getName();
-      }
-      DIType T(getFieldAs<DIType>(7));
-      return T.getName();
-    }
 
     /// isLocalToUnit - Return true if this subprogram is local to the current
     /// compile unit, like 'static' in C.
@@ -477,11 +467,6 @@ namespace llvm {
 
     unsigned isOptimized() const;
 
-    /// getScopeLineNumber - Get the beginning of the scope of the
-    /// function, not necessarily where the name of the program
-    /// starts.
-    unsigned getScopeLineNumber() const { return getUnsignedField(19); }
-
     /// Verify - Verify that a subprogram descriptor is well formed.
     bool Verify() const;
 
@@ -497,6 +482,11 @@ namespace llvm {
     }
     MDNode *getVariablesNodes() const;
     DIArray getVariables() const;
+
+    /// getScopeLineNumber - Get the beginning of the scope of the
+    /// function, not necessarily where the name of the program
+    /// starts.
+    unsigned getScopeLineNumber() const { return getUnsignedField(19); }
   };
 
   /// DIGlobalVariable - This is a wrapper for a global variable.
@@ -658,22 +648,22 @@ namespace llvm {
     StringRef getObjCPropertySetterName() const {
       return getStringField(5);
     }
-    bool isReadOnlyObjCProperty() {
+    bool isReadOnlyObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_readonly) != 0;
     }
-    bool isReadWriteObjCProperty() {
+    bool isReadWriteObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_readwrite) != 0;
     }
-    bool isAssignObjCProperty() {
+    bool isAssignObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_assign) != 0;
     }
-    bool isRetainObjCProperty() {
+    bool isRetainObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_retain) != 0;
     }
-    bool isCopyObjCProperty() {
+    bool isCopyObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_copy) != 0;
     }
-    bool isNonAtomicObjCProperty() {
+    bool isNonAtomicObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_nonatomic) != 0;
     }
 
@@ -684,14 +674,15 @@ namespace llvm {
   };
 
   /// \brief An imported module (C++ using directive or similar).
-  class DIImportedModule : public DIDescriptor {
+  class DIImportedEntity : public DIDescriptor {
     friend class DIDescriptor;
     void printInternal(raw_ostream &OS) const;
   public:
-    explicit DIImportedModule(const MDNode *N) : DIDescriptor(N) { }
+    explicit DIImportedEntity(const MDNode *N) : DIDescriptor(N) { }
     DIScope getContext() const { return getFieldAs<DIScope>(1); }
-    DINameSpace getNameSpace() const { return getFieldAs<DINameSpace>(2); }
+    DIDescriptor getEntity() const { return getFieldAs<DIDescriptor>(2); }
     unsigned getLineNumber() const { return getUnsignedField(3); }
+    StringRef getName() const { return getStringField(4); }
     bool Verify() const;
   };
 
