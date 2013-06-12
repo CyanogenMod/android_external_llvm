@@ -13,6 +13,7 @@ mips_codegen_TBLGEN_TABLES := \
 
 mips_codegen_SRC_FILES := \
   Mips16FrameLowering.cpp \
+  Mips16HardFloat.cpp \
   Mips16ISelDAGToDAG.cpp \
   Mips16ISelLowering.cpp \
   Mips16InstrInfo.cpp \
@@ -31,6 +32,7 @@ mips_codegen_SRC_FILES := \
   MipsMachineFunction.cpp \
   MipsMCInstLower.cpp \
   MipsModuleISelDAGToDAG.cpp \
+  MipsOptimizeMathLibCalls.cpp \
   MipsOs16.cpp \
   MipsRegisterInfo.cpp \
   MipsSEFrameLowering.cpp \

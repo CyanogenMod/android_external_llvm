@@ -44,6 +44,7 @@ llvm_llc_STATIC_LIBRARIES := \
   libLLVMInstCombine \
   libLLVMInstrumentation \
   libLLVMCodeGen \
+  libLLVMObject \
   libLLVMipo \
   libLLVMipa \
   libLLVMLinker \

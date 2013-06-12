@@ -6,7 +6,6 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES :=	\
 	JIT.cpp	\
-	JITDwarfEmitter.cpp	\
 	JITEmitter.cpp	\
 	JITMemoryManager.cpp
 

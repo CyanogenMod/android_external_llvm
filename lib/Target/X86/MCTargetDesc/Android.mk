@@ -8,9 +8,11 @@ x86_mc_desc_TBLGEN_TABLES := \
 x86_mc_desc_SRC_FILES := \
   X86AsmBackend.cpp \
   X86ELFObjectWriter.cpp \
+  X86ELFRelocationInfo.cpp \
   X86MCTargetDesc.cpp \
   X86MCAsmInfo.cpp \
   X86MCCodeEmitter.cpp \
+  X86MachORelocationInfo.cpp \
   X86MachObjectWriter.cpp \
   X86WinCOFFObjectWriter.cpp
 

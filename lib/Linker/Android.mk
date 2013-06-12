@@ -1,8 +1,7 @@
 LOCAL_PATH:= $(call my-dir)
 
 linker_SRC_FILES := \
-  LinkModules.cpp \
-  Linker.cpp
+  LinkModules.cpp
 
 # For the host
 # =====================================================
