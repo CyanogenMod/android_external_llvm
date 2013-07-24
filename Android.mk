@@ -16,6 +16,7 @@ subdirs := \
   lib/CodeGen \
   lib/CodeGen/AsmPrinter \
   lib/CodeGen/SelectionDAG \
+  lib/IR \
   lib/Linker \
   lib/MC \
   lib/MC/MCParser \
@@ -26,10 +27,10 @@ subdirs := \
   lib/Transforms/IPO \
   lib/Transforms/InstCombine \
   lib/Transforms/Instrumentation \
+  lib/Transforms/ObjCARC \
   lib/Transforms/Scalar \
   lib/Transforms/Utils \
   lib/Transforms/Vectorize \
-  lib/VMCore \
   utils/FileCheck \
   utils/TableGen
 
@@ -62,7 +63,7 @@ subdirs += \
   lib/Target/X86/Utils
 
 # LLVM Command Line Tools
-#subdirs += tools/llc
+subdirs += tools/llc
 subdirs += tools/llvm-as
 subdirs += tools/llvm-dis
 subdirs += tools/llvm-link
@@ -70,4 +71,5 @@ subdirs += tools/llvm-link
 
 
 include $(LOCAL_PATH)/llvm.mk
+include $(LOCAL_PATH)/shared_llvm.mk
 include $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, $(subdirs)))

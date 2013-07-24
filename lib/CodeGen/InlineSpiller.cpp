@@ -14,7 +14,6 @@
 
 #define DEBUG_TYPE "regalloc"
 #include "Spiller.h"
-#include "VirtRegMap.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/ADT/TinyPtrVector.h"
 #include "llvm/Analysis/AliasAnalysis.h"
@@ -22,16 +21,17 @@
 #include "llvm/CodeGen/LiveRangeEdit.h"
 #include "llvm/CodeGen/LiveStackAnalysis.h"
 #include "llvm/CodeGen/MachineDominators.h"
-#include "llvm/CodeGen/MachineInstrBundle.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineInstrBundle.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
-#include "llvm/Target/TargetMachine.h"
-#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/CodeGen/VirtRegMap.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Target/TargetInstrInfo.h"
+#include "llvm/Target/TargetMachine.h"
 
 using namespace llvm;
 
@@ -863,7 +863,7 @@ bool InlineSpiller::reMaterializeFor(LiveInterval &VirtReg,
   // If the instruction also writes VirtReg.reg, it had better not require the
   // same register for uses and defs.
   SmallVector<std::pair<MachineInstr*, unsigned>, 8> Ops;
-  MIBundleOperands::RegInfo RI =
+  MIBundleOperands::VirtRegInfo RI =
     MIBundleOperands(MI).analyzeVirtReg(VirtReg.reg, &Ops);
   if (RI.Tied) {
     markValueUsed(&VirtReg, ParentVNI);
@@ -1142,7 +1142,7 @@ void InlineSpiller::spillAroundUses(unsigned Reg) {
 
     // Analyze instruction.
     SmallVector<std::pair<MachineInstr*, unsigned>, 8> Ops;
-    MIBundleOperands::RegInfo RI =
+    MIBundleOperands::VirtRegInfo RI =
       MIBundleOperands(MI).analyzeVirtReg(Reg, &Ops);
 
     // Find the slot index where this instruction reads and writes OldLI.

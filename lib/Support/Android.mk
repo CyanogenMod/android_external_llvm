@@ -10,6 +10,8 @@ support_SRC_FILES := \
   BranchProbability.cpp \
   CommandLine.cpp \
   ConstantRange.cpp \
+  ConvertUTF.c \
+  ConvertUTFWrapper.cpp \
   CrashRecoveryContext.cpp \
   DAGDeltaAlgorithm.cpp \
   DataStream.cpp \

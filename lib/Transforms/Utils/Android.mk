@@ -1,7 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 
 transforms_utils_SRC_FILES := \
-  AddrModeMatcher.cpp \
   BasicBlockUtils.cpp \
   BreakCriticalEdges.cpp \
   BuildLibCalls.cpp \
@@ -22,12 +21,14 @@ transforms_utils_SRC_FILES := \
   LowerInvoke.cpp \
   LowerSwitch.cpp \
   Mem2Reg.cpp \
+  MetaRenamer.cpp \
   ModuleUtils.cpp \
   PromoteMemoryToRegister.cpp \
   SSAUpdater.cpp \
   SimplifyCFG.cpp \
   SimplifyIndVar.cpp \
   SimplifyInstructions.cpp \
+  SimplifyLibCalls.cpp \
   UnifyFunctionExitNodes.cpp \
   Utils.cpp \
   ValueMapper.cpp

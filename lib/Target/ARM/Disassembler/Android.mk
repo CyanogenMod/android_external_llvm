@@ -2,7 +2,6 @@ LOCAL_PATH := $(call my-dir)
 
 arm_disassembler_TBLGEN_TABLES := \
   ARMGenDisassemblerTables.inc \
-  ARMGenEDInfo.inc \
   ARMGenInstrInfo.inc \
   ARMGenSubtargetInfo.inc \
   ARMGenRegisterInfo.inc

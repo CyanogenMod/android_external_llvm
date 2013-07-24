@@ -11,14 +11,15 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "llvm/Support/Host.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
+#include "llvm/ADT/Triple.h"
+#include "llvm/Config/config.h"
 #include "llvm/Support/DataStream.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Config/config.h"
 #include <string.h>
 
 // Include the platform-specific parts of this class.
@@ -234,6 +235,8 @@ std::string sys::getHostCPUName() {
       case 37: // Intel Core i7, laptop version.
       case 44: // Intel Core i7 processor and Intel Xeon processor. All
                // processors are manufactured using the 32 nm process.
+      case 46: // Nehalem EX
+      case 47: // Westmere EX
         return "corei7";
 
       // SandyBridge:
@@ -303,6 +306,7 @@ std::string sys::getHostCPUName() {
         case 8:  return "k6-2";
         case 9:
         case 13: return "k6-3";
+        case 10: return "geode";
         default: return "pentium";
         }
       case 6:
@@ -327,7 +331,10 @@ std::string sys::getHostCPUName() {
       case 20:
         return "btver1";
       case 21:
-        return "bdver1";
+        if (Model <= 15)
+          return "bdver1";
+        else if (Model <= 31)
+          return "bdver2";
     default:
       return "generic";
     }
@@ -500,6 +507,7 @@ std::string sys::getHostCPUName() {
           .Case("0xb76", "arm1176jz-s")
           .Case("0xc08", "cortex-a8")
           .Case("0xc09", "cortex-a9")
+          .Case("0xc0f", "cortex-a15")
           .Case("0xc20", "cortex-m0")
           .Case("0xc23", "cortex-m3")
           .Case("0xc24", "cortex-m4")
@@ -513,6 +521,75 @@ std::string sys::getHostCPUName() {
 }
 #endif
 
+#if defined(__linux__) && defined(__arm__)
+bool sys::getHostCPUFeatures(StringMap<bool> &Features) {
+  std::string Err;
+  DataStreamer *DS = getDataFileStreamer("/proc/cpuinfo", &Err);
+  if (!DS) {
+    DEBUG(dbgs() << "Unable to open /proc/cpuinfo: " << Err << "\n");
+    return false;
+  }
+
+  // Read 1024 bytes from /proc/cpuinfo, which should contain the Features line
+  // in all cases.
+  char buffer[1024];
+  size_t CPUInfoSize = DS->GetBytes((unsigned char*) buffer, sizeof(buffer));
+  delete DS;
+
+  StringRef Str(buffer, CPUInfoSize);
+
+  SmallVector<StringRef, 32> Lines;
+  Str.split(Lines, "\n");
+
+  // Look for the CPU implementer line.
+  StringRef Implementer;
+  for (unsigned I = 0, E = Lines.size(); I != E; ++I)
+    if (Lines[I].startswith("CPU implementer"))
+      Implementer = Lines[I].substr(15).ltrim("\t :");
+
+  if (Implementer == "0x41") { // ARM Ltd.
+    SmallVector<StringRef, 32> CPUFeatures;
+
+    // Look for the CPU features.
+    for (unsigned I = 0, E = Lines.size(); I != E; ++I)
+      if (Lines[I].startswith("Features")) {
+        Lines[I].split(CPUFeatures, " ");
+        break;
+      }
+
+    for (unsigned I = 0, E = CPUFeatures.size(); I != E; ++I) {
+      StringRef LLVMFeatureStr = StringSwitch<StringRef>(CPUFeatures[I])
+        .Case("half", "fp16")
+        .Case("neon", "neon")
+        .Case("vfpv3", "vfp3")
+        .Case("vfpv3d16", "d16")
+        .Case("vfpv4", "vfp4")
+        .Case("idiva", "hwdiv-arm")
+        .Case("idivt", "hwdiv")
+        .Default("");
+
+      if (LLVMFeatureStr != "")
+        Features.GetOrCreateValue(LLVMFeatureStr).setValue(true);
+    }
+
+    return true;
+  }
+
+  return false;
+}
+#else
 bool sys::getHostCPUFeatures(StringMap<bool> &Features){
   return false;
+}
+#endif
+
+std::string sys::getProcessTriple() {
+  Triple PT(LLVM_HOSTTRIPLE);
+
+  if (sizeof(void *) == 8 && PT.isArch32Bit())
+    PT = PT.get64BitArchVariant();
+  if (sizeof(void *) == 4 && PT.isArch64Bit())
+    PT = PT.get32BitArchVariant();
+
+  return PT.str();
 }

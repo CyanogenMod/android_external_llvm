@@ -20,8 +20,8 @@
 #ifndef LLVM_ADT_SPARSESET_H
 #define LLVM_ADT_SPARSESET_H
 
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/DataTypes.h"
 #include <limits>
 
@@ -128,8 +128,8 @@ class SparseSet {
 
   // Disable copy construction and assignment.
   // This data structure is not meant to be used that way.
-  SparseSet(const SparseSet&); // DO NOT IMPLEMENT.
-  SparseSet &operator=(const SparseSet&); // DO NOT IMPLEMENT.
+  SparseSet(const SparseSet&) LLVM_DELETED_FUNCTION;
+  SparseSet &operator=(const SparseSet&) LLVM_DELETED_FUNCTION;
 
 public:
   typedef ValueT value_type;

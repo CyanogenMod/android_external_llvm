@@ -17,11 +17,11 @@
 #define TBLGEN_SEQUENCE_TO_OFFSET_TABLE_H
 
 #include "llvm/Support/raw_ostream.h"
-#include <functional>
 #include <algorithm>
-#include <vector>
 #include <cassert>
 #include <cctype>
+#include <functional>
+#include <vector>
 
 namespace llvm {
 
@@ -82,7 +82,7 @@ public:
   }
 
   bool empty() const { return Seqs.empty(); }
-  
+
   /// layout - Computes the final table layout.
   void layout() {
     assert(Entries == 0 && "Can only call layout() once");

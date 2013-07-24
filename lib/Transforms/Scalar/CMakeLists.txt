@@ -21,10 +21,10 @@ add_llvm_library(LLVMScalarOpts
   LoopUnswitch.cpp
   LowerAtomic.cpp
   MemCpyOptimizer.cpp
-  ObjCARC.cpp
   Reassociate.cpp
   Reg2Mem.cpp
   SCCP.cpp
+  SROA.cpp
   Scalar.cpp
   ScalarReplAggregates.cpp
   SimplifyCFGPass.cpp

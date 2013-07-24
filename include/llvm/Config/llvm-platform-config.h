@@ -14,6 +14,9 @@
 /* LLVM architecture name for the native architecture, if available */
 #define LLVM_NATIVE_ARCH X86
 
+/* Host triple LLVM will be executed on */
+#define LLVM_HOSTTRIPLE "i686-unknown-linux-gnu"
+
 /* LLVM name for the native AsmParser init function, if available */
 #define LLVM_NATIVE_ASMPARSER LLVMInitializeX86AsmParser
 
@@ -38,6 +41,9 @@
 /* LLVM architecture name for the native architecture, if available */
 #define LLVM_NATIVE_ARCH ARM
 
+/* Host triple LLVM will be executed on */
+#define LLVM_HOSTTRIPLE "arm-unknown-linux-gnu"
+
 /* LLVM name for the native AsmParser init function, if available */
 #define LLVM_NATIVE_ASMPARSER LLVMInitializeARMAsmParser
 
@@ -61,6 +67,9 @@
 
 /* LLVM architecture name for the native architecture, if available */
 #define LLVM_NATIVE_ARCH Mips
+
+/* Host triple LLVM will be executed on */
+#define LLVM_HOSTTRIPLE "mipsel-unknown-linux-gnu"
 
 /* LLVM name for the native AsmParser init function, if available */
 #define LLVM_NATIVE_ASMPARSER LLVMInitializeMipsAsmParser

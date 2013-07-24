@@ -58,7 +58,16 @@ enum NodeType {
   RETURN,
   CallSeqBegin,
   CallSeqEnd,
-  Dummy
+  Dummy,
+
+  LoadV2 = ISD::FIRST_TARGET_MEMORY_OPCODE,
+  LoadV4,
+  LDGV2, // LDG.v2
+  LDGV4, // LDG.v4
+  LDUV2, // LDU.v2
+  LDUV4, // LDU.v4
+  StoreV2,
+  StoreV4
 };
 }
 
@@ -92,6 +101,8 @@ public:
   virtual unsigned getFunctionAlignment(const Function *F) const;
 
   virtual EVT getSetCCResultType(EVT VT) const {
+    if (VT.isVector())
+      return MVT::getVectorVT(MVT::i1, VT.getVectorNumElements());
     return MVT::i1;
   }
 
@@ -125,9 +136,11 @@ public:
   NVPTXTargetMachine *nvTM;
 
   // PTX always uses 32-bit shift amounts
-  virtual MVT getShiftAmountTy(EVT LHSTy) const {
+  virtual MVT getScalarShiftAmountTy(EVT LHSTy) const {
     return MVT::i32;
   }
+
+  virtual bool shouldSplitVectorElementType(EVT VT) const;
 
 private:
   const NVPTXSubtarget &nvptxSubtarget;  // cache the subtarget here
@@ -138,6 +151,17 @@ private:
   SDValue getParamHelpSymbol(SelectionDAG &DAG, int idx);
 
   SDValue LowerCONCAT_VECTORS(SDValue Op, SelectionDAG &DAG) const;
+
+  SDValue LowerLOAD(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerLOADi1(SDValue Op, SelectionDAG &DAG) const;
+
+  SDValue LowerSTORE(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerSTOREi1(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerSTOREVector(SDValue Op, SelectionDAG &DAG) const;
+
+  virtual void ReplaceNodeResults(SDNode *N,
+                                  SmallVectorImpl<SDValue> &Results,
+                                  SelectionDAG &DAG) const;
 };
 } // namespace llvm
 

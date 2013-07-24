@@ -5,7 +5,6 @@ libtablegen_SRC_FILES := \
   Main.cpp \
   Record.cpp \
   StringMatcher.cpp \
-  TableGenAction.cpp \
   TableGenBackend.cpp \
   TGLexer.cpp \
   TGParser.cpp

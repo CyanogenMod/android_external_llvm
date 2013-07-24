@@ -14,11 +14,11 @@ analysis_SRC_FILES := \
   CaptureTracking.cpp \
   CodeMetrics.cpp \
   ConstantFolding.cpp \
-  DbgInfoPrinter.cpp \
+  CostModel.cpp \
+  DependenceAnalysis.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
   IVUsers.cpp \
-  InlineCost.cpp \
   InstCount.cpp \
   InstructionSimplify.cpp \
   Interval.cpp \
@@ -28,7 +28,6 @@ analysis_SRC_FILES := \
   LibCallSemantics.cpp \
   Lint.cpp \
   Loads.cpp \
-  LoopDependenceAnalysis.cpp \
   LoopInfo.cpp \
   LoopPass.cpp \
   MemDepPrinter.cpp \
@@ -48,6 +47,7 @@ analysis_SRC_FILES := \
   ProfileInfoLoader.cpp \
   ProfileInfoLoaderPass.cpp \
   ProfileVerifierPass.cpp \
+  PtrUseVisitor.cpp \
   RegionInfo.cpp \
   RegionPass.cpp \
   RegionPrinter.cpp \
@@ -56,6 +56,7 @@ analysis_SRC_FILES := \
   ScalarEvolutionExpander.cpp \
   ScalarEvolutionNormalization.cpp \
   SparsePropagation.cpp \
+  TargetTransformInfo.cpp \
   Trace.cpp \
   TypeBasedAliasAnalysis.cpp \
   ValueTracking.cpp

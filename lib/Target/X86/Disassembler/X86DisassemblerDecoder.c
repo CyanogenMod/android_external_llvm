@@ -138,6 +138,10 @@ static InstrUID decode(OpcodeType type,
     if (modFromModRM(modRM) == 0x3)
       return modRMTable[dec->instructionIDs+((modRM & 0x38) >> 3)+8];
     return modRMTable[dec->instructionIDs+((modRM & 0x38) >> 3)];
+  case MODRM_SPLITMISC:
+    if (modFromModRM(modRM) == 0x3)
+      return modRMTable[dec->instructionIDs+(modRM & 0x3f)+8];
+    return modRMTable[dec->instructionIDs+((modRM & 0x38) >> 3)];
   case MODRM_FULL:
     return modRMTable[dec->instructionIDs+modRM];
   }
@@ -690,7 +694,7 @@ static int getIDWithAttrMask(uint16_t* instructionID,
  * @param orig  - The instruction that is not 16-bit
  * @param equiv - The instruction that is 16-bit
  */
-static BOOL is16BitEquvalent(const char* orig, const char* equiv) {
+static BOOL is16BitEquivalent(const char* orig, const char* equiv) {
   off_t i;
   
   for (i = 0;; i++) {
@@ -856,7 +860,7 @@ static int getID(struct InternalInstruction* insn, const void *miiArg) {
     specWithOpSizeName =
       x86DisassemblerGetInstrName(instructionIDWithOpsize, miiArg);
 
-    if (is16BitEquvalent(specName, specWithOpSizeName)) {
+    if (is16BitEquivalent(specName, specWithOpSizeName)) {
       insn->instructionID = instructionIDWithOpsize;
       insn->spec = specifierForUID(instructionIDWithOpsize);
     } else {

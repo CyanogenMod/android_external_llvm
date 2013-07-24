@@ -3,9 +3,11 @@ LOCAL_PATH:= $(call my-dir)
 analysis_ipa_SRC_FILES := \
   CallGraph.cpp \
   CallGraphSCCPass.cpp \
+  CallPrinter.cpp \
   FindUsedTypes.cpp \
   GlobalsModRef.cpp \
-  IPA.cpp
+  IPA.cpp \
+  InlineCost.cpp
 
 # For the host
 # =====================================================

@@ -3,25 +3,13 @@
 # selections.
 
 include(AddLLVMDefinitions)
+include(CheckCCompilerFlag)
+include(CheckCXXCompilerFlag)
 
 if( CMAKE_COMPILER_IS_GNUCXX )
   set(LLVM_COMPILER_IS_GCC_COMPATIBLE ON)
 elseif( "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang" )
   set(LLVM_COMPILER_IS_GCC_COMPATIBLE ON)
-endif()
-
-# Run-time build mode; It is used for unittests.
-if(MSVC_IDE)
-  # Expect "$(Configuration)", "$(OutDir)", etc.
-  # It is expanded by msbuild or similar.
-  set(RUNTIME_BUILD_MODE "${CMAKE_CFG_INTDIR}")
-elseif(NOT CMAKE_BUILD_TYPE STREQUAL "")
-  # Expect "Release" "Debug", etc.
-  # Or unittests could not run.
-  set(RUNTIME_BUILD_MODE ${CMAKE_BUILD_TYPE})
-else()
-  # It might be "."
-  set(RUNTIME_BUILD_MODE "${CMAKE_CFG_INTDIR}")
 endif()
 
 if( LLVM_ENABLE_ASSERTIONS )
@@ -71,6 +59,24 @@ else(WIN32)
   endif(UNIX)
 endif(WIN32)
 
+function(add_flag_or_print_warning flag)
+  check_c_compiler_flag(${flag} C_SUPPORTS_${flag})
+  check_cxx_compiler_flag(${flag} CXX_SUPPORTS_${flag})
+  if (C_SUPPORTS_${flag} AND CXX_SUPPORTS_${flag})
+    message(STATUS "Building with ${flag}")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${flag}" PARENT_SCOPE)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${flag}" PARENT_SCOPE)
+  else()
+    message(WARNING "${flag} is not supported.")
+  endif()
+endfunction()
+
+function(append_if variable value condition)
+  if (${condition})
+    set(${variable} "${${variable}} ${value}" PARENT_SCOPE)
+  endif()
+endfunction()
+
 if( LLVM_ENABLE_PIC )
   if( XCODE )
     # Xcode has -mdynamic-no-pic on by default, which overrides -fPIC. I don't
@@ -79,24 +85,14 @@ if( LLVM_ENABLE_PIC )
   elseif( WIN32 OR CYGWIN)
     # On Windows all code is PIC. MinGW warns if -fPIC is used.
   else()
-    include(CheckCXXCompilerFlag)
-    check_cxx_compiler_flag("-fPIC" SUPPORTS_FPIC_FLAG)
-    if( SUPPORTS_FPIC_FLAG )
-      message(STATUS "Building with -fPIC")
-      set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-      set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
-    else( SUPPORTS_FPIC_FLAG )
-      message(WARNING "-fPIC not supported.")
-    endif()
+    add_flag_or_print_warning("-fPIC")
 
     if( WIN32 OR CYGWIN)
       # MinGW warns if -fvisibility-inlines-hidden is used.
     else()
       check_cxx_compiler_flag("-fvisibility-inlines-hidden" SUPPORTS_FVISIBILITY_INLINES_HIDDEN_FLAG)
-      if( SUPPORTS_FVISIBILITY_INLINES_HIDDEN_FLAG )
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fvisibility-inlines-hidden")
-      endif()
-     endif()
+      append_if(CMAKE_CXX_FLAGS "-fvisibility-inlines-hidden" SUPPORTS_FVISIBILITY_INLINES_HIDDEN_FLAG)
+    endif()
   endif()
 endif()
 
@@ -168,6 +164,7 @@ if( MSVC )
     -wd4551 # Suppress 'function call missing argument list'
     -wd4624 # Suppress ''derived class' : destructor could not be generated because a base class destructor is inaccessible'
     -wd4715 # Suppress ''function' : not all control paths return a value'
+    -wd4722 # Suppress ''function' : destructor never returns, potential memory leak'
     -wd4800 # Suppress ''type' : forcing value to bool 'true' or 'false' (performance warning)'
 
     # Promoted warnings.
@@ -175,7 +172,6 @@ if( MSVC )
 
     # Promoted warnings to errors.
     -we4238 # Promote 'nonstandard extension used : class rvalue used as lvalue' to error.
-    -we4239 # Promote 'nonstandard extension used : 'token' : conversion from 'type' to 'type'' to error.
     )
 
   # Enable warnings
@@ -191,13 +187,28 @@ if( MSVC )
 elseif( LLVM_COMPILER_IS_GCC_COMPATIBLE )
   if (LLVM_ENABLE_WARNINGS)
     add_llvm_definitions( -Wall -W -Wno-unused-parameter -Wwrite-strings )
+
+    # Turn off missing field initializer warnings for gcc to avoid noise from
+    # false positives with empty {}. Turn them on otherwise (they're off by
+    # default for clang).
+    check_cxx_compiler_flag("-Wmissing-field-initializers" CXX_SUPPORTS_MISSING_FIELD_INITIALIZERS_FLAG)
+    if (CXX_SUPPORTS_MISSING_FIELD_INITIALIZERS_FLAG)
+      if (CMAKE_COMPILER_IS_GNUCXX)
+        add_llvm_definitions( -Wno-missing-field-initializers )
+      else()
+        add_llvm_definitions( -Wmissing-field-initializers )
+      endif()
+    endif()
+
     if (LLVM_ENABLE_PEDANTIC)
       add_llvm_definitions( -pedantic -Wno-long-long )
     endif (LLVM_ENABLE_PEDANTIC)
-    check_cxx_compiler_flag("-Werror -Wcovered-switch-default" SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG)
-    if( SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG )
-      add_llvm_definitions( -Wcovered-switch-default )
-    endif()
+    check_cxx_compiler_flag("-Werror -Wcovered-switch-default" CXX_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG)
+    append_if(CMAKE_CXX_FLAGS "-Wcovered-switch-default" CXX_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG)
+    check_c_compiler_flag("-Werror -Wcovered-switch-default" C_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG)
+    append_if(CMAKE_C_FLAGS "-Wcovered-switch-default" C_SUPPORTS_COVERED_SWITCH_DEFAULT_FLAG)
+    append_if(CMAKE_CXX_FLAGS "-Wno-uninitialized" USE_NO_UNINITIALIZED)
+    append_if(CMAKE_CXX_FLAGS "-Wno-maybe-uninitialized" USE_NO_MAYBE_UNINITIALIZED)
   endif (LLVM_ENABLE_WARNINGS)
   if (LLVM_ENABLE_WERROR)
     add_llvm_definitions( -Werror )

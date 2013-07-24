@@ -4,6 +4,7 @@ codegen_SRC_FILES := \
   AggressiveAntiDepBreaker.cpp \
   AllocationOrder.cpp \
   Analysis.cpp \
+  BasicTargetTransformInfo.cpp \
   BranchFolding.cpp \
   CalcSpillWeights.cpp \
   CallingConvLower.cpp \
@@ -25,6 +26,7 @@ codegen_SRC_FILES := \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
   IntrinsicLowering.cpp \
+  JITCodeEmitter.cpp \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
   LiveDebugVariables.cpp \
@@ -43,6 +45,7 @@ codegen_SRC_FILES := \
   MachineBlockPlacement.cpp \
   MachineBranchProbabilityInfo.cpp \
   MachineCSE.cpp \
+  MachineCodeEmitter.cpp \
   MachineCopyPropagation.cpp \
   MachineDominators.cpp \
   MachineFunction.cpp \
@@ -53,10 +56,10 @@ codegen_SRC_FILES := \
   MachineInstrBundle.cpp \
   MachineLICM.cpp \
   MachineLoopInfo.cpp \
-  MachineLoopRanges.cpp \
   MachineModuleInfo.cpp \
   MachineModuleInfoImpls.cpp \
   MachinePassRegistry.cpp \
+  MachinePostDominators.cpp \
   MachineRegisterInfo.cpp \
   MachineSSAUpdater.cpp \
   MachineScheduler.cpp \
@@ -99,9 +102,12 @@ codegen_SRC_FILES := \
   StrongPHIElimination.cpp \
   TailDuplication.cpp \
   TargetFrameLoweringImpl.cpp \
-  TargetInstrInfoImpl.cpp \
+  TargetInstrInfo.cpp \
+  TargetLoweringBase.cpp \
   TargetLoweringObjectFileImpl.cpp \
   TargetOptionsImpl.cpp \
+  TargetRegisterInfo.cpp \
+  TargetSchedule.cpp \
   TwoAddressInstructionPass.cpp \
   UnreachableBlockElim.cpp \
   VirtRegMap.cpp

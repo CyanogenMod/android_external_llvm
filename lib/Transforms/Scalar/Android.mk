@@ -23,10 +23,10 @@ transforms_scalar_SRC_FILES := \
   LoopUnswitch.cpp \
   LowerAtomic.cpp \
   MemCpyOptimizer.cpp \
-  ObjCARC.cpp \
   Reassociate.cpp \
   Reg2Mem.cpp \
   SCCP.cpp \
+  SROA.cpp \
   Scalar.cpp \
   ScalarReplAggregates.cpp \
   SimplifyCFGPass.cpp \
@@ -55,6 +55,13 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(transforms_scalar_SRC_FILES)
 LOCAL_MODULE:= libLLVMScalarOpts
+
+# Override the default optimization level to work around a SIGSEGV
+# on x86 target builds for SROA.cpp.
+# Bug: 8047767
+ifeq ($(TARGET_ARCH),x86)
+LOCAL_CFLAGS += -O1
+endif
 
 LOCAL_MODULE_TAGS := optional
 

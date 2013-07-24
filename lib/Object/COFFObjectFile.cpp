@@ -269,7 +269,7 @@ error_code COFFObjectFile::getSymbolNMTypeChar(DataRefImpl Symb,
   }
 
   if (symb->StorageClass == COFF::IMAGE_SYM_CLASS_EXTERNAL)
-    ret = ::toupper(ret);
+    ret = ::toupper(static_cast<unsigned char>(ret));
 
   Result = ret;
   return object_error::success;
@@ -288,6 +288,11 @@ error_code COFFObjectFile::getSymbolSection(DataRefImpl Symb,
     Result = section_iterator(SectionRef(Sec, this));
   }
   return object_error::success;
+}
+
+error_code COFFObjectFile::getSymbolValue(DataRefImpl Symb,
+                                          uint64_t &Val) const {
+  report_fatal_error("getSymbolValue unimplemented in COFFObjectFile");
 }
 
 error_code COFFObjectFile::getSectionNext(DataRefImpl Sec,
@@ -374,7 +379,14 @@ error_code COFFObjectFile::isSectionVirtual(DataRefImpl Sec,
 
 error_code COFFObjectFile::isSectionZeroInit(DataRefImpl Sec,
                                              bool &Result) const {
-  // FIXME: Unimplemented
+  // FIXME: Unimplemented.
+  Result = false;
+  return object_error::success;
+}
+
+error_code COFFObjectFile::isSectionReadOnlyData(DataRefImpl Sec,
+                                                bool &Result) const {
+  // FIXME: Unimplemented.
   Result = false;
   return object_error::success;
 }

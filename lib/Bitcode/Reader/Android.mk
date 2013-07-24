@@ -2,7 +2,8 @@ LOCAL_PATH:= $(call my-dir)
 
 bitcode_reader_SRC_FILES := \
 	BitReader.cpp	\
-	BitcodeReader.cpp
+	BitcodeReader.cpp \
+	BitstreamReader.cpp
 
 # For the host
 # =====================================================

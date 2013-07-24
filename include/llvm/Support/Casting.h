@@ -15,6 +15,7 @@
 #ifndef LLVM_SUPPORT_CASTING_H
 #define LLVM_SUPPORT_CASTING_H
 
+#include "llvm/Support/type_traits.h"
 #include <cassert>
 
 namespace llvm {
@@ -44,11 +45,21 @@ template<typename From> struct simplify_type<const From> {
 // The core of the implementation of isa<X> is here; To and From should be
 // the names of classes.  This template can be specialized to customize the
 // implementation of isa<> without rewriting it from scratch.
-template <typename To, typename From>
+template <typename To, typename From, typename Enabler = void>
 struct isa_impl {
   static inline bool doit(const From &Val) {
     return To::classof(&Val);
   }
+};
+
+/// \brief Always allow upcasts, and perform no dynamic check for them.
+template <typename To, typename From>
+struct isa_impl<To, From,
+                typename enable_if<
+                  llvm::is_base_of<To, From>
+                >::type
+               > {
+  static inline bool doit(const From &) { return true; }
 };
 
 template <typename To, typename From> struct isa_impl_cl {
@@ -65,18 +76,21 @@ template <typename To, typename From> struct isa_impl_cl<To, const From> {
 
 template <typename To, typename From> struct isa_impl_cl<To, From*> {
   static inline bool doit(const From *Val) {
+    assert(Val && "isa<> used on a null pointer");
     return isa_impl<To, From>::doit(*Val);
   }
 };
 
 template <typename To, typename From> struct isa_impl_cl<To, const From*> {
   static inline bool doit(const From *Val) {
+    assert(Val && "isa<> used on a null pointer");
     return isa_impl<To, From>::doit(*Val);
   }
 };
 
 template <typename To, typename From> struct isa_impl_cl<To, const From*const> {
   static inline bool doit(const From *Val) {
+    assert(Val && "isa<> used on a null pointer");
     return isa_impl<To, From>::doit(*Val);
   }
 };
@@ -190,10 +204,33 @@ template<class To, class FromTy> struct cast_convert_val<To,FromTy,FromTy> {
 //  cast<Instruction>(myVal)->getParent()
 //
 template <class X, class Y>
-inline typename cast_retty<X, Y>::ret_type cast(const Y &Val) {
+inline typename enable_if_c<
+  !is_same<Y, typename simplify_type<Y>::SimpleType>::value,
+  typename cast_retty<X, Y>::ret_type
+>::type cast(const Y &Val) {
   assert(isa<X>(Val) && "cast<Ty>() argument of incompatible type!");
   return cast_convert_val<X, Y,
                           typename simplify_type<Y>::SimpleType>::doit(Val);
+}
+
+template <class X, class Y>
+inline typename enable_if<
+  is_same<Y, typename simplify_type<Y>::SimpleType>,
+  typename cast_retty<X, Y>::ret_type
+>::type cast(Y &Val) {
+  assert(isa<X>(Val) && "cast<Ty>() argument of incompatible type!");
+  return cast_convert_val<X, Y,
+                          typename simplify_type<Y>::SimpleType>::doit(Val);
+}
+
+template <class X, class Y>
+inline typename enable_if<
+  is_same<Y, typename simplify_type<Y>::SimpleType>,
+  typename cast_retty<X, Y*>::ret_type
+>::type cast(Y *Val) {
+  assert(isa<X>(Val) && "cast<Ty>() argument of incompatible type!");
+  return cast_convert_val<X, Y*,
+                          typename simplify_type<Y*>::SimpleType>::doit(Val);
 }
 
 // cast_or_null<X> - Functionally identical to cast, except that a null value is
@@ -216,8 +253,27 @@ inline typename cast_retty<X, Y*>::ret_type cast_or_null(Y *Val) {
 //
 
 template <class X, class Y>
-inline typename cast_retty<X, Y>::ret_type dyn_cast(const Y &Val) {
-  return isa<X>(Val) ? cast<X, Y>(Val) : 0;
+inline typename enable_if_c<
+  !is_same<Y, typename simplify_type<Y>::SimpleType>::value,
+  typename cast_retty<X, Y>::ret_type
+>::type dyn_cast(const Y &Val) {
+  return isa<X>(Val) ? cast<X>(Val) : 0;
+}
+
+template <class X, class Y>
+inline typename enable_if<
+  is_same<Y, typename simplify_type<Y>::SimpleType>,
+  typename cast_retty<X, Y>::ret_type
+>::type dyn_cast(Y &Val) {
+  return isa<X>(Val) ? cast<X>(Val) : 0;
+}
+
+template <class X, class Y>
+inline typename enable_if<
+  is_same<Y, typename simplify_type<Y>::SimpleType>,
+  typename cast_retty<X, Y*>::ret_type
+>::type dyn_cast(Y *Val) {
+  return isa<X>(Val) ? cast<X>(Val) : 0;
 }
 
 // dyn_cast_or_null<X> - Functionally identical to dyn_cast, except that a null

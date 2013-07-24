@@ -1,10 +1,11 @@
 ; RUN: llc -mtriple=x86_64-apple-darwin %s -o %t -filetype=obj
-; RUN: llvm-dwarfdump %t | FileCheck %s
+; RUN: llvm-dwarfdump -debug-dump=all %t | FileCheck %s
 
 ; Checks that we don't emit a size for a pointer type.
 ; CHECK: DW_TAG_pointer_type
 ; CHECK-NEXT: DW_AT_type
-; CHECK-NOT-NEXT: DW_AT_byte_size
+; CHECK-NOT: DW_AT_byte_size
+; CHECK: .debug_info contents
 
 %struct.A = type { i32 }
 
@@ -23,13 +24,11 @@ declare void @llvm.dbg.declare(metadata, metadata) nounwind readnone
 
 !llvm.dbg.cu = !{!0}
 
-!0 = metadata !{i32 786449, i32 0, i32 4, metadata !"foo.cpp", metadata !"/Users/echristo", metadata !"clang version 3.1 (trunk 150996)", i1 true, i1 false, metadata !"", i32 0, metadata !1, metadata !1, metadata !3, metadata !1} ; [ DW_TAG_compile_unit ]
-!1 = metadata !{metadata !2}
-!2 = metadata !{i32 0}
-!3 = metadata !{metadata !4}
-!4 = metadata !{metadata !5}
-!5 = metadata !{i32 786478, i32 0, metadata !6, metadata !"foo", metadata !"foo", metadata !"_Z3fooP1A", metadata !6, i32 3, metadata !7, i1 false, i1 true, i32 0, i32 0, null, i32 256, i1 false, i32 (%struct.A*)* @_Z3fooP1A, null, null, metadata !14} ; [ DW_TAG_subprogram ]
-!6 = metadata !{i32 786473, metadata !"foo.cpp", metadata !"/Users/echristo", null} ; [ DW_TAG_file_type ]
+!0 = metadata !{i32 786449, i32 0, i32 4, metadata !6, metadata !"clang version 3.1 (trunk 150996)", i1 false, metadata !"", i32 0, metadata !1, metadata !1, metadata !3, metadata !1, metadata !""} ; [ DW_TAG_compile_unit ]
+!1 = metadata !{i32 0}
+!3 = metadata !{metadata !5}
+!5 = metadata !{i32 786478, i32 0, metadata !6, metadata !"foo", metadata !"foo", metadata !"_Z3fooP1A", metadata !6, i32 3, metadata !7, i1 false, i1 true, i32 0, i32 0, null, i32 256, i1 false, i32 (%struct.A*)* @_Z3fooP1A, null, null, metadata !14, i32 3} ; [ DW_TAG_subprogram ]
+!6 = metadata !{i32 786473, metadata !20} ; [ DW_TAG_file_type ]
 !7 = metadata !{i32 786453, i32 0, metadata !"", i32 0, i32 0, i64 0, i64 0, i64 0, i32 0, null, metadata !8, i32 0, i32 0} ; [ DW_TAG_subroutine_type ]
 !8 = metadata !{metadata !9, metadata !10}
 !9 = metadata !{i32 786468, null, metadata !"int", null, i32 0, i64 32, i64 32, i64 0, i32 0, i32 5} ; [ DW_TAG_base_type ]
@@ -43,3 +42,4 @@ declare void @llvm.dbg.declare(metadata, metadata) nounwind readnone
 !17 = metadata !{i32 3, i32 13, metadata !5, null}
 !18 = metadata !{i32 4, i32 3, metadata !19, null}
 !19 = metadata !{i32 786443, metadata !5, i32 3, i32 16, metadata !6, i32 0} ; [ DW_TAG_lexical_block ]
+!20 = metadata !{metadata !"foo.cpp", metadata !"/Users/echristo"}

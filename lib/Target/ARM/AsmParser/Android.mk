@@ -5,7 +5,6 @@ LOCAL_PATH := $(call my-dir)
 #===---------------------------------------------------------------===
 
 arm_asm_parser_SRC_FILES := \
-  ARMAsmLexer.cpp \
   ARMAsmParser.cpp
 
 arm_asm_parser_TBLGEN_TABLES := \

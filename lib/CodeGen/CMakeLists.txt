@@ -2,14 +2,15 @@ add_llvm_library(LLVMCodeGen
   AggressiveAntiDepBreaker.cpp
   AllocationOrder.cpp
   Analysis.cpp
+  BasicTargetTransformInfo.cpp
   BranchFolding.cpp
   CalcSpillWeights.cpp
   CallingConvLower.cpp
   CodeGen.cpp
   CodePlacementOpt.cpp
   CriticalAntiDepBreaker.cpp
-  DeadMachineInstructionElim.cpp
   DFAPacketizer.cpp
+  DeadMachineInstructionElim.cpp
   DwarfEHPrepare.cpp
   EarlyIfConversion.cpp
   EdgeBundles.cpp
@@ -31,19 +32,19 @@ add_llvm_library(LLVMCodeGen
   LiveInterval.cpp
   LiveIntervalAnalysis.cpp
   LiveIntervalUnion.cpp
+  LiveRangeCalc.cpp
+  LiveRangeEdit.cpp
   LiveRegMatrix.cpp
   LiveStackAnalysis.cpp
   LiveVariables.cpp
-  LiveRangeCalc.cpp
-  LiveRangeEdit.cpp
   LocalStackSlotAllocation.cpp
   MachineBasicBlock.cpp
   MachineBlockFrequencyInfo.cpp
   MachineBlockPlacement.cpp
   MachineBranchProbabilityInfo.cpp
+  MachineCSE.cpp
   MachineCodeEmitter.cpp
   MachineCopyPropagation.cpp
-  MachineCSE.cpp
   MachineDominators.cpp
   MachineFunction.cpp
   MachineFunctionAnalysis.cpp
@@ -53,10 +54,10 @@ add_llvm_library(LLVMCodeGen
   MachineInstrBundle.cpp
   MachineLICM.cpp
   MachineLoopInfo.cpp
-  MachineLoopRanges.cpp
   MachineModuleInfo.cpp
   MachineModuleInfoImpls.cpp
   MachinePassRegistry.cpp
+  MachinePostDominators.cpp
   MachineRegisterInfo.cpp
   MachineSSAUpdater.cpp
   MachineScheduler.cpp
@@ -90,18 +91,21 @@ add_llvm_library(LLVMCodeGen
   ShrinkWrapping.cpp
   SjLjEHPrepare.cpp
   SlotIndexes.cpp
-  Spiller.cpp
   SpillPlacement.cpp
+  Spiller.cpp
   SplitKit.cpp
+  StackColoring.cpp
   StackProtector.cpp
   StackSlotColoring.cpp
-  StackColoring.cpp
   StrongPHIElimination.cpp
   TailDuplication.cpp
   TargetFrameLoweringImpl.cpp
-  TargetInstrInfoImpl.cpp
+  TargetInstrInfo.cpp
+  TargetLoweringBase.cpp
   TargetLoweringObjectFileImpl.cpp
   TargetOptionsImpl.cpp
+  TargetRegisterInfo.cpp
+  TargetSchedule.cpp
   TwoAddressInstructionPass.cpp
   UnreachableBlockElim.cpp
   VirtRegMap.cpp

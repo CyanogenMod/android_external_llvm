@@ -16,7 +16,7 @@
 
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/PointerIntPair.h"
-#include "llvm/Value.h"
+#include "llvm/IR/Value.h"
 
 namespace llvm {
 class ValueHandleBase;
@@ -59,8 +59,8 @@ private:
   // pair. The 'setValPtrInt' and 'getValPtrInt' methods below give them this
   // access.
   PointerIntPair<Value*, 2> VP;
-  
-  explicit ValueHandleBase(const ValueHandleBase&); // DO NOT IMPLEMENT.
+
+  ValueHandleBase(const ValueHandleBase&) LLVM_DELETED_FUNCTION;
 public:
   explicit ValueHandleBase(HandleBaseKind Kind)
     : PrevPair(0, Kind), Next(0), VP(0, 0) {}

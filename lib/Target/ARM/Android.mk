@@ -12,17 +12,16 @@ arm_codegen_TBLGEN_TABLES := \
   ARMGenFastISel.inc \
   ARMGenCallingConv.inc \
   ARMGenSubtargetInfo.inc \
-  ARMGenEDInfo.inc \
   ARMGenDisassemblerTables.inc
 
 arm_codegen_SRC_FILES := \
+  A15SDOptimizer.cpp \
   ARMAsmPrinter.cpp \
   ARMBaseInstrInfo.cpp \
   ARMBaseRegisterInfo.cpp \
   ARMCodeEmitter.cpp \
   ARMConstantIslandPass.cpp \
   ARMConstantPoolValue.cpp \
-  ARMELFWriterInfo.cpp \
   ARMExpandPseudoInsts.cpp \
   ARMFastISel.cpp \
   ARMFrameLowering.cpp \
@@ -39,7 +38,7 @@ arm_codegen_SRC_FILES := \
   ARMSubtarget.cpp \
   ARMTargetMachine.cpp \
   ARMTargetObjectFile.cpp \
-  InstPrinter/ARMInstPrinter.cpp \
+  ARMTargetTransformInfo.cpp \
   MLxExpansionPass.cpp \
   Thumb1FrameLowering.cpp \
   Thumb1InstrInfo.cpp \

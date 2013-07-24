@@ -43,21 +43,22 @@ public:
 
   /// Code Generation virtual methods...
   const uint16_t *getCalleeSavedRegs(const MachineFunction* MF = 0) const;
-  const unsigned *getCallPreservedMask(CallingConv::ID CC) const;
+  const uint32_t *getCallPreservedMask(CallingConv::ID CC) const;
 
   BitVector getReservedRegs(const MachineFunction &MF) const;
 
-  virtual bool avoidWriteAfterWrite(const TargetRegisterClass *RC) const;
+  /// We require the register scavenger.
+  bool requiresRegisterScavenging(const MachineFunction &MF) const {
+    return true;
+  }
 
-  /// requiresRegisterScavenging - We require a register scavenger.
-  /// FIXME (64-bit): Should be inlined.
-  bool requiresRegisterScavenging(const MachineFunction &MF) const;
+  bool requiresFrameIndexScavenging(const MachineFunction &MF) const {
+    return true;
+  }
 
-  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const;
-
-  void eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                     MachineBasicBlock &MBB,
-                                     MachineBasicBlock::iterator I) const;
+  bool trackLivenessAfterRegAlloc(const MachineFunction &MF) const {
+    return true;
+  }
 
   void lowerDynamicAlloc(MachineBasicBlock::iterator II,
                          int SPAdj, RegScavenger *RS) const;
@@ -65,8 +66,11 @@ public:
                        int SPAdj, RegScavenger *RS) const;
   void lowerCRRestore(MachineBasicBlock::iterator II, unsigned FrameIndex,
                        int SPAdj, RegScavenger *RS) const;
+  bool hasReservedSpillSlot(const MachineFunction &MF, unsigned Reg,
+			    int &FrameIdx) const;
   void eliminateFrameIndex(MachineBasicBlock::iterator II,
-                           int SPAdj, RegScavenger *RS = NULL) const;
+                           int SPAdj, unsigned FIOperandNum,
+                           RegScavenger *RS = NULL) const;
 
   // Debug information queries.
   unsigned getFrameRegister(const MachineFunction &MF) const;

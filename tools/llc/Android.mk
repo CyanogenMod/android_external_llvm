@@ -30,6 +30,7 @@ llvm_llc_arm_STATIC_LIBRARIES := \
   libLLVMARMCodeGen \
   libLLVMARMDisassembler \
   libLLVMARMAsmParser \
+  libLLVMARMAsmPrinter \
   libLLVMARMDesc \
   libLLVMARMInfo
 
@@ -104,7 +105,7 @@ else
     LOCAL_STATIC_LIBRARIES := $(llvm_llc_mips_STATIC_LIBRARIES)
   else
     ifeq ($(TARGET_ARCH),x86)
-      LOCAL_STATIC_LIBRARIES := $(llvm_llc__STATIC_LIBRARIES)
+      LOCAL_STATIC_LIBRARIES := $(llvm_llc_x86_STATIC_LIBRARIES)
     else
       $(error "Unsupport llc target $(TARGET_ARCH)")
     endif

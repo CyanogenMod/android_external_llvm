@@ -17,9 +17,9 @@
 #include "NVPTXSubtarget.h"
 #include "NVPTXTargetMachine.h"
 #include "llvm/ADT/BitVector.h"
-#include "llvm/CodeGen/MachineInstrBuilder.h"
-#include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
+#include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/MC/MachineLocation.h"
 #include "llvm/Target/TargetInstrInfo.h"
 
@@ -74,3 +74,14 @@ void NVPTXFrameLowering::emitPrologue(MachineFunction &MF) const {
 void NVPTXFrameLowering::emitEpilogue(MachineFunction &MF,
                                       MachineBasicBlock &MBB) const {
 }
+
+// This function eliminates ADJCALLSTACKDOWN,
+// ADJCALLSTACKUP pseudo instructions
+void NVPTXFrameLowering::
+eliminateCallFramePseudoInstr(MachineFunction &MF, MachineBasicBlock &MBB,
+                              MachineBasicBlock::iterator I) const {
+  // Simply discard ADJCALLSTACKDOWN,
+  // ADJCALLSTACKUP instructions.
+  MBB.erase(I);
+}
+

@@ -24,11 +24,15 @@ using namespace llvm;
 #undef MemoryFence
 #endif
 
+#if defined(__GNUC__) || (defined(__IBMCPP__) && __IBMCPP__ >= 1210)
+#define GNU_ATOMICS
+#endif
+
 void sys::MemoryFence() {
 #if LLVM_HAS_ATOMICS == 0
   return;
 #else
-#  if defined(__GNUC__)
+#  if defined(GNU_ATOMICS)
   __sync_synchronize();
 #  elif defined(_MSC_VER)
   MemoryBarrier();
@@ -49,7 +53,7 @@ sys::cas_flag sys::CompareAndSwap(volatile sys::cas_flag* ptr,
 #elif defined(ANDROID_TARGET_BUILD)
   return android_atomic_cmpxchg((int32_t)old_value, (int32_t)new_value,
                                 (volatile int*)ptr);
-#elif defined(__GNUC__)
+#elif defined(GNU_ATOMICS)
   return __sync_val_compare_and_swap(ptr, old_value, new_value);
 #elif defined(_MSC_VER)
   return InterlockedCompareExchange(ptr, new_value, old_value);
@@ -64,7 +68,7 @@ sys::cas_flag sys::AtomicIncrement(volatile sys::cas_flag* ptr) {
   return *ptr;
 #elif defined(ANDROID_TARGET_BUILD)
   return android_atomic_inc((volatile int*)ptr);
-#elif defined(__GNUC__)
+#elif defined(GNU_ATOMICS)
   return __sync_add_and_fetch(ptr, 1);
 #elif defined(_MSC_VER)
   return InterlockedIncrement(ptr);
@@ -79,7 +83,7 @@ sys::cas_flag sys::AtomicDecrement(volatile sys::cas_flag* ptr) {
   return *ptr;
 #elif defined(ANDROID_TARGET_BUILD)
   return android_atomic_dec((volatile int*)ptr);
-#elif defined(__GNUC__)
+#elif defined(GNU_ATOMICS)
   return __sync_sub_and_fetch(ptr, 1);
 #elif defined(_MSC_VER)
   return InterlockedDecrement(ptr);
@@ -94,7 +98,7 @@ sys::cas_flag sys::AtomicAdd(volatile sys::cas_flag* ptr, sys::cas_flag val) {
   return *ptr;
 #elif defined(ANDROID_TARGET_BUILD)
   return android_atomic_add((int32_t)val, (volatile int*)ptr);
-#elif defined(__GNUC__)
+#elif defined(GNU_ATOMICS)
   return __sync_add_and_fetch(ptr, val);
 #elif defined(_MSC_VER)
   return InterlockedExchangeAdd(ptr, val) + val;

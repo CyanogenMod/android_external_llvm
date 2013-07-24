@@ -17,13 +17,12 @@
 #include "ARMConstantPoolValue.h"
 #include "ARMRelocations.h"
 #include "ARMSubtarget.h"
-#include "MCTargetDesc/ARMAddressingModes.h"
-#include "llvm/Function.h"
 #include "llvm/CodeGen/JITCodeEmitter.h"
+#include "llvm/IR/Function.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/Memory.h"
+#include "llvm/Support/raw_ostream.h"
 #include <cstdlib>
 using namespace llvm;
 
@@ -49,7 +48,7 @@ static TargetJITInfo::JITCompilerFn JITCompilerFunction;
 // write our own wrapper, which does things our way, so we have complete
 // control over register saving and restoring.
 extern "C" {
-#if defined(__arm__) && !defined(ANDROID)
+#if defined(__arm__)
   void ARMCompilationCallback();
   asm(
     ".text\n"
@@ -249,7 +248,6 @@ intptr_t ARMJITInfo::resolveRelocDestAddr(MachineRelocation *MR) const {
     return getJumpTableBaseAddr(MR->getJumpTableIndex());
   case ARM::reloc_arm_cp_entry:
   case ARM::reloc_arm_vfp_cp_entry:
-  case ARM::reloc_arm_so_imm_cp_entry:
     // Constant pool entry address.
     return getConstantPoolEntryAddr(MR->getConstantPoolIndex());
   case ARM::reloc_arm_machine_cp_entry: {
@@ -294,29 +292,6 @@ void ARMJITInfo::relocate(void *Function, MachineRelocation *MR,
       // Set register Rn to PC (which is register 15 on all architectures).
       // FIXME: This avoids the need for register info in the JIT class.
       *((intptr_t*)RelocPos) |= 15 << ARMII::RegRnShift;
-      break;
-    }
-    case ARM::reloc_arm_so_imm_cp_entry: {
-      ResultPtr = ResultPtr - (intptr_t)RelocPos - 8;
-      // If the result is positive, set bit U(23) to 1.
-      if (ResultPtr >= 0)
-        *((intptr_t*)RelocPos) |= 1 << ARMII::U_BitShift;
-      else {
-        // Otherwise, obtain the absolute value and set bit U(23) to 0.
-        *((intptr_t*)RelocPos) &= ~(1 << ARMII::U_BitShift);
-        // FIXME: Also set bit 22 to 1 since 'sub' instruction is going to be used.
-        *((intptr_t*)RelocPos) |= 1 << 22;
-        ResultPtr = - ResultPtr;
-      }
-
-      int SoImmVal = ARM_AM::getSOImmVal(ResultPtr);
-      assert(SoImmVal != -1 && "Not a valid so_imm value!");
-      *((intptr_t*)RelocPos) |= (ARM_AM::getSOImmValRot((unsigned)SoImmVal) >> 1)
-            << ARMII::SoRotImmShift;
-      *((intptr_t*)RelocPos) |= ARM_AM::getSOImmValImm((unsigned)SoImmVal);
-       // Set register Rn to PC (which is register 15 on all architectures).
-       // FIXME: This avoids the need for register info in the JIT class.
-       *((intptr_t*)RelocPos) |= 15 << ARMII::RegRnShift;
       break;
     }
     case ARM::reloc_arm_pic_jt:

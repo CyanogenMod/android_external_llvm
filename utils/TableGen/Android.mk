@@ -8,6 +8,7 @@ tablegen_SRC_FILES := \
   CodeEmitterGen.cpp \
   CodeGenDAGPatterns.cpp \
   CodeGenInstruction.cpp \
+  CodeGenMapTable.cpp \
   CodeGenRegisters.cpp \
   CodeGenSchedule.cpp \
   CodeGenTarget.cpp \
@@ -18,11 +19,11 @@ tablegen_SRC_FILES := \
   DAGISelMatcher.cpp \
   DFAPacketizerEmitter.cpp \
   DisassemblerEmitter.cpp \
-  EDEmitter.cpp \
   FastISelEmitter.cpp \
   FixedLenDecoderEmitter.cpp \
   InstrInfoEmitter.cpp \
   IntrinsicEmitter.cpp \
+  OptParserEmitter.cpp \
   PseudoLoweringEmitter.cpp \
   RegisterInfoEmitter.cpp \
   SetTheory.cpp \

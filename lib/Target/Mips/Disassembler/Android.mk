@@ -2,7 +2,6 @@ LOCAL_PATH := $(call my-dir)
 
 mips_disassembler_TBLGEN_TABLES := \
   MipsGenDisassemblerTables.inc \
-  MipsGenEDInfo.inc \
   MipsGenInstrInfo.inc \
   MipsGenRegisterInfo.inc \
   MipsGenSubtargetInfo.inc

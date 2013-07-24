@@ -26,6 +26,11 @@
 //===----------------------------------------------------------------------===//
 
 #define DEBUG_TYPE "block-placement2"
+#include "llvm/CodeGen/Passes.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/Statistic.h"
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
 #include "llvm/CodeGen/MachineBranchProbabilityInfo.h"
@@ -33,13 +38,8 @@
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineLoopInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
-#include "llvm/CodeGen/Passes.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/SmallPtrSet.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/Statistic.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetLowering.h"
 #include <algorithm>
@@ -171,7 +171,7 @@ class MachineBlockPlacement : public MachineFunctionPass {
   const TargetInstrInfo *TII;
 
   /// \brief A handle to the target's lowering info.
-  const TargetLowering *TLI;
+  const TargetLoweringBase *TLI;
 
   /// \brief Allocator and owner of BlockChain structures.
   ///
@@ -500,11 +500,10 @@ void MachineBlockPlacement::buildChain(
     assert(BB);
     assert(BlockToChain[BB] == &Chain);
     assert(*llvm::prior(Chain.end()) == BB);
-    MachineBasicBlock *BestSucc = 0;
 
     // Look for the best viable successor if there is one to place immediately
     // after this block.
-    BestSucc = selectBestSuccessor(BB, Chain, BlockFilter);
+    MachineBasicBlock *BestSucc = selectBestSuccessor(BB, Chain, BlockFilter);
 
     // If an immediate successor isn't available, look for the best viable
     // block among those we've identified as not violating the loop's CFG at
@@ -1014,7 +1013,8 @@ void MachineBlockPlacement::buildCFGChains(MachineFunction &F) {
   // exclusively on the loop info here so that we can align backedges in
   // unnatural CFGs and backedges that were introduced purely because of the
   // loop rotations done during this layout pass.
-  if (F.getFunction()->hasFnAttr(Attribute::OptimizeForSize))
+  if (F.getFunction()->getAttributes().
+        hasAttribute(AttributeSet::FunctionIndex, Attribute::OptimizeForSize))
     return;
   unsigned Align = TLI->getPrefLoopAlignment();
   if (!Align)

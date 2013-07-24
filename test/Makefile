@@ -29,11 +29,6 @@ else
 LIT_ARGS := -s -v
 endif
 
-# -jN causes crash on Cygwin's python.
-ifneq (,$(filter $(HOST_OS),Cygwin))
-  LIT_ARGS += -j1
-endif
-
 ifdef TESTSUITE
 LIT_TESTSUITE := $(TESTSUITE)
 CLEANED_TESTSUITE := $(patsubst %/,%,$(TESTSUITE))
@@ -65,11 +60,6 @@ endif
 
 ifeq ($(shell test -f $(PROJ_OBJ_DIR)/../tools/clang/tools/extra/Makefile && echo OK), OK)
 LIT_ALL_TESTSUITES += $(PROJ_OBJ_DIR)/../tools/clang/tools/extra/test
-
-# Force creation of Clang Tools' lit.site.cfg.
-clang-tools-site-cfg: FORCE
-	$(MAKE) -C $(PROJ_OBJ_DIR)/../tools/clang/tools/extra/test lit.site.cfg
-extra-site-cfgs:: clang-tools-site-cfg
 endif
 endif
 endif
@@ -83,21 +73,24 @@ else # !SunOS
 ifeq ($(HOST_OS),AuroraUX)
 ULIMIT=ulimit -t 600 ; ulimit -d 512000 ; ulimit -v 512000 ;
 else # !AuroraUX
-# Fedora 13 x86-64 python fails with -v 76800
-ULIMIT=ulimit -t 600 ; ulimit -d 512000 ; ulimit -m 512000 ; ulimit -v 1024000 ;
+# Newer versions of python try to allocate an insane amount of address space for
+# its thread-local storage, don't set a limit here.
+# When -v is not used, then -s has to be used to limit the stack size.
+# FIXME: Those limits should be enforced by lit instead of globally.
+ULIMIT=ulimit -t 600 ; ulimit -d 512000 ; ulimit -m 512000 ; ulimit -s 8192 ;
 endif # AuroraUX
 endif # SunOS
 
 check-local:: lit.site.cfg Unit/lit.site.cfg
 	( $(ULIMIT) \
-	  $(LLVM_SRC_ROOT)/utils/lit/lit.py $(LIT_ARGS) $(LIT_TESTSUITE) )
+	  $(PYTHON) $(LLVM_SRC_ROOT)/utils/lit/lit.py $(LIT_ARGS) $(LIT_TESTSUITE) )
 
 # This is a legacy alias dating from when both DejaGNU and lit were in use.
 check-local-lit:: check-local
 
 check-local-all:: lit.site.cfg Unit/lit.site.cfg extra-site-cfgs
 	( $(ULIMIT) \
-	  $(LLVM_SRC_ROOT)/utils/lit/lit.py $(LIT_ARGS) $(LIT_ALL_TESTSUITES) )
+	  $(PYTHON) $(LLVM_SRC_ROOT)/utils/lit/lit.py $(LIT_ARGS) $(LIT_ALL_TESTSUITES) )
 
 clean::
 	$(RM) -rf `find $(LLVM_OBJ_ROOT)/test -name Output -type d -print`
@@ -122,18 +115,30 @@ else
 ENABLE_ASSERTIONS=1
 endif
 
+# Derive whether or not LTO is enabled by checking the extra options.
+LTO_IS_ENABLED := 0
+ifneq ($(findstring -flto,$(CompileCommonOpts)),)
+LTO_IS_ENABLED := 1
+else
+ifneq ($(findstring -O4,$(CompileCommonOpts)),)
+LTO_IS_ENABLED := 1
+endif
+endif
+
 lit.site.cfg: FORCE
 	@echo "Making LLVM 'lit.site.cfg' file..."
-	@$(ECHOPATH) s=@TARGET_TRIPLE@=$(TARGET_TRIPLE)=g > lit.tmp
+	@$(ECHOPATH) s=@LLVM_HOSTTRIPLE@=$(HOST_TRIPLE)=g > lit.tmp
+	@$(ECHOPATH) s=@TARGET_TRIPLE@=$(TARGET_TRIPLE)=g >> lit.tmp
 	@$(ECHOPATH) s=@LLVM_SOURCE_DIR@=$(LLVM_SRC_ROOT)=g >> lit.tmp
 	@$(ECHOPATH) s=@LLVM_BINARY_DIR@=$(LLVM_OBJ_ROOT)=g >> lit.tmp
 	@$(ECHOPATH) s=@LLVM_TOOLS_DIR@=$(ToolDir)=g >> lit.tmp
 	@$(ECHOPATH) s=@SHLIBDIR@=$(SharedLibDir)=g >> lit.tmp
 	@$(ECHOPATH) s=@SHLIBEXT@=$(SHLIBEXT)=g >> lit.tmp
-	@$(ECHOPATH) s=@PYTHON_EXECUTABLE@=python=g >> lit.tmp
+	@$(ECHOPATH) s=@PYTHON_EXECUTABLE@=$(PYTHON)=g >> lit.tmp
 	@$(ECHOPATH) s=@OCAMLOPT@=$(OCAMLOPT) -cc $(subst *,'\\\"',*$(subst =,"\\=",$(CXX_FOR_OCAMLOPT))*) -I $(LibDir)/ocaml=g >> lit.tmp
 	@$(ECHOPATH) s=@ENABLE_SHARED@=$(ENABLE_SHARED)=g >> lit.tmp
 	@$(ECHOPATH) s=@ENABLE_ASSERTIONS@=$(ENABLE_ASSERTIONS)=g >> lit.tmp
+	@$(ECHOPATH) s=@LTO_IS_ENABLED@=$(LTO_IS_ENABLED)=g >> lit.tmp
 	@$(ECHOPATH) s=@TARGETS_TO_BUILD@=$(TARGETS_TO_BUILD)=g >> lit.tmp
 	@$(ECHOPATH) s=@LLVM_BINDINGS@=$(BINDINGS_TO_BUILD)=g >> lit.tmp
 	@$(ECHOPATH) s=@HOST_OS@=$(HOST_OS)=g >> lit.tmp
