@@ -104,7 +104,7 @@ else
   ifeq ($(TARGET_ARCH),mips)
     LOCAL_STATIC_LIBRARIES := $(llvm_llc_mips_STATIC_LIBRARIES)
   else
-    ifeq ($(TARGET_ARCH),x86)
+    ifeq ($(TARGET_ARCH),$(filter $(TARGET_ARCH),x86 x86_64 x32))
       LOCAL_STATIC_LIBRARIES := $(llvm_llc_x86_STATIC_LIBRARIES)
     else
       $(error "Unsupport llc target $(TARGET_ARCH)")
