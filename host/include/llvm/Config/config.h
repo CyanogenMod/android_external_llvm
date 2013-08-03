@@ -455,13 +455,8 @@
 /* Define to 1 if you have the <sys/types.h> header file. */
 #define HAVE_SYS_TYPES_H 1
 
-/* Already defined in system/core/include/arch/darwin-x86/AndroidConfig.h */
-#if !defined(HAVE_SYS_UIO_H)
-
 /* Define to 1 if you have the <sys/uio.h> header file. */
-#define HAVE_SYS_UIO_H 1
-
-#endif
+/* #define HAVE_SYS_UIO_H 1 */
 
 /* Define to 1 if you have <sys/wait.h> that is POSIX.1 compatible. */
 #define HAVE_SYS_WAIT_H 1
