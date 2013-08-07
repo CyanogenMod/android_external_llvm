@@ -29,6 +29,7 @@ namespace llvm {
   class MDNode;
   class StringRef;
   class DIBasicType;
+  class DICompileUnit;
   class DICompositeType;
   class DIDerivedType;
   class DIDescriptor;
@@ -53,7 +54,6 @@ namespace llvm {
     private:
     Module &M;
     LLVMContext & VMContext;
-    MDNode *TheCU;
 
     MDNode *TempEnumTypes;
     MDNode *TempRetainTypes;
@@ -70,12 +70,17 @@ namespace llvm {
     SmallVector<Value *, 4> AllGVs;
     SmallVector<Value *, 4> AllImportedModules;
 
+    DITemplateValueParameter
+    createTemplateValueParameter(unsigned Tag, DIDescriptor Scope,
+                                 StringRef Name, DIType Ty, Value *Val,
+                                 MDNode *File = 0, unsigned LineNo = 0,
+                                 unsigned ColumnNo = 0);
+
     DIBuilder(const DIBuilder &) LLVM_DELETED_FUNCTION;
     void operator=(const DIBuilder &) LLVM_DELETED_FUNCTION;
 
     public:
     explicit DIBuilder(Module &M);
-    const MDNode *getCU() { return TheCU; }
     enum ComplexAddrKind { OpPlus=1, OpDeref };
 
     /// finalize - Construct any deferred debug info descriptors.
@@ -97,20 +102,24 @@ namespace llvm {
     ///                 Objective-C.
     /// @param SplitName The name of the file that we'll split debug info out
     ///                  into.
-    void createCompileUnit(unsigned Lang, StringRef File, StringRef Dir,
-                           StringRef Producer, bool isOptimized,
-                           StringRef Flags, unsigned RV,
-                           StringRef SplitName = StringRef());
+    DICompileUnit createCompileUnit(unsigned Lang, StringRef File,
+                                    StringRef Dir, StringRef Producer,
+                                    bool isOptimized, StringRef Flags,
+                                    unsigned RV,
+                                    StringRef SplitName = StringRef());
 
     /// createFile - Create a file descriptor to hold debugging information
     /// for a file.
     DIFile createFile(StringRef Filename, StringRef Directory);
 
     /// createEnumerator - Create a single enumerator value.
-    DIEnumerator createEnumerator(StringRef Name, uint64_t Val);
+    DIEnumerator createEnumerator(StringRef Name, int64_t Val);
 
-    /// createNullPtrType - Create C++0x nullptr type.
-    DIBasicType createNullPtrType(StringRef Name);
+    /// \brief Create a DWARF unspecified type.
+    DIBasicType createUnspecifiedType(StringRef Name);
+
+    /// \brief Create C++11 nullptr type.
+    DIBasicType createNullPtrType();
 
     /// createBasicType - Create debugging information entry for a basic
     /// type.
@@ -336,6 +345,32 @@ namespace llvm {
     createTemplateValueParameter(DIDescriptor Scope, StringRef Name,
                                  DIType Ty, Value *Val, MDNode *File = 0,
                                  unsigned LineNo = 0, unsigned ColumnNo = 0);
+
+    /// \brief Create debugging information for a template template parameter.
+    /// @param Scope        Scope in which this type is defined.
+    /// @param Name         Value parameter name.
+    /// @param Ty           Parameter type.
+    /// @param Val          The fully qualified name of the template.
+    /// @param File         File where this type parameter is defined.
+    /// @param LineNo       Line number.
+    /// @param ColumnNo     Column Number.
+    DITemplateValueParameter
+    createTemplateTemplateParameter(DIDescriptor Scope, StringRef Name,
+                                    DIType Ty, StringRef Val, MDNode *File = 0,
+                                    unsigned LineNo = 0, unsigned ColumnNo = 0);
+
+    /// \brief Create debugging information for a template parameter pack.
+    /// @param Scope        Scope in which this type is defined.
+    /// @param Name         Value parameter name.
+    /// @param Ty           Parameter type.
+    /// @param Val          An array of types in the pack.
+    /// @param File         File where this type parameter is defined.
+    /// @param LineNo       Line number.
+    /// @param ColumnNo     Column Number.
+    DITemplateValueParameter
+    createTemplateParameterPack(DIDescriptor Scope, StringRef Name,
+                                DIType Ty, DIArray Val, MDNode *File = 0,
+                                unsigned LineNo = 0, unsigned ColumnNo = 0);
 
     /// createArrayType - Create debugging information entry for an array.
     /// @param Size         Array size.

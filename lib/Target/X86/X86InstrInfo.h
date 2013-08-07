@@ -275,12 +275,6 @@ public:
 
   virtual bool expandPostRAPseudo(MachineBasicBlock::iterator MI) const;
 
-  virtual
-  MachineInstr *emitFrameIndexDebugValue(MachineFunction &MF,
-                                         int FrameIx, uint64_t Offset,
-                                         const MDNode *MDPtr,
-                                         DebugLoc DL) const;
-
   /// foldMemoryOperand - If this target supports it, fold a load or store of
   /// the specified stack slot into the specified machine instruction for the
   /// specified operand(s).  If this is possible, the target should perform the
@@ -344,6 +338,9 @@ public:
   virtual bool shouldScheduleLoadsNear(SDNode *Load1, SDNode *Load2,
                                        int64_t Offset1, int64_t Offset2,
                                        unsigned NumLoads) const;
+
+  virtual bool shouldScheduleAdjacent(MachineInstr* First,
+                                      MachineInstr *Second) const LLVM_OVERRIDE;
 
   virtual void getNoopForMachoTarget(MCInst &NopInst) const;
 

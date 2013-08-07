@@ -89,6 +89,7 @@ protected:
   bool IsBookE;
   bool HasLazyResolverStubs;
   bool IsJITCodeModel;
+  bool IsLittleEndian;
 
   /// TargetTriple - What processor and OS we're targeting.
   Triple TargetTriple;
@@ -128,7 +129,7 @@ public:
     // documentation are wrong; these are correct (i.e. "what gcc does").
     if (isPPC64() && isSVR4ABI()) {
       if (TargetTriple.getOS() == llvm::Triple::FreeBSD)
-        return "E-p:64:64-f64:64:64-i64:64:64-f128:64:64-v128:128:128-n32:64";
+        return "E-p:64:64-f64:64:64-i64:64:64-v128:128:128-n32:64";
       else
         return "E-p:64:64-f64:64:64-i64:64:64-f128:128:128-v128:128:128-n32:64";
     }
@@ -137,6 +138,13 @@ public:
                      : "E-p:32:32-f64:64:64-i64:64:64-f128:64:128-n32";
   }
 
+  /// \brief Reset the features for the PowerPC target.
+  virtual void resetSubtargetFeatures(const MachineFunction *MF);
+private:
+  void initializeEnvironment();
+  void resetSubtargetFeatures(StringRef CPU, StringRef FS);
+
+public:
   /// isPPC64 - Return true if we are generating code for 64-bit pointer mode.
   ///
   bool isPPC64() const { return IsPPC64; }
@@ -158,6 +166,9 @@ public:
 
   // isJITCodeModel - True if we're generating code for the JIT
   bool isJITCodeModel() const { return IsJITCodeModel; }
+
+  // isLittleEndian - True if generating little-endian code
+  bool isLittleEndian() const { return IsLittleEndian; }
 
   // Specific obvious features.
   bool hasFSQRT() const { return HasFSQRT; }

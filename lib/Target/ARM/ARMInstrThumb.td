@@ -69,11 +69,6 @@ def thumb_immshifted_shamt : SDNodeXForm<imm, [{
   return CurDAG->getTargetConstant(V, MVT::i32);
 }]>;
 
-// ADR instruction labels.
-def t_adrlabel : Operand<i32> {
-  let EncoderMethod = "getThumbAdrLabelOpValue";
-}
-
 // Scaled 4 immediate.
 def t_imm0_1020s4_asmoperand: AsmOperandClass { let Name = "Imm0_1020s4"; }
 def t_imm0_1020s4 : Operand<i32> {
@@ -97,10 +92,32 @@ def t_imm0_508s4_neg : Operand<i32> {
 
 // Define Thumb specific addressing modes.
 
+// unsigned 8-bit, 2-scaled memory offset
+class OperandUnsignedOffset_b8s2 : AsmOperandClass {
+  let Name = "UnsignedOffset_b8s2";
+  let PredicateMethod = "isUnsignedOffset<8, 2>";
+}
+
+def UnsignedOffset_b8s2 : OperandUnsignedOffset_b8s2;
+
+// thumb style PC relative operand. signed, 8 bits magnitude,
+// two bits shift. can be represented as either [pc, #imm], #imm,
+// or relocatable expression...
+def ThumbMemPC : AsmOperandClass {
+  let Name = "ThumbMemPC";
+}
+
 let OperandType = "OPERAND_PCREL" in {
 def t_brtarget : Operand<OtherVT> {
   let EncoderMethod = "getThumbBRTargetOpValue";
   let DecoderMethod = "DecodeThumbBROperand";
+}
+
+// ADR instruction labels.
+def t_adrlabel : Operand<i32> {
+  let EncoderMethod = "getThumbAdrLabelOpValue";
+  let PrintMethod = "printAdrLabelOperand<2>";
+  let ParserMatchClass = UnsignedOffset_b8s2;
 }
 
 def t_bcctarget : Operand<i32> {
@@ -121,6 +138,15 @@ def t_bltarget : Operand<i32> {
 def t_blxtarget : Operand<i32> {
   let EncoderMethod = "getThumbBLXTargetOpValue";
   let DecoderMethod = "DecodeThumbBLXOffset";
+}
+
+// t_addrmode_pc := <label> => pc + imm8 * 4
+//
+def t_addrmode_pc : Operand<i32> {
+  let EncoderMethod = "getAddrModePCOpValue";
+  let DecoderMethod = "DecodeThumbAddrModePC";
+  let PrintMethod = "printThumbLdrLabelOperand";
+  let ParserMatchClass = ThumbMemPC;
 }
 }
 
@@ -216,14 +242,6 @@ def t_addrmode_sp : Operand<i32>,
   let PrintMethod = "printThumbAddrModeSPOperand";
   let ParserMatchClass = t_addrmode_sp_asm_operand;
   let MIOperandInfo = (ops GPR:$base, i32imm:$offsimm);
-}
-
-// t_addrmode_pc := <label> => pc + imm8 * 4
-//
-def t_addrmode_pc : Operand<i32> {
-  let EncoderMethod = "getAddrModePCOpValue";
-  let DecoderMethod = "DecodeThumbAddrModePC";
-  let PrintMethod = "printThumbLdrLabelOperand";
 }
 
 //===----------------------------------------------------------------------===//
@@ -505,6 +523,7 @@ let isBranch = 1, isTerminator = 1 in
   let Inst{7-0} = target;
 }
 
+
 // Tail calls
 let isCall = 1, isTerminator = 1, isReturn = 1, isBarrier = 1 in {
   // IOS versions.
@@ -629,11 +648,9 @@ def tLDRspi : T1pIs<(outs tGPR:$Rt), (ins t_addrmode_sp:$addr), IIC_iLoad_i,
   let Inst{7-0} = addr;
 }
 
-// Load tconstpool
-// FIXME: Use ldr.n to work around a darwin assembler bug.
-let canFoldAsLoad = 1, isReMaterializable = 1, isCodeGenOnly = 1 in
+let canFoldAsLoad = 1, isReMaterializable = 1 in
 def tLDRpci : T1pIs<(outs tGPR:$Rt), (ins t_addrmode_pc:$addr), IIC_iLoad_i,
-                  "ldr", ".n\t$Rt, $addr",
+                  "ldr", "\t$Rt, $addr",
                   [(set tGPR:$Rt, (load (ARMWrapper tconstpool:$addr)))]>,
               T1Encoding<{0,1,0,0,1,?}> {
   // A6.2 & A8.6.59
@@ -643,17 +660,8 @@ def tLDRpci : T1pIs<(outs tGPR:$Rt), (ins t_addrmode_pc:$addr), IIC_iLoad_i,
   let Inst{7-0}  = addr;
 }
 
-// FIXME: Remove this entry when the above ldr.n workaround is fixed.
-// For assembly/disassembly use only.
-def tLDRpciASM : T1pIs<(outs tGPR:$Rt), (ins t_addrmode_pc:$addr), IIC_iLoad_i,
-                       "ldr", "\t$Rt, $addr", []>,
-                 T1Encoding<{0,1,0,0,1,?}> {
-  // A6.2 & A8.6.59
-  bits<3> Rt;
-  bits<8> addr;
-  let Inst{10-8} = Rt;
-  let Inst{7-0}  = addr;
-}
+def : tInstAlias<"ldr${p}.n $Rt, $addr", 
+                 (tLDRpci tGPR:$Rt, t_addrmode_pc:$addr, pred:$p), 0>;
 
 // A8.6.194 & A8.6.192
 defm tSTR  : thumb_st_rr_ri_enc<0b000, 0b0110, t_addrmode_rrs4,

@@ -23,6 +23,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/AliasAnalysis.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/Dominators.h"
 #include "llvm/Analysis/InstructionSimplify.h"
@@ -1555,7 +1556,7 @@ bool GVN::PerformLoadPRE(LoadInst *LI, AvailValInBlkVect &ValuesPerBlock,
       return false;
 
   // Split critical edges, and update the unavailable predecessors accordingly.
-  for (SmallVector<BasicBlock *, 4>::iterator I = CriticalEdgePred.begin(), 
+  for (SmallVectorImpl<BasicBlock *>::iterator I = CriticalEdgePred.begin(),
          E = CriticalEdgePred.end(); I != E; I++) {
     BasicBlock *OrigPred = *I;
     BasicBlock *NewPred = splitCriticalEdges(OrigPred, LoadBB);
@@ -2352,7 +2353,7 @@ bool GVN::processBlock(BasicBlock *BB) {
     if (!AtStart)
       --BI;
 
-    for (SmallVector<Instruction*, 4>::iterator I = InstrsToErase.begin(),
+    for (SmallVectorImpl<Instruction *>::iterator I = InstrsToErase.begin(),
          E = InstrsToErase.end(); I != E; ++I) {
       DEBUG(dbgs() << "GVN removed: " << **I << '\n');
       if (MD) MD->removeInstruction(*I);

@@ -20,6 +20,7 @@
 // Include headers for createBinary.
 #include "llvm/Object/Archive.h"
 #include "llvm/Object/COFF.h"
+#include "llvm/Object/MachOUniversal.h"
 #include "llvm/Object/ObjectFile.h"
 
 using namespace llvm;
@@ -74,7 +75,8 @@ error_code object::createBinary(MemoryBuffer *Source,
     case sys::fs::file_magic::macho_dynamically_linked_shared_lib:
     case sys::fs::file_magic::macho_dynamic_linker:
     case sys::fs::file_magic::macho_bundle:
-    case sys::fs::file_magic::macho_dynamically_linked_shared_lib_stub: {
+    case sys::fs::file_magic::macho_dynamically_linked_shared_lib_stub:
+    case sys::fs::file_magic::macho_dsym_companion: {
       OwningPtr<Binary> ret(
         ObjectFile::createMachOObjectFile(scopedSource.take()));
       if (!ret)
@@ -82,16 +84,28 @@ error_code object::createBinary(MemoryBuffer *Source,
       Result.swap(ret);
       return object_error::success;
     }
-    case sys::fs::file_magic::coff_object:
-    case sys::fs::file_magic::pecoff_executable: {
-      OwningPtr<Binary> ret(new COFFObjectFile(scopedSource.take(), ec));
+    case sys::fs::file_magic::macho_universal_binary: {
+      OwningPtr<Binary> ret(new MachOUniversalBinary(scopedSource.take(), ec));
       if (ec) return ec;
       Result.swap(ret);
       return object_error::success;
     }
-    default: // Unrecognized object file format.
+    case sys::fs::file_magic::coff_object:
+    case sys::fs::file_magic::pecoff_executable: {
+      OwningPtr<Binary> ret(
+          ObjectFile::createCOFFObjectFile(scopedSource.take()));
+      if (!ret)
+        return object_error::invalid_file_type;
+      Result.swap(ret);
+      return object_error::success;
+    }
+    case sys::fs::file_magic::unknown:
+    case sys::fs::file_magic::bitcode: {
+      // Unrecognized object file format.
       return object_error::invalid_file_type;
+    }
   }
+  llvm_unreachable("Unexpected Binary File Type");
 }
 
 error_code object::createBinary(StringRef Path, OwningPtr<Binary> &Result) {

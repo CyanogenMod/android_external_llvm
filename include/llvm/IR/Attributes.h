@@ -67,6 +67,8 @@ public:
                            ///< stored as log2 of alignment with +1 bias
                            ///< 0 means unaligned (different from align(1))
     AlwaysInline,          ///< inline=always
+    Builtin,               ///< Callee is recognized as a builtin, despite
+                           ///< nobuiltin attribute on its declaration.
     ByVal,                 ///< Pass structure by value
     Cold,                  ///< Marks function as being in a cold path.
     InlineHint,            ///< Source said inlining was desirable
@@ -248,6 +250,8 @@ public:
   /// attribute sets are immutable, this returns a new set.
   AttributeSet addAttribute(LLVMContext &C, unsigned Index,
                             StringRef Kind) const;
+  AttributeSet addAttribute(LLVMContext &C, unsigned Index,
+                            StringRef Kind, StringRef Value) const;
 
   /// \brief Add attributes to the attribute set at the given index. Since
   /// attribute sets are immutable, this returns a new set.

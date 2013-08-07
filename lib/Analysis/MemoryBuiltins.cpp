@@ -77,7 +77,7 @@ static Function *getCalledFunction(const Value *V, bool LookThroughBitCast) {
   if (!CS.getInstruction())
     return 0;
 
-  if (CS.hasFnAttr(Attribute::NoBuiltin))
+  if (CS.isNoBuiltin())
     return 0;
 
   Function *Callee = CS.getCalledFunction();
@@ -318,9 +318,15 @@ const CallInst *llvm::isFreeCall(const Value *I, const TargetLibraryInfo *TLI) {
   if (!TLI || !TLI->getLibFunc(FnName, TLIFn) || !TLI->has(TLIFn))
     return 0;
 
-  if (TLIFn != LibFunc::free &&
-      TLIFn != LibFunc::ZdlPv && // operator delete(void*)
-      TLIFn != LibFunc::ZdaPv)   // operator delete[](void*)
+  unsigned ExpectedNumParams;
+  if (TLIFn == LibFunc::free ||
+      TLIFn == LibFunc::ZdlPv || // operator delete(void*)
+      TLIFn == LibFunc::ZdaPv)   // operator delete[](void*)
+    ExpectedNumParams = 1;
+  else if (TLIFn == LibFunc::ZdlPvRKSt9nothrow_t || // delete(void*, nothrow)
+           TLIFn == LibFunc::ZdaPvRKSt9nothrow_t)   // delete[](void*, nothrow)
+    ExpectedNumParams = 2;
+  else
     return 0;
 
   // Check free prototype.
@@ -329,7 +335,7 @@ const CallInst *llvm::isFreeCall(const Value *I, const TargetLibraryInfo *TLI) {
   FunctionType *FTy = Callee->getFunctionType();
   if (!FTy->getReturnType()->isVoidTy())
     return 0;
-  if (FTy->getNumParams() != 1)
+  if (FTy->getNumParams() != ExpectedNumParams)
     return 0;
   if (FTy->getParamType(0) != Type::getInt8PtrTy(Callee->getContext()))
     return 0;

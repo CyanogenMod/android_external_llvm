@@ -38,14 +38,18 @@ section_iterator ObjectFile::getRelocatedSection(DataRefImpl Sec) const {
 }
 
 ObjectFile *ObjectFile::createObjectFile(MemoryBuffer *Object) {
-  if (!Object || Object->getBufferSize() < 64)
+  if (Object->getBufferSize() < 64) {
+    delete Object;
     return 0;
+  }
 
   sys::fs::file_magic Type = sys::fs::identify_magic(Object->getBuffer());
   switch (Type) {
   case sys::fs::file_magic::unknown:
   case sys::fs::file_magic::bitcode:
   case sys::fs::file_magic::archive:
+  case sys::fs::file_magic::macho_universal_binary:
+    delete Object;
     return 0;
   case sys::fs::file_magic::elf_relocatable:
   case sys::fs::file_magic::elf_executable:

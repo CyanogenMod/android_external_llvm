@@ -1102,7 +1102,7 @@ void PredTransitions::getIntersectingVariants(
     TransVariant &Variant = Variants[VIdx];
     // Don't expand variants if the processor models don't intersect.
     // A zero processor index means any processor.
-    SmallVector<unsigned, 4> &ProcIndices = TransVec[TransIdx].ProcIndices;
+    SmallVectorImpl<unsigned> &ProcIndices = TransVec[TransIdx].ProcIndices;
     if (ProcIndices[0] && Variants[VIdx].ProcIdx) {
       unsigned Cnt = std::count(ProcIndices.begin(), ProcIndices.end(),
                                 Variant.ProcIdx);
@@ -1475,6 +1475,19 @@ void CodeGenSchedModels::collectProcResources() {
   for (RecIter RAI = RADefs.begin(), RAE = RADefs.end(); RAI != RAE; ++RAI) {
     Record *ModelDef = (*RAI)->getValueAsDef("SchedModel");
     addReadAdvance(*RAI, getProcModel(ModelDef).Index);
+  }
+  // Add ProcResGroups that are defined within this processor model, which may
+  // not be directly referenced but may directly specify a buffer size.
+  RecVec ProcResGroups = Records.getAllDerivedDefinitions("ProcResGroup");
+  for (RecIter RI = ProcResGroups.begin(), RE = ProcResGroups.end();
+       RI != RE; ++RI) {
+    if (!(*RI)->getValueInit("SchedModel")->isComplete())
+      continue;
+    CodeGenProcModel &PM = getProcModel((*RI)->getValueAsDef("SchedModel"));
+    RecIter I = std::find(PM.ProcResourceDefs.begin(),
+                          PM.ProcResourceDefs.end(), *RI);
+    if (I == PM.ProcResourceDefs.end())
+      PM.ProcResourceDefs.push_back(*RI);
   }
   // Finalize each ProcModel by sorting the record arrays.
   for (unsigned PIdx = 0, PEnd = ProcModels.size(); PIdx != PEnd; ++PIdx) {

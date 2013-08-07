@@ -50,12 +50,8 @@ class RMWI<SDPatternOperator load, SDPatternOperator operator,
 // memory location.  IMM is the type of the second operand.
 multiclass RMWIByte<SDPatternOperator operator, AddressingMode mode,
                     Instruction insn> {
-  def : RMWI<zextloadi8, operator, truncstorei8, mode, imm32, insn>;
-  def : RMWI<zextloadi8, operator, truncstorei8, mode, imm64, insn>;
-  def : RMWI<sextloadi8, operator, truncstorei8, mode, imm32, insn>;
-  def : RMWI<sextloadi8, operator, truncstorei8, mode, imm64, insn>;
-  def : RMWI<extloadi8, operator, truncstorei8, mode, imm32, insn>;
-  def : RMWI<extloadi8, operator, truncstorei8, mode, imm64, insn>;
+  def : RMWI<anyextloadi8, operator, truncstorei8, mode, imm32, insn>;
+  def : RMWI<anyextloadi8, operator, truncstorei8, mode, imm64, insn>;
 }
 
 // Record that INSN performs insertion TYPE into a register of class CLS.
@@ -69,3 +65,23 @@ multiclass InsertMem<string type, Instruction insn, RegisterOperand cls,
               (load mode:$src2), cls:$src1),
             (insn cls:$src1, mode:$src2)>;
 }
+
+// Use MVC instruction INSN for a load of type LOAD followed by a store
+// of type STORE.  VT is the type of the intermediate register and LENGTH
+// is the number of bytes to copy (which may be smaller than VT).
+multiclass MVCLoadStore<SDPatternOperator load, SDPatternOperator store,
+                        ValueType vt, Instruction insn, bits<5> length> {
+  def Pat : PatFrag<(ops node:$dest, node:$src),
+                    (store (vt (load node:$src)), node:$dest),
+                    [{ return storeLoadCanUseMVC(N); }]>;
+
+  def : Pat<(!cast<SDPatternOperator>(NAME##"Pat") bdaddr12only:$dest,
+                                                   bdaddr12only:$src),
+            (insn bdaddr12only:$dest, bdaddr12only:$src, length)>;
+}
+
+// Record that INSN is a LOAD AND TEST that can be used to compare
+// registers in CLS against zero.  The instruction has separate R1 and R2
+// operands, but they must be the same when the instruction is used like this.
+class CompareZeroFP<Instruction insn, RegisterOperand cls>
+  : Pat<(z_cmp cls:$reg, (fpimm0)), (insn cls:$reg, cls:$reg)>;

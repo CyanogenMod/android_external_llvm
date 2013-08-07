@@ -31,10 +31,10 @@ MipsSETargetLowering::MipsSETargetLowering(MipsTargetMachine &TM)
 
   clearRegisterClasses();
 
-  addRegisterClass(MVT::i32, &Mips::CPURegsRegClass);
+  addRegisterClass(MVT::i32, &Mips::GPR32RegClass);
 
   if (HasMips64)
-    addRegisterClass(MVT::i64, &Mips::CPU64RegsRegClass);
+    addRegisterClass(MVT::i64, &Mips::GPR64RegClass);
 
   if (Subtarget->hasDSP()) {
     MVT::SimpleValueType VecTys[2] = {MVT::v2i16, MVT::v4i8};
@@ -51,6 +51,20 @@ MipsSETargetLowering::MipsSETargetLowering(MipsTargetMachine &TM)
       setOperationAction(ISD::LOAD, VecTys[i], Legal);
       setOperationAction(ISD::STORE, VecTys[i], Legal);
       setOperationAction(ISD::BITCAST, VecTys[i], Legal);
+    }
+
+    // Expand all truncating stores and extending loads.
+    unsigned FirstVT = (unsigned)MVT::FIRST_VECTOR_VALUETYPE;
+    unsigned LastVT = (unsigned)MVT::LAST_VECTOR_VALUETYPE;
+
+    for (unsigned VT0 = FirstVT; VT0 <= LastVT; ++VT0) {
+      for (unsigned VT1 = FirstVT; VT1 <= LastVT; ++VT1)
+        setTruncStoreAction((MVT::SimpleValueType)VT0,
+                            (MVT::SimpleValueType)VT1, Expand);
+
+      setLoadExtAction(ISD::SEXTLOAD, (MVT::SimpleValueType)VT0, Expand);
+      setLoadExtAction(ISD::ZEXTLOAD, (MVT::SimpleValueType)VT0, Expand);
+      setLoadExtAction(ISD::EXTLOAD, (MVT::SimpleValueType)VT0, Expand);
     }
 
     setTargetDAGCombine(ISD::SHL);
@@ -99,6 +113,7 @@ MipsSETargetLowering::MipsSETargetLowering(MipsTargetMachine &TM)
 
   setTargetDAGCombine(ISD::ADDE);
   setTargetDAGCombine(ISD::SUBE);
+  setTargetDAGCombine(ISD::MUL);
 
   computeRegisterProperties();
 }
@@ -320,6 +335,57 @@ static SDValue performSUBECombine(SDNode *N, SelectionDAG &DAG,
   return SDValue();
 }
 
+static SDValue genConstMult(SDValue X, uint64_t C, SDLoc DL, EVT VT,
+                            EVT ShiftTy, SelectionDAG &DAG) {
+  // Clear the upper (64 - VT.sizeInBits) bits.
+  C &= ((uint64_t)-1) >> (64 - VT.getSizeInBits());
+
+  // Return 0.
+  if (C == 0)
+    return DAG.getConstant(0, VT);
+
+  // Return x.
+  if (C == 1)
+    return X;
+
+  // If c is power of 2, return (shl x, log2(c)).
+  if (isPowerOf2_64(C))
+    return DAG.getNode(ISD::SHL, DL, VT, X,
+                       DAG.getConstant(Log2_64(C), ShiftTy));
+
+  unsigned Log2Ceil = Log2_64_Ceil(C);
+  uint64_t Floor = 1LL << Log2_64(C);
+  uint64_t Ceil = Log2Ceil == 64 ? 0LL : 1LL << Log2Ceil;
+
+  // If |c - floor_c| <= |c - ceil_c|,
+  // where floor_c = pow(2, floor(log2(c))) and ceil_c = pow(2, ceil(log2(c))),
+  // return (add constMult(x, floor_c), constMult(x, c - floor_c)).
+  if (C - Floor <= Ceil - C) {
+    SDValue Op0 = genConstMult(X, Floor, DL, VT, ShiftTy, DAG);
+    SDValue Op1 = genConstMult(X, C - Floor, DL, VT, ShiftTy, DAG);
+    return DAG.getNode(ISD::ADD, DL, VT, Op0, Op1);
+  }
+
+  // If |c - floor_c| > |c - ceil_c|,
+  // return (sub constMult(x, ceil_c), constMult(x, ceil_c - c)).
+  SDValue Op0 = genConstMult(X, Ceil, DL, VT, ShiftTy, DAG);
+  SDValue Op1 = genConstMult(X, Ceil - C, DL, VT, ShiftTy, DAG);
+  return DAG.getNode(ISD::SUB, DL, VT, Op0, Op1);
+}
+
+static SDValue performMULCombine(SDNode *N, SelectionDAG &DAG,
+                                 const TargetLowering::DAGCombinerInfo &DCI,
+                                 const MipsSETargetLowering *TL) {
+  EVT VT = N->getValueType(0);
+
+  if (ConstantSDNode *C = dyn_cast<ConstantSDNode>(N->getOperand(1)))
+    if (!VT.isVector())
+      return genConstMult(N->getOperand(0), C->getZExtValue(), SDLoc(N),
+                          VT, TL->getScalarShiftAmountTy(VT), DAG);
+
+  return SDValue(N, 0);
+}
+
 static SDValue performDSPShiftCombine(unsigned Opc, SDNode *N, EVT Ty,
                                       SelectionDAG &DAG,
                                       const MipsSubtarget *Subtarget) {
@@ -432,6 +498,8 @@ MipsSETargetLowering::PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const {
     return performADDECombine(N, DAG, DCI, Subtarget);
   case ISD::SUBE:
     return performSUBECombine(N, DAG, DCI, Subtarget);
+  case ISD::MUL:
+    return performMULCombine(N, DAG, DCI, this);
   case ISD::SHL:
     return performSHLCombine(N, DAG, DCI, Subtarget);
   case ISD::SRA:
@@ -701,7 +769,7 @@ emitBPOSGE32(MachineInstr *MI, MachineBasicBlock *BB) const{
 
   MachineRegisterInfo &RegInfo = BB->getParent()->getRegInfo();
   const TargetInstrInfo *TII = getTargetMachine().getInstrInfo();
-  const TargetRegisterClass *RC = &Mips::CPURegsRegClass;
+  const TargetRegisterClass *RC = &Mips::GPR32RegClass;
   DebugLoc DL = MI->getDebugLoc();
   const BasicBlock *LLVM_BB = BB->getBasicBlock();
   MachineFunction::iterator It = llvm::next(MachineFunction::iterator(BB));

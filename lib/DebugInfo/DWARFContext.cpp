@@ -35,6 +35,11 @@ void DWARFContext::dump(raw_ostream &OS, DIDumpType DumpType) {
       getCompileUnitAtIndex(i)->dump(OS);
   }
 
+  if (DumpType == DIDT_All || DumpType == DIDT_Loc) {
+    OS << ".debug_loc contents:\n";
+    getDebugLoc()->dump(OS);
+  }
+
   if (DumpType == DIDT_All || DumpType == DIDT_Frames) {
     OS << "\n.debug_frame contents:\n";
     getDebugFrame()->dump(OS);
@@ -169,6 +174,18 @@ const DWARFDebugAbbrev *DWARFContext::getDebugAbbrevDWO() {
   AbbrevDWO.reset(new DWARFDebugAbbrev());
   AbbrevDWO->parse(abbrData);
   return AbbrevDWO.get();
+}
+
+const DWARFDebugLoc *DWARFContext::getDebugLoc() {
+  if (Loc)
+    return Loc.get();
+
+  DataExtractor LocData(getLocSection(), isLittleEndian(), 0);
+  Loc.reset(new DWARFDebugLoc(locRelocMap()));
+  // assume all compile units have the same address byte size
+  if (getNumCompileUnits())
+    Loc->parse(LocData, getCompileUnitAtIndex(0)->getAddressByteSize());
+  return Loc.get();
 }
 
 const DWARFDebugAranges *DWARFContext::getDebugAranges() {
@@ -359,11 +376,11 @@ DILineInfo DWARFContext::getLineInfoForAddress(uint64_t Address,
     // The address may correspond to instruction in some inlined function,
     // so we have to build the chain of inlined functions and take the
     // name of the topmost function in it.
-    const DWARFDebugInfoEntryMinimal::InlinedChain &InlinedChain =
+    const DWARFDebugInfoEntryInlinedChain &InlinedChain =
         CU->getInlinedChainForAddress(Address);
-    if (InlinedChain.size() > 0) {
-      const DWARFDebugInfoEntryMinimal &TopFunctionDIE = InlinedChain[0];
-      if (const char *Name = TopFunctionDIE.getSubroutineName(CU))
+    if (InlinedChain.DIEs.size() > 0) {
+      const DWARFDebugInfoEntryMinimal &TopFunctionDIE = InlinedChain.DIEs[0];
+      if (const char *Name = TopFunctionDIE.getSubroutineName(InlinedChain.CU))
         FunctionName = Name;
     }
   }
@@ -392,11 +409,11 @@ DILineInfoTable DWARFContext::getLineInfoForAddressRange(uint64_t Address,
     // The address may correspond to instruction in some inlined function,
     // so we have to build the chain of inlined functions and take the
     // name of the topmost function in it.
-    const DWARFDebugInfoEntryMinimal::InlinedChain &InlinedChain =
+    const DWARFDebugInfoEntryInlinedChain &InlinedChain =
         CU->getInlinedChainForAddress(Address);
-    if (InlinedChain.size() > 0) {
-      const DWARFDebugInfoEntryMinimal &TopFunctionDIE = InlinedChain[0];
-      if (const char *Name = TopFunctionDIE.getSubroutineName(CU))
+    if (InlinedChain.DIEs.size() > 0) {
+      const DWARFDebugInfoEntryMinimal &TopFunctionDIE = InlinedChain.DIEs[0];
+      if (const char *Name = TopFunctionDIE.getSubroutineName(InlinedChain.CU))
         FunctionName = Name;
     }
   }
@@ -406,8 +423,8 @@ DILineInfoTable DWARFContext::getLineInfoForAddressRange(uint64_t Address,
   // If the Specifier says we don't need FileLineInfo, just
   // return the top-most function at the starting address.
   if (!Specifier.needs(DILineInfoSpecifier::FileLineInfo)) {
-    Lines.push_back(std::make_pair(Address, 
-                                   DILineInfo(StringRef("<invalid>"), 
+    Lines.push_back(std::make_pair(Address,
+                                   DILineInfo(StringRef("<invalid>"),
                                               FuncNameRef, 0, 0)));
     return Lines;
   }
@@ -429,7 +446,7 @@ DILineInfoTable DWARFContext::getLineInfoForAddressRange(uint64_t Address,
     std::string FileName = "<invalid>";
     getFileNameForCompileUnit(CU, LineTable, Row.File,
                               NeedsAbsoluteFilePath, FileName);
-    Lines.push_back(std::make_pair(Row.Address, 
+    Lines.push_back(std::make_pair(Row.Address,
                                    DILineInfo(StringRef(FileName),
                                          FuncNameRef, Row.Line, Row.Column)));
   }
@@ -443,23 +460,23 @@ DIInliningInfo DWARFContext::getInliningInfoForAddress(uint64_t Address,
   if (!CU)
     return DIInliningInfo();
 
-  const DWARFDebugInfoEntryMinimal::InlinedChain &InlinedChain =
+  const DWARFDebugInfoEntryInlinedChain &InlinedChain =
       CU->getInlinedChainForAddress(Address);
-  if (InlinedChain.size() == 0)
+  if (InlinedChain.DIEs.size() == 0)
     return DIInliningInfo();
 
   DIInliningInfo InliningInfo;
   uint32_t CallFile = 0, CallLine = 0, CallColumn = 0;
   const DWARFLineTable *LineTable = 0;
-  for (uint32_t i = 0, n = InlinedChain.size(); i != n; i++) {
-    const DWARFDebugInfoEntryMinimal &FunctionDIE = InlinedChain[i];
+  for (uint32_t i = 0, n = InlinedChain.DIEs.size(); i != n; i++) {
+    const DWARFDebugInfoEntryMinimal &FunctionDIE = InlinedChain.DIEs[i];
     std::string FileName = "<invalid>";
     std::string FunctionName = "<invalid>";
     uint32_t Line = 0;
     uint32_t Column = 0;
     // Get function name if necessary.
     if (Specifier.needs(DILineInfoSpecifier::FunctionName)) {
-      if (const char *Name = FunctionDIE.getSubroutineName(CU))
+      if (const char *Name = FunctionDIE.getSubroutineName(InlinedChain.CU))
         FunctionName = Name;
     }
     if (Specifier.needs(DILineInfoSpecifier::FileLineInfo)) {
@@ -483,7 +500,8 @@ DIInliningInfo DWARFContext::getInliningInfoForAddress(uint64_t Address,
       }
       // Get call file/line/column of a current DIE.
       if (i + 1 < n) {
-        FunctionDIE.getCallerFrame(CU, CallFile, CallLine, CallColumn);
+        FunctionDIE.getCallerFrame(InlinedChain.CU, CallFile, CallLine,
+                                   CallColumn);
       }
     }
     DILineInfo Frame(StringRef(FileName), StringRef(FunctionName),
@@ -542,6 +560,7 @@ DWARFContextInMemory::DWARFContextInMemory(object::ObjectFile *Obj) :
     StringRef *Section = StringSwitch<StringRef*>(name)
         .Case("debug_info", &InfoSection)
         .Case("debug_abbrev", &AbbrevSection)
+        .Case("debug_loc", &LocSection)
         .Case("debug_line", &LineSection)
         .Case("debug_aranges", &ARangeSection)
         .Case("debug_frame", &DebugFrameSection)
@@ -576,6 +595,7 @@ DWARFContextInMemory::DWARFContextInMemory(object::ObjectFile *Obj) :
     // Record relocations for the debug_info and debug_line sections.
     RelocAddrMap *Map = StringSwitch<RelocAddrMap*>(RelSecName)
         .Case("debug_info", &InfoRelocMap)
+        .Case("debug_loc", &LocRelocMap)
         .Case("debug_info.dwo", &InfoDWORelocMap)
         .Case("debug_line", &LineRelocMap)
         .Default(0);

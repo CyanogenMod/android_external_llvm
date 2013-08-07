@@ -445,6 +445,11 @@ class Instruction {
   string TwoOperandAliasConstraint = "";
 
   ///@}
+
+  /// UseNamedOperandTable - If set, the operand indices of this instruction
+  /// can be queried via the getNamedOperandIdx() function which is generated
+  /// by TableGen.
+  bit UseNamedOperandTable = 0;
 }
 
 /// PseudoInstExpansion - Expansion information for a pseudo-instruction.
@@ -813,6 +818,9 @@ class AsmParser {
   // ShouldEmitMatchRegisterName - Set to false if the target needs a hand
   // written register name matcher
   bit ShouldEmitMatchRegisterName = 1;
+
+  /// Does the instruction mnemonic allow '.'
+  bit MnemonicContainsDot = 0;
 }
 def DefaultAsmParser : AsmParser;
 

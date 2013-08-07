@@ -6,14 +6,13 @@ lit - LLVM Integrated Tester.
 See lit.pod for more information.
 """
 
+from __future__ import absolute_import
 import math, os, platform, random, re, sys, time, threading, traceback
 
-import ProgressBar
-import TestRunner
-import Util
-
-import LitConfig
-import Test
+import lit.ProgressBar
+import lit.LitConfig
+import lit.Test
+import lit.Util
 
 import lit.discovery
 
@@ -59,14 +58,14 @@ class TestingProgressDisplay:
         if self.progressBar:
             self.progressBar.clear()
 
-        print '%s: %s (%d of %d)' % (test.result.name, test.getFullName(),
-                                     self.completed, self.numTests)
+        print('%s: %s (%d of %d)' % (test.result.name, test.getFullName(),
+                                     self.completed, self.numTests))
 
         if test.result.isFailure and self.opts.showOutput:
-            print "%s TEST '%s' FAILED %s" % ('*'*20, test.getFullName(),
-                                              '*'*20)
-            print test.output
-            print "*" * 20
+            print("%s TEST '%s' FAILED %s" % ('*'*20, test.getFullName(),
+                                              '*'*20))
+            print(test.output)
+            print("*" * 20)
 
         sys.stdout.flush()
 
@@ -76,6 +75,12 @@ class TestProvider:
         self.iter = iter(tests)
         self.lock = threading.Lock()
         self.startTime = time.time()
+        self.canceled = False
+
+    def cancel(self):
+        self.lock.acquire()
+        self.canceled = True
+        self.lock.release()
 
     def get(self):
         # Check if we have run out of time.
@@ -85,9 +90,12 @@ class TestProvider:
 
         # Otherwise take the next test.
         self.lock.acquire()
-        try:
-            item = self.iter.next()
-        except StopIteration:
+        if self.canceled:
+          self.lock.release()
+          return None
+        for item in self.iter:
+            break
+        else:
             item = None
         self.lock.release()
         return item
@@ -115,12 +123,12 @@ class Tester(threading.Thread):
         except KeyboardInterrupt:
             # This is a sad hack. Unfortunately subprocess goes
             # bonkers with ctrl-c and we start forking merrily.
-            print '\nCtrl-C detected, goodbye.'
+            print('\nCtrl-C detected, goodbye.')
             os.kill(0,9)
         except:
             if self.litConfig.debug:
                 raise
-            result = Test.UNRESOLVED
+            result = lit.Test.UNRESOLVED
             output = 'Exception during script execution:\n'
             output += traceback.format_exc()
             output += '\n'
@@ -232,6 +240,9 @@ def main(builtinParameters = {}):
     group.add_option("", "--show-suites", dest="showSuites",
                       help="Show discovered test suites",
                       action="store_true", default=False)
+    group.add_option("", "--show-tests", dest="showTests",
+                      help="Show all discovered tests",
+                      action="store_true", default=False)
     group.add_option("", "--repeat", dest="repeatTests", metavar="N",
                       help="Repeat tests N times (for timing)",
                       action="store", default=None, type=int)
@@ -248,7 +259,7 @@ def main(builtinParameters = {}):
 # I haven't seen this bug occur with 2.5.2 and later, so only enable multiple
 # threads by default there.
        if sys.hexversion >= 0x2050200:
-               opts.numThreads = Util.detectCPUs()
+               opts.numThreads = lit.Util.detectCPUs()
        else:
                opts.numThreads = 1
 
@@ -264,36 +275,47 @@ def main(builtinParameters = {}):
         userParams[name] = val
 
     # Create the global config object.
-    litConfig = LitConfig.LitConfig(progname = os.path.basename(sys.argv[0]),
-                                    path = opts.path,
-                                    quiet = opts.quiet,
-                                    useValgrind = opts.useValgrind,
-                                    valgrindLeakCheck = opts.valgrindLeakCheck,
-                                    valgrindArgs = opts.valgrindArgs,
-                                    noExecute = opts.noExecute,
-                                    ignoreStdErr = False,
-                                    debug = opts.debug,
-                                    isWindows = (platform.system()=='Windows'),
-                                    params = userParams,
-                                    config_prefix = opts.configPrefix)
+    litConfig = lit.LitConfig.LitConfig(
+        progname = os.path.basename(sys.argv[0]),
+        path = opts.path,
+        quiet = opts.quiet,
+        useValgrind = opts.useValgrind,
+        valgrindLeakCheck = opts.valgrindLeakCheck,
+        valgrindArgs = opts.valgrindArgs,
+        noExecute = opts.noExecute,
+        debug = opts.debug,
+        isWindows = (platform.system()=='Windows'),
+        params = userParams,
+        config_prefix = opts.configPrefix)
 
     tests = lit.discovery.find_tests_for_inputs(litConfig, inputs)
 
-    if opts.showSuites:
+    if opts.showSuites or opts.showTests:
+        # Aggregate the tests by suite.
         suitesAndTests = {}
         for t in tests:
             if t.suite not in suitesAndTests:
                 suitesAndTests[t.suite] = []
             suitesAndTests[t.suite].append(t)
-
-        print '-- Test Suites --'
         suitesAndTests = suitesAndTests.items()
-        suitesAndTests.sort(key = lambda (ts,_): ts.name)
-        for ts,ts_tests in suitesAndTests:
-            print '  %s - %d tests' %(ts.name, len(ts_tests))
-            print '    Source Root: %s' % ts.source_root
-            print '    Exec Root  : %s' % ts.exec_root
+        suitesAndTests.sort(key = lambda item: item[0].name)
 
+        # Show the suites, if requested.
+        if opts.showSuites:
+            print('-- Test Suites --')
+            for ts,ts_tests in suitesAndTests:
+                print('  %s - %d tests' %(ts.name, len(ts_tests)))
+                print('    Source Root: %s' % ts.source_root)
+                print('    Exec Root  : %s' % ts.exec_root)
+
+        # Show the tests, if requested.
+        if opts.showTests:
+            print('-- Available Tests --')
+            for ts,ts_tests in suitesAndTests:
+                ts_tests.sort(key = lambda test: test.path_in_suite)
+                for test in ts_tests:
+                    print('  %s' % (test.getFullName(),))
+        
     # Select and order the tests.
     numTotalTests = len(tests)
 
@@ -335,27 +357,38 @@ def main(builtinParameters = {}):
     if not opts.quiet:
         if opts.succinct and opts.useProgressBar:
             try:
-                tc = ProgressBar.TerminalController()
-                progressBar = ProgressBar.ProgressBar(tc, header)
+                tc = lit.ProgressBar.TerminalController()
+                progressBar = lit.ProgressBar.ProgressBar(tc, header)
             except ValueError:
-                print header
-                progressBar = ProgressBar.SimpleProgressBar('Testing: ')
+                print(header)
+                progressBar = lit.ProgressBar.SimpleProgressBar('Testing: ')
         else:
-            print header
+            print(header)
 
     startTime = time.time()
     display = TestingProgressDisplay(opts, len(tests), progressBar)
     provider = TestProvider(tests, opts.maxTime)
+
+    try:
+      import win32api
+    except ImportError:
+      pass
+    else:
+      def console_ctrl_handler(type):
+        provider.cancel()
+        return True
+      win32api.SetConsoleCtrlHandler(console_ctrl_handler, True)
+
     runTests(opts.numThreads, litConfig, provider, display)
     display.finish()
 
     if not opts.quiet:
-        print 'Testing Time: %.2fs'%(time.time() - startTime)
+        print('Testing Time: %.2fs'%(time.time() - startTime))
 
     # Update results for any tests which weren't run.
     for t in tests:
         if t.result is None:
-            t.setResult(Test.UNRESOLVED, '', 0.0)
+            t.setResult(lit.Test.UNRESOLVED, '', 0.0)
 
     # List test results organized by kind.
     hasFailures = False
@@ -368,16 +401,16 @@ def main(builtinParameters = {}):
             hasFailures = True
 
     # FIXME: Show unresolved and (optionally) unsupported tests.
-    for title,code in (('Unexpected Passing Tests', Test.XPASS),
-                       ('Failing Tests', Test.FAIL)):
+    for title,code in (('Unexpected Passing Tests', lit.Test.XPASS),
+                       ('Failing Tests', lit.Test.FAIL)):
         elts = byCode.get(code)
         if not elts:
             continue
-        print '*'*20
-        print '%s (%d):' % (title, len(elts))
+        print('*'*20)
+        print('%s (%d):' % (title, len(elts)))
         for t in elts:
-            print '    %s' % t.getFullName()
-        print
+            print('    %s' % t.getFullName())
+        sys.stdout.write('\n')
 
     if opts.timeTests:
         # Collate, in case we repeated tests.
@@ -387,30 +420,30 @@ def main(builtinParameters = {}):
             times[key] = times.get(key, 0.) + t.elapsed
 
         byTime = list(times.items())
-        byTime.sort(key = lambda (name,elapsed): elapsed)
+        byTime.sort(key = lambda item: item[1])
         if byTime:
-            Util.printHistogram(byTime, title='Tests')
+            lit.Util.printHistogram(byTime, title='Tests')
 
-    for name,code in (('Expected Passes    ', Test.PASS),
-                      ('Expected Failures  ', Test.XFAIL),
-                      ('Unsupported Tests  ', Test.UNSUPPORTED),
-                      ('Unresolved Tests   ', Test.UNRESOLVED),
-                      ('Unexpected Passes  ', Test.XPASS),
-                      ('Unexpected Failures', Test.FAIL),):
+    for name,code in (('Expected Passes    ', lit.Test.PASS),
+                      ('Expected Failures  ', lit.Test.XFAIL),
+                      ('Unsupported Tests  ', lit.Test.UNSUPPORTED),
+                      ('Unresolved Tests   ', lit.Test.UNRESOLVED),
+                      ('Unexpected Passes  ', lit.Test.XPASS),
+                      ('Unexpected Failures', lit.Test.FAIL),):
         if opts.quiet and not code.isFailure:
             continue
         N = len(byCode.get(code,[]))
         if N:
-            print '  %s: %d' % (name,N)
+            print('  %s: %d' % (name,N))
 
     # If we encountered any additional errors, exit abnormally.
     if litConfig.numErrors:
-        print >>sys.stderr, '\n%d error(s), exiting.' % litConfig.numErrors
+        sys.stderr.write('\n%d error(s), exiting.\n' % litConfig.numErrors)
         sys.exit(2)
 
     # Warn about warnings.
     if litConfig.numWarnings:
-        print >>sys.stderr, '\n%d warning(s) in tests.' % litConfig.numWarnings
+        sys.stderr.write('\n%d warning(s) in tests.\n' % litConfig.numWarnings)
 
     if hasFailures:
         sys.exit(1)

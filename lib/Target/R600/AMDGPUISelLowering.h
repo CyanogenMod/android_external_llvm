@@ -20,6 +20,7 @@
 
 namespace llvm {
 
+class AMDGPUMachineFunction;
 class MachineRegisterInfo;
 
 class AMDGPUTargetLowering : public TargetLowering {
@@ -36,6 +37,8 @@ protected:
   virtual SDValue CreateLiveInRegister(SelectionDAG &DAG,
                                        const TargetRegisterClass *RC,
                                        unsigned Reg, EVT VT) const;
+  SDValue LowerGlobalAddress(AMDGPUMachineFunction *MFI, SDValue Op,
+                             SelectionDAG &DAG) const;
 
   bool isHWTrueValue(SDValue Op) const;
   bool isHWFalseValue(SDValue Op) const;
@@ -46,6 +49,9 @@ protected:
 public:
   AMDGPUTargetLowering(TargetMachine &TM);
 
+  virtual bool isFAbsFree(EVT VT) const;
+  virtual bool isFNegFree(EVT VT) const;
+  virtual MVT getVectorIdxTy() const;
   virtual SDValue LowerReturn(SDValue Chain, CallingConv::ID CallConv,
                               bool isVarArg,
                               const SmallVectorImpl<ISD::OutputArg> &Outs,
@@ -118,6 +124,8 @@ enum {
   // End AMDIL ISD Opcodes
   DWORDADDR,
   FRACT,
+  COS_HW,
+  SIN_HW,
   FMAX,
   SMAX,
   UMAX,

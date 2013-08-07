@@ -53,6 +53,10 @@ namespace llvm {
       /// to X86::XORPS or X86::XORPD.
       FXOR,
 
+      /// FAND - Bitwise logical ANDNOT of floating point values. This
+      /// corresponds to X86::ANDNPS or X86::ANDNPD.
+      FANDN,
+
       /// FSRL - Bitwise logical right shift of floating point values. These
       /// corresponds to X86::PSRLDQ.
       FSRL,
@@ -290,6 +294,10 @@ namespace llvm {
       // TESTP - Vector packed fp sign bitwise comparisons
       TESTP,
 
+      // OR/AND test for masks
+      KORTEST,
+      KTEST,
+
       // Several flavors of instructions with vector shuffle behaviors.
       PALIGNR,
       PSHUFD,
@@ -313,6 +321,8 @@ namespace llvm {
       VPERMI,
       VPERM2X128,
       VBROADCAST,
+      // masked broadcast
+      VBROADCASTM,
 
       // PMULUDQ - Vector multiply packed unsigned doubleword integers
       PMULUDQ,
@@ -434,25 +444,45 @@ namespace llvm {
 
   /// Define some predicates that are used for node matching.
   namespace X86 {
-    /// isVEXTRACTF128Index - Return true if the specified
+    /// isVEXTRACT128Index - Return true if the specified
     /// EXTRACT_SUBVECTOR operand specifies a vector extract that is
-    /// suitable for input to VEXTRACTF128.
-    bool isVEXTRACTF128Index(SDNode *N);
+    /// suitable for input to VEXTRACTF128, VEXTRACTI128 instructions.
+    bool isVEXTRACT128Index(SDNode *N);
 
-    /// isVINSERTF128Index - Return true if the specified
+    /// isVINSERT128Index - Return true if the specified
     /// INSERT_SUBVECTOR operand specifies a subvector insert that is
-    /// suitable for input to VINSERTF128.
-    bool isVINSERTF128Index(SDNode *N);
+    /// suitable for input to VINSERTF128, VINSERTI128 instructions.
+    bool isVINSERT128Index(SDNode *N);
 
-    /// getExtractVEXTRACTF128Immediate - Return the appropriate
+    /// isVEXTRACT256Index - Return true if the specified
+    /// EXTRACT_SUBVECTOR operand specifies a vector extract that is
+    /// suitable for input to VEXTRACTF64X4, VEXTRACTI64X4 instructions.
+    bool isVEXTRACT256Index(SDNode *N);
+
+    /// isVINSERT256Index - Return true if the specified
+    /// INSERT_SUBVECTOR operand specifies a subvector insert that is
+    /// suitable for input to VINSERTF64X4, VINSERTI64X4 instructions.
+    bool isVINSERT256Index(SDNode *N);
+
+    /// getExtractVEXTRACT128Immediate - Return the appropriate
     /// immediate to extract the specified EXTRACT_SUBVECTOR index
-    /// with VEXTRACTF128 instructions.
-    unsigned getExtractVEXTRACTF128Immediate(SDNode *N);
+    /// with VEXTRACTF128, VEXTRACTI128 instructions.
+    unsigned getExtractVEXTRACT128Immediate(SDNode *N);
 
-    /// getInsertVINSERTF128Immediate - Return the appropriate
+    /// getInsertVINSERT128Immediate - Return the appropriate
     /// immediate to insert at the specified INSERT_SUBVECTOR index
-    /// with VINSERTF128 instructions.
-    unsigned getInsertVINSERTF128Immediate(SDNode *N);
+    /// with VINSERTF128, VINSERT128 instructions.
+    unsigned getInsertVINSERT128Immediate(SDNode *N);
+
+    /// getExtractVEXTRACT256Immediate - Return the appropriate
+    /// immediate to extract the specified EXTRACT_SUBVECTOR index
+    /// with VEXTRACTF64X4, VEXTRACTI64x4 instructions.
+    unsigned getExtractVEXTRACT256Immediate(SDNode *N);
+
+    /// getInsertVINSERT256Immediate - Return the appropriate
+    /// immediate to insert at the specified INSERT_SUBVECTOR index
+    /// with VINSERTF64x4, VINSERTI64x4 instructions.
+    unsigned getInsertVINSERT256Immediate(SDNode *N);
 
     /// isZeroNode - Returns true if Elt is a constant zero or a floating point
     /// constant +0.0.
@@ -610,7 +640,7 @@ namespace llvm {
     /// error, this returns a register number of 0.
     std::pair<unsigned, const TargetRegisterClass*>
       getRegForInlineAsmConstraint(const std::string &Constraint,
-                                   EVT VT) const;
+                                   MVT VT) const;
 
     /// isLegalAddressingMode - Return true if the addressing mode represented
     /// by AM is legal for this target, for a load/store of the specified type.
@@ -634,6 +664,8 @@ namespace llvm {
     virtual bool isTruncateFree(Type *Ty1, Type *Ty2) const;
     virtual bool isTruncateFree(EVT VT1, EVT VT2) const;
 
+    virtual bool allowTruncateForTailCall(Type *Ty1, Type *Ty2) const;
+
     /// isZExtFree - Return true if any actual instruction that defines a
     /// value of type Ty1 implicit zero-extends the value to Ty2 in the result
     /// register. This does not necessarily include registers defined in
@@ -646,11 +678,11 @@ namespace llvm {
     virtual bool isZExtFree(EVT VT1, EVT VT2) const;
     virtual bool isZExtFree(SDValue Val, EVT VT2) const;
 
-    /// isFMAFasterThanMulAndAdd - Return true if an FMA operation is faster than
-    /// a pair of mul and add instructions. fmuladd intrinsics will be expanded to
-    /// FMAs when this method returns true (and FMAs are legal), otherwise fmuladd
-    /// is expanded to mul + add.
-    virtual bool isFMAFasterThanMulAndAdd(EVT) const { return true; }
+    /// isFMAFasterThanFMulAndFAdd - Return true if an FMA operation is faster
+    /// than a pair of fmul and fadd instructions. fmuladd intrinsics will be
+    /// expanded to FMAs when this method returns true, otherwise fmuladd is
+    /// expanded to fmul + fadd.
+    virtual bool isFMAFasterThanFMulAndFAdd(EVT VT) const;
 
     /// isNarrowingProfitable - Return true if it's profitable to narrow
     /// operations of type VT1 to VT2. e.g. on x86, it's profitable to narrow
@@ -802,6 +834,7 @@ namespace llvm {
     SDValue LowerAsSplatVectorLoad(SDValue SrcOp, EVT VT, SDLoc dl,
                                    SelectionDAG &DAG) const;
     SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerBUILD_VECTORvXi1(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerEXTRACT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINSERT_VECTOR_ELT(SDValue Op, SelectionDAG &DAG) const;
@@ -821,7 +854,9 @@ namespace llvm {
     SDValue lowerUINT_TO_FP_vec(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerTRUNCATE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerZERO_EXTEND(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerZERO_EXTEND_AVX512(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSIGN_EXTEND(SDValue Op, SelectionDAG &DAG) const;
+    SDValue LowerSIGN_EXTEND_AVX512(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerANY_EXTEND(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_SINT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_UINT(SDValue Op, SelectionDAG &DAG) const;

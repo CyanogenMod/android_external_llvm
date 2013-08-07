@@ -855,14 +855,34 @@ bool llvm::isKnownToBeAPowerOfTwo(Value *V, bool OrZero, unsigned Depth) {
     return false;
   }
 
-  // Adding a power of two to the same power of two is a power of two or zero.
-  if (OrZero && match(V, m_Add(m_Value(X), m_Value(Y)))) {
-    if (match(X, m_And(m_Value(), m_Specific(Y)))) {
-      if (isKnownToBeAPowerOfTwo(Y, /*OrZero*/true, Depth))
-        return true;
-    } else if (match(Y, m_And(m_Value(), m_Specific(X)))) {
-      if (isKnownToBeAPowerOfTwo(X, /*OrZero*/true, Depth))
-        return true;
+  // Adding a power-of-two or zero to the same power-of-two or zero yields
+  // either the original power-of-two, a larger power-of-two or zero.
+  if (match(V, m_Add(m_Value(X), m_Value(Y)))) {
+    OverflowingBinaryOperator *VOBO = cast<OverflowingBinaryOperator>(V);
+    if (OrZero || VOBO->hasNoUnsignedWrap() || VOBO->hasNoSignedWrap()) {
+      if (match(X, m_And(m_Specific(Y), m_Value())) ||
+          match(X, m_And(m_Value(), m_Specific(Y))))
+        if (isKnownToBeAPowerOfTwo(Y, OrZero, Depth))
+          return true;
+      if (match(Y, m_And(m_Specific(X), m_Value())) ||
+          match(Y, m_And(m_Value(), m_Specific(X))))
+        if (isKnownToBeAPowerOfTwo(X, OrZero, Depth))
+          return true;
+
+      unsigned BitWidth = V->getType()->getScalarSizeInBits();
+      APInt LHSZeroBits(BitWidth, 0), LHSOneBits(BitWidth, 0);
+      ComputeMaskedBits(X, LHSZeroBits, LHSOneBits, 0, Depth);
+
+      APInt RHSZeroBits(BitWidth, 0), RHSOneBits(BitWidth, 0);
+      ComputeMaskedBits(Y, RHSZeroBits, RHSOneBits, 0, Depth);
+      // If i8 V is a power of two or zero:
+      //  ZeroBits: 1 1 1 0 1 1 1 1
+      // ~ZeroBits: 0 0 0 1 0 0 0 0
+      if ((~(LHSZeroBits & RHSZeroBits)).isPowerOf2())
+        // If OrZero isn't set, we cannot give back a zero result.
+        // Make sure either the LHS or RHS has a bit set.
+        if (OrZero || RHSOneBits.getBoolValue() || LHSOneBits.getBoolValue())
+          return true;
     }
   }
 
@@ -1520,7 +1540,7 @@ Value *llvm::isBytewiseValue(Value *V) {
 // struct. To is the result struct built so far, new insertvalue instructions
 // build on that.
 static Value *BuildSubAggregate(Value *From, Value* To, Type *IndexedType,
-                                SmallVector<unsigned, 10> &Idxs,
+                                SmallVectorImpl<unsigned> &Idxs,
                                 unsigned IdxSkip,
                                 Instruction *InsertBefore) {
   llvm::StructType *STy = dyn_cast<llvm::StructType>(IndexedType);

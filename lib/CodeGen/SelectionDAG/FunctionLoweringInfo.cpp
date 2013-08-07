@@ -55,15 +55,12 @@ static bool isUsedOutsideOfDefiningBlock(const Instruction *I) {
   return false;
 }
 
-FunctionLoweringInfo::FunctionLoweringInfo(const TargetMachine &TM)
-  : TM(TM), TLI(0) {
-}
-
 void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
+  const TargetLowering *TLI = TM.getTargetLowering();
+
   Fn = &fn;
   MF = &mf;
   RegInfo = &MF->getRegInfo();
-  TLI = TM.getTargetLowering();
 
   // Check whether the function can return without sret-demotion.
   SmallVector<ISD::OutputArg, 4> Outs;
@@ -115,8 +112,11 @@ void FunctionLoweringInfo::set(const Function &fn, MachineFunction &mf) {
       // in a predictable order.
       if (const DbgDeclareInst *DI = dyn_cast<DbgDeclareInst>(I)) {
         MachineModuleInfo &MMI = MF->getMMI();
+        DIVariable DIVar(DI->getVariable());
+        assert((!DIVar || DIVar.isVariable()) &&
+          "Variable in DbgDeclareInst should be either null or a DIVariable.");
         if (MMI.hasDebugInfo() &&
-            DIVariable(DI->getVariable()).Verify() &&
+            DIVar &&
             !DI->getDebugLoc().isUnknown()) {
           // Don't handle byval struct arguments or VLAs, for example.
           // Non-byval arguments are handled here (they refer to the stack
@@ -209,7 +209,8 @@ void FunctionLoweringInfo::clear() {
 
 /// CreateReg - Allocate a single virtual register for the given type.
 unsigned FunctionLoweringInfo::CreateReg(MVT VT) {
-  return RegInfo->createVirtualRegister(TLI->getRegClassFor(VT));
+  return RegInfo->
+    createVirtualRegister(TM.getTargetLowering()->getRegClassFor(VT));
 }
 
 /// CreateRegs - Allocate the appropriate number of virtual registers of
@@ -220,6 +221,8 @@ unsigned FunctionLoweringInfo::CreateReg(MVT VT) {
 /// will assign registers for each member or element.
 ///
 unsigned FunctionLoweringInfo::CreateRegs(Type *Ty) {
+  const TargetLowering *TLI = TM.getTargetLowering();
+
   SmallVector<EVT, 4> ValueVTs;
   ComputeValueVTs(*TLI, Ty, ValueVTs);
 
@@ -266,6 +269,8 @@ void FunctionLoweringInfo::ComputePHILiveOutRegInfo(const PHINode *PN) {
   Type *Ty = PN->getType();
   if (!Ty->isIntegerTy() || Ty->isVectorTy())
     return;
+
+  const TargetLowering *TLI = TM.getTargetLowering();
 
   SmallVector<EVT, 1> ValueVTs;
   ComputeValueVTs(*TLI, Ty, ValueVTs);

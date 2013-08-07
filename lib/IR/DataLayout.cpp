@@ -200,9 +200,7 @@ static unsigned inBytes(unsigned Bits) {
 }
 
 void DataLayout::parseSpecifier(StringRef Desc) {
-
   while (!Desc.empty()) {
-
     // Split at '-'.
     std::pair<StringRef, StringRef> Split = split(Desc, '-');
     Desc = Split.second;
@@ -482,7 +480,7 @@ std::string DataLayout::getStringRepresentation() const {
     addrSpaces.push_back(pib->first);
   }
   std::sort(addrSpaces.begin(), addrSpaces.end());
-  for (SmallVector<unsigned, 8>::iterator asb = addrSpaces.begin(),
+  for (SmallVectorImpl<unsigned>::iterator asb = addrSpaces.begin(),
       ase = addrSpaces.end(); asb != ase; ++asb) {
     const PointerAlignElem &PI = Pointers.find(*asb)->second;
     OS << "-p";
@@ -509,6 +507,15 @@ std::string DataLayout::getStringRepresentation() const {
   return OS.str();
 }
 
+unsigned DataLayout::getPointerTypeSizeInBits(Type *Ty) const {
+  assert(Ty->isPtrOrPtrVectorTy() &&
+         "This should only be called with a pointer or pointer vector type");
+
+  if (Ty->isPointerTy())
+    return getTypeSizeInBits(Ty);
+
+  return getTypeSizeInBits(Ty->getScalarType());
+}
 
 /*!
   \param abi_or_pref Flag that determines which alignment is returned. true
@@ -581,7 +588,6 @@ unsigned DataLayout::getABITypeAlignment(Type *Ty) const {
 unsigned DataLayout::getABIIntegerTypeAlignment(unsigned BitWidth) const {
   return getAlignmentInfo(INTEGER_ALIGN, BitWidth, true, 0);
 }
-
 
 unsigned DataLayout::getCallFrameTypeAlignment(Type *Ty) const {
   for (unsigned i = 0, e = Alignments.size(); i != e; ++i)

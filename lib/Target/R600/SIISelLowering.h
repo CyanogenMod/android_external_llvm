@@ -25,10 +25,13 @@ class SITargetLowering : public AMDGPUTargetLowering {
                          SDValue Chain, unsigned Offset) const;
   SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerSIGN_EXTEND(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerZERO_EXTEND(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerBRCOND(SDValue Op, SelectionDAG &DAG) const;
 
   bool foldImm(SDValue &Operand, int32_t &Immediate,
                bool &ScalarSlotUsed) const;
+  const TargetRegisterClass *getRegClassForNode(SelectionDAG &DAG,
+                                                const SDValue &Op) const;
   bool fitsRegClass(SelectionDAG &DAG, const SDValue &Op,
                     unsigned RegClass) const;
   void ensureSRegLimit(SelectionDAG &DAG, SDValue &Operand,
@@ -40,6 +43,7 @@ class SITargetLowering : public AMDGPUTargetLowering {
 
 public:
   SITargetLowering(TargetMachine &tm);
+  bool allowsUnalignedMemoryAccesses(EVT  VT, bool *IsFast) const;
 
   SDValue LowerFormalArguments(SDValue Chain, CallingConv::ID CallConv,
                                bool isVarArg,

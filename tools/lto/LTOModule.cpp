@@ -50,11 +50,6 @@ DisableFPElim("disable-fp-elim",
   cl::init(false));
 
 static cl::opt<bool>
-DisableFPElimNonLeaf("disable-non-leaf-fp-elim",
-  cl::desc("Disable frame pointer elimination optimization for non-leaf funcs"),
-  cl::init(false));
-
-static cl::opt<bool>
 EnableUnsafeFPMath("enable-unsafe-fp-math",
   cl::desc("Enable optimizations that may decrease FP precision"),
   cl::init(false));
@@ -126,11 +121,6 @@ OverrideStackAlignment("stack-alignment",
   cl::desc("Override default stack alignment"),
   cl::init(0));
 
-static cl::opt<bool>
-EnableRealignStack("realign-stack",
-  cl::desc("Realign stack if needed"),
-  cl::init(true));
-
 static cl::opt<std::string>
 TrapFuncName("trap-func", cl::Hidden,
   cl::desc("Emit a call to trap function rather than a trap instruction"),
@@ -151,14 +141,9 @@ UseInitArray("use-init-array",
   cl::desc("Use .init_array instead of .ctors."),
   cl::init(false));
 
-static cl::opt<unsigned>
-SSPBufferSize("stack-protector-buffer-size", cl::init(8),
-              cl::desc("Lower bound for a buffer to be considered for "
-                       "stack protection"));
-
 LTOModule::LTOModule(llvm::Module *m, llvm::TargetMachine *t)
   : _module(m), _target(t),
-    _context(*_target->getMCAsmInfo(), *_target->getRegisterInfo(), NULL),
+    _context(_target->getMCAsmInfo(), _target->getRegisterInfo(), NULL),
     _mangler(_context, t) {}
 
 /// isBitcodeFile - Returns 'true' if the file (or memory contents) is LLVM
@@ -214,17 +199,16 @@ LTOModule *LTOModule::makeLTOModule(const char *path, std::string &errMsg) {
 
 LTOModule *LTOModule::makeLTOModule(int fd, const char *path,
                                     size_t size, std::string &errMsg) {
-  return makeLTOModule(fd, path, size, size, 0, errMsg);
+  return makeLTOModule(fd, path, size, 0, errMsg);
 }
 
 LTOModule *LTOModule::makeLTOModule(int fd, const char *path,
-                                    size_t file_size,
                                     size_t map_size,
                                     off_t offset,
                                     std::string &errMsg) {
   OwningPtr<MemoryBuffer> buffer;
-  if (error_code ec = MemoryBuffer::getOpenFile(fd, path, buffer, file_size,
-                                                map_size, offset, false)) {
+  if (error_code ec =
+          MemoryBuffer::getOpenFileSlice(fd, path, buffer, map_size, offset)) {
     errMsg = ec.message();
     return NULL;
   }
@@ -242,7 +226,6 @@ LTOModule *LTOModule::makeLTOModule(const void *mem, size_t length,
 void LTOModule::getTargetOptions(TargetOptions &Options) {
   Options.LessPreciseFPMADOption = EnableFPMAD;
   Options.NoFramePointerElim = DisableFPElim;
-  Options.NoFramePointerElimNonLeaf = DisableFPElimNonLeaf;
   Options.AllowFPOpFusion = FuseFPOps;
   Options.UnsafeFPMath = EnableUnsafeFPMath;
   Options.NoInfsFPMath = EnableNoInfsFPMath;
@@ -256,12 +239,10 @@ void LTOModule::getTargetOptions(TargetOptions &Options) {
   Options.GuaranteedTailCallOpt = EnableGuaranteedTailCallOpt;
   Options.DisableTailCalls = DisableTailCalls;
   Options.StackAlignmentOverride = OverrideStackAlignment;
-  Options.RealignStack = EnableRealignStack;
   Options.TrapFuncName = TrapFuncName;
   Options.PositionIndependentExecutable = EnablePIE;
   Options.EnableSegmentedStacks = SegmentedStacks;
   Options.UseInitArray = UseInitArray;
-  Options.SSPBufferSize = SSPBufferSize;
 }
 
 LTOModule *LTOModule::makeLTOModule(MemoryBuffer *buffer,
@@ -792,9 +773,8 @@ namespace {
                                        unsigned ByteAlignment) {}
     virtual void EmitTBSSSymbol(const MCSection *Section, MCSymbol *Symbol,
                                 uint64_t Size, unsigned ByteAlignment) {}
-    virtual void EmitBytes(StringRef Data, unsigned AddrSpace) {}
-    virtual void EmitValueImpl(const MCExpr *Value, unsigned Size,
-                               unsigned AddrSpace) {}
+    virtual void EmitBytes(StringRef Data) {}
+    virtual void EmitValueImpl(const MCExpr *Value, unsigned Size) {}
     virtual void EmitULEB128Value(const MCExpr *Value) {}
     virtual void EmitSLEB128Value(const MCExpr *Value) {}
     virtual void EmitValueToAlignment(unsigned ByteAlignment, int64_t Value,

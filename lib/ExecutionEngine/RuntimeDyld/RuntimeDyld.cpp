@@ -396,7 +396,7 @@ uint8_t *RuntimeDyldImpl::createStubFunction(uint8_t *Addr) {
     StubAddr++;
     *StubAddr = NopInstr;
     return Addr;
-  } else if (Arch == Triple::ppc64) {
+  } else if (Arch == Triple::ppc64 || Arch == Triple::ppc64le) {
     // PowerPC64 stub: the address points to a function descriptor
     // instead of the function itself. Load the function address
     // on r11 and sets it to control register. Also loads the function
@@ -527,6 +527,7 @@ ObjectImage *RuntimeDyld::loadObject(ObjectBuffer *InputBuffer) {
     case sys::fs::file_magic::archive:
     case sys::fs::file_magic::coff_object:
     case sys::fs::file_magic::pecoff_executable:
+    case sys::fs::file_magic::macho_universal_binary:
       report_fatal_error("Incompatible object format!");
     }
   } else {

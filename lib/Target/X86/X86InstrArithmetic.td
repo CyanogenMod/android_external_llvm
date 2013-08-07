@@ -1041,13 +1041,13 @@ multiclass ArithBinOp_RF<bits<8> BaseOpc, bits<8> BaseOpc2, bits<8> BaseOpc4,
   } // Defs = [EFLAGS]
 
   def NAME#8i8   : BinOpAI<BaseOpc4, mnemonic, Xi8 , AL,
-                           "{$src, %al|AL, $src}">;
+                           "{$src, %al|al, $src}">;
   def NAME#16i16 : BinOpAI<BaseOpc4, mnemonic, Xi16, AX,
-                           "{$src, %ax|AX, $src}">;
+                           "{$src, %ax|ax, $src}">;
   def NAME#32i32 : BinOpAI<BaseOpc4, mnemonic, Xi32, EAX,
-                           "{$src, %eax|EAX, $src}">;
+                           "{$src, %eax|eax, $src}">;
   def NAME#64i32 : BinOpAI<BaseOpc4, mnemonic, Xi64, RAX,
-                           "{$src, %rax|RAX, $src}">;
+                           "{$src, %rax|rax, $src}">;
 }
 
 /// ArithBinOp_RFF - This is an arithmetic binary operator where the pattern is
@@ -1112,13 +1112,13 @@ multiclass ArithBinOp_RFF<bits<8> BaseOpc, bits<8> BaseOpc2, bits<8> BaseOpc4,
   } // Uses = [EFLAGS], Defs = [EFLAGS]
 
   def NAME#8i8   : BinOpAI_FF<BaseOpc4, mnemonic, Xi8 , AL,
-                              "{$src, %al|AL, $src}">;
+                              "{$src, %al|al, $src}">;
   def NAME#16i16 : BinOpAI_FF<BaseOpc4, mnemonic, Xi16, AX,
-                              "{$src, %ax|AX, $src}">;
+                              "{$src, %ax|ax, $src}">;
   def NAME#32i32 : BinOpAI_FF<BaseOpc4, mnemonic, Xi32, EAX,
-                              "{$src, %eax|EAX, $src}">;
+                              "{$src, %eax|eax, $src}">;
   def NAME#64i32 : BinOpAI_FF<BaseOpc4, mnemonic, Xi64, RAX,
-                              "{$src, %rax|RAX, $src}">;
+                              "{$src, %rax|rax, $src}">;
 }
 
 /// ArithBinOp_F - This is an arithmetic binary operator where the pattern is
@@ -1179,13 +1179,13 @@ multiclass ArithBinOp_F<bits<8> BaseOpc, bits<8> BaseOpc2, bits<8> BaseOpc4,
   } // Defs = [EFLAGS]
 
   def NAME#8i8   : BinOpAI<BaseOpc4, mnemonic, Xi8 , AL,
-                           "{$src, %al|AL, $src}">;
+                           "{$src, %al|al, $src}">;
   def NAME#16i16 : BinOpAI<BaseOpc4, mnemonic, Xi16, AX,
-                           "{$src, %ax|AX, $src}">;
+                           "{$src, %ax|ax, $src}">;
   def NAME#32i32 : BinOpAI<BaseOpc4, mnemonic, Xi32, EAX,
-                           "{$src, %eax|EAX, $src}">;
+                           "{$src, %eax|eax, $src}">;
   def NAME#64i32 : BinOpAI<BaseOpc4, mnemonic, Xi64, RAX,
-                           "{$src, %rax|RAX, $src}">;
+                           "{$src, %rax|rax, $src}">;
 }
 
 
@@ -1253,13 +1253,13 @@ let isCompare = 1 in {
   } // Defs = [EFLAGS]
 
   def TEST8i8    : BinOpAI<0xA8, "test", Xi8 , AL,
-                           "{$src, %al|AL, $src}">;
+                           "{$src, %al|al, $src}">;
   def TEST16i16  : BinOpAI<0xA8, "test", Xi16, AX,
-                           "{$src, %ax|AX, $src}">;
+                           "{$src, %ax|ax, $src}">;
   def TEST32i32  : BinOpAI<0xA8, "test", Xi32, EAX,
-                           "{$src, %eax|EAX, $src}">;
+                           "{$src, %eax|eax, $src}">;
   def TEST64i32  : BinOpAI<0xA8, "test", Xi64, RAX,
-                           "{$src, %rax|RAX, $src}">;
+                           "{$src, %rax|rax, $src}">;
 } // isCompare
 
 //===----------------------------------------------------------------------===//
@@ -1302,12 +1302,12 @@ let neverHasSideEffects = 1 in {
   let isCommutable = 1 in
   def rr : I<0xF6, MRMSrcReg, (outs RC:$dst1, RC:$dst2), (ins RC:$src),
              !strconcat(mnemonic, "\t{$src, $dst2, $dst1|$dst1, $dst2, $src}"),
-             [], IIC_MUL8>, T8XD, VEX_4V, Sched<[WriteIMul]>;
+             [], IIC_MUL8>, T8XD, VEX_4V, Sched<[WriteIMul, WriteIMulH]>;
 
   let mayLoad = 1 in
   def rm : I<0xF6, MRMSrcMem, (outs RC:$dst1, RC:$dst2), (ins x86memop:$src),
              !strconcat(mnemonic, "\t{$src, $dst2, $dst1|$dst1, $dst2, $src}"),
-             [], IIC_MUL8>, T8XD, VEX_4V, Sched<[WriteIMulLd]>;
+             [], IIC_MUL8>, T8XD, VEX_4V, Sched<[WriteIMulLd, WriteIMulH]>;
 }
 }
 
@@ -1336,7 +1336,7 @@ let hasSideEffects = 0, Predicates = [HasADX], Defs = [EFLAGS] in {
   def ADCX32rm : I<0xF6, MRMSrcMem, (outs GR32:$dst), (ins i32mem:$src),
              "adcx{l}\t{$src, $dst|$dst, $src}",
              [], IIC_BIN_MEM>, T8, OpSize;
- 
+
   def ADCX64rm : I<0xF6, MRMSrcMem, (outs GR64:$dst), (ins i64mem:$src),
              "adcx{q}\t{$src, $dst|$dst, $src}",
              [], IIC_BIN_MEM>, T8, OpSize, REX_W, Requires<[In64BitMode]>;
@@ -1361,7 +1361,7 @@ let hasSideEffects = 0, Predicates = [HasADX], Defs = [EFLAGS] in {
   def ADOX32rm : I<0xF6, MRMSrcMem, (outs GR32:$dst), (ins i32mem:$src),
              "adox{l}\t{$src, $dst|$dst, $src}",
              [], IIC_BIN_MEM>, T8XS;
- 
+
   def ADOX64rm : I<0xF6, MRMSrcMem, (outs GR64:$dst), (ins i64mem:$src),
              "adox{q}\t{$src, $dst|$dst, $src}",
              [], IIC_BIN_MEM>, T8XS, REX_W, Requires<[In64BitMode]>;

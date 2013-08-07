@@ -233,6 +233,13 @@ bool PPCCTRLoops::mightUseCTR(const Triple &TT, BasicBlock *BB) {
 #endif
 
           case Intrinsic::longjmp:
+
+          // Exclude eh_sjlj_setjmp; we don't need to exclude eh_sjlj_longjmp
+          // because, although it does clobber the counter register, the
+          // control can't then return to inside the loop unless there is also
+          // an eh_sjlj_setjmp.
+          case Intrinsic::eh_sjlj_setjmp:
+
           case Intrinsic::memcpy:
           case Intrinsic::memmove:
           case Intrinsic::memset:
@@ -402,7 +409,7 @@ bool PPCCTRLoops::convertToCTRLoop(Loop *L) {
   BasicBlock *CountedExitBlock = 0;
   const SCEV *ExitCount = 0;
   BranchInst *CountedExitBranch = 0;
-  for (SmallVector<BasicBlock*, 4>::iterator I = ExitingBlocks.begin(),
+  for (SmallVectorImpl<BasicBlock *>::iterator I = ExitingBlocks.begin(),
        IE = ExitingBlocks.end(); I != IE; ++I) {
     const SCEV *EC = SE->getExitCount(L, *I);
     DEBUG(dbgs() << "Exit Count for " << *L << " from block " <<
@@ -413,6 +420,9 @@ bool PPCCTRLoops::convertToCTRLoop(Loop *L) {
       if (ConstEC->getValue()->isZero())
         continue;
     } else if (!SE->isLoopInvariant(EC, L))
+      continue;
+
+    if (SE->getTypeSizeInBits(EC->getType()) > (TT.isArch64Bit() ? 64 : 32))
       continue;
 
     // We now have a loop-invariant count of loop iterations (which is not the

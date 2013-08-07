@@ -24,8 +24,12 @@ namespace llvm {
       under_IO_putc,
       /// void operator delete[](void*);
       ZdaPv,
+      /// void operator delete[](void*, nothrow);
+      ZdaPvRKSt9nothrow_t,
       /// void operator delete(void*);
       ZdlPv,
+      /// void operator delete(void*, nothrow);
+      ZdlPvRKSt9nothrow_t,
       /// void *new[](unsigned int);
       Znaj,
       /// void *new[](unsigned int, nothrow);
@@ -308,6 +312,8 @@ namespace llvm {
       getpwnam,
       /// char *gets(char *s);
       gets,
+      /// int gettimeofday(struct timeval *tp, void *tzp);
+      gettimeofday,
       /// uint32_t htonl(uint32_t hostlong);
       htonl,
       /// uint16_t htons(uint16_t hostshort);

@@ -21,13 +21,13 @@ def addr16 :
 // Address operand
 def mem16 : Operand<i32> {
   let PrintMethod = "printMemOperand";
-  let MIOperandInfo = (ops CPU16Regs, simm16, CPU16Regs);
+  let MIOperandInfo = (ops CPU16Regs, simm16, CPU16RegsPlusSP);
   let EncoderMethod = "getMemEncoding";
 }
 
 def mem16_ea : Operand<i32> {
   let PrintMethod = "printMemOperandEA";
-  let MIOperandInfo = (ops CPU16Regs, simm16);
+  let MIOperandInfo = (ops CPU16RegsPlusSP, simm16);
   let EncoderMethod = "getMemEncoding";
 }
 
@@ -187,6 +187,11 @@ class FEXT_RI16_SP_explicit_ins<bits<5> _op, string asmstr,
   FEXT_RI16<_op, (outs CPU16Regs:$rx), (ins CPUSPReg:$ry, simm16:$imm),
             !strconcat(asmstr, "\t$rx, $imm ( $ry ); "), [], itin>;
 
+class FEXT_RI16_SP_Store_explicit_ins<bits<5> _op, string asmstr,
+                                InstrItinClass itin>:
+  FEXT_RI16<_op, (outs), (ins  CPU16Regs:$rx, CPUSPReg:$ry, simm16:$imm),
+            !strconcat(asmstr, "\t$rx, $imm ( $ry ); "), [], itin>;
+
 //
 // EXT-RRI instruction format
 //
@@ -248,7 +253,7 @@ class FEXT_T8I8I16_ins<string asmstr, string asmstr2>:
 // I8_MOVR32 instruction format (used only by the MOVR32 instructio
 //
 class FI8_MOVR3216_ins<string asmstr, InstrItinClass itin>:
-       FI8_MOVR3216<(outs CPU16Regs:$rz), (ins CPURegs:$r32),
+       FI8_MOVR3216<(outs CPU16Regs:$rz), (ins GPR32:$r32),
        !strconcat(asmstr,  "\t$rz, $r32"), [], itin>;
 
 //
@@ -256,7 +261,7 @@ class FI8_MOVR3216_ins<string asmstr, InstrItinClass itin>:
 //
 
 class FI8_MOV32R16_ins<string asmstr, InstrItinClass itin>:
-  FI8_MOV32R16<(outs CPURegs:$r32), (ins CPU16Regs:$rz),
+  FI8_MOV32R16<(outs GPR32:$r32), (ins CPU16Regs:$rz),
                !strconcat(asmstr,  "\t$r32, $rz"), [], itin>;
 
 //
@@ -285,6 +290,11 @@ class FMULT16_LO_ins<string asmstr, InstrItinClass itin> :
 class FRR16_ins<bits<5> f, string asmstr, InstrItinClass itin> :
   FRR16<f, (outs CPU16Regs:$rx), (ins CPU16Regs:$ry),
         !strconcat(asmstr, "\t$rx, $ry"), [], itin> {
+}
+
+class FRRBreakNull16_ins<string asmstr, InstrItinClass itin> :
+  FRRBreak16<(outs), (ins), asmstr, [], itin> {
+  let Code=0;
 }
 
 class FRR16R_ins<bits<5> f, string asmstr, InstrItinClass itin> :
@@ -437,7 +447,7 @@ def Constant32:
   MipsPseudo16<(outs), (ins imm32:$imm), "\t.word $imm", []>;
 
 def LwConstant32:
-  MipsPseudo16<(outs), (ins CPU16Regs:$rx, imm32:$imm),
+  MipsPseudo16<(outs CPU16Regs:$rx), (ins imm32:$imm),
     "lw\t$rx, 1f\n\tb\t2f\n\t.align\t2\n1: \t.word\t$imm\n2:", []>;
 
 
@@ -569,6 +579,13 @@ def BnezRxImm16: FRI16_B_ins<0b00101, "bnez", IIAlu>, cbranch16;
 //
 def BnezRxImmX16: FEXT_RI16_B_ins<0b00101, "bnez", IIAlu>, cbranch16;
 
+
+//
+//Format: BREAK immediate
+// Purpose: Breakpoint
+// To cause a Breakpoint exception.
+
+def Break16: FRRBreakNull16_ins<"break 0", NoItinerary>; 
 //
 // Format: BTEQZ offset MIPS16e
 // Purpose: Branch on T Equal to Zero (Extended)
@@ -671,6 +688,7 @@ def Jal16 : FJAL16_ins<0b0, "jal", IIAlu> {
   let hasDelaySlot = 0;  // not true, but we add the nop for now
   let isTerminator=1;
   let isBarrier=1;
+  let isCall=1;
 }
 
 //
@@ -878,9 +896,9 @@ def OrRxRxRy16: FRxRxRy16_ins<0b01101, "or", IIAlu>, ArithLogic16Defs<1>;
 let ra=1, s=0,s0=1,s1=1 in
 def RestoreRaF16:
   FI8_SVRS16<0b1, (outs), (ins uimm16:$frame_size),
-             "restore\t$$ra,  $$s0, $$s1, $frame_size", [], IILoad >, MayLoad {
+             "restore\t$$ra,  $$s0, $$s1, $$s2, $frame_size", [], IILoad >, MayLoad {
   let isCodeGenOnly = 1;
-  let Defs = [S0, S1, RA, SP];
+  let Defs = [S0, S1, S2, RA, SP];
   let Uses = [SP];
 }
 
@@ -906,9 +924,9 @@ def RestoreIncSpF16:
 let ra=1, s=1,s0=1,s1=1 in
 def SaveRaF16:
   FI8_SVRS16<0b1, (outs), (ins uimm16:$frame_size),
-             "save\t$$ra, $$s0, $$s1, $frame_size", [], IIStore >, MayStore {
+             "save\t$$ra, $$s0, $$s1, $$s2, $frame_size", [], IIStore >, MayStore {
   let isCodeGenOnly = 1;
-  let Uses = [RA, SP, S0, S1];
+  let Uses = [RA, SP, S0, S1, S2];
   let Defs = [SP];
 }
 
@@ -1195,7 +1213,8 @@ def SwRxRyOffMemX16:
 // Purpose: Store Word rx (SP-Relative)
 // To store an SP-relative word to memory.
 //
-def SwRxSpImmX16: FEXT_RI16_SP_explicit_ins<0b11010, "sw", IIStore>, MayStore;
+def SwRxSpImmX16: FEXT_RI16_SP_Store_explicit_ins
+  <0b11010, "sw", IIStore>, MayStore;
 
 //
 //
@@ -1789,3 +1808,6 @@ def : Mips16Pat<(i32 (extloadi8   addr16:$src)),
                 (LbuRxRyOffMemX16  addr16:$src)>;
 def : Mips16Pat<(i32 (extloadi16  addr16:$src)),
                 (LhuRxRyOffMemX16  addr16:$src)>;
+
+def: Mips16Pat<(trap), (Break16)>;
+

@@ -18,11 +18,13 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Dwarf.h"
+#include "llvm/MC/MCExpr.h"
 #include <vector>
 
 namespace llvm {
   class AsmPrinter;
   class MCSymbol;
+  class MCSymbolRefExpr;
   class raw_ostream;
 
   //===--------------------------------------------------------------------===//
@@ -173,6 +175,10 @@ namespace llvm {
       Child->Parent = this;
     }
 
+    /// findAttribute - Find a value in the DIE with the attribute given, returns NULL
+    /// if no such attribute exists.
+    DIEValue *findAttribute(unsigned Attribute);
+
 #ifndef NDEBUG
     void print(raw_ostream &O, unsigned IndentCount = 0) const;
     void dump();
@@ -188,6 +194,7 @@ namespace llvm {
     enum {
       isInteger,
       isString,
+      isExpr,
       isLabel,
       isDelta,
       isEntry,
@@ -261,7 +268,35 @@ namespace llvm {
   };
 
   //===--------------------------------------------------------------------===//
-  /// DIELabel - A label expression DIE.
+  /// DIEExpr - An expression DIE.
+  //
+  class DIEExpr : public DIEValue {
+    const MCExpr *Expr;
+  public:
+    explicit DIEExpr(const MCExpr *E) : DIEValue(isExpr), Expr(E) {}
+
+    /// EmitValue - Emit expression value.
+    ///
+    virtual void EmitValue(AsmPrinter *AP, unsigned Form) const;
+
+    /// getValue - Get MCExpr.
+    ///
+    const MCExpr *getValue() const { return Expr; }
+
+    /// SizeOf - Determine size of expression value in bytes.
+    ///
+    virtual unsigned SizeOf(AsmPrinter *AP, unsigned Form) const;
+
+    // Implement isa/cast/dyncast.
+    static bool classof(const DIEValue *E) { return E->getType() == isExpr; }
+
+#ifndef NDEBUG
+    virtual void print(raw_ostream &O) const;
+#endif
+  };
+
+  //===--------------------------------------------------------------------===//
+  /// DIELabel - A label DIE.
   //
   class DIELabel : public DIEValue {
     const MCSymbol *Label;
@@ -315,6 +350,36 @@ namespace llvm {
   };
 
   //===--------------------------------------------------------------------===//
+  /// DIEString - A container for string values.
+  ///
+  class DIEString : public DIEValue {
+    const DIEValue *Access;
+    const StringRef Str;
+
+  public:
+    DIEString(const DIEValue *Acc, const StringRef S)
+        : DIEValue(isString), Access(Acc), Str(S) {}
+
+    /// getString - Grab the string out of the object.
+    StringRef getString() const { return Str; }
+
+    /// EmitValue - Emit delta value.
+    ///
+    virtual void EmitValue(AsmPrinter *AP, unsigned Form) const;
+
+    /// SizeOf - Determine size of delta value in bytes.
+    ///
+    virtual unsigned SizeOf(AsmPrinter *AP, unsigned Form) const;
+
+    // Implement isa/cast/dyncast.
+    static bool classof(const DIEValue *D) { return D->getType() == isString; }
+
+  #ifndef NDEBUG
+    virtual void print(raw_ostream &O) const;
+  #endif
+  };
+
+  //===--------------------------------------------------------------------===//
   /// DIEEntry - A pointer to another debug information entry.  An instance of
   /// this class can also be used as a proxy for a debug information entry not
   /// yet defined (ie. types.)
@@ -334,8 +399,12 @@ namespace llvm {
     /// SizeOf - Determine size of debug information entry in bytes.
     ///
     virtual unsigned SizeOf(AsmPrinter *AP, unsigned Form) const {
-      return sizeof(int32_t);
+      return Form == dwarf::DW_FORM_ref_addr ? getRefAddrSize(AP) :
+                                               sizeof(int32_t);
     }
+
+    /// Returns size of a ref_addr entry.
+    static unsigned getRefAddrSize(AsmPrinter *AP);
 
     // Implement isa/cast/dyncast.
     static bool classof(const DIEValue *E) { return E->getType() == isEntry; }

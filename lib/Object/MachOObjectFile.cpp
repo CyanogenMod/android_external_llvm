@@ -1181,7 +1181,7 @@ MachOObjectFile::getRelocationHidden(DataRefImpl Rel, bool &Result) const {
     if (Type == macho::RIT_Pair) Result = true;
   } else if (Arch == Triple::x86_64) {
     // On x86_64, X86_64_RELOC_UNSIGNED is hidden only when it follows
-    // an X864_64_RELOC_SUBTRACTOR.
+    // an X86_64_RELOC_SUBTRACTOR.
     if (Type == macho::RIT_X86_64_Unsigned && Rel.d.a > 0) {
       DataRefImpl RelPrev = Rel;
       RelPrev.d.a--;
@@ -1284,8 +1284,8 @@ StringRef MachOObjectFile::getFileFormatName() const {
 
   // Make sure the cpu type has the correct mask.
   assert((CPUType & llvm::MachO::CPUArchABI64)
-	 == llvm::MachO::CPUArchABI64 &&
-	 "32-bit object file when we're 64-bit?");
+         == llvm::MachO::CPUArchABI64 &&
+         "32-bit object file when we're 64-bit?");
 
   switch (CPUType) {
   case llvm::MachO::CPUTypeX86_64:
@@ -1297,8 +1297,8 @@ StringRef MachOObjectFile::getFileFormatName() const {
   }
 }
 
-unsigned MachOObjectFile::getArch() const {
-  switch (getCPUType(this)) {
+Triple::ArchType MachOObjectFile::getArch(uint32_t CPUType) {
+  switch (CPUType) {
   case llvm::MachO::CPUTypeI386:
     return Triple::x86;
   case llvm::MachO::CPUTypeX86_64:
@@ -1312,6 +1312,10 @@ unsigned MachOObjectFile::getArch() const {
   default:
     return Triple::UnknownArch;
   }
+}
+
+unsigned MachOObjectFile::getArch() const {
+  return getArch(getCPUType(this));
 }
 
 StringRef MachOObjectFile::getLoadName() const {
@@ -1380,30 +1384,32 @@ MachOObjectFile::isRelocationScattered(const macho::RelocationEntry &RE)
   return getPlainRelocationAddress(RE) & macho::RF_Scattered;
 }
 
-unsigned MachOObjectFile::getPlainRelocationSymbolNum(const macho::RelocationEntry &RE) const {
+unsigned MachOObjectFile::getPlainRelocationSymbolNum(
+    const macho::RelocationEntry &RE) const {
   if (isLittleEndian())
     return RE.Word1 & 0xffffff;
   return RE.Word1 >> 8;
 }
 
-bool MachOObjectFile::getPlainRelocationExternal(const macho::RelocationEntry &RE) const {
+bool MachOObjectFile::getPlainRelocationExternal(
+    const macho::RelocationEntry &RE) const {
   if (isLittleEndian())
     return (RE.Word1 >> 27) & 1;
   return (RE.Word1 >> 4) & 1;
 }
 
-bool
-MachOObjectFile::getScatteredRelocationScattered(const macho::RelocationEntry &RE) const {
+bool MachOObjectFile::getScatteredRelocationScattered(
+    const macho::RelocationEntry &RE) const {
   return RE.Word0 >> 31;
 }
 
-uint32_t
-MachOObjectFile::getScatteredRelocationValue(const macho::RelocationEntry &RE) const {
+uint32_t MachOObjectFile::getScatteredRelocationValue(
+    const macho::RelocationEntry &RE) const {
   return RE.Word1;
 }
 
-unsigned
-MachOObjectFile::getAnyRelocationAddress(const macho::RelocationEntry &RE) const {
+unsigned MachOObjectFile::getAnyRelocationAddress(
+    const macho::RelocationEntry &RE) const {
   if (isRelocationScattered(RE))
     return getScatteredRelocationAddress(RE);
   return getPlainRelocationAddress(RE);
@@ -1416,8 +1422,8 @@ MachOObjectFile::getAnyRelocationPCRel(const macho::RelocationEntry &RE) const {
   return getPlainRelocationPCRel(this, RE);
 }
 
-unsigned
-MachOObjectFile::getAnyRelocationLength(const macho::RelocationEntry &RE) const {
+unsigned MachOObjectFile::getAnyRelocationLength(
+    const macho::RelocationEntry &RE) const {
   if (isRelocationScattered(RE))
     return getScatteredRelocationLength(RE);
   return getPlainRelocationLength(this, RE);
@@ -1490,8 +1496,8 @@ MachOObjectFile::getSymbol64TableEntry(DataRefImpl DRI) const {
   return getStruct<macho::Symbol64TableEntry>(this, P);
 }
 
-macho::LinkeditDataLoadCommand
-MachOObjectFile::getLinkeditDataLoadCommand(const MachOObjectFile::LoadCommandInfo &L) const {
+macho::LinkeditDataLoadCommand MachOObjectFile::getLinkeditDataLoadCommand(
+    const MachOObjectFile::LoadCommandInfo &L) const {
   return getStruct<macho::LinkeditDataLoadCommand>(this, L.Ptr);
 }
 
@@ -1593,21 +1599,23 @@ void MachOObjectFile::ReadULEB128s(uint64_t Index,
 ObjectFile *ObjectFile::createMachOObjectFile(MemoryBuffer *Buffer) {
   StringRef Magic = Buffer->getBuffer().slice(0, 4);
   error_code ec;
-  ObjectFile *Ret;
+  OwningPtr<ObjectFile> Ret;
   if (Magic == "\xFE\xED\xFA\xCE")
-    Ret = new MachOObjectFile(Buffer, false, false, ec);
+    Ret.reset(new MachOObjectFile(Buffer, false, false, ec));
   else if (Magic == "\xCE\xFA\xED\xFE")
-    Ret = new MachOObjectFile(Buffer, true, false, ec);
+    Ret.reset(new MachOObjectFile(Buffer, true, false, ec));
   else if (Magic == "\xFE\xED\xFA\xCF")
-    Ret = new MachOObjectFile(Buffer, false, true, ec);
+    Ret.reset(new MachOObjectFile(Buffer, false, true, ec));
   else if (Magic == "\xCF\xFA\xED\xFE")
-    Ret = new MachOObjectFile(Buffer, true, true, ec);
-  else
+    Ret.reset(new MachOObjectFile(Buffer, true, true, ec));
+  else {
+    delete Buffer;
     return NULL;
+  }
 
   if (ec)
     return NULL;
-  return Ret;
+  return Ret.take();
 }
 
 } // end namespace object

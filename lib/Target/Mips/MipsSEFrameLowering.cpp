@@ -285,7 +285,7 @@ void MipsSEFrameLowering::emitPrologue(MachineFunction &MF) const {
   if (StackSize == 0 && !MFI->adjustsStack()) return;
 
   MachineModuleInfo &MMI = MF.getMMI();
-  const MCRegisterInfo &MRI = MMI.getContext().getRegisterInfo();
+  const MCRegisterInfo *MRI = MMI.getContext().getRegisterInfo();
   MachineLocation DstML, SrcML;
 
   // Adjust stack.
@@ -321,9 +321,9 @@ void MipsSEFrameLowering::emitPrologue(MachineFunction &MF) const {
       // one for each of the paired single precision registers.
       if (Mips::AFGR64RegClass.contains(Reg)) {
         unsigned Reg0 =
-            MRI.getDwarfRegNum(RegInfo.getSubReg(Reg, Mips::sub_fpeven), true);
+            MRI->getDwarfRegNum(RegInfo.getSubReg(Reg, Mips::sub_fpeven), true);
         unsigned Reg1 =
-            MRI.getDwarfRegNum(RegInfo.getSubReg(Reg, Mips::sub_fpodd), true);
+            MRI->getDwarfRegNum(RegInfo.getSubReg(Reg, Mips::sub_fpodd), true);
 
         if (!STI.isLittle())
           std::swap(Reg0, Reg1);
@@ -333,16 +333,16 @@ void MipsSEFrameLowering::emitPrologue(MachineFunction &MF) const {
         MMI.addFrameInst(
             MCCFIInstruction::createOffset(CSLabel, Reg1, Offset + 4));
       } else {
-        // Reg is either in CPURegs or FGR32.
+        // Reg is either in GPR32 or FGR32.
         MMI.addFrameInst(MCCFIInstruction::createOffset(
-            CSLabel, MRI.getDwarfRegNum(Reg, 1), Offset));
+            CSLabel, MRI->getDwarfRegNum(Reg, 1), Offset));
       }
     }
   }
 
   if (MipsFI->callsEhReturn()) {
     const TargetRegisterClass *RC = STI.isABI_N64() ?
-        &Mips::CPU64RegsRegClass : &Mips::CPURegsRegClass;
+        &Mips::GPR64RegClass : &Mips::GPR32RegClass;
 
     // Insert instructions that spill eh data registers.
     for (int I = 0; I < 4; ++I) {
@@ -358,7 +358,7 @@ void MipsSEFrameLowering::emitPrologue(MachineFunction &MF) const {
             TII.get(TargetOpcode::PROLOG_LABEL)).addSym(CSLabel2);
     for (int I = 0; I < 4; ++I) {
       int64_t Offset = MFI->getObjectOffset(MipsFI->getEhDataRegFI(I));
-      unsigned Reg = MRI.getDwarfRegNum(ehDataReg(I), true);
+      unsigned Reg = MRI->getDwarfRegNum(ehDataReg(I), true);
       MMI.addFrameInst(MCCFIInstruction::createOffset(CSLabel2, Reg, Offset));
     }
   }
@@ -373,7 +373,7 @@ void MipsSEFrameLowering::emitPrologue(MachineFunction &MF) const {
     BuildMI(MBB, MBBI, dl,
             TII.get(TargetOpcode::PROLOG_LABEL)).addSym(SetFPLabel);
     MMI.addFrameInst(MCCFIInstruction::createDefCfaRegister(
-        SetFPLabel, MRI.getDwarfRegNum(FP, true)));
+        SetFPLabel, MRI->getDwarfRegNum(FP, true)));
   }
 }
 
@@ -408,7 +408,7 @@ void MipsSEFrameLowering::emitEpilogue(MachineFunction &MF,
 
   if (MipsFI->callsEhReturn()) {
     const TargetRegisterClass *RC = STI.isABI_N64() ?
-        &Mips::CPU64RegsRegClass : &Mips::CPURegsRegClass;
+        &Mips::GPR64RegClass : &Mips::GPR32RegClass;
 
     // Find first instruction that restores a callee-saved register.
     MachineBasicBlock::iterator I = MBBI;
@@ -516,7 +516,7 @@ processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
     // The spill slot should be half the size of the accumulator. If target is
     // mips64, it should be 64-bit, otherwise it should be 32-bt.
     const TargetRegisterClass *RC = STI.hasMips64() ?
-      &Mips::CPU64RegsRegClass : &Mips::CPURegsRegClass;
+      &Mips::GPR64RegClass : &Mips::GPR32RegClass;
     int FI = MF.getFrameInfo()->CreateStackObject(RC->getSize(),
                                                   RC->getAlignment(), false);
     RS->addScavengingFrameIndex(FI);
@@ -530,7 +530,7 @@ processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
     return;
 
   const TargetRegisterClass *RC = STI.isABI_N64() ?
-    &Mips::CPU64RegsRegClass : &Mips::CPURegsRegClass;
+    &Mips::GPR64RegClass : &Mips::GPR32RegClass;
   int FI = MF.getFrameInfo()->CreateStackObject(RC->getSize(),
                                                 RC->getAlignment(), false);
   RS->addScavengingFrameIndex(FI);

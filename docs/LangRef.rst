@@ -733,14 +733,13 @@ Currently, only the following parameter attributes are defined:
     attribute for return values and can only be applied to one parameter.
 
 ``returned``
-    This indicates that the value of the function always returns the value
-    of the parameter as its return value. This is an optimization hint to
-    the code generator when generating the caller, allowing tail call
-    optimization and omission of register saves and restores in some cases;
-    it is not checked or enforced when generating the callee. The parameter
-    and the function return type must be valid operands for the
-    :ref:`bitcast instruction <i_bitcast>`. This is not a valid attribute for
-    return values and can only be applied to one parameter.
+    This indicates that the function always returns the argument as its return
+    value. This is an optimization hint to the code generator when generating
+    the caller, allowing tail call optimization and omission of register saves
+    and restores in some cases; it is not checked or enforced when generating
+    the callee. The parameter and the function return type must be valid
+    operands for the :ref:`bitcast instruction <i_bitcast>`. This is not a
+    valid attribute for return values and can only be applied to one parameter.
 
 .. _gc:
 
@@ -818,15 +817,17 @@ example:
     This attribute indicates that the inliner should attempt to inline
     this function into callers whenever possible, ignoring any active
     inlining size threshold for this caller.
+``builtin``
+    This indicates that the callee function at a call site should be
+    recognized as a built-in function, even though the function's declaration
+    uses the ``nobuiltin`` attribute. This is only valid at call sites for
+    direct calls to functions which are declared with the ``nobuiltin``
+    attribute.
 ``cold``
     This attribute indicates that this function is rarely called. When
     computing edge weights, basic blocks post-dominated by a cold
     function call are also considered to be cold; and, thus, given low
     weight.
-``nonlazybind``
-    This attribute suppresses lazy symbol binding for the function. This
-    may make calls to the function faster, at the cost of extra program
-    startup time if the function is not called during program startup.
 ``inlinehint``
     This attribute indicates that the source code contained a hint that
     inlining this function is desirable (such as the "inline" keyword in
@@ -836,11 +837,11 @@ example:
     This attribute disables prologue / epilogue emission for the
     function. This can have very system-specific consequences.
 ``nobuiltin``
-    This indicates that the callee function at a call site is not
-    recognized as a built-in function. LLVM will retain the original call
-    and not replace it with equivalent code based on the semantics of the
-    built-in function. This is only valid at call sites, not on function
-    declarations or definitions.
+    This indicates that the callee function at a call site is not recognized as
+    a built-in function. LLVM will retain the original call and not replace it
+    with equivalent code based on the semantics of the built-in function, unless
+    the call site uses the ``builtin`` attribute. This is valid at call sites
+    and on function declarations and definitions.
 ``noduplicate``
     This attribute indicates that calls to the function cannot be
     duplicated. A call to a ``noduplicate`` function may be moved
@@ -858,6 +859,10 @@ example:
     This attribute indicates that the inliner should never inline this
     function in any situation. This attribute may not be used together
     with the ``alwaysinline`` attribute.
+``nonlazybind``
+    This attribute suppresses lazy symbol binding for the function. This
+    may make calls to the function faster, at the cost of extra program
+    startup time if the function is not called during program startup.
 ``noredzone``
     This attribute indicates that the code generator should not use a
     red zone, even if the target-specific ABI normally permits it.
@@ -874,17 +879,21 @@ example:
     passes make choices that keep the code size of this function low,
     and otherwise do optimizations specifically to reduce code size.
 ``readnone``
-    This attribute indicates that the function computes its result (or
-    decides to unwind an exception) based strictly on its arguments,
+    On a function, this attribute indicates that the function computes its
+    result (or decides to unwind an exception) based strictly on its arguments,
     without dereferencing any pointer arguments or otherwise accessing
     any mutable state (e.g. memory, control registers, etc) visible to
     caller functions. It does not write through any pointer arguments
     (including ``byval`` arguments) and never changes any state visible
     to callers. This means that it cannot unwind exceptions by calling
     the ``C++`` exception throwing methods.
+    
+    On an argument, this attribute indicates that the function does not
+    dereference that pointer argument, even though it may read or write the
+    memory that the pointer points to if accessed through other pointers.
 ``readonly``
-    This attribute indicates that the function does not write through
-    any pointer arguments (including ``byval`` arguments) or otherwise
+    On a function, this attribute indicates that the function does not write
+    through any pointer arguments (including ``byval`` arguments) or otherwise
     modify any state (e.g. memory, control registers, etc) visible to
     caller functions. It may dereference pointer arguments and read
     state that may be set in the caller. A readonly function always
@@ -892,6 +901,10 @@ example:
     called with the same set of arguments and global state. It cannot
     unwind an exception by calling the ``C++`` exception throwing
     methods.
+    
+    On an argument, this attribute indicates that the function does not write
+    through this pointer argument, even though it may write to the memory that
+    the pointer points to.
 ``returns_twice``
     This attribute indicates that this function can return twice. The C
     ``setjmp`` is an example of such a function. The compiler disables
@@ -1048,7 +1061,9 @@ the specifications in the ``datalayout`` keyword. The default
 specifications are given in this list:
 
 -  ``E`` - big endian
--  ``p:64:64:64`` - 64-bit pointers with 64-bit alignment
+-  ``p:64:64:64`` - 64-bit pointers with 64-bit alignment.
+-  ``p[n]:64:64:64`` - Other address spaces are assumed to be the
+   same as the default address space.
 -  ``S0`` - natural stack alignment is unspecified
 -  ``i1:8:8`` - i1 is 8-bit (byte) aligned
 -  ``i8:8:8`` - i8 is 8-bit (byte) aligned
@@ -2570,7 +2585,7 @@ Examples:
 It is sometimes useful to attach information to loop constructs. Currently,
 loop metadata is implemented as metadata attached to the branch instruction
 in the loop latch block. This type of metadata refer to a metadata node that is
-guaranteed to be separate for each loop. The loop identifier metadata is 
+guaranteed to be separate for each loop. The loop identifier metadata is
 specified with the name ``llvm.loop``.
 
 The loop identifier metadata is implemented using a metadata that refers to
@@ -4641,16 +4656,16 @@ alignment results in undefined behavior. Underestimating the alignment
 may produce less efficient code. An alignment of 1 is always safe.
 
 The optional ``!nontemporal`` metadata must reference a single
-metatadata name ``<index>`` corresponding to a metadata node with one
+metadata name ``<index>`` corresponding to a metadata node with one
 ``i32`` entry of value 1. The existence of the ``!nontemporal``
-metatadata on the instruction tells the optimizer and code generator
+metadata on the instruction tells the optimizer and code generator
 that this load is not expected to be reused in the cache. The code
 generator may select special instructions to save cache bandwidth, such
 as the ``MOVNT`` instruction on x86.
 
 The optional ``!invariant.load`` metadata must reference a single
-metatadata name ``<index>`` corresponding to a metadata node with no
-entries. The existence of the ``!invariant.load`` metatadata on the
+metadata name ``<index>`` corresponding to a metadata node with no
+entries. The existence of the ``!invariant.load`` metadata on the
 instruction tells the optimizer and code generator that this load
 address points to memory which does not change value during program
 execution. The optimizer may then move this load around, for example, by
@@ -4726,9 +4741,9 @@ alignment results in undefined behavior. Underestimating the
 alignment may produce less efficient code. An alignment of 1 is always
 safe.
 
-The optional ``!nontemporal`` metadata must reference a single metatadata
+The optional ``!nontemporal`` metadata must reference a single metadata
 name ``<index>`` corresponding to a metadata node with one ``i32`` entry of
-value 1. The existence of the ``!nontemporal`` metatadata on the instruction
+value 1. The existence of the ``!nontemporal`` metadata on the instruction
 tells the optimizer and code generator that this load is not expected to
 be reused in the cache. The code generator may select special
 instructions to save cache bandwidth, such as the MOVNT instruction on
@@ -5600,24 +5615,24 @@ Arguments:
 
 The '``bitcast``' instruction takes a value to cast, which must be a
 non-aggregate first class value, and a type to cast it to, which must
-also be a non-aggregate :ref:`first class <t_firstclass>` type. The bit
-sizes of ``value`` and the destination type, ``ty2``, must be identical.
-If the source type is a pointer, the destination type must also be a
-pointer. This instruction supports bitwise conversion of vectors to
-integers and to vectors of other types (as long as they have the same
-size).
+also be a non-aggregate :ref:`first class <t_firstclass>` type. The
+bit sizes of ``value`` and the destination type, ``ty2``, must be
+identical.  If the source type is a pointer, the destination type must
+also be a pointer of the same size. This instruction supports bitwise
+conversion of vectors to integers and to vectors of other types (as
+long as they have the same size).
 
 Semantics:
 """"""""""
 
-The '``bitcast``' instruction converts ``value`` to type ``ty2``. It is
-always a *no-op cast* because no bits change with this conversion. The
-conversion is done as if the ``value`` had been stored to memory and
-read back as type ``ty2``. Pointer (or vector of pointers) types may
-only be converted to other pointer (or vector of pointers) types with
-this instruction. To convert pointers to other types, use the
-:ref:`inttoptr <i_inttoptr>` or :ref:`ptrtoint <i_ptrtoint>` instructions
-first.
+The '``bitcast``' instruction converts ``value`` to type ``ty2``. It
+is always a *no-op cast* because no bits change with this
+conversion. The conversion is done as if the ``value`` had been stored
+to memory and read back as type ``ty2``. Pointer (or vector of
+pointers) types may only be converted to other pointer (or vector of
+pointers) types with this instruction if the pointer sizes are
+equal. To convert pointers to other types, use the :ref:`inttoptr
+<i_inttoptr>` or :ref:`ptrtoint <i_ptrtoint>` instructions first.
 
 Example:
 """"""""

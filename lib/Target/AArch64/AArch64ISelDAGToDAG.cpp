@@ -70,10 +70,11 @@ public:
 
   /// Used for pre-lowered address-reference nodes, so we already know
   /// the fields match. This operand's job is simply to add an
-  /// appropriate shift operand (i.e. 0) to the MOVZ/MOVK instruction.
+  /// appropriate shift operand to the MOVZ/MOVK instruction.
+  template<unsigned LogShift>
   bool SelectMOVWAddressRef(SDValue N, SDValue &Imm, SDValue &Shift) {
     Imm = N;
-    Shift = CurDAG->getTargetConstant(0, MVT::i32);
+    Shift = CurDAG->getTargetConstant(LogShift, MVT::i32);
     return true;
   }
 
@@ -258,15 +259,15 @@ AArch64DAGToDAGISel::getConstantPoolItemAddress(SDLoc DL,
     LitAddr = CurDAG->getMachineNode(
         AArch64::MOVZxii, DL, PtrVT,
         CurDAG->getTargetConstantPool(CV, PtrVT, 0, 0, AArch64II::MO_ABS_G3),
-        CurDAG->getTargetConstant(0, MVT::i32));
+        CurDAG->getTargetConstant(3, MVT::i32));
     LitAddr = CurDAG->getMachineNode(
         AArch64::MOVKxii, DL, PtrVT, SDValue(LitAddr, 0),
         CurDAG->getTargetConstantPool(CV, PtrVT, 0, 0, AArch64II::MO_ABS_G2_NC),
-        CurDAG->getTargetConstant(0, MVT::i32));
+        CurDAG->getTargetConstant(2, MVT::i32));
     LitAddr = CurDAG->getMachineNode(
         AArch64::MOVKxii, DL, PtrVT, SDValue(LitAddr, 0),
         CurDAG->getTargetConstantPool(CV, PtrVT, 0, 0, AArch64II::MO_ABS_G1_NC),
-        CurDAG->getTargetConstant(0, MVT::i32));
+        CurDAG->getTargetConstant(1, MVT::i32));
     LitAddr = CurDAG->getMachineNode(
         AArch64::MOVKxii, DL, PtrVT, SDValue(LitAddr, 0),
         CurDAG->getTargetConstantPool(CV, PtrVT, 0, 0, AArch64II::MO_ABS_G0_NC),
