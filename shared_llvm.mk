@@ -51,8 +51,8 @@ llvm_post_static_libraries := \
   libLLVMMC \
   libLLVMMCParser \
   libLLVMCore \
-  libLLVMArchive \
   libLLVMAsmParser \
+  libLLVMOption \
   libLLVMSupport \
   libLLVMVectorize
 

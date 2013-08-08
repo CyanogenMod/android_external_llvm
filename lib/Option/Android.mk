@@ -1,17 +1,23 @@
 LOCAL_PATH:= $(call my-dir)
 
-archive_SRC_FILES := \
-	Archive.cpp \
-	ArchiveReader.cpp \
-	ArchiveWriter.cpp
+option_SRC_FILES := \
+    Arg.cpp \
+    ArgList.cpp \
+    Option.cpp \
+    OptTable.cpp
 
 # For the host
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(archive_SRC_FILES)
+# FIXME: This only requires RTTI because tblgen uses it.  Fix that.
+REQUIRES_RTTI := 1
 
-LOCAL_MODULE:= libLLVMArchive
+LOCAL_SRC_FILES := $(option_SRC_FILES)
+
+LOCAL_MODULE:= libLLVMOption
+
+LOCAL_CFLAGS := -D__android__
 
 LOCAL_MODULE_TAGS := optional
 
@@ -22,9 +28,11 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 # =====================================================
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := $(archive_SRC_FILES)
+LOCAL_SRC_FILES := $(option_SRC_FILES)
 
-LOCAL_MODULE := libLLVMArchive
+LOCAL_MODULE:= libLLVMOption
+
+LOCAL_CFLAGS := -D__android__
 
 LOCAL_MODULE_TAGS := optional
 

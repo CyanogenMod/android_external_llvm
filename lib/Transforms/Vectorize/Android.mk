@@ -4,8 +4,7 @@ transforms_vectorize_SRC_FILES := \
   BBVectorize.cpp \
   LoopVectorize.cpp \
   SLPVectorizer.cpp \
-  Vectorize.cpp \
-  VecUtils.cpp
+  Vectorize.cpp
 
 # For the host
 # =====================================================

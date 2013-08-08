@@ -7,6 +7,7 @@ object_SRC_FILES := \
   ELFObjectFile.cpp \
   Error.cpp \
   MachOObjectFile.cpp \
+  MachOUniversal.cpp \
   Object.cpp \
   ObjectFile.cpp
 

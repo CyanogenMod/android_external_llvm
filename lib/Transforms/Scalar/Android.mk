@@ -30,8 +30,8 @@ transforms_scalar_SRC_FILES := \
   Scalar.cpp \
   ScalarReplAggregates.cpp \
   SimplifyCFGPass.cpp \
-  SimplifyLibCalls.cpp \
   Sink.cpp \
+  StructurizeCFG.cpp \
   TailRecursionElimination.cpp
 
 # For the host

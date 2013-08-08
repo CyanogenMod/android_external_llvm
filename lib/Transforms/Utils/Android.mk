@@ -29,6 +29,7 @@ transforms_utils_SRC_FILES := \
   SimplifyIndVar.cpp \
   SimplifyInstructions.cpp \
   SimplifyLibCalls.cpp \
+  SpecialCaseList.cpp \
   UnifyFunctionExitNodes.cpp \
   Utils.cpp \
   ValueMapper.cpp

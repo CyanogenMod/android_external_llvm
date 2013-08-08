@@ -144,6 +144,9 @@
 /* Define to 1 if you have the `fmodf' function. */
 #define HAVE_FMODF 1
 
+/* Define to 1 if you have the `futimens' function. */
+#define HAVE_FUTIMENS 1
+
 /* Define to 1 if you have the `getcwd' function. */
 #define HAVE_GETCWD 1
 

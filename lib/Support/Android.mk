@@ -35,13 +35,13 @@ support_SRC_FILES := \
   IsNAN.cpp \
   Locale.cpp \
   LockFileManager.cpp \
+  MD5.cpp \
   ManagedStatic.cpp \
   Memory.cpp \
   MemoryBuffer.cpp \
   MemoryObject.cpp \
   Mutex.cpp \
   Path.cpp \
-  PathV2.cpp \
   PluginLoader.cpp \
   PrettyStackTrace.cpp \
   Process.cpp \
