@@ -23,7 +23,7 @@
 #include "llvm/Transforms/Scalar.h"
 using namespace llvm;
 
-static cl::opt<bool>
+cl::opt<bool>
 EnableGlobalMerge("global-merge", cl::Hidden,
                   cl::desc("Enable global merge pass"),
                   cl::init(true));
