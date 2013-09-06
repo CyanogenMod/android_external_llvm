@@ -56,6 +56,7 @@ llvm_post_static_libraries := \
   libLLVMSupport \
   libLLVMVectorize
 
+ifeq (true,$(FORCE_BUILD_LLVM_COMPONENTS))
 # HOST LLVM shared library build
 include $(CLEAR_VARS)
 LOCAL_IS_HOST_MODULE := true
@@ -80,6 +81,7 @@ endif
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)
+endif
 
 
 # DEVICE LLVM shared library build
