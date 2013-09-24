@@ -98,7 +98,7 @@ LOCAL_WHOLE_STATIC_LIBRARIES := \
 ifeq ($(TARGET_ARCH),arm)
   LOCAL_WHOLE_STATIC_LIBRARIES += $(llvm_arm_static_libraries)
 else
-  ifeq ($(TARGET_ARCH),x86)
+  ifeq ($(TARGET_ARCH),$(filter $(TARGET_ARCH),x86 x86_64 x32))
     LOCAL_WHOLE_STATIC_LIBRARIES += $(llvm_x86_static_libraries)
   else
     ifeq ($(TARGET_ARCH),mips)
