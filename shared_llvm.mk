@@ -81,7 +81,8 @@ endif
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)
 
-
+#TODOAArch64: Enable llvm build
+ifneq ($(TARGET_ARCH),aarch64)
 # DEVICE LLVM shared library build
 include $(CLEAR_VARS)
 
@@ -114,5 +115,7 @@ LOCAL_SHARED_LIBRARIES := libcutils libdl libstlport
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_SHARED_LIBRARY)
+
+endif # !aarch64
 
 endif # don't build in unbundled branches
