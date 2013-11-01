@@ -49,21 +49,21 @@ void llvm::remove_fatal_error_handler() {
   ErrorHandler = 0;
 }
 
-void llvm::report_fatal_error(const char *Reason) {
-  report_fatal_error(Twine(Reason));
+void llvm::report_fatal_error(const char *Reason, bool GenCrashDiag) {
+  report_fatal_error(Twine(Reason), GenCrashDiag);
 }
 
-void llvm::report_fatal_error(const std::string &Reason) {
-  report_fatal_error(Twine(Reason));
+void llvm::report_fatal_error(const std::string &Reason, bool GenCrashDiag) {
+  report_fatal_error(Twine(Reason), GenCrashDiag);
 }
 
-void llvm::report_fatal_error(StringRef Reason) {
-  report_fatal_error(Twine(Reason));
+void llvm::report_fatal_error(StringRef Reason, bool GenCrashDiag) {
+  report_fatal_error(Twine(Reason), GenCrashDiag);
 }
 
-void llvm::report_fatal_error(const Twine &Reason) {
+void llvm::report_fatal_error(const Twine &Reason, bool GenCrashDiag) {
   if (ErrorHandler) {
-    ErrorHandler(ErrorHandlerUserData, Reason.str());
+    ErrorHandler(ErrorHandlerUserData, Reason.str(), GenCrashDiag);
   } else {
     // Blast the result out to stderr.  We don't try hard to make sure this
     // succeeds (e.g. handling EINTR) and we can't use errs() here because
@@ -96,4 +96,9 @@ void llvm::llvm_unreachable_internal(const char *msg, const char *file,
     dbgs() << " at " << file << ":" << line;
   dbgs() << "!\n";
   abort();
+#ifdef LLVM_BUILTIN_UNREACHABLE
+  // Windows systems and possibly others don't declare abort() to be noreturn,
+  // so use the unreachable builtin to avoid a Clang self-host warning.
+  LLVM_BUILTIN_UNREACHABLE;
+#endif
 }

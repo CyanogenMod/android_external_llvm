@@ -61,10 +61,8 @@
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
-#include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Intrinsics.h"
-#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Pass.h"
 #include "llvm/Support/CommandLine.h"
@@ -74,15 +72,13 @@ using namespace llvm;
 
 static cl::opt<bool>
 EnableGlobalMergeOnConst("global-merge-on-const", cl::Hidden,
-                  	cl::desc("Enable global merge pass on constants"),
-                  	cl::init(false));
+                         cl::desc("Enable global merge pass on constants"),
+                         cl::init(false));
 
 STATISTIC(NumMerged      , "Number of globals merged");
 namespace {
   class GlobalMerge : public FunctionPass {
-    /// TLI - Keep a pointer of a TargetLowering to consult for determining
-    /// target type sizes.
-    const TargetLowering *TLI;
+    const TargetMachine *TM;
 
     bool doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
                  Module &M, bool isConst, unsigned AddrSpace) const;
@@ -101,18 +97,19 @@ namespace {
     /// Collect every variables marked as "used"
     void collectUsedGlobalVariables(Module &M);
 
-    /// Keep track of the GlobalVariable that are marked as "used"
+    /// Keep track of the GlobalVariable that must not be merged away
     SmallPtrSet<const GlobalVariable *, 16> MustKeepGlobalVariables;
 
   public:
     static char ID;             // Pass identification, replacement for typeid.
-    explicit GlobalMerge(const TargetLowering *tli = 0)
-      : FunctionPass(ID), TLI(tli) {
+    explicit GlobalMerge(const TargetMachine *TM = 0)
+      : FunctionPass(ID), TM(TM) {
       initializeGlobalMergePass(*PassRegistry::getPassRegistry());
     }
 
     virtual bool doInitialization(Module &M);
     virtual bool runOnFunction(Function &F);
+    virtual bool doFinalization(Module &M);
 
     const char *getPassName() const {
       return "Merge internal globals";
@@ -145,6 +142,7 @@ INITIALIZE_PASS(GlobalMerge, "global-merge",
 
 bool GlobalMerge::doMerge(SmallVectorImpl<GlobalVariable*> &Globals,
                           Module &M, bool isConst, unsigned AddrSpace) const {
+  const TargetLowering *TLI = TM->getTargetLowering();
   const DataLayout *TD = TLI->getDataLayout();
 
   // FIXME: Infer the maximum possible offset depending on the actual users
@@ -201,9 +199,8 @@ void GlobalMerge::collectUsedGlobalVariables(Module &M) {
   if (!GV || !GV->hasInitializer()) return;
 
   // Should be an array of 'i8*'.
-  const ConstantArray *InitList = dyn_cast<ConstantArray>(GV->getInitializer());
-  if (InitList == 0) return;
- 
+  const ConstantArray *InitList = cast<ConstantArray>(GV->getInitializer());
+
   for (unsigned i = 0, e = InitList->getNumOperands(); i != e; ++i)
     if (const GlobalVariable *G =
         dyn_cast<GlobalVariable>(InitList->getOperand(i)->stripPointerCasts()))
@@ -211,9 +208,6 @@ void GlobalMerge::collectUsedGlobalVariables(Module &M) {
 }
 
 void GlobalMerge::setMustKeepGlobalVariables(Module &M) {
-  // If we already processed a Module, UsedGlobalVariables may have been
-  // populated. Reset the information for this module.
-  MustKeepGlobalVariables.clear();
   collectUsedGlobalVariables(M);
 
   for (Module::iterator IFn = M.begin(), IEndFn = M.end(); IFn != IEndFn;
@@ -239,6 +233,7 @@ void GlobalMerge::setMustKeepGlobalVariables(Module &M) {
 bool GlobalMerge::doInitialization(Module &M) {
   DenseMap<unsigned, SmallVector<GlobalVariable*, 16> > Globals, ConstGlobals,
                                                         BSSGlobals;
+  const TargetLowering *TLI = TM->getTargetLowering();
   const DataLayout *TD = TLI->getDataLayout();
   unsigned MaxOffset = TLI->getMaximalGlobalOffset();
   bool Changed = false;
@@ -268,8 +263,6 @@ bool GlobalMerge::doInitialization(Module &M) {
       continue;
 
     // Ignore all "required" globals:
-    // - the ones used for EH
-    // - the ones marked with "used" attribute
     if (isMustKeepGlobalVariable(I))
       continue;
 
@@ -307,6 +300,11 @@ bool GlobalMerge::runOnFunction(Function &F) {
   return false;
 }
 
-Pass *llvm::createGlobalMergePass(const TargetLowering *tli) {
-  return new GlobalMerge(tli);
+bool GlobalMerge::doFinalization(Module &M) {
+  MustKeepGlobalVariables.clear();
+  return false;
+}
+
+Pass *llvm::createGlobalMergePass(const TargetMachine *TM) {
+  return new GlobalMerge(TM);
 }

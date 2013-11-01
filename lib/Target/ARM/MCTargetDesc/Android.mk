@@ -14,7 +14,9 @@ arm_mc_desc_SRC_FILES := \
   ARMMCCodeEmitter.cpp \
   ARMMCExpr.cpp \
   ARMMCTargetDesc.cpp \
-  ARMMachObjectWriter.cpp
+  ARMMachObjectWriter.cpp \
+  ARMMachORelocationInfo.cpp \
+  ARMUnwindOpAsm.cpp
 
 # For the host
 # =====================================================

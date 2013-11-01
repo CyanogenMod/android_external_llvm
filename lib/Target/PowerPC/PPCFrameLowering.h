@@ -43,6 +43,7 @@ public:
 
   bool hasFP(const MachineFunction &MF) const;
   bool needsFP(const MachineFunction &MF) const;
+  void replaceFPWithRealFP(MachineFunction &MF) const;
 
   void processFunctionBeforeCalleeSavedScan(MachineFunction &MF,
                                             RegScavenger *RS = NULL) const;
@@ -91,6 +92,16 @@ public:
 
     // SVR4 ABI: First slot in the general register save area.
     return isPPC64 ? -8U : -4U;
+  }
+
+  /// getBasePointerSaveOffset - Return the previous frame offset to save the
+  /// base pointer.
+  static unsigned getBasePointerSaveOffset(bool isPPC64, bool isDarwinABI) {
+    if (isDarwinABI)
+      return isPPC64 ? -16U : -8U;
+
+    // SVR4 ABI: First slot in the general register save area.
+    return isPPC64 ? -16U : -8U;
   }
 
   /// getLinkageSize - Return the size of the PowerPC ABI linkage area.

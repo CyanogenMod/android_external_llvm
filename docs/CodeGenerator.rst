@@ -1038,6 +1038,24 @@ for your target.  It has the following strengths:
   are used to manipulate the input immediate (in this case, take the high or low
   16-bits of the immediate).
 
+* When using the 'Pat' class to map a pattern to an instruction that has one
+  or more complex operands (like e.g. `X86 addressing mode`_), the pattern may
+  either specify the operand as a whole using a ``ComplexPattern``, or else it
+  may specify the components of the complex operand separately.  The latter is
+  done e.g. for pre-increment instructions by the PowerPC back end:
+
+  ::
+
+    def STWU  : DForm_1<37, (outs ptr_rc:$ea_res), (ins GPRC:$rS, memri:$dst),
+                    "stwu $rS, $dst", LdStStoreUpd, []>,
+                    RegConstraint<"$dst.reg = $ea_res">, NoEncode<"$ea_res">;
+
+    def : Pat<(pre_store GPRC:$rS, ptr_rc:$ptrreg, iaddroff:$ptroff),
+              (STWU GPRC:$rS, iaddroff:$ptroff, ptr_rc:$ptrreg)>;
+
+  Here, the pair of ``ptroff`` and ``ptrreg`` operands is matched onto the
+  complex operand ``dst`` of class ``memri`` in the ``STWU`` instruction.
+
 * While the system does automate a lot, it still allows you to write custom C++
   code to match special cases if there is something that is hard to
   express.
@@ -1770,12 +1788,12 @@ Here is the table:
 :raw-html:`<th>Feature</th>`
 :raw-html:`<th>ARM</th>`
 :raw-html:`<th>Hexagon</th>`
-:raw-html:`<th>MBlaze</th>`
 :raw-html:`<th>MSP430</th>`
 :raw-html:`<th>Mips</th>`
 :raw-html:`<th>NVPTX</th>`
 :raw-html:`<th>PowerPC</th>`
 :raw-html:`<th>Sparc</th>`
+:raw-html:`<th>SystemZ</th>`
 :raw-html:`<th>X86</th>`
 :raw-html:`<th>XCore</th>`
 :raw-html:`</tr>`
@@ -1784,26 +1802,26 @@ Here is the table:
 :raw-html:`<td><a href="#feat_reliable">is generally reliable</a></td>`
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
 :raw-html:`<td class="yes"></td> <!-- Hexagon -->`
-:raw-html:`<td class="no"></td> <!-- MBlaze -->`
 :raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
 :raw-html:`<td class="yes"></td> <!-- Mips -->`
 :raw-html:`<td class="yes"></td> <!-- NVPTX -->`
 :raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="yes"></td> <!-- Sparc -->`
+:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="unknown"></td> <!-- XCore -->`
+:raw-html:`<td class="yes"></td> <!-- XCore -->`
 :raw-html:`</tr>`
 
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_asmparser">assembly parser</a></td>`
 :raw-html:`<td class="no"></td> <!-- ARM -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
-:raw-html:`<td class="yes"></td> <!-- MBlaze -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
 :raw-html:`<td class="no"></td> <!-- NVPTX -->`
 :raw-html:`<td class="no"></td> <!-- PowerPC -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
+:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
 :raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`
@@ -1812,54 +1830,54 @@ Here is the table:
 :raw-html:`<td><a href="#feat_disassembler">disassembler</a></td>`
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
-:raw-html:`<td class="yes"></td> <!-- MBlaze -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
 :raw-html:`<td class="na"></td> <!-- NVPTX -->`
 :raw-html:`<td class="no"></td> <!-- PowerPC -->`
+:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="no"></td> <!-- XCore -->`
+:raw-html:`<td class="yes"></td> <!-- XCore -->`
 :raw-html:`</tr>`
 
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_inlineasm">inline asm</a></td>`
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
 :raw-html:`<td class="yes"></td> <!-- Hexagon -->`
-:raw-html:`<td class="yes"></td> <!-- MBlaze -->`
 :raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
 :raw-html:`<td class="yes"></td> <!-- NVPTX -->`
 :raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="unknown"></td> <!-- Sparc -->`
+:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="unknown"></td> <!-- XCore -->`
+:raw-html:`<td class="yes"></td> <!-- XCore -->`
 :raw-html:`</tr>`
 
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_jit">jit</a></td>`
 :raw-html:`<td class="partial"><a href="#feat_jit_arm">*</a></td> <!-- ARM -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
-:raw-html:`<td class="no"></td> <!-- MBlaze -->`
 :raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
 :raw-html:`<td class="yes"></td> <!-- Mips -->`
 :raw-html:`<td class="na"></td> <!-- NVPTX -->`
 :raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="unknown"></td> <!-- Sparc -->`
+:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="unknown"></td> <!-- XCore -->`
+:raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`
 
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_objectwrite">.o&nbsp;file writing</a></td>`
 :raw-html:`<td class="no"></td> <!-- ARM -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
-:raw-html:`<td class="yes"></td> <!-- MBlaze -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
 :raw-html:`<td class="na"></td> <!-- NVPTX -->`
 :raw-html:`<td class="no"></td> <!-- PowerPC -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
+:raw-html:`<td class="yes"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
 :raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`
@@ -1868,26 +1886,26 @@ Here is the table:
 :raw-html:`<td><a hr:raw-html:`ef="#feat_tailcall">tail calls</a></td>`
 :raw-html:`<td class="yes"></td> <!-- ARM -->`
 :raw-html:`<td class="yes"></td> <!-- Hexagon -->`
-:raw-html:`<td class="no"></td> <!-- MBlaze -->`
 :raw-html:`<td class="unknown"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
 :raw-html:`<td class="no"></td> <!-- NVPTX -->`
 :raw-html:`<td class="yes"></td> <!-- PowerPC -->`
 :raw-html:`<td class="unknown"></td> <!-- Sparc -->`
+:raw-html:`<td class="no"></td> <!-- SystemZ -->`
 :raw-html:`<td class="yes"></td> <!-- X86 -->`
-:raw-html:`<td class="unknown"></td> <!-- XCore -->`
+:raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`
 
 :raw-html:`<tr>`
 :raw-html:`<td><a href="#feat_segstacks">segmented stacks</a></td>`
 :raw-html:`<td class="no"></td> <!-- ARM -->`
 :raw-html:`<td class="no"></td> <!-- Hexagon -->`
-:raw-html:`<td class="no"></td> <!-- MBlaze -->`
 :raw-html:`<td class="no"></td> <!-- MSP430 -->`
 :raw-html:`<td class="no"></td> <!-- Mips -->`
 :raw-html:`<td class="no"></td> <!-- NVPTX -->`
 :raw-html:`<td class="no"></td> <!-- PowerPC -->`
 :raw-html:`<td class="no"></td> <!-- Sparc -->`
+:raw-html:`<td class="no"></td> <!-- SystemZ -->`
 :raw-html:`<td class="partial"><a href="#feat_segstacks_x86">*</a></td> <!-- X86 -->`
 :raw-html:`<td class="no"></td> <!-- XCore -->`
 :raw-html:`</tr>`

@@ -1,6 +1,8 @@
 import os
 import sys
 
+PY2 = sys.version_info[0] < 3
+
 class TestingConfig:
     """"
     TestingConfig - Information on the tests inside a suite.
@@ -47,7 +49,8 @@ class TestingConfig:
                                    test_exec_root = None,
                                    test_source_root = None,
                                    excludes = [],
-                                   available_features = available_features)
+                                   available_features = available_features,
+                                   pipefail = True)
 
         if os.path.exists(path):
             # FIXME: Improve detection and error reporting of errors in the
@@ -58,13 +61,18 @@ class TestingConfig:
             cfg_globals['lit'] = litConfig
             cfg_globals['__file__'] = path
             try:
-                exec f in cfg_globals
+                data = f.read()
+                if PY2:
+                    exec("exec data in cfg_globals")
+                else:
+                    exec(data, cfg_globals)
                 if litConfig.debug:
                     litConfig.note('... loaded config %r' % path)
-            except SystemExit,status:
+            except SystemExit:
+                e = sys.exc_info()[1]
                 # We allow normal system exit inside a config file to just
                 # return control without error.
-                if status.args:
+                if e.args:
                     raise
             f.close()
         else:
@@ -79,7 +87,7 @@ class TestingConfig:
     def __init__(self, parent, name, suffixes, test_format,
                  environment, substitutions, unsupported, on_clone,
                  test_exec_root, test_source_root, excludes,
-                 available_features):
+                 available_features, pipefail):
         self.parent = parent
         self.name = str(name)
         self.suffixes = set(suffixes)
@@ -92,6 +100,7 @@ class TestingConfig:
         self.test_source_root = test_source_root
         self.excludes = set(excludes)
         self.available_features = set(available_features)
+        self.pipefail = pipefail
 
     def clone(self, path):
         # FIXME: Chain implementations?
@@ -101,7 +110,8 @@ class TestingConfig:
                             self.environment, self.substitutions,
                             self.unsupported, self.on_clone,
                             self.test_exec_root, self.test_source_root,
-                            self.excludes, self.available_features)
+                            self.excludes, self.available_features,
+                            self.pipefail)
         if cfg.on_clone:
             cfg.on_clone(self, cfg, path)
         return cfg

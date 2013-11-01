@@ -91,8 +91,7 @@ private:
 
 public:
   SILowerControlFlowPass(TargetMachine &tm) :
-    MachineFunctionPass(ID), TRI(tm.getRegisterInfo()),
-    TII(tm.getInstrInfo()) { }
+    MachineFunctionPass(ID), TRI(0), TII(0) { }
 
   virtual bool runOnMachineFunction(MachineFunction &MF);
 
@@ -197,7 +196,8 @@ void SILowerControlFlowPass::Else(MachineInstr &MI) {
   unsigned Dst = MI.getOperand(0).getReg();
   unsigned Src = MI.getOperand(1).getReg();
 
-  BuildMI(MBB, &MI, DL, TII->get(AMDGPU::S_OR_SAVEEXEC_B64), Dst)
+  BuildMI(MBB, MBB.getFirstNonPHI(), DL,
+          TII->get(AMDGPU::S_OR_SAVEEXEC_B64), Dst)
           .addReg(Src); // Saved EXEC
 
   BuildMI(MBB, &MI, DL, TII->get(AMDGPU::S_XOR_B64), AMDGPU::EXEC)
@@ -407,8 +407,12 @@ void SILowerControlFlowPass::IndirectDst(MachineInstr &MI) {
 }
 
 bool SILowerControlFlowPass::runOnMachineFunction(MachineFunction &MF) {
+  TII = MF.getTarget().getInstrInfo();
+  TRI = MF.getTarget().getRegisterInfo();
 
   bool HaveKill = false;
+  bool NeedM0 = false;
+  bool NeedWQM = false;
   unsigned Depth = 0;
 
   for (MachineFunction::iterator BI = MF.begin(), BE = MF.end();
@@ -478,8 +482,36 @@ bool SILowerControlFlowPass::runOnMachineFunction(MachineFunction &MF) {
         case AMDGPU::SI_INDIRECT_DST_V16:
           IndirectDst(MI);
           break;
+
+        case AMDGPU::DS_READ_B32:
+          NeedWQM = true;
+          // Fall through
+        case AMDGPU::DS_WRITE_B32:
+          NeedM0 = true;
+          break;
+
+        case AMDGPU::V_INTERP_P1_F32:
+        case AMDGPU::V_INTERP_P2_F32:
+        case AMDGPU::V_INTERP_MOV_F32:
+          NeedWQM = true;
+          break;
+
       }
     }
+  }
+
+  if (NeedM0) {
+    MachineBasicBlock &MBB = MF.front();
+    // Initialize M0 to a value that won't cause LDS access to be discarded
+    // due to offset clamping
+    BuildMI(MBB, MBB.getFirstNonPHI(), DebugLoc(), TII->get(AMDGPU::S_MOV_B32),
+            AMDGPU::M0).addImm(0xffffffff);
+  }
+
+  if (NeedWQM) {
+    MachineBasicBlock &MBB = MF.front();
+    BuildMI(MBB, MBB.getFirstNonPHI(), DebugLoc(), TII->get(AMDGPU::S_WQM_B64),
+            AMDGPU::EXEC).addReg(AMDGPU::EXEC);
   }
 
   return true;

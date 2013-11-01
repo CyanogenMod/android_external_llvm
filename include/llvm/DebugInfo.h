@@ -31,6 +31,7 @@ namespace llvm {
   class Type;
   class Value;
   class DbgDeclareInst;
+  class DbgValueInst;
   class Instruction;
   class MDNode;
   class NamedMDNode;
@@ -63,7 +64,8 @@ namespace llvm {
       FlagObjcClassComplete  = 1 << 9,
       FlagObjectPointer      = 1 << 10,
       FlagVector             = 1 << 11,
-      FlagStaticMember       = 1 << 12
+      FlagStaticMember       = 1 << 12,
+      FlagIndirectVariable   = 1 << 13
     };
   protected:
     const MDNode *DbgNode;
@@ -87,19 +89,26 @@ namespace llvm {
     void replaceFunctionField(unsigned Elt, Function *F);
 
   public:
-    explicit DIDescriptor() : DbgNode(0) {}
-    explicit DIDescriptor(const MDNode *N) : DbgNode(N) {}
-    explicit DIDescriptor(const DIFile F);
-    explicit DIDescriptor(const DISubprogram F);
-    explicit DIDescriptor(const DILexicalBlockFile F);
-    explicit DIDescriptor(const DILexicalBlock F);
-    explicit DIDescriptor(const DIVariable F);
-    explicit DIDescriptor(const DIType F);
+    explicit DIDescriptor(const MDNode *N = 0) : DbgNode(N) {}
 
     bool Verify() const;
 
     operator MDNode *() const { return const_cast<MDNode*>(DbgNode); }
     MDNode *operator ->() const { return const_cast<MDNode*>(DbgNode); }
+
+    // An explicit operator bool so that we can do testing of DI values
+    // easily.
+    // FIXME: This operator bool isn't actually protecting anything at the
+    // moment due to the conversion operator above making DIDescriptor nodes
+    // implicitly convertable to bool.
+    LLVM_EXPLICIT operator bool() const { return DbgNode != 0; }
+
+    bool operator==(DIDescriptor Other) const {
+      return DbgNode == Other.DbgNode;
+    }
+    bool operator!=(DIDescriptor Other) const {
+      return !operator==(Other);
+    }
 
     unsigned getTag() const {
       return getUnsignedField(0) & ~LLVMDebugVersionMask;
@@ -120,11 +129,11 @@ namespace llvm {
     bool isSubrange() const;
     bool isEnumerator() const;
     bool isType() const;
-    bool isGlobal() const;
     bool isUnspecifiedParameter() const;
     bool isTemplateTypeParameter() const;
     bool isTemplateValueParameter() const;
     bool isObjCProperty() const;
+    bool isImportedEntity() const;
 
     /// print - print descriptor.
     void print(raw_ostream &OS) const;
@@ -148,67 +157,12 @@ namespace llvm {
   /// DIArray - This descriptor holds an array of descriptors.
   class DIArray : public DIDescriptor {
   public:
-    explicit DIArray(const MDNode *N = 0)
-      : DIDescriptor(N) {}
+    explicit DIArray(const MDNode *N = 0) : DIDescriptor(N) {}
 
     unsigned getNumElements() const;
     DIDescriptor getElement(unsigned Idx) const {
       return getDescriptorField(Idx);
     }
-  };
-
-  /// DIScope - A base class for various scopes.
-  class DIScope : public DIDescriptor {
-  protected:
-    friend class DIDescriptor;
-    void printInternal(raw_ostream &OS) const;
-  public:
-    explicit DIScope(const MDNode *N = 0) : DIDescriptor (N) {}
-
-    StringRef getFilename() const;
-    StringRef getDirectory() const;
-  };
-
-  /// DIFile - This is a wrapper for a file.
-  class DIFile : public DIScope {
-    friend class DIDescriptor;
-  public:
-    explicit DIFile(const MDNode *N = 0) : DIScope(N) {
-      if (DbgNode && !isFile())
-        DbgNode = 0;
-    }
-    bool Verify() const;
-  };
-
-  /// DICompileUnit - A wrapper for a compile unit.
-  class DICompileUnit : public DIScope {
-    friend class DIDescriptor;
-    void printInternal(raw_ostream &OS) const;
-  public:
-    explicit DICompileUnit(const MDNode *N = 0) : DIScope(N) {}
-
-    unsigned getLanguage() const { return getUnsignedField(2); }
-    StringRef getFilename() const {
-      return getFieldAs<DIFile>(3).getFilename();
-    }
-    StringRef getDirectory() const {
-      return getFieldAs<DIFile>(3).getDirectory();
-    }
-    StringRef getProducer() const { return getStringField(4); }
-
-    bool isOptimized() const { return getUnsignedField(5) != 0; }
-    StringRef getFlags() const { return getStringField(6); }
-    unsigned getRunTimeVersion() const { return getUnsignedField(7); }
-
-    DIArray getEnumTypes() const;
-    DIArray getRetainedTypes() const;
-    DIArray getSubprograms() const;
-    DIArray getGlobalVariables() const;
-
-    StringRef getSplitDebugFilename() const { return getStringField(12); }
-
-    /// Verify - Verify that a compile unit is well formed.
-    bool Verify() const;
   };
 
   /// DIEnumerator - A wrapper for an enumerator (e.g. X and Y in 'enum {X,Y}').
@@ -221,8 +175,23 @@ namespace llvm {
     explicit DIEnumerator(const MDNode *N = 0) : DIDescriptor(N) {}
 
     StringRef getName() const        { return getStringField(1); }
-    uint64_t getEnumValue() const      { return getUInt64Field(2); }
+    int64_t getEnumValue() const      { return getInt64Field(2); }
     bool Verify() const;
+  };
+
+  /// DIScope - A base class for various scopes.
+  class DIScope : public DIDescriptor {
+  protected:
+    friend class DIDescriptor;
+    void printInternal(raw_ostream &OS) const;
+  public:
+    explicit DIScope(const MDNode *N = 0) : DIDescriptor (N) {}
+
+    /// Gets the parent scope for this scope node or returns a
+    /// default constructed scope.
+    DIScope getContext() const;
+    StringRef getFilename() const;
+    StringRef getDirectory() const;
   };
 
   /// DIType - This is a wrapper for a type.
@@ -232,18 +201,15 @@ namespace llvm {
   protected:
     friend class DIDescriptor;
     void printInternal(raw_ostream &OS) const;
-    // This ctor is used when the Tag has already been validated by a derived
-    // ctor.
-    DIType(const MDNode *N, bool, bool) : DIScope(N) {}
+
   public:
+    DIType(const MDNode *N = 0) : DIScope(N) {}
+
     /// Verify - Verify that a type descriptor is well formed.
     bool Verify() const;
-    explicit DIType(const MDNode *N);
-    explicit DIType() {}
 
-    DIScope getContext() const          { return getFieldAs<DIScope>(1); }
-    StringRef getName() const           { return getStringField(2);     }
-    DIFile getFile() const              { return getFieldAs<DIFile>(3); }
+    DIScope getContext() const          { return getFieldAs<DIScope>(2); }
+    StringRef getName() const           { return getStringField(3);     }
     unsigned getLineNumber() const      { return getUnsignedField(4); }
     uint64_t getSizeInBits() const      { return getUInt64Field(5); }
     uint64_t getAlignInBits() const     { return getUInt64Field(6); }
@@ -286,13 +252,7 @@ namespace llvm {
       return (getFlags() & FlagStaticMember) != 0;
     }
     bool isValid() const {
-      return DbgNode && (isBasicType() || isDerivedType() || isCompositeType());
-    }
-    StringRef getDirectory() const  {
-      return getFieldAs<DIFile>(3).getDirectory();
-    }
-    StringRef getFilename() const  {
-      return getFieldAs<DIFile>(3).getFilename();
+      return DbgNode && isType();
     }
 
     /// isUnsignedDIType - Return true if type encoding is unsigned.
@@ -321,12 +281,9 @@ namespace llvm {
   class DIDerivedType : public DIType {
     friend class DIDescriptor;
     void printInternal(raw_ostream &OS) const;
-  protected:
-    explicit DIDerivedType(const MDNode *N, bool, bool)
-      : DIType(N, true, true) {}
+
   public:
-    explicit DIDerivedType(const MDNode *N = 0)
-      : DIType(N, true, true) {}
+    explicit DIDerivedType(const MDNode *N = 0) : DIType(N) {}
 
     DIType getTypeDerivedFrom() const { return getFieldAs<DIType>(9); }
 
@@ -354,25 +311,175 @@ namespace llvm {
 
   /// DICompositeType - This descriptor holds a type that can refer to multiple
   /// other types, like a function or struct.
-  /// FIXME: Why is this a DIDerivedType??
+  /// DICompositeType is derived from DIDerivedType because some
+  /// composite types (such as enums) can be derived from basic types
+  // FIXME: Make this derive from DIType directly & just store the
+  // base type in a single DIType field.
   class DICompositeType : public DIDerivedType {
     friend class DIDescriptor;
     void printInternal(raw_ostream &OS) const;
   public:
-    explicit DICompositeType(const MDNode *N = 0)
-      : DIDerivedType(N, true, true) {
-      if (N && !isCompositeType())
-        DbgNode = 0;
-    }
+    explicit DICompositeType(const MDNode *N = 0) : DIDerivedType(N) {}
 
     DIArray getTypeArray() const { return getFieldAs<DIArray>(10); }
+    void setTypeArray(DIArray Elements, DIArray TParams = DIArray());
     unsigned getRunTimeLang() const { return getUnsignedField(11); }
     DICompositeType getContainingType() const {
       return getFieldAs<DICompositeType>(12);
     }
+    void setContainingType(DICompositeType ContainingType);
     DIArray getTemplateParams() const { return getFieldAs<DIArray>(13); }
 
     /// Verify - Verify that a composite type descriptor is well formed.
+    bool Verify() const;
+  };
+
+  /// DIFile - This is a wrapper for a file.
+  class DIFile : public DIScope {
+    friend class DIDescriptor;
+  public:
+    explicit DIFile(const MDNode *N = 0) : DIScope(N) {}
+    MDNode *getFileNode() const;
+    bool Verify() const;
+  };
+
+  /// DICompileUnit - A wrapper for a compile unit.
+  class DICompileUnit : public DIScope {
+    friend class DIDescriptor;
+    void printInternal(raw_ostream &OS) const;
+  public:
+    explicit DICompileUnit(const MDNode *N = 0) : DIScope(N) {}
+
+    unsigned getLanguage() const { return getUnsignedField(2); }
+    StringRef getProducer() const { return getStringField(3); }
+
+    bool isOptimized() const { return getUnsignedField(4) != 0; }
+    StringRef getFlags() const { return getStringField(5); }
+    unsigned getRunTimeVersion() const { return getUnsignedField(6); }
+
+    DIArray getEnumTypes() const;
+    DIArray getRetainedTypes() const;
+    DIArray getSubprograms() const;
+    DIArray getGlobalVariables() const;
+    DIArray getImportedEntities() const;
+
+    StringRef getSplitDebugFilename() const { return getStringField(12); }
+
+    /// Verify - Verify that a compile unit is well formed.
+    bool Verify() const;
+  };
+
+  /// DISubprogram - This is a wrapper for a subprogram (e.g. a function).
+  class DISubprogram : public DIScope {
+    friend class DIDescriptor;
+    void printInternal(raw_ostream &OS) const;
+  public:
+    explicit DISubprogram(const MDNode *N = 0) : DIScope(N) {}
+
+    DIScope getContext() const          { return getFieldAs<DIScope>(2); }
+    StringRef getName() const         { return getStringField(3); }
+    StringRef getDisplayName() const  { return getStringField(4); }
+    StringRef getLinkageName() const  { return getStringField(5); }
+    unsigned getLineNumber() const      { return getUnsignedField(6); }
+    DICompositeType getType() const { return getFieldAs<DICompositeType>(7); }
+
+    /// isLocalToUnit - Return true if this subprogram is local to the current
+    /// compile unit, like 'static' in C.
+    unsigned isLocalToUnit() const     { return getUnsignedField(8); }
+    unsigned isDefinition() const      { return getUnsignedField(9); }
+
+    unsigned getVirtuality() const { return getUnsignedField(10); }
+    unsigned getVirtualIndex() const { return getUnsignedField(11); }
+
+    DICompositeType getContainingType() const {
+      return getFieldAs<DICompositeType>(12);
+    }
+
+    unsigned getFlags() const {
+      return getUnsignedField(13);
+    }
+
+    unsigned isArtificial() const    {
+      return (getUnsignedField(13) & FlagArtificial) != 0;
+    }
+    /// isPrivate - Return true if this subprogram has "private"
+    /// access specifier.
+    bool isPrivate() const    {
+      return (getUnsignedField(13) & FlagPrivate) != 0;
+    }
+    /// isProtected - Return true if this subprogram has "protected"
+    /// access specifier.
+    bool isProtected() const    {
+      return (getUnsignedField(13) & FlagProtected) != 0;
+    }
+    /// isExplicit - Return true if this subprogram is marked as explicit.
+    bool isExplicit() const    {
+      return (getUnsignedField(13) & FlagExplicit) != 0;
+    }
+    /// isPrototyped - Return true if this subprogram is prototyped.
+    bool isPrototyped() const    {
+      return (getUnsignedField(13) & FlagPrototyped) != 0;
+    }
+
+    unsigned isOptimized() const;
+
+    /// Verify - Verify that a subprogram descriptor is well formed.
+    bool Verify() const;
+
+    /// describes - Return true if this subprogram provides debugging
+    /// information for the function F.
+    bool describes(const Function *F);
+
+    Function *getFunction() const { return getFunctionField(15); }
+    void replaceFunction(Function *F) { replaceFunctionField(15, F); }
+    DIArray getTemplateParams() const { return getFieldAs<DIArray>(16); }
+    DISubprogram getFunctionDeclaration() const {
+      return getFieldAs<DISubprogram>(17);
+    }
+    MDNode *getVariablesNodes() const;
+    DIArray getVariables() const;
+
+    /// getScopeLineNumber - Get the beginning of the scope of the
+    /// function, not necessarily where the name of the program
+    /// starts.
+    unsigned getScopeLineNumber() const { return getUnsignedField(19); }
+  };
+
+  /// DILexicalBlock - This is a wrapper for a lexical block.
+  class DILexicalBlock : public DIScope {
+  public:
+    explicit DILexicalBlock(const MDNode *N = 0) : DIScope(N) {}
+    DIScope getContext() const       { return getFieldAs<DIScope>(2);      }
+    unsigned getLineNumber() const   { return getUnsignedField(3);         }
+    unsigned getColumnNumber() const { return getUnsignedField(4);         }
+    bool Verify() const;
+  };
+
+  /// DILexicalBlockFile - This is a wrapper for a lexical block with
+  /// a filename change.
+  class DILexicalBlockFile : public DIScope {
+  public:
+    explicit DILexicalBlockFile(const MDNode *N = 0) : DIScope(N) {}
+    DIScope getContext() const {
+      if (getScope().isSubprogram())
+        return getScope();
+      return getScope().getContext();
+    }
+    unsigned getLineNumber() const { return getScope().getLineNumber(); }
+    unsigned getColumnNumber() const { return getScope().getColumnNumber(); }
+    DILexicalBlock getScope() const { return getFieldAs<DILexicalBlock>(2); }
+    bool Verify() const;
+  };
+
+  /// DINameSpace - A wrapper for a C++ style name space.
+  class DINameSpace : public DIScope {
+    friend class DIDescriptor;
+    void printInternal(raw_ostream &OS) const;
+  public:
+    explicit DINameSpace(const MDNode *N = 0) : DIScope(N) {}
+    DIScope getContext() const     { return getFieldAs<DIScope>(2);      }
+    StringRef getName() const      { return getStringField(3);           }
+    unsigned getLineNumber() const { return getUnsignedField(4);         }
     bool Verify() const;
   };
 
@@ -403,7 +510,7 @@ namespace llvm {
     DIScope getContext() const       { return getFieldAs<DIScope>(1); }
     StringRef getName() const        { return getStringField(2); }
     DIType getType() const           { return getFieldAs<DIType>(3); }
-    uint64_t getValue() const         { return getUInt64Field(4); }
+    Value *getValue() const;
     StringRef getFilename() const    {
       return getFieldAs<DIFile>(5).getFilename();
     }
@@ -413,107 +520,6 @@ namespace llvm {
     unsigned getLineNumber() const   { return getUnsignedField(6); }
     unsigned getColumnNumber() const { return getUnsignedField(7); }
     bool Verify() const;
-  };
-
-  /// DISubprogram - This is a wrapper for a subprogram (e.g. a function).
-  class DISubprogram : public DIScope {
-    friend class DIDescriptor;
-    void printInternal(raw_ostream &OS) const;
-  public:
-    explicit DISubprogram(const MDNode *N = 0) : DIScope(N) {}
-
-    DIScope getContext() const          { return getFieldAs<DIScope>(2); }
-    StringRef getName() const         { return getStringField(3); }
-    StringRef getDisplayName() const  { return getStringField(4); }
-    StringRef getLinkageName() const  { return getStringField(5); }
-    unsigned getLineNumber() const      { return getUnsignedField(7); }
-    DICompositeType getType() const { return getFieldAs<DICompositeType>(8); }
-
-    /// getReturnTypeName - Subprogram return types are encoded either as
-    /// DIType or as DICompositeType.
-    StringRef getReturnTypeName() const {
-      DICompositeType DCT(getFieldAs<DICompositeType>(8));
-      if (DCT.Verify()) {
-        DIArray A = DCT.getTypeArray();
-        DIType T(A.getElement(0));
-        return T.getName();
-      }
-      DIType T(getFieldAs<DIType>(8));
-      return T.getName();
-    }
-
-    /// isLocalToUnit - Return true if this subprogram is local to the current
-    /// compile unit, like 'static' in C.
-    unsigned isLocalToUnit() const     { return getUnsignedField(9); }
-    unsigned isDefinition() const      { return getUnsignedField(10); }
-
-    unsigned getVirtuality() const { return getUnsignedField(11); }
-    unsigned getVirtualIndex() const { return getUnsignedField(12); }
-
-    DICompositeType getContainingType() const {
-      return getFieldAs<DICompositeType>(13);
-    }
-
-    unsigned getFlags() const {
-      return getUnsignedField(14);
-    }
-
-    unsigned isArtificial() const    {
-      return (getUnsignedField(14) & FlagArtificial) != 0;
-    }
-    /// isPrivate - Return true if this subprogram has "private"
-    /// access specifier.
-    bool isPrivate() const    {
-      return (getUnsignedField(14) & FlagPrivate) != 0;
-    }
-    /// isProtected - Return true if this subprogram has "protected"
-    /// access specifier.
-    bool isProtected() const    {
-      return (getUnsignedField(14) & FlagProtected) != 0;
-    }
-    /// isExplicit - Return true if this subprogram is marked as explicit.
-    bool isExplicit() const    {
-      return (getUnsignedField(14) & FlagExplicit) != 0;
-    }
-    /// isPrototyped - Return true if this subprogram is prototyped.
-    bool isPrototyped() const    {
-      return (getUnsignedField(14) & FlagPrototyped) != 0;
-    }
-
-    unsigned isOptimized() const;
-
-    StringRef getFilename() const    {
-      return getFieldAs<DIFile>(6).getFilename();
-    }
-
-    StringRef getDirectory() const   {
-      return getFieldAs<DIFile>(6).getDirectory();
-    }
-
-    DIFile getFile() const {
-      return getFieldAs<DIFile>(6);
-    }
-
-    /// getScopeLineNumber - Get the beginning of the scope of the
-    /// function, not necessarily where the name of the program
-    /// starts.
-    unsigned getScopeLineNumber() const { return getUnsignedField(20); }
-
-    /// Verify - Verify that a subprogram descriptor is well formed.
-    bool Verify() const;
-
-    /// describes - Return true if this subprogram provides debugging
-    /// information for the function F.
-    bool describes(const Function *F);
-
-    Function *getFunction() const { return getFunctionField(16); }
-    void replaceFunction(Function *F) { replaceFunctionField(16, F); }
-    DIArray getTemplateParams() const { return getFieldAs<DIArray>(17); }
-    DISubprogram getFunctionDeclaration() const {
-      return getFieldAs<DISubprogram>(18);
-    }
-    MDNode *getVariablesNodes() const;
-    DIArray getVariables() const;
   };
 
   /// DIGlobalVariable - This is a wrapper for a global variable.
@@ -556,8 +562,7 @@ namespace llvm {
     friend class DIDescriptor;
     void printInternal(raw_ostream &OS) const;
   public:
-    explicit DIVariable(const MDNode *N = 0)
-      : DIDescriptor(N) {}
+    explicit DIVariable(const MDNode *N = 0) : DIDescriptor(N) {}
 
     DIScope getContext() const          { return getFieldAs<DIScope>(1); }
     StringRef getName() const           { return getStringField(2);     }
@@ -578,6 +583,11 @@ namespace llvm {
 
     bool isObjectPointer() const {
       return (getUnsignedField(6) & FlagObjectPointer) != 0;
+    }
+
+    /// \brief Return true if this variable is represented as a pointer.
+    bool isIndirect() const {
+      return (getUnsignedField(6) & FlagIndirectVariable) != 0;
     }
 
     /// getInlinedAt - If this variable is inlined then return inline location.
@@ -608,56 +618,6 @@ namespace llvm {
     bool isInlinedFnArgument(const Function *CurFn);
 
     void printExtendedName(raw_ostream &OS) const;
-  };
-
-  /// DILexicalBlock - This is a wrapper for a lexical block.
-  class DILexicalBlock : public DIScope {
-  public:
-    explicit DILexicalBlock(const MDNode *N = 0) : DIScope(N) {}
-    DIScope getContext() const       { return getFieldAs<DIScope>(1);      }
-    unsigned getLineNumber() const   { return getUnsignedField(2);         }
-    unsigned getColumnNumber() const { return getUnsignedField(3);         }
-    StringRef getDirectory() const {
-      return getFieldAs<DIFile>(4).getDirectory();
-    }
-    StringRef getFilename() const {
-      return getFieldAs<DIFile>(4).getFilename();
-    }
-    bool Verify() const;
-  };
-
-  /// DILexicalBlockFile - This is a wrapper for a lexical block with
-  /// a filename change.
-  class DILexicalBlockFile : public DIScope {
-  public:
-    explicit DILexicalBlockFile(const MDNode *N = 0) : DIScope(N) {}
-    DIScope getContext() const { if (getScope().isSubprogram()) return getScope(); return getScope().getContext(); }
-    unsigned getLineNumber() const { return getScope().getLineNumber(); }
-    unsigned getColumnNumber() const { return getScope().getColumnNumber(); }
-    StringRef getDirectory() const {
-      return getFieldAs<DIFile>(2).getDirectory();
-    }
-    StringRef getFilename() const {
-      return getFieldAs<DIFile>(2).getFilename();
-    }
-    DILexicalBlock getScope() const { return getFieldAs<DILexicalBlock>(1); }
-    bool Verify() const;
-  };
-
-  /// DINameSpace - A wrapper for a C++ style name space.
-  class DINameSpace : public DIScope {
-  public:
-    explicit DINameSpace(const MDNode *N = 0) : DIScope(N) {}
-    DIScope getContext() const     { return getFieldAs<DIScope>(1);      }
-    StringRef getName() const      { return getStringField(2);           }
-    StringRef getDirectory() const  {
-      return getFieldAs<DIFile>(3).getDirectory();
-    }
-    StringRef getFilename() const  {
-      return getFieldAs<DIFile>(3).getFilename();
-    }
-    unsigned getLineNumber() const { return getUnsignedField(4);         }
-    bool Verify() const;
   };
 
   /// DILocation - This object holds location information. This object
@@ -691,28 +651,41 @@ namespace llvm {
     StringRef getObjCPropertySetterName() const {
       return getStringField(5);
     }
-    bool isReadOnlyObjCProperty() {
+    bool isReadOnlyObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_readonly) != 0;
     }
-    bool isReadWriteObjCProperty() {
+    bool isReadWriteObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_readwrite) != 0;
     }
-    bool isAssignObjCProperty() {
+    bool isAssignObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_assign) != 0;
     }
-    bool isRetainObjCProperty() {
+    bool isRetainObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_retain) != 0;
     }
-    bool isCopyObjCProperty() {
+    bool isCopyObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_copy) != 0;
     }
-    bool isNonAtomicObjCProperty() {
+    bool isNonAtomicObjCProperty() const {
       return (getUnsignedField(6) & dwarf::DW_APPLE_PROPERTY_nonatomic) != 0;
     }
 
     DIType getType() const { return getFieldAs<DIType>(7); }
 
     /// Verify - Verify that a derived type descriptor is well formed.
+    bool Verify() const;
+  };
+
+  /// \brief An imported module (C++ using directive or similar).
+  class DIImportedEntity : public DIDescriptor {
+    friend class DIDescriptor;
+    void printInternal(raw_ostream &OS) const;
+  public:
+    explicit DIImportedEntity(const MDNode *N) : DIDescriptor(N) { }
+    DIScope getContext() const { return getFieldAs<DIScope>(1); }
+    DIDescriptor getEntity() const { return getFieldAs<DIDescriptor>(2); }
+    unsigned getLineNumber() const { return getUnsignedField(3); }
+    StringRef getName() const { return getStringField(4); }
     bool Verify() const;
   };
 
@@ -744,12 +717,27 @@ namespace llvm {
   /// cleanseInlinedVariable - Remove inlined scope from the variable.
   DIVariable cleanseInlinedVariable(MDNode *DV, LLVMContext &VMContext);
 
+  /// DebugInfoFinder tries to list all debug info MDNodes used in a module. To
+  /// list debug info MDNodes used by an instruction, DebugInfoFinder uses
+  /// processDeclare, processValue and processLocation to handle DbgDeclareInst,
+  /// DbgValueInst and DbgLoc attached to instructions. processModule will go
+  /// through all DICompileUnits in llvm.dbg.cu and list debug info MDNodes
+  /// used by the CUs.
   class DebugInfoFinder {
   public:
     /// processModule - Process entire module and collect debug info
     /// anchors.
     void processModule(const Module &M);
 
+    /// processDeclare - Process DbgDeclareInst.
+    void processDeclare(const DbgDeclareInst *DDI);
+    /// Process DbgValueInst.
+    void processValue(const DbgValueInst *DVI);
+    /// processLocation - Process DILocation.
+    void processLocation(DILocation Loc);
+
+    /// Clear all lists.
+    void reset();
   private:
     /// processType - Process DIType.
     void processType(DIType DT);
@@ -760,11 +748,7 @@ namespace llvm {
     /// processSubprogram - Process DISubprogram.
     void processSubprogram(DISubprogram SP);
 
-    /// processDeclare - Process DbgDeclareInst.
-    void processDeclare(const DbgDeclareInst *DDI);
-
-    /// processLocation - Process DILocation.
-    void processLocation(DILocation Loc);
+    void processScope(DIScope Scope);
 
     /// addCompileUnit - Add compile unit into CUs.
     bool addCompileUnit(DICompileUnit CU);
@@ -778,8 +762,10 @@ namespace llvm {
     /// addType - Add type into Tys.
     bool addType(DIType DT);
 
+    bool addScope(DIScope Scope);
+
   public:
-    typedef SmallVector<MDNode *, 8>::const_iterator iterator;
+    typedef SmallVectorImpl<MDNode *>::const_iterator iterator;
     iterator compile_unit_begin()    const { return CUs.begin(); }
     iterator compile_unit_end()      const { return CUs.end(); }
     iterator subprogram_begin()      const { return SPs.begin(); }
@@ -788,17 +774,21 @@ namespace llvm {
     iterator global_variable_end()   const { return GVs.end(); }
     iterator type_begin()            const { return TYs.begin(); }
     iterator type_end()              const { return TYs.end(); }
+    iterator scope_begin()           const { return Scopes.begin(); }
+    iterator scope_end()             const { return Scopes.end(); }
 
     unsigned compile_unit_count()    const { return CUs.size(); }
     unsigned global_variable_count() const { return GVs.size(); }
     unsigned subprogram_count()      const { return SPs.size(); }
     unsigned type_count()            const { return TYs.size(); }
+    unsigned scope_count()           const { return Scopes.size(); }
 
   private:
     SmallVector<MDNode *, 8> CUs;  // Compile Units
     SmallVector<MDNode *, 8> SPs;  // Subprograms
     SmallVector<MDNode *, 8> GVs;  // Global Variables;
     SmallVector<MDNode *, 8> TYs;  // Types
+    SmallVector<MDNode *, 8> Scopes; // Scopes
     SmallPtrSet<MDNode *, 64> NodesSeen;
   };
 } // end namespace llvm

@@ -1,4 +1,4 @@
-; RUN: llc -mcpu=pwr7 -O0 -disable-fp-elim < %s | FileCheck %s
+; RUN: llc -mcpu=pwr7 -O0 -disable-fp-elim -fast-isel=false < %s | FileCheck %s
 
 target datalayout = "E-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v128:128:128-n32:64"
 target triple = "powerpc64-unknown-linux-gnu"
@@ -114,8 +114,8 @@ entry:
   ret i32 %add13
 
 ; CHECK: lha {{[0-9]+}}, 126(1)
-; CHECK: lbz {{[0-9]+}}, 119(1)
 ; CHECK: lha {{[0-9]+}}, 132(1)
+; CHECK: lbz {{[0-9]+}}, 119(1)
 ; CHECK: lwz {{[0-9]+}}, 140(1)
 ; CHECK: lwz {{[0-9]+}}, 144(1)
 ; CHECK: lwz {{[0-9]+}}, 152(1)
@@ -206,8 +206,8 @@ entry:
   ret i32 %add13
 
 ; CHECK: lha {{[0-9]+}}, 126(1)
-; CHECK: lbz {{[0-9]+}}, 119(1)
 ; CHECK: lha {{[0-9]+}}, 133(1)
+; CHECK: lbz {{[0-9]+}}, 119(1)
 ; CHECK: lwz {{[0-9]+}}, 140(1)
 ; CHECK: lwz {{[0-9]+}}, 147(1)
 ; CHECK: lwz {{[0-9]+}}, 154(1)

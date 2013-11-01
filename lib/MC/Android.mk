@@ -18,6 +18,7 @@ mc_SRC_FILES := \
   MCELFObjectTargetWriter.cpp \
   MCELFStreamer.cpp \
   MCExpr.cpp \
+  MCExternalSymbolizer.cpp \
   MCInst.cpp \
   MCInstPrinter.cpp \
   MCInstrAnalysis.cpp \
@@ -29,6 +30,7 @@ mc_SRC_FILES := \
   MCObjectStreamer.cpp \
   MCObjectWriter.cpp \
   MCRegisterInfo.cpp \
+  MCRelocationInfo.cpp \
   MCSection.cpp \
   MCSectionCOFF.cpp	\
   MCSectionELF.cpp \
@@ -36,6 +38,7 @@ mc_SRC_FILES := \
   MCStreamer.cpp \
   MCSubtargetInfo.cpp \
   MCSymbol.cpp \
+  MCSymbolizer.cpp \
   MCValue.cpp \
   MCWin64EH.cpp \
   WinCOFFObjectWriter.cpp \

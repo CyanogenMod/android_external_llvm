@@ -36,7 +36,24 @@ def CC_SI : CallingConv<[
 
 ]>;
 
+// Calling convention for compute kernels
+def CC_AMDGPU_Kernel : CallingConv<[
+  CCIfType<[v4i32, v4f32],               CCAssignToStack <16, 16>>,
+  CCIfType<[i64, f64, v2f32, v2i32],     CCAssignToStack < 8, 8>>,
+  CCIfType<[i32, f32],                   CCAssignToStack < 4, 4>>,
+  CCIfType<[i16],                        CCAssignToStack < 2, 4>>,
+  CCIfType<[i8],                         CCAssignToStack < 1, 4>>
+]>;
+
 def CC_AMDGPU : CallingConv<[
-  CCIf<"State.getTarget().getSubtarget<AMDGPUSubtarget>().device()"#
-       "->getGeneration() == AMDGPUDeviceInfo::HD7XXX", CCDelegateTo<CC_SI>>
+  CCIf<"State.getTarget().getSubtarget<AMDGPUSubtarget>().getGeneration() == "
+       "AMDGPUSubtarget::SOUTHERN_ISLANDS && "
+       "State.getMachineFunction().getInfo<SIMachineFunctionInfo>()->"#
+       "ShaderType == ShaderType::COMPUTE", CCDelegateTo<CC_AMDGPU_Kernel>>,
+  CCIf<"State.getTarget().getSubtarget<AMDGPUSubtarget>().getGeneration() < "
+       "AMDGPUSubtarget::SOUTHERN_ISLANDS && "
+       "State.getMachineFunction().getInfo<R600MachineFunctionInfo>()->"
+       "ShaderType == ShaderType::COMPUTE", CCDelegateTo<CC_AMDGPU_Kernel>>,
+  CCIf<"State.getTarget().getSubtarget<AMDGPUSubtarget>()"#
+       ".getGeneration() == AMDGPUSubtarget::SOUTHERN_ISLANDS", CCDelegateTo<CC_SI>>
 ]>;

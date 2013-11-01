@@ -10,6 +10,7 @@ analysis_SRC_FILES := \
   BasicAliasAnalysis.cpp \
   BlockFrequencyInfo.cpp \
   BranchProbabilityInfo.cpp \
+  CFG.cpp \
   CFGPrinter.cpp \
   CaptureTracking.cpp \
   CodeMetrics.cpp \

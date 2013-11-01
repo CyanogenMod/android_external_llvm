@@ -144,6 +144,14 @@
 /* Define to 1 if you have the `fmodf' function. */
 #define HAVE_FMODF 1
 
+#ifdef __APPLE__
+/* Define to 1 if you have the `futimes' function. */
+#define HAVE_FUTIMES 1
+#else
+/* Define to 1 if you have the `futimens' function. */
+#define HAVE_FUTIMENS 1
+#endif  // __APPLE__
+
 /* Define to 1 if you have the `getcwd' function. */
 #define HAVE_GETCWD 1
 
@@ -638,7 +646,7 @@
 #define LLVM_VERSION_MAJOR 3
 
 /* Minor version of the LLVM API */
-#define LLVM_VERSION_MINOR 1
+#define LLVM_VERSION_MINOR 3
 
 /* Define if the OS needs help to load dependent libraries for dlopen(). */
 /* #undef LTDL_DLOPEN_DEPLIBS */

@@ -2550,7 +2550,9 @@ let TargetPrefix = "x86" in {  // All intrinsics start with "llvm.x86.".
 }
 
 //===----------------------------------------------------------------------===//
-// RDRAND intrinsics. Return a random value and whether it is valid.
+// RDRAND intrinsics - Return a random value and whether it is valid.
+// RDSEED intrinsics - Return a NIST SP800-90B & C compliant random value and
+// whether it is valid.
 
 let TargetPrefix = "x86" in {  // All intrinsics start with "llvm.x86.".
   // These are declared side-effecting so they don't get eliminated by CSE or
@@ -2558,6 +2560,9 @@ let TargetPrefix = "x86" in {  // All intrinsics start with "llvm.x86.".
   def int_x86_rdrand_16 : Intrinsic<[llvm_i16_ty, llvm_i32_ty], [], []>;
   def int_x86_rdrand_32 : Intrinsic<[llvm_i32_ty, llvm_i32_ty], [], []>;
   def int_x86_rdrand_64 : Intrinsic<[llvm_i64_ty, llvm_i32_ty], [], []>;
+  def int_x86_rdseed_16 : Intrinsic<[llvm_i16_ty, llvm_i32_ty], [], []>;
+  def int_x86_rdseed_32 : Intrinsic<[llvm_i32_ty, llvm_i32_ty], [], []>;
+  def int_x86_rdseed_64 : Intrinsic<[llvm_i64_ty, llvm_i32_ty], [], []>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2570,4 +2575,45 @@ let TargetPrefix = "x86" in {  // All intrinsics start with "llvm.x86.".
               Intrinsic<[], [], []>;
   def int_x86_xabort : GCCBuiltin<"__builtin_ia32_xabort">,
               Intrinsic<[], [llvm_i8_ty], [IntrNoReturn]>;
+  def int_x86_xtest : GCCBuiltin<"__builtin_ia32_xtest">,
+              Intrinsic<[llvm_i32_ty], [], []>;
+}
+// AVX-512
+
+let TargetPrefix = "x86" in {  // All intrinsics start with "llvm.x86.".
+  // Mask instructions
+  // 16-bit mask
+  def int_x86_kadd_v16i1 : GCCBuiltin<"__builtin_ia32_kaddw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_v16i1_ty, llvm_v16i1_ty],
+                         [IntrNoMem]>;
+  def int_x86_kand_v16i1 : GCCBuiltin<"__builtin_ia32_kandw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_v16i1_ty, llvm_v16i1_ty],
+                         [IntrNoMem]>;
+  def int_x86_kandn_v16i1 : GCCBuiltin<"__builtin_ia32_kandnw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_v16i1_ty, llvm_v16i1_ty],
+                         [IntrNoMem]>;
+  def int_x86_knot_v16i1 : GCCBuiltin<"__builtin_ia32_knotw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_v16i1_ty], [IntrNoMem]>;
+  def int_x86_kor_v16i1 : GCCBuiltin<"__builtin_ia32_korw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_v16i1_ty, llvm_v16i1_ty],
+                         [IntrNoMem]>;
+  def int_x86_kxor_v16i1 : GCCBuiltin<"__builtin_ia32_kxorw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_v16i1_ty, llvm_v16i1_ty],
+                         [IntrNoMem]>;
+  def int_x86_kxnor_v16i1 : GCCBuiltin<"__builtin_ia32_kxnorw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_v16i1_ty, llvm_v16i1_ty],
+                         [IntrNoMem]>;
+  def int_x86_mask2int_v16i1 : GCCBuiltin<"__builtin_ia32_mask2intw">,
+              Intrinsic<[llvm_i32_ty], [llvm_v16i1_ty], [IntrNoMem]>;
+  def int_x86_int2mask_v16i1 : GCCBuiltin<"__builtin_ia32_int2maskw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_i32_ty], [IntrNoMem]>;
+  def int_x86_kunpck_v16i1 : GCCBuiltin<"__builtin_ia32_kunpckbw">,
+              Intrinsic<[llvm_v16i1_ty], [llvm_v8i1_ty, llvm_v8i1_ty],
+                         [IntrNoMem]>;
+  def int_x86_avx512_kortestz : GCCBuiltin<"__builtin_ia32_kortestz">,
+              Intrinsic<[llvm_i32_ty], [llvm_i16_ty, llvm_i16_ty],
+                        [IntrNoMem]>;
+  def int_x86_avx512_kortestc : GCCBuiltin<"__builtin_ia32_kortestc">,
+              Intrinsic<[llvm_i32_ty], [llvm_i16_ty, llvm_i16_ty],
+                        [IntrNoMem]>;
 }

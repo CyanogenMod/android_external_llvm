@@ -41,26 +41,25 @@ using namespace llvm;
 STATISTIC(NumSimpl, "Number of blocks simplified");
 
 namespace {
-  struct CFGSimplifyPass : public FunctionPass {
-    static char ID; // Pass identification, replacement for typeid
-    CFGSimplifyPass() : FunctionPass(ID) {
-      initializeCFGSimplifyPassPass(*PassRegistry::getPassRegistry());
-    }
+struct CFGSimplifyPass : public FunctionPass {
+  static char ID; // Pass identification, replacement for typeid
+  CFGSimplifyPass() : FunctionPass(ID) {
+    initializeCFGSimplifyPassPass(*PassRegistry::getPassRegistry());
+  }
+  virtual bool runOnFunction(Function &F);
 
-    virtual bool runOnFunction(Function &F);
-
-    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-      AU.addRequired<TargetTransformInfo>();
-    }
-  };
+  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    AU.addRequired<TargetTransformInfo>();
+  }
+};
 }
 
 char CFGSimplifyPass::ID = 0;
-INITIALIZE_PASS_BEGIN(CFGSimplifyPass, "simplifycfg", "Simplify the CFG",
-                      false, false)
+INITIALIZE_PASS_BEGIN(CFGSimplifyPass, "simplifycfg", "Simplify the CFG", false,
+                      false)
 INITIALIZE_AG_DEPENDENCY(TargetTransformInfo)
-INITIALIZE_PASS_END(CFGSimplifyPass, "simplifycfg", "Simplify the CFG",
-                    false, false)
+INITIALIZE_PASS_END(CFGSimplifyPass, "simplifycfg", "Simplify the CFG", false,
+                    false)
 
 // Public interface to the CFGSimplification pass
 FunctionPass *llvm::createCFGSimplificationPass() {

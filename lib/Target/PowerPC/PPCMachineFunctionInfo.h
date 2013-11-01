@@ -32,6 +32,9 @@ class PPCFunctionInfo : public MachineFunctionInfo {
   ///
   int ReturnAddrSaveIndex;
 
+  /// Frame index where the old base pointer is stored.
+  int BasePointerSaveIndex;
+
   /// MustSaveLR - Indicates whether LR is defined (or clobbered) in the current
   /// function.  This is only valid after the initial scan of the function by
   /// PEI.
@@ -46,6 +49,9 @@ class PPCFunctionInfo : public MachineFunctionInfo {
 
   /// SpillsCR - Indicates whether CR is spilled in the current function.
   bool SpillsCR;
+
+  /// Indicates whether VRSAVE is spilled in the current function.
+  bool SpillsVRSAVE;
 
   /// LRStoreRequired - The bool indicates whether there is some explicit use of
   /// the LR/LR8 stack slot that is not obvious from scanning the code.  This
@@ -81,13 +87,20 @@ class PPCFunctionInfo : public MachineFunctionInfo {
   /// CRSpillFrameIndex - FrameIndex for CR spill slot for 32-bit SVR4.
   int CRSpillFrameIndex;
 
+  /// If any of CR[2-4] need to be saved in the prologue and restored in the
+  /// epilogue then they are added to this array. This is used for the
+  /// 64-bit SVR4 ABI.
+  SmallVector<unsigned, 3> MustSaveCRs;
+
 public:
   explicit PPCFunctionInfo(MachineFunction &MF) 
     : FramePointerSaveIndex(0),
       ReturnAddrSaveIndex(0),
+      BasePointerSaveIndex(0),
       HasSpills(false),
       HasNonRISpills(false),
       SpillsCR(false),
+      SpillsVRSAVE(false),
       LRStoreRequired(false),
       MinReservedArea(0),
       TailCallSPDelta(0),
@@ -103,6 +116,9 @@ public:
   
   int getReturnAddrSaveIndex() const { return ReturnAddrSaveIndex; }
   void setReturnAddrSaveIndex(int idx) { ReturnAddrSaveIndex = idx; }
+
+  int getBasePointerSaveIndex() const { return BasePointerSaveIndex; }
+  void setBasePointerSaveIndex(int Idx) { BasePointerSaveIndex = Idx; }
 
   unsigned getMinReservedArea() const { return MinReservedArea; }
   void setMinReservedArea(unsigned size) { MinReservedArea = size; }
@@ -127,6 +143,9 @@ public:
   void setSpillsCR()       { SpillsCR = true; }
   bool isCRSpilled() const { return SpillsCR; }
 
+  void setSpillsVRSAVE()       { SpillsVRSAVE = true; }
+  bool isVRSAVESpilled() const { return SpillsVRSAVE; }
+
   void setLRStoreRequired() { LRStoreRequired = true; }
   bool isLRStoreRequired() const { return LRStoreRequired; }
 
@@ -147,6 +166,10 @@ public:
 
   int getCRSpillFrameIndex() const { return CRSpillFrameIndex; }
   void setCRSpillFrameIndex(int idx) { CRSpillFrameIndex = idx; }
+
+  const SmallVectorImpl<unsigned> &
+    getMustSaveCRs() const { return MustSaveCRs; }
+  void addMustSaveCR(unsigned Reg) { MustSaveCRs.push_back(Reg); }
 };
 
 } // end of namespace llvm

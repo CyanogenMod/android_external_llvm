@@ -518,7 +518,6 @@ void CppWriter::printAttributes(const AttributeSet &PAL,
         attrs.removeAttribute(Attribute::StackAlignment);
       }
 
-      assert(!attrs.hasAttributes() && "Unhandled attribute!");
       Out << "PAS = AttributeSet::get(mod->getContext(), ";
       if (index == ~0U)
         Out << "~0U,";
@@ -1833,7 +1832,7 @@ void CppWriter::printInline(const std::string& fname,
   unsigned arg_count = 1;
   for (Function::const_arg_iterator AI = F->arg_begin(), AE = F->arg_end();
        AI != AE; ++AI) {
-    Out << ", Value* arg_" << arg_count;
+    Out << ", Value* arg_" << arg_count++;
   }
   Out << ") {";
   nl(Out);

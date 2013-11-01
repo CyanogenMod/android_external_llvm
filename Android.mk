@@ -8,7 +8,6 @@ include $(CLEAR_VARS)
 subdirs := \
   lib/Analysis \
   lib/Analysis/IPA \
-  lib/Archive \
   lib/AsmParser \
   lib/Bitcode/Reader \
   lib/Bitcode/Writer \
@@ -17,10 +16,12 @@ subdirs := \
   lib/CodeGen/AsmPrinter \
   lib/CodeGen/SelectionDAG \
   lib/IR \
+  lib/IRReader \
   lib/Linker \
   lib/MC \
   lib/MC/MCParser \
   lib/Object \
+  lib/Option \
   lib/Support \
   lib/TableGen \
   lib/Target \

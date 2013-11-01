@@ -35,13 +35,13 @@ support_SRC_FILES := \
   IsNAN.cpp \
   Locale.cpp \
   LockFileManager.cpp \
+  MD5.cpp \
   ManagedStatic.cpp \
   Memory.cpp \
   MemoryBuffer.cpp \
   MemoryObject.cpp \
   Mutex.cpp \
   Path.cpp \
-  PathV2.cpp \
   PluginLoader.cpp \
   PrettyStackTrace.cpp \
   Process.cpp \
@@ -69,6 +69,7 @@ support_SRC_FILES := \
   Triple.cpp \
   Twine.cpp \
   Valgrind.cpp \
+  Watchdog.cpp \
   circular_raw_ostream.cpp \
   raw_os_ostream.cpp \
   raw_ostream.cpp \

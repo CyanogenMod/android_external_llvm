@@ -47,6 +47,8 @@ def X86for     : SDNode<"X86ISD::FOR",       SDTFPBinOp,
                         [SDNPCommutative, SDNPAssociative]>;
 def X86fxor    : SDNode<"X86ISD::FXOR",      SDTFPBinOp,
                         [SDNPCommutative, SDNPAssociative]>;
+def X86fandn   : SDNode<"X86ISD::FANDN",     SDTFPBinOp,
+                        [SDNPCommutative, SDNPAssociative]>;
 def X86frsqrt  : SDNode<"X86ISD::FRSQRT",    SDTFPUnaryOp>;
 def X86frcp    : SDNode<"X86ISD::FRCP",      SDTFPUnaryOp>;
 def X86fsrl    : SDNode<"X86ISD::FSRL",      SDTX86FPShiftOp>;
@@ -136,6 +138,8 @@ def SDTX86CmpPTest : SDTypeProfile<1, 2, [SDTCisVT<0, i32>,
 def X86subus   : SDNode<"X86ISD::SUBUS", SDTIntBinOp>;
 def X86ptest   : SDNode<"X86ISD::PTEST", SDTX86CmpPTest>;
 def X86testp   : SDNode<"X86ISD::TESTP", SDTX86CmpPTest>;
+def X86kortest : SDNode<"X86ISD::KORTEST", SDTX86CmpPTest>;
+def X86ktest   : SDNode<"X86ISD::KTEST", SDTX86CmpPTest>;
 
 def X86pmuludq : SDNode<"X86ISD::PMULUDQ",
                         SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>,
@@ -153,7 +157,9 @@ def SDTShuff2OpI : SDTypeProfile<1, 2, [SDTCisVec<0>,
 def SDTShuff3OpI : SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0,1>,
                                  SDTCisSameAs<0,2>, SDTCisInt<3>]>;
 
-def SDTVBroadcast : SDTypeProfile<1, 1, [SDTCisVec<0>]>;
+def SDTVBroadcast  : SDTypeProfile<1, 1, [SDTCisVec<0>]>;
+def SDTVBroadcastm : SDTypeProfile<1, 2, [SDTCisVec<0>, SDTCisVec<1>]>;
+
 def SDTBlend : SDTypeProfile<1, 3, [SDTCisVec<0>, SDTCisSameAs<0,1>,
                              SDTCisSameAs<1,2>, SDTCisVT<3, i32>]>;
 
@@ -192,6 +198,7 @@ def X86VPermi    : SDNode<"X86ISD::VPERMI",   SDTShuff2OpI>;
 def X86VPerm2x128 : SDNode<"X86ISD::VPERM2X128", SDTShuff3OpI>;
 
 def X86VBroadcast : SDNode<"X86ISD::VBROADCAST", SDTVBroadcast>;
+def X86VBroadcastm : SDNode<"X86ISD::VBROADCASTM", SDTVBroadcastm>;
 
 def X86Blendi    : SDNode<"X86ISD::BLENDI",   SDTBlend>;
 def X86Fmadd     : SDNode<"X86ISD::FMADD",     SDTFma>;
@@ -405,28 +412,54 @@ def BYTE_imm  : SDNodeXForm<imm, [{
   return getI32Imm(N->getZExtValue() >> 3);
 }]>;
 
-// EXTRACT_get_vextractf128_imm xform function: convert extract_subvector index
-// to VEXTRACTF128 imm.
-def EXTRACT_get_vextractf128_imm : SDNodeXForm<extract_subvector, [{
-  return getI8Imm(X86::getExtractVEXTRACTF128Immediate(N));
+// EXTRACT_get_vextract128_imm xform function: convert extract_subvector index
+// to VEXTRACTF128/VEXTRACTI128 imm.
+def EXTRACT_get_vextract128_imm : SDNodeXForm<extract_subvector, [{
+  return getI8Imm(X86::getExtractVEXTRACT128Immediate(N));
 }]>;
 
-// INSERT_get_vinsertf128_imm xform function: convert insert_subvector index to
-// VINSERTF128 imm.
-def INSERT_get_vinsertf128_imm : SDNodeXForm<insert_subvector, [{
-  return getI8Imm(X86::getInsertVINSERTF128Immediate(N));
+// INSERT_get_vinsert128_imm xform function: convert insert_subvector index to
+// VINSERTF128/VINSERTI128 imm.
+def INSERT_get_vinsert128_imm : SDNodeXForm<insert_subvector, [{
+  return getI8Imm(X86::getInsertVINSERT128Immediate(N));
 }]>;
 
-def vextractf128_extract : PatFrag<(ops node:$bigvec, node:$index),
+// EXTRACT_get_vextract256_imm xform function: convert extract_subvector index
+// to VEXTRACTF64x4 imm.
+def EXTRACT_get_vextract256_imm : SDNodeXForm<extract_subvector, [{
+  return getI8Imm(X86::getExtractVEXTRACT256Immediate(N));
+}]>;
+
+// INSERT_get_vinsert256_imm xform function: convert insert_subvector index to
+// VINSERTF64x4 imm.
+def INSERT_get_vinsert256_imm : SDNodeXForm<insert_subvector, [{
+  return getI8Imm(X86::getInsertVINSERT256Immediate(N));
+}]>;
+
+def vextract128_extract : PatFrag<(ops node:$bigvec, node:$index),
                                    (extract_subvector node:$bigvec,
                                                       node:$index), [{
-  return X86::isVEXTRACTF128Index(N);
-}], EXTRACT_get_vextractf128_imm>;
+  return X86::isVEXTRACT128Index(N);
+}], EXTRACT_get_vextract128_imm>;
 
-def vinsertf128_insert : PatFrag<(ops node:$bigvec, node:$smallvec,
+def vinsert128_insert : PatFrag<(ops node:$bigvec, node:$smallvec,
                                       node:$index),
                                  (insert_subvector node:$bigvec, node:$smallvec,
                                                    node:$index), [{
-  return X86::isVINSERTF128Index(N);
-}], INSERT_get_vinsertf128_imm>;
+  return X86::isVINSERT128Index(N);
+}], INSERT_get_vinsert128_imm>;
+
+
+def vextract256_extract : PatFrag<(ops node:$bigvec, node:$index),
+                                   (extract_subvector node:$bigvec,
+                                                      node:$index), [{
+  return X86::isVEXTRACT256Index(N);
+}], EXTRACT_get_vextract256_imm>;
+
+def vinsert256_insert : PatFrag<(ops node:$bigvec, node:$smallvec,
+                                      node:$index),
+                                 (insert_subvector node:$bigvec, node:$smallvec,
+                                                   node:$index), [{
+  return X86::isVINSERT256Index(N);
+}], INSERT_get_vinsert256_imm>;
 

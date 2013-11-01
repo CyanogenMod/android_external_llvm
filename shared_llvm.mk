@@ -6,6 +6,7 @@ LOCAL_PATH:= $(call my-dir)
 llvm_pre_static_libraries := \
   libLLVMLinker \
   libLLVMipo \
+  libLLVMIRReader \
   libLLVMBitWriter \
   libLLVMBitReader
 
@@ -50,8 +51,8 @@ llvm_post_static_libraries := \
   libLLVMMC \
   libLLVMMCParser \
   libLLVMCore \
-  libLLVMArchive \
   libLLVMAsmParser \
+  libLLVMOption \
   libLLVMSupport \
   libLLVMVectorize
 

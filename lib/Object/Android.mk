@@ -6,8 +6,8 @@ object_SRC_FILES := \
   COFFObjectFile.cpp \
   ELFObjectFile.cpp \
   Error.cpp \
-  MachOObject.cpp \
   MachOObjectFile.cpp \
+  MachOUniversal.cpp \
   Object.cpp \
   ObjectFile.cpp
 

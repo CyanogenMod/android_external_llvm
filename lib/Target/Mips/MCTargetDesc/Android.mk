@@ -8,7 +8,6 @@ mips_mc_desc_TBLGEN_TABLES := \
 
 mips_mc_desc_SRC_FILES := \
   MipsAsmBackend.cpp \
-  MipsDirectObjLower.cpp \
   MipsELFObjectWriter.cpp \
   MipsELFStreamer.cpp \
   MipsMCAsmInfo.cpp \
