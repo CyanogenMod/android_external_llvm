@@ -65,6 +65,7 @@ support_SRC_FILES := \
   ThreadLocal.cpp \
   Timer.cpp \
   TimeValue.cpp \
+  Unix/Signals.inc \
   ToolOutputFile.cpp \
   Triple.cpp \
   Twine.cpp \
@@ -87,7 +88,6 @@ support_SRC_FILES := \
   Unix/Process.inc \
   Unix/Program.inc \
   Unix/RWMutex.inc \
-  Unix/Signals.inc \
   Unix/system_error.inc \
   Unix/ThreadLocal.inc \
   Unix/TimeValue.inc
