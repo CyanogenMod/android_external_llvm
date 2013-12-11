@@ -91,6 +91,8 @@ include $(BUILD_HOST_EXECUTABLE)
 # llc command line tool (target)
 #===---------------------------------------------------------------===
 
+#TODOAArch64: Enable llc build
+ifneq ($(TARGET_ARCH),aarch64)
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := llc
@@ -125,3 +127,5 @@ include $(LLVM_ROOT_PATH)/llvm.mk
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_EXECUTABLE)
+
+endif # !aarch64
