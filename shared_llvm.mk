@@ -92,7 +92,8 @@ include $(BUILD_HOST_SHARED_LIBRARY)
 endif
 
 #TODOArm64: Enable llvm build
-ifneq ($(TARGET_ARCH),arm64)
+#TODOMips64: Enable llvm build
+ifeq ($(filter $(TARGET_ARCH),arm64 mips64),)
 # DEVICE LLVM shared library build
 include $(CLEAR_VARS)
 
@@ -126,6 +127,6 @@ LOCAL_SHARED_LIBRARIES := libcutils libdl libstlport
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_SHARED_LIBRARY)
 
-endif # !arm64
+endif # !(arm64 || mips64)
 
 endif # don't build in unbundled branches

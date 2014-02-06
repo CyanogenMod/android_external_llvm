@@ -92,7 +92,8 @@ include $(BUILD_HOST_EXECUTABLE)
 #===---------------------------------------------------------------===
 
 #TODOArm64: Enable llc build
-ifneq ($(TARGET_ARCH),arm64)
+#TODOMips64: Enable llc build
+ifeq ($(filter $(TARGET_ARCH),arm64 mips64),)
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := llc
@@ -128,4 +129,4 @@ include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_EXECUTABLE)
 
-endif # !arm64
+endif # !(arm64 || mips64)
