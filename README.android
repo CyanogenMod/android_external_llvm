@@ -22,7 +22,10 @@
 * For Jellybean MR1: Synced to upstream r162314
 * For Jellybean MR2: Synced to upstream r177342
 * For Key Lime Pie: Synced to upstream r187913
+* For FUTURE: Synced to LLVM 3.4 r197944
 
+* Cherry-pick on 2014/2/13: https://llvm.org/svn/llvm-project/llvm/trunk@201362 (Contact srhines for merge questions.)
+* Recent downstreaming on 2014/2/11: Synced to r197944 (Contact srhines for merge questions.)
 * Recent downstreaming on 2013/8/8: Synced to r187913 (Contact srhines for merge questions.)
 * Recent downstreaming on 2013/6/13: Synced to r183849 (Contact srhines for merge questions.)
 * Recent downstreaming on 2013/5/3: Synced to r180947 (Contact srhines for merge questions.)

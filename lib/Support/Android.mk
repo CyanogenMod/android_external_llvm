@@ -68,6 +68,7 @@ support_SRC_FILES := \
   ToolOutputFile.cpp \
   Triple.cpp \
   Twine.cpp \
+  Unicode.cpp \
   Valgrind.cpp \
   Watchdog.cpp \
   circular_raw_ostream.cpp \

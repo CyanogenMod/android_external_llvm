@@ -2,7 +2,6 @@ LOCAL_PATH:= $(call my-dir)
 
 transforms_scalar_SRC_FILES := \
   ADCE.cpp \
-  BasicBlockPlacement.cpp \
   CodeGenPrepare.cpp \
   ConstantProp.cpp \
   CorrelatedValuePropagation.cpp \
@@ -17,16 +16,19 @@ transforms_scalar_SRC_FILES := \
   LoopDeletion.cpp \
   LoopIdiomRecognize.cpp \
   LoopInstSimplify.cpp \
+  LoopRerollPass.cpp \
   LoopRotation.cpp \
   LoopStrengthReduce.cpp \
   LoopUnrollPass.cpp \
   LoopUnswitch.cpp \
   LowerAtomic.cpp \
   MemCpyOptimizer.cpp \
+  PartiallyInlineLibCalls.cpp \
   Reassociate.cpp \
   Reg2Mem.cpp \
   SCCP.cpp \
   SROA.cpp \
+  SampleProfile.cpp \
   Scalar.cpp \
   ScalarReplAggregates.cpp \
   SimplifyCFGPass.cpp \
