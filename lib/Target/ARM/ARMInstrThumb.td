@@ -269,25 +269,26 @@ class T1SystemEncoding<bits<8> opc>
   let Inst{7-0} = opc;
 }
 
-def tNOP : T1pI<(outs), (ins), NoItinerary, "nop", "", []>,
-           T1SystemEncoding<0x00>, // A8.6.110
-        Requires<[IsThumb2]>;
+def tHINT : T1pI<(outs), (ins imm0_15:$imm), NoItinerary, "hint", "\t$imm", []>,
+            T1SystemEncoding<0x00>,
+            Requires<[IsThumb, HasV6M]> {
+  bits<4> imm;
+  let Inst{7-4} = imm;
+}
 
-def tYIELD : T1pI<(outs), (ins), NoItinerary, "yield", "", []>,
-           T1SystemEncoding<0x10>, // A8.6.410
-           Requires<[IsThumb2]>;
+class tHintAlias<string Asm, dag Result> : tInstAlias<Asm, Result> {
+  let Predicates = [IsThumb, HasV6M];
+}
 
-def tWFE : T1pI<(outs), (ins), NoItinerary, "wfe", "", []>,
-           T1SystemEncoding<0x20>, // A8.6.408
-           Requires<[IsThumb2]>;
-
-def tWFI : T1pI<(outs), (ins), NoItinerary, "wfi", "", []>,
-           T1SystemEncoding<0x30>, // A8.6.409
-           Requires<[IsThumb2]>;
-
-def tSEV : T1pI<(outs), (ins), NoItinerary, "sev", "", []>,
-           T1SystemEncoding<0x40>, // A8.6.157
-           Requires<[IsThumb2]>;
+def : tHintAlias<"nop$p", (tHINT 0, pred:$p)>; // A8.6.110
+def : tHintAlias<"yield$p", (tHINT 1, pred:$p)>; // A8.6.410
+def : tHintAlias<"wfe$p", (tHINT 2, pred:$p)>; // A8.6.408
+def : tHintAlias<"wfi$p", (tHINT 3, pred:$p)>; // A8.6.409
+def : tHintAlias<"sev$p", (tHINT 4, pred:$p)>; // A8.6.157
+def : tInstAlias<"sevl$p", (tHINT 5, pred:$p)> {
+  let Predicates = [IsThumb2, HasV8];
+}
+def : T2Pat<(int_arm_sevl), (tHINT 5)>;
 
 // The imm operand $val can be used by a debugger to store more information
 // about the breakpoint.
@@ -300,8 +301,15 @@ def tBKPT : T1I<(outs), (ins imm0_255:$val), NoItinerary, "bkpt\t$val",
   let Inst{7-0} = val;
 }
 
+def tHLT : T1I<(outs), (ins imm0_63:$val), NoItinerary, "hlt\t$val",
+                []>, T1Encoding<0b101110>, Requires<[IsThumb, HasV8]> {
+  let Inst{9-6} = 0b1010;
+  bits<6> val;
+  let Inst{5-0} = val;
+}
+
 def tSETEND : T1I<(outs), (ins setend_op:$end), NoItinerary, "setend\t$end",
-                  []>, T1Encoding<0b101101> {
+                  []>, T1Encoding<0b101101>, Deprecated<HasV8Ops> {
   bits<1> end;
   // A8.6.156
   let Inst{9-5} = 0b10010;
@@ -491,7 +499,8 @@ let isBranch = 1, isTerminator = 1, isBarrier = 1 in {
              T1Encoding<{1,1,1,0,0,?}>, Sched<[WriteBr]> {
     bits<11> target;
     let Inst{10-0} = target;
-  }
+    let AsmMatchConverter = "cvtThumbBranches";
+ }
 
   // Far jump
   // Just a pseudo for a tBL instruction. Needed to let regalloc know about
@@ -521,6 +530,7 @@ let isBranch = 1, isTerminator = 1 in
   bits<8> target;
   let Inst{11-8} = p;
   let Inst{7-0} = target;
+  let AsmMatchConverter = "cvtThumbBranches";
 }
 
 
@@ -659,9 +669,6 @@ def tLDRpci : T1pIs<(outs tGPR:$Rt), (ins t_addrmode_pc:$addr), IIC_iLoad_i,
   let Inst{10-8} = Rt;
   let Inst{7-0}  = addr;
 }
-
-def : tInstAlias<"ldr${p}.n $Rt, $addr", 
-                 (tLDRpci tGPR:$Rt, t_addrmode_pc:$addr, pred:$p), 0>;
 
 // A8.6.194 & A8.6.192
 defm tSTR  : thumb_st_rr_ri_enc<0b000, 0b0110, t_addrmode_rrs4,
@@ -1205,9 +1212,9 @@ def tUXTH :                     // A8.6.264
 // Expanded after instruction selection into a branch sequence.
 let usesCustomInserter = 1 in  // Expanded after instruction selection.
   def tMOVCCr_pseudo :
-  PseudoInst<(outs tGPR:$dst), (ins tGPR:$false, tGPR:$true, pred:$cc),
-              NoItinerary,
-             [/*(set tGPR:$dst, (ARMcmov tGPR:$false, tGPR:$true, imm:$cc))*/]>;
+  PseudoInst<(outs tGPR:$dst), (ins tGPR:$false, tGPR:$true, cmovpred:$p),
+             NoItinerary,
+             [(set tGPR:$dst, (ARMcmov tGPR:$false, tGPR:$true, cmovpred:$p))]>;
 
 // tLEApcrel - Load a pc-relative address into a register without offending the
 // assembler.

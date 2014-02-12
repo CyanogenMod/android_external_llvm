@@ -733,9 +733,9 @@ class AllocaPromoter : public LoadAndStorePromoter {
   SmallVector<DbgValueInst *, 4> DVIs;
 
 public:
-  AllocaPromoter(const SmallVectorImpl<Instruction*> &Insts, SSAUpdater &S,
+  AllocaPromoter(const SmallVectorImpl<Instruction *> &Insts, SSAUpdater &S,
                  AllocaInst &AI, DIBuilder &DIB)
-    : LoadAndStorePromoter(Insts, S), AI(AI), DIB(DIB) {}
+      : LoadAndStorePromoter(Insts, S), AI(AI), DIB(DIB) {}
 
   void run(const SmallVectorImpl<Instruction*> &Insts) {
     // Retain the debug information attached to the alloca for use when
@@ -762,9 +762,30 @@ public:
 
   virtual bool isInstInList(Instruction *I,
                             const SmallVectorImpl<Instruction*> &Insts) const {
+    Value *Ptr;
     if (LoadInst *LI = dyn_cast<LoadInst>(I))
-      return LI->getOperand(0) == &AI;
-    return cast<StoreInst>(I)->getPointerOperand() == &AI;
+      Ptr = LI->getOperand(0);
+    else
+      Ptr = cast<StoreInst>(I)->getPointerOperand();
+
+    // Only used to detect cycles, which will be rare and quickly found as
+    // we're walking up a chain of defs rather than down through uses.
+    SmallPtrSet<Value *, 4> Visited;
+
+    do {
+      if (Ptr == &AI)
+        return true;
+
+      if (BitCastInst *BCI = dyn_cast<BitCastInst>(Ptr))
+        Ptr = BCI->getOperand(0);
+      else if (GetElementPtrInst *GEPI = dyn_cast<GetElementPtrInst>(Ptr))
+        Ptr = GEPI->getPointerOperand();
+      else
+        return false;
+
+    } while (Visited.insert(Ptr));
+
+    return false;
   }
 
   virtual void updateDebugInfo(Instruction *Inst) const {
@@ -917,6 +938,7 @@ static Type *findCommonType(AllocaSlices::const_iterator B,
                             AllocaSlices::const_iterator E,
                             uint64_t EndOffset) {
   Type *Ty = 0;
+  bool IgnoreNonIntegralTypes = false;
   for (AllocaSlices::const_iterator I = B; I != E; ++I) {
     Use *U = I->getUse();
     if (isa<IntrinsicInst>(*U->getUser()))
@@ -925,29 +947,37 @@ static Type *findCommonType(AllocaSlices::const_iterator B,
       continue;
 
     Type *UserTy = 0;
-    if (LoadInst *LI = dyn_cast<LoadInst>(U->getUser()))
+    if (LoadInst *LI = dyn_cast<LoadInst>(U->getUser())) {
       UserTy = LI->getType();
-    else if (StoreInst *SI = dyn_cast<StoreInst>(U->getUser()))
+    } else if (StoreInst *SI = dyn_cast<StoreInst>(U->getUser())) {
       UserTy = SI->getValueOperand()->getType();
-    else
-      return 0; // Bail if we have weird uses.
+    } else {
+      IgnoreNonIntegralTypes = true; // Give up on anything but an iN type.
+      continue;
+    }
 
     if (IntegerType *ITy = dyn_cast<IntegerType>(UserTy)) {
       // If the type is larger than the partition, skip it. We only encounter
       // this for split integer operations where we want to use the type of the
-      // entity causing the split.
-      if (ITy->getBitWidth() / 8 > (EndOffset - B->beginOffset()))
+      // entity causing the split. Also skip if the type is not a byte width
+      // multiple.
+      if (ITy->getBitWidth() % 8 != 0 ||
+          ITy->getBitWidth() / 8 > (EndOffset - B->beginOffset()))
         continue;
 
       // If we have found an integer type use covering the alloca, use that
-      // regardless of the other types, as integers are often used for a
-      // "bucket
-      // of bits" type.
+      // regardless of the other types, as integers are often used for
+      // a "bucket of bits" type.
+      //
+      // NB: This *must* be the only return from inside the loop so that the
+      // order of slices doesn't impact the computed type.
       return ITy;
+    } else if (IgnoreNonIntegralTypes) {
+      continue;
     }
 
     if (Ty && Ty != UserTy)
-      return 0;
+      IgnoreNonIntegralTypes = true; // Give up on anything but an iN type.
 
     Ty = UserTy;
   }
@@ -1431,6 +1461,10 @@ static bool canConvertValue(const DataLayout &DL, Type *OldTy, Type *NewTy) {
   if (!NewTy->isSingleValueType() || !OldTy->isSingleValueType())
     return false;
 
+  // We can convert pointers to integers and vice-versa. Same for vectors
+  // of pointers and integers.
+  OldTy = OldTy->getScalarType();
+  NewTy = NewTy->getScalarType();
   if (NewTy->isPointerTy() || OldTy->isPointerTy()) {
     if (NewTy->isPointerTy() && OldTy->isPointerTy())
       return true;
@@ -1449,21 +1483,53 @@ static bool canConvertValue(const DataLayout &DL, Type *OldTy, Type *NewTy) {
 /// inttoptr, and ptrtoint casts. Use the \c canConvertValue predicate to test
 /// two types for viability with this routine.
 static Value *convertValue(const DataLayout &DL, IRBuilderTy &IRB, Value *V,
-                           Type *Ty) {
-  assert(canConvertValue(DL, V->getType(), Ty) &&
-         "Value not convertable to type");
-  if (V->getType() == Ty)
+                           Type *NewTy) {
+  Type *OldTy = V->getType();
+  assert(canConvertValue(DL, OldTy, NewTy) && "Value not convertable to type");
+
+  if (OldTy == NewTy)
     return V;
-  if (IntegerType *OldITy = dyn_cast<IntegerType>(V->getType()))
-    if (IntegerType *NewITy = dyn_cast<IntegerType>(Ty))
+
+  if (IntegerType *OldITy = dyn_cast<IntegerType>(OldTy))
+    if (IntegerType *NewITy = dyn_cast<IntegerType>(NewTy))
       if (NewITy->getBitWidth() > OldITy->getBitWidth())
         return IRB.CreateZExt(V, NewITy);
-  if (V->getType()->isIntegerTy() && Ty->isPointerTy())
-    return IRB.CreateIntToPtr(V, Ty);
-  if (V->getType()->isPointerTy() && Ty->isIntegerTy())
-    return IRB.CreatePtrToInt(V, Ty);
 
-  return IRB.CreateBitCast(V, Ty);
+  // See if we need inttoptr for this type pair. A cast involving both scalars
+  // and vectors requires and additional bitcast.
+  if (OldTy->getScalarType()->isIntegerTy() &&
+      NewTy->getScalarType()->isPointerTy()) {
+    // Expand <2 x i32> to i8* --> <2 x i32> to i64 to i8*
+    if (OldTy->isVectorTy() && !NewTy->isVectorTy())
+      return IRB.CreateIntToPtr(IRB.CreateBitCast(V, DL.getIntPtrType(NewTy)),
+                                NewTy);
+
+    // Expand i128 to <2 x i8*> --> i128 to <2 x i64> to <2 x i8*>
+    if (!OldTy->isVectorTy() && NewTy->isVectorTy())
+      return IRB.CreateIntToPtr(IRB.CreateBitCast(V, DL.getIntPtrType(NewTy)),
+                                NewTy);
+
+    return IRB.CreateIntToPtr(V, NewTy);
+  }
+
+  // See if we need ptrtoint for this type pair. A cast involving both scalars
+  // and vectors requires and additional bitcast.
+  if (OldTy->getScalarType()->isPointerTy() &&
+      NewTy->getScalarType()->isIntegerTy()) {
+    // Expand <2 x i8*> to i128 --> <2 x i8*> to <2 x i64> to i128
+    if (OldTy->isVectorTy() && !NewTy->isVectorTy())
+      return IRB.CreateBitCast(IRB.CreatePtrToInt(V, DL.getIntPtrType(OldTy)),
+                               NewTy);
+
+    // Expand i8* to <2 x i32> --> i8* to i64 to <2 x i32>
+    if (!OldTy->isVectorTy() && NewTy->isVectorTy())
+      return IRB.CreateBitCast(IRB.CreatePtrToInt(V, DL.getIntPtrType(OldTy)),
+                               NewTy);
+
+    return IRB.CreatePtrToInt(V, NewTy);
+  }
+
+  return IRB.CreateBitCast(V, NewTy);
 }
 
 /// \brief Test whether the given slice use can be promoted to a vector.
@@ -3364,12 +3430,12 @@ void SROA::deleteDeadInstructions(SmallPtrSet<AllocaInst*, 4> &DeletedAllocas) {
 }
 
 static void enqueueUsersInWorklist(Instruction &I,
-                                   SmallVectorImpl<Use *> &UseWorklist,
-                                   SmallPtrSet<Use *, 8> &VisitedUses) {
+                                   SmallVectorImpl<Instruction *> &Worklist,
+                                   SmallPtrSet<Instruction *, 8> &Visited) {
   for (Value::use_iterator UI = I.use_begin(), UE = I.use_end(); UI != UE;
        ++UI)
-    if (VisitedUses.insert(&UI.getUse()))
-      UseWorklist.push_back(&UI.getUse());
+    if (Visited.insert(cast<Instruction>(*UI)))
+      Worklist.push_back(cast<Instruction>(*UI));
 }
 
 /// \brief Promote the allocas, using the best available technique.
@@ -3388,7 +3454,7 @@ bool SROA::promoteAllocas(Function &F) {
 
   if (DT && !ForceSSAUpdater) {
     DEBUG(dbgs() << "Promoting allocas with mem2reg...\n");
-    PromoteMemToReg(PromotableAllocas, *DT, DL);
+    PromoteMemToReg(PromotableAllocas, *DT);
     PromotableAllocas.clear();
     return true;
   }
@@ -3396,29 +3462,29 @@ bool SROA::promoteAllocas(Function &F) {
   DEBUG(dbgs() << "Promoting allocas with SSAUpdater...\n");
   SSAUpdater SSA;
   DIBuilder DIB(*F.getParent());
-  SmallVector<Instruction*, 64> Insts;
+  SmallVector<Instruction *, 64> Insts;
 
   // We need a worklist to walk the uses of each alloca.
-  SmallVector<Use *, 8> UseWorklist;
-  SmallPtrSet<Use *, 8> VisitedUses;
+  SmallVector<Instruction *, 8> Worklist;
+  SmallPtrSet<Instruction *, 8> Visited;
   SmallVector<Instruction *, 32> DeadInsts;
 
   for (unsigned Idx = 0, Size = PromotableAllocas.size(); Idx != Size; ++Idx) {
     AllocaInst *AI = PromotableAllocas[Idx];
-    UseWorklist.clear();
-    VisitedUses.clear();
+    Insts.clear();
+    Worklist.clear();
+    Visited.clear();
 
-    enqueueUsersInWorklist(*AI, UseWorklist, VisitedUses);
+    enqueueUsersInWorklist(*AI, Worklist, Visited);
 
-    while (!UseWorklist.empty()) {
-      Use *U = UseWorklist.pop_back_val();
-      Instruction &I = *cast<Instruction>(U->getUser());
+    while (!Worklist.empty()) {
+      Instruction *I = Worklist.pop_back_val();
 
       // FIXME: Currently the SSAUpdater infrastructure doesn't reason about
       // lifetime intrinsics and so we strip them (and the bitcasts+GEPs
       // leading to them) here. Eventually it should use them to optimize the
       // scalar values produced.
-      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(&I)) {
+      if (IntrinsicInst *II = dyn_cast<IntrinsicInst>(I)) {
         assert(II->getIntrinsicID() == Intrinsic::lifetime_start ||
                II->getIntrinsicID() == Intrinsic::lifetime_end);
         II->eraseFromParent();
@@ -3428,12 +3494,12 @@ bool SROA::promoteAllocas(Function &F) {
       // Push the loads and stores we find onto the list. SROA will already
       // have validated that all loads and stores are viable candidates for
       // promotion.
-      if (LoadInst *LI = dyn_cast<LoadInst>(&I)) {
+      if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
         assert(LI->getType() == AI->getAllocatedType());
         Insts.push_back(LI);
         continue;
       }
-      if (StoreInst *SI = dyn_cast<StoreInst>(&I)) {
+      if (StoreInst *SI = dyn_cast<StoreInst>(I)) {
         assert(SI->getValueOperand()->getType() == AI->getAllocatedType());
         Insts.push_back(SI);
         continue;
@@ -3442,11 +3508,10 @@ bool SROA::promoteAllocas(Function &F) {
       // For everything else, we know that only no-op bitcasts and GEPs will
       // make it this far, just recurse through them and recall them for later
       // removal.
-      DeadInsts.push_back(&I);
-      enqueueUsersInWorklist(I, UseWorklist, VisitedUses);
+      DeadInsts.push_back(I);
+      enqueueUsersInWorklist(*I, Worklist, Visited);
     }
     AllocaPromoter(Insts, SSA, *AI, DIB).run(Insts);
-    Insts.clear();
     while (!DeadInsts.empty())
       DeadInsts.pop_back_val()->eraseFromParent();
     AI->eraseFromParent();

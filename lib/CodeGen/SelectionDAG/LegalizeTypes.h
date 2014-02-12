@@ -410,6 +410,7 @@ private:
   SDValue SoftenFloatRes_FPOWI(SDNode *N);
   SDValue SoftenFloatRes_FREM(SDNode *N);
   SDValue SoftenFloatRes_FRINT(SDNode *N);
+  SDValue SoftenFloatRes_FROUND(SDNode *N);
   SDValue SoftenFloatRes_FSIN(SDNode *N);
   SDValue SoftenFloatRes_FSQRT(SDNode *N);
   SDValue SoftenFloatRes_FSUB(SDNode *N);
@@ -470,6 +471,7 @@ private:
   void ExpandFloatRes_FPOWI     (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FREM      (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FRINT     (SDNode *N, SDValue &Lo, SDValue &Hi);
+  void ExpandFloatRes_FROUND    (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FSIN      (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FSQRT     (SDNode *N, SDValue &Lo, SDValue &Hi);
   void ExpandFloatRes_FSUB      (SDNode *N, SDValue &Lo, SDValue &Hi);
@@ -480,6 +482,7 @@ private:
   // Float Operand Expansion.
   bool ExpandFloatOperand(SDNode *N, unsigned OperandNo);
   SDValue ExpandFloatOp_BR_CC(SDNode *N);
+  SDValue ExpandFloatOp_FCOPYSIGN(SDNode *N);
   SDValue ExpandFloatOp_FP_ROUND(SDNode *N);
   SDValue ExpandFloatOp_FP_TO_SINT(SDNode *N);
   SDValue ExpandFloatOp_FP_TO_UINT(SDNode *N);
@@ -534,7 +537,7 @@ private:
   // Vector Operand Scalarization: <1 x ty> -> ty.
   bool ScalarizeVectorOperand(SDNode *N, unsigned OpNo);
   SDValue ScalarizeVecOp_BITCAST(SDNode *N);
-  SDValue ScalarizeVecOp_EXTEND(SDNode *N);
+  SDValue ScalarizeVecOp_UnaryOp(SDNode *N);
   SDValue ScalarizeVecOp_CONCAT_VECTORS(SDNode *N);
   SDValue ScalarizeVecOp_EXTRACT_VECTOR_ELT(SDNode *N);
   SDValue ScalarizeVecOp_STORE(StoreSDNode *N, unsigned OpNo);
@@ -558,6 +561,7 @@ private:
   void SplitVecRes_BinOp(SDNode *N, SDValue &Lo, SDValue &Hi);
   void SplitVecRes_TernaryOp(SDNode *N, SDValue &Lo, SDValue &Hi);
   void SplitVecRes_UnaryOp(SDNode *N, SDValue &Lo, SDValue &Hi);
+  void SplitVecRes_ExtendOp(SDNode *N, SDValue &Lo, SDValue &Hi);
   void SplitVecRes_InregOp(SDNode *N, SDValue &Lo, SDValue &Hi);
 
   void SplitVecRes_BITCAST(SDNode *N, SDValue &Lo, SDValue &Hi);
@@ -628,6 +632,7 @@ private:
 
   SDValue WidenVecRes_Ternary(SDNode *N);
   SDValue WidenVecRes_Binary(SDNode *N);
+  SDValue WidenVecRes_BinaryCanTrap(SDNode *N);
   SDValue WidenVecRes_Convert(SDNode *N);
   SDValue WidenVecRes_POWI(SDNode *N);
   SDValue WidenVecRes_Shift(SDNode *N);
@@ -699,10 +704,6 @@ private:
       GetExpandedFloat(Op, Lo, Hi);
   }
 
-  /// GetSplitDestVTs - Compute the VTs needed for the low/hi parts of a type
-  /// which is split (or expanded) into two not necessarily identical pieces.
-  void GetSplitDestVTs(EVT InVT, EVT &LoVT, EVT &HiVT);
-
   /// GetPairElements - Use ISD::EXTRACT_ELEMENT nodes to extract the low and
   /// high parts of the given value.
   void GetPairElements(SDValue Pair, SDValue &Lo, SDValue &Hi);
@@ -729,6 +730,12 @@ private:
     else
       GetExpandedFloat(Op, Lo, Hi);
   }
+
+
+  /// This function will split the integer \p Op into \p NumElements
+  /// operations of type \p EltVT and store them in \p Ops.
+  void IntegerToVector(SDValue Op, unsigned NumElements,
+                       SmallVectorImpl<SDValue> &Ops, EVT EltVT);
 
   // Generic Result Expansion.
   void ExpandRes_MERGE_VALUES      (SDNode *N, unsigned ResNo,

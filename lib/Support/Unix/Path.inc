@@ -182,7 +182,7 @@ namespace sys  {
 namespace fs {
 #if defined(__FreeBSD__) || defined (__NetBSD__) || defined(__Bitrig__) || \
     defined(__OpenBSD__) || defined(__minix) || defined(__FreeBSD_kernel__) || \
-    defined(__linux__) || defined(__CYGWIN__)
+    defined(__linux__) || defined(__CYGWIN__) || defined(__DragonFly__)
 static int
 test_dir(char buf[PATH_MAX], char ret[PATH_MAX],
     const char *dir, const char *bin)
@@ -251,7 +251,8 @@ std::string getMainExecutable(const char *argv0, void *MainAddr) {
       return link_path;
   }
 #elif defined(__FreeBSD__) || defined (__NetBSD__) || defined(__Bitrig__) || \
-      defined(__OpenBSD__) || defined(__minix) || defined(__FreeBSD_kernel__)
+      defined(__OpenBSD__) || defined(__minix) || defined(__DragonFly__) || \
+      defined(__FreeBSD_kernel__)
   char exe_path[PATH_MAX];
 
   if (getprogpath(exe_path, argv0) != NULL)
@@ -298,6 +299,18 @@ UniqueID file_status::getUniqueID() const {
 }
 
 error_code current_path(SmallVectorImpl<char> &result) {
+  result.clear();
+
+  const char *pwd = ::getenv("PWD");
+  llvm::sys::fs::file_status PWDStatus, DotStatus;
+  if (pwd && llvm::sys::path::is_absolute(pwd) &&
+      !llvm::sys::fs::status(pwd, PWDStatus) &&
+      !llvm::sys::fs::status(".", DotStatus) &&
+      PWDStatus.getUniqueID() == DotStatus.getUniqueID()) {
+    result.append(pwd, pwd + strlen(pwd));
+    return error_code::success();
+  }
+
 #ifdef MAXPATHLEN
   result.reserve(MAXPATHLEN);
 #else

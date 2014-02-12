@@ -13,7 +13,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPUSubtarget.h"
-#include <stdio.h>
 
 using namespace llvm;
 
@@ -37,6 +36,8 @@ AMDGPUSubtarget::AMDGPUSubtarget(StringRef TT, StringRef CPU, StringRef FS) :
   Gen = AMDGPUSubtarget::R600;
   FP64 = false;
   CaymanISA = false;
+  EnableIRStructurizer = true;
+  EnableIfCvt = true;
   ParseSubtargetFeatures(GPU, FS);
   DevName = GPU;
 }
@@ -64,6 +65,14 @@ AMDGPUSubtarget::hasHWFP64() const {
 bool
 AMDGPUSubtarget::hasCaymanISA() const {
   return CaymanISA;
+}
+bool
+AMDGPUSubtarget::IsIRStructurizerEnabled() const {
+  return EnableIRStructurizer;
+}
+bool
+AMDGPUSubtarget::isIfCvtEnabled() const {
+  return EnableIfCvt;
 }
 bool
 AMDGPUSubtarget::isTargetELF() const {
@@ -96,6 +105,10 @@ AMDGPUSubtarget::getDataLayout() const {
     DataLayout.append("-p:64:64:64");
   } else {
     DataLayout.append("-p:32:32:32");
+  }
+
+  if (Gen >= AMDGPUSubtarget::SOUTHERN_ISLANDS) {
+    DataLayout.append("-p3:32:32:32");
   }
 
   return DataLayout;

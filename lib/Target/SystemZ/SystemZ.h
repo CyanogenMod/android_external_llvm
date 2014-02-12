@@ -52,6 +52,29 @@ namespace llvm {
     const unsigned CCMASK_CS_NE = CCMASK_1;
     const unsigned CCMASK_CS    = CCMASK_0 | CCMASK_1;
 
+    // Condition-code mask assignments for a completed SRST loop.
+    const unsigned CCMASK_SRST_FOUND    = CCMASK_1;
+    const unsigned CCMASK_SRST_NOTFOUND = CCMASK_2;
+    const unsigned CCMASK_SRST          = CCMASK_1 | CCMASK_2;
+
+    // Condition-code mask assignments for TEST UNDER MASK.
+    const unsigned CCMASK_TM_ALL_0       = CCMASK_0;
+    const unsigned CCMASK_TM_MIXED_MSB_0 = CCMASK_1;
+    const unsigned CCMASK_TM_MIXED_MSB_1 = CCMASK_2;
+    const unsigned CCMASK_TM_ALL_1       = CCMASK_3;
+    const unsigned CCMASK_TM_SOME_0      = CCMASK_TM_ALL_1 ^ CCMASK_ANY;
+    const unsigned CCMASK_TM_SOME_1      = CCMASK_TM_ALL_0 ^ CCMASK_ANY;
+    const unsigned CCMASK_TM_MSB_0       = CCMASK_0 | CCMASK_1;
+    const unsigned CCMASK_TM_MSB_1       = CCMASK_2 | CCMASK_3;
+    const unsigned CCMASK_TM             = CCMASK_ANY;
+
+    // The position of the low CC bit in an IPM result.
+    const unsigned IPM_CC = 28;
+
+    // Mask assignments for PFD.
+    const unsigned PFD_READ  = 1;
+    const unsigned PFD_WRITE = 2;
+
     // Return true if Val fits an LLILL operand.
     static inline bool isImmLL(uint64_t Val) {
       return (Val & ~0x000000000000ffffULL) == 0;
@@ -86,6 +109,7 @@ namespace llvm {
   FunctionPass *createSystemZISelDag(SystemZTargetMachine &TM,
                                      CodeGenOpt::Level OptLevel);
   FunctionPass *createSystemZElimComparePass(SystemZTargetMachine &TM);
+  FunctionPass *createSystemZShortenInstPass(SystemZTargetMachine &TM);
   FunctionPass *createSystemZLongBranchPass(SystemZTargetMachine &TM);
 } // end namespace llvm;
 #endif
