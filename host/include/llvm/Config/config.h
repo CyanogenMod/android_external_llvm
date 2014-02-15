@@ -212,6 +212,9 @@
 /* Define to 1 if you have the `pthread' library (-lpthread). */
 #define HAVE_LIBPTHREAD 1
 
+/* Define to 1 if you have the `shell32' library (-lshell32). */
+#define HAVE_LIBSHELL32 1
+
 /* Define to 1 if you have the `udis86' library (-ludis86). */
 /* #undef HAVE_LIBUDIS86 */
 
@@ -530,7 +533,7 @@
 /* #undef HAVE___DIVDI3 */
 
 /* Define to 1 if you have the `__dso_handle' function. */
-#define HAVE___DSO_HANDLE 1
+/* #undef HAVE___DSO_HANDLE */
 
 /* Have host's __fixdfdi */
 /* #undef HAVE___FIXDFDI */
