@@ -28,7 +28,6 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device
 # =====================================================
-ifeq ($(TARGET_ARCH),mips)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
@@ -44,4 +43,3 @@ LOCAL_C_INCLUDES +=	$(LOCAL_PATH)/..
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_STATIC_LIBRARY)
-endif

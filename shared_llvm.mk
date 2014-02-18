@@ -81,9 +81,10 @@ endif
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)
 
-#TODOArm64: Enable llvm build
-#TODOMips64: Enable llvm build
-ifeq ($(filter $(TARGET_ARCH),arm64 mips64),)
+ifeq (,$(filter $(TARGET_ARCH),$(LLVM_SUPPORTED_ARCH)))
+$(warning TODO $(TARGET_ARCH): Enable llvm build)
+endif
+
 # DEVICE LLVM shared library build
 include $(CLEAR_VARS)
 
@@ -95,19 +96,10 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_WHOLE_STATIC_LIBRARIES := \
   $(llvm_pre_static_libraries)
 
-ifeq ($(TARGET_ARCH),arm)
-  LOCAL_WHOLE_STATIC_LIBRARIES += $(llvm_arm_static_libraries)
-else
-  ifeq ($(TARGET_ARCH),$(filter $(TARGET_ARCH),x86 x86_64 x32))
-    LOCAL_WHOLE_STATIC_LIBRARIES += $(llvm_x86_static_libraries)
-  else
-    ifeq ($(TARGET_ARCH),mips)
-      LOCAL_WHOLE_STATIC_LIBRARIES += $(llvm_mips_static_libraries)
-    else
-      $(error Unsupported architecture $(TARGET_ARCH))
-    endif
-  endif
-endif
+LOCAL_WHOLE_STATIC_LIBRARIES_arm += $(llvm_arm_static_libraries)
+LOCAL_WHOLE_STATIC_LIBRARIES_x86 += $(llvm_x86_static_libraries)
+LOCAL_WHOLE_STATIC_LIBRARIES_x86_64 += $(llvm_x86_static_libraries)
+LOCAL_WHOLE_STATIC_LIBRARIES_mips += $(llvm_mips_static_libraries)
 
 LOCAL_WHOLE_STATIC_LIBRARIES += $(llvm_post_static_libraries)
 
@@ -116,7 +108,5 @@ LOCAL_SHARED_LIBRARIES := libcutils libdl libstlport
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_SHARED_LIBRARY)
-
-endif # !(arm64 || mips64)
 
 endif # don't build in unbundled branches
