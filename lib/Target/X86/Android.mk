@@ -53,7 +53,6 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device only
 # =====================================================
-ifeq ($(TARGET_ARCH),x86)
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
@@ -69,4 +68,3 @@ include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
-endif
