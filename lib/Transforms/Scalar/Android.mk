@@ -61,9 +61,7 @@ LOCAL_MODULE:= libLLVMScalarOpts
 # Override the default optimization level to work around a SIGSEGV
 # on x86 target builds for SROA.cpp.
 # Bug: 8047767
-ifeq ($(TARGET_ARCH),x86)
-LOCAL_CFLAGS += -O1
-endif
+LOCAL_CFLAGS_x86 += -O1
 
 LOCAL_MODULE_TAGS := optional
 
