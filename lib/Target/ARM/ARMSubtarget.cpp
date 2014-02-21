@@ -135,6 +135,7 @@ void ARMSubtarget::initializeEnvironment() {
   Thumb2DSP = false;
   UseNaClTrap = false;
   UnsafeFPMath = false;
+  UseLong64 = false;
 }
 
 void ARMSubtarget::resetSubtargetFeatures(const MachineFunction *MF) {

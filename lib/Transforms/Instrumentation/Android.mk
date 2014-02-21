@@ -3,13 +3,11 @@ LOCAL_PATH:= $(call my-dir)
 instrumentation_SRC_FILES := \
   AddressSanitizer.cpp \
   BoundsChecking.cpp \
-  EdgeProfiling.cpp \
+  DataFlowSanitizer.cpp \
+  DebugIR.cpp \
   GCOVProfiling.cpp \
   Instrumentation.cpp \
   MemorySanitizer.cpp \
-  OptimalEdgeProfiling.cpp \
-  PathProfiling.cpp \
-  ProfilingUtils.cpp \
   ThreadSanitizer.cpp
 
 # For the host
