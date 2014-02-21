@@ -238,7 +238,9 @@ struct file_magic {
     macho_dsym_companion,     ///< Mach-O dSYM companion file
     macho_universal_binary,   ///< Mach-O universal binary
     coff_object,              ///< COFF object file
-    pecoff_executable         ///< PECOFF executable file
+    coff_import_library,      ///< COFF import library
+    pecoff_executable,        ///< PECOFF executable file
+    windows_resource          ///< Windows compiled resource file (.rc)
   };
 
   bool is_object() const {
@@ -638,17 +640,6 @@ error_code openFileForWrite(const Twine &Name, int &ResultFD, OpenFlags Flags,
 
 error_code openFileForRead(const Twine &Name, int &ResultFD);
 
-/// @brief Canonicalize path.
-///
-/// Sets result to the file system's idea of what path is. The result is always
-/// absolute and has the same capitalization as the file system.
-///
-/// @param path Input path.
-/// @param result Set to the canonicalized version of \a path.
-/// @returns errc::success if result has been successfully set, otherwise a
-///          platform specific error_code.
-error_code canonicalize(const Twine &path, SmallVectorImpl<char> &result);
-
 /// @brief Are \a path's first bytes \a magic?
 ///
 /// @param path Input path.
@@ -731,7 +722,7 @@ public:
   ///               should begin. Must be a multiple of
   ///               mapped_file_region::alignment().
   /// \param ec This is set to errc::success if the map was constructed
-  ///           sucessfully. Otherwise it is set to a platform dependent error.
+  ///           successfully. Otherwise it is set to a platform dependent error.
   mapped_file_region(const Twine &path,
                      mapmode mode,
                      uint64_t length,
@@ -869,7 +860,7 @@ public:
   }
 
   /// Construct end iterator.
-  directory_iterator() : State(new detail::DirIterState) {}
+  directory_iterator() : State(0) {}
 
   // No operator++ because we need error_code.
   directory_iterator &increment(error_code &ec) {
@@ -881,6 +872,12 @@ public:
   const directory_entry *operator->() const { return &State->CurrentEntry; }
 
   bool operator==(const directory_iterator &RHS) const {
+    if (State == RHS.State)
+      return true;
+    if (RHS.State == 0)
+      return State->CurrentEntry == directory_entry();
+    if (State == 0)
+      return RHS.State->CurrentEntry == directory_entry();
     return State->CurrentEntry == RHS.State->CurrentEntry;
   }
 
@@ -920,7 +917,7 @@ public:
   }
   // No operator++ because we need error_code.
   recursive_directory_iterator &increment(error_code &ec) {
-    static const directory_iterator end_itr;
+    const directory_iterator end_itr;
 
     if (State->HasNoPushRequest)
       State->HasNoPushRequest = false;
@@ -964,10 +961,10 @@ public:
   // modifiers
   /// Goes up one level if Level > 0.
   void pop() {
-    assert(State && "Cannot pop and end itertor!");
+    assert(State && "Cannot pop an end iterator!");
     assert(State->Level > 0 && "Cannot pop an iterator with level < 1");
 
-    static const directory_iterator end_itr;
+    const directory_iterator end_itr;
     error_code ec;
     do {
       if (ec)

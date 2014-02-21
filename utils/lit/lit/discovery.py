@@ -2,9 +2,11 @@
 Test discovery functions.
 """
 
+import copy
 import os
 import sys
 
+import lit.run
 from lit.TestingConfig import TestingConfig
 from lit import LitConfig, Test
 
@@ -38,11 +40,12 @@ def getTestSuite(item, litConfig, cache):
             ts, relative = search(parent)
             return (ts, relative + (base,))
 
-        # We found a config file, load it.
+        # We found a test suite, create a new config for it and load it.
         if litConfig.debug:
             litConfig.note('loading suite config %r' % cfgpath)
 
-        cfg = TestingConfig.frompath(cfgpath, None, litConfig, mustExist = True)
+        cfg = TestingConfig.fromdefaults(litConfig)
+        cfg.load_from_path(cfgpath, litConfig)
         source_root = os.path.realpath(cfg.test_source_root or path)
         exec_root = os.path.realpath(cfg.test_exec_root or path)
         return Test.TestSuite(cfg.name, source_root, exec_root, cfg), ()
@@ -78,14 +81,21 @@ def getLocalConfig(ts, path_in_suite, litConfig, cache):
         else:
             parent = search(path_in_suite[:-1])
 
-        # Load the local configuration.
+        # Check if there is a local configuration file.
         source_path = ts.getSourcePath(path_in_suite)
         cfgpath = os.path.join(source_path, litConfig.local_config_name)
+
+        # If not, just reuse the parent config.
+        if not os.path.exists(cfgpath):
+            return parent
+
+        # Otherwise, copy the current config and load the local configuration
+        # file into it.
+        config = copy.copy(parent)
         if litConfig.debug:
             litConfig.note('loading local config %r' % cfgpath)
-        return TestingConfig.frompath(cfgpath, parent, litConfig,
-                                    mustExist = False,
-                                    config = parent.clone(cfgpath))
+        config.load_from_path(cfgpath, litConfig)
+        return config
 
     def search(path_in_suite):
         key = (ts, path_in_suite)
@@ -237,7 +247,9 @@ def load_test_suite(inputs):
                                     isWindows = (platform.system()=='Windows'),
                                     params = {})
 
-    tests = find_tests_for_inputs(litConfig, inputs)
+    # Perform test discovery.
+    run = lit.run.Run(litConfig, find_tests_for_inputs(litConfig, inputs))
 
     # Return a unittest test suite which just runs the tests in order.
-    return unittest.TestSuite([LitTestCase(test, litConfig) for test in tests])
+    return unittest.TestSuite([LitTestCase(test, run)
+                               for test in run.tests])

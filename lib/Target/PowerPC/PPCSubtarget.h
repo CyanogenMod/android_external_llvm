@@ -76,6 +76,8 @@ protected:
   bool IsPPC64;
   bool HasAltivec;
   bool HasQPX;
+  bool HasVSX;
+  bool HasFCPSGN;
   bool HasFSQRT;
   bool HasFRE, HasFRES, HasFRSQRTE, HasFRSQRTES;
   bool HasRecipPrec;
@@ -87,6 +89,8 @@ protected:
   bool HasPOPCNTD;
   bool HasLDBRX;
   bool IsBookE;
+  bool DeprecatedMFTB;
+  bool DeprecatedDST;
   bool HasLazyResolverStubs;
   bool IsJITCodeModel;
   bool IsLittleEndian;
@@ -171,6 +175,7 @@ public:
   bool isLittleEndian() const { return IsLittleEndian; }
 
   // Specific obvious features.
+  bool hasFCPSGN() const { return HasFCPSGN; }
   bool hasFSQRT() const { return HasFSQRT; }
   bool hasFRE() const { return HasFRE; }
   bool hasFRES() const { return HasFRES; }
@@ -188,6 +193,8 @@ public:
   bool hasPOPCNTD() const { return HasPOPCNTD; }
   bool hasLDBRX() const { return HasLDBRX; }
   bool isBookE() const { return IsBookE; }
+  bool isDeprecatedMFTB() const { return DeprecatedMFTB; }
+  bool isDeprecatedDST() const { return DeprecatedDST; }
 
   const Triple &getTargetTriple() const { return TargetTriple; }
 
@@ -205,6 +212,14 @@ public:
   bool enablePostRAScheduler(CodeGenOpt::Level OptLevel,
                              TargetSubtargetInfo::AntiDepBreakMode& Mode,
                              RegClassVector& CriticalPathRCs) const;
+
+  // Scheduling customization.
+  bool enableMachineScheduler() const;
+  void overrideSchedPolicy(MachineSchedPolicy &Policy,
+                           MachineInstr *begin,
+                           MachineInstr *end,
+                           unsigned NumRegionInstrs) const;
+  bool useAA() const;
 };
 } // End llvm namespace
 
