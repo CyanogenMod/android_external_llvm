@@ -11,7 +11,10 @@ subdirs := \
   lib/AsmParser \
   lib/Bitcode/Reader \
   lib/Bitcode/Writer \
+  lib/ExecutionEngine \
+  lib/ExecutionEngine/RuntimeDyld \
   lib/ExecutionEngine/JIT \
+  lib/ExecutionEngine/MCJIT \
   lib/CodeGen \
   lib/CodeGen/AsmPrinter \
   lib/CodeGen/SelectionDAG \
@@ -19,6 +22,7 @@ subdirs := \
   lib/IRReader \
   lib/Linker \
   lib/MC \
+  lib/MC/MCDisassembler \
   lib/MC/MCParser \
   lib/Object \
   lib/Option \
@@ -70,7 +74,7 @@ subdirs += tools/llvm-dis
 subdirs += tools/llvm-link
 #subdirs += tools/opt
 
-
 include $(LOCAL_PATH)/llvm.mk
 include $(LOCAL_PATH)/shared_llvm.mk
+
 include $(addprefix $(LOCAL_PATH)/,$(addsuffix /Android.mk, $(subdirs)))
