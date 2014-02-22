@@ -32,7 +32,6 @@ mips_codegen_SRC_FILES := \
   MipsMachineFunction.cpp \
   MipsMCInstLower.cpp \
   MipsModuleISelDAGToDAG.cpp \
-  MipsOptimizeMathLibCalls.cpp \
   MipsOs16.cpp \
   MipsRegisterInfo.cpp \
   MipsSEFrameLowering.cpp \

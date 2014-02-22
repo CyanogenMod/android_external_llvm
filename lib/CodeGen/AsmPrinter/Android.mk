@@ -13,6 +13,7 @@ LOCAL_SRC_FILES :=	\
 	AsmPrinterInlineAsm.cpp	\
 	ARMException.cpp	\
 	DIE.cpp	\
+	DIEHash.cpp \
 	DwarfAccelTable.cpp \
 	DwarfCFIException.cpp \
 	DwarfCompileUnit.cpp \
@@ -40,6 +41,7 @@ LOCAL_SRC_FILES :=	\
 	AsmPrinterInlineAsm.cpp \
 	ARMException.cpp        \
 	DIE.cpp \
+	DIEHash.cpp \
 	DwarfAccelTable.cpp \
 	DwarfCFIException.cpp \
 	DwarfCompileUnit.cpp \

@@ -4,6 +4,7 @@ object_SRC_FILES := \
   Archive.cpp \
   Binary.cpp \
   COFFObjectFile.cpp \
+  ELF.cpp \
   ELFObjectFile.cpp \
   Error.cpp \
   MachOObjectFile.cpp \
