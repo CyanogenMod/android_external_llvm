@@ -11,13 +11,12 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/Object/ELF.h"
+#include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Support/MathExtras.h"
 
 #include <ctype.h>
 
 namespace llvm {
-
 using namespace object;
 
 // Creates an in-memory object-file by default: createELFObjectFile(Buffer)

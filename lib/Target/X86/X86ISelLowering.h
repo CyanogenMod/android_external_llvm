@@ -53,7 +53,7 @@ namespace llvm {
       /// to X86::XORPS or X86::XORPD.
       FXOR,
 
-      /// FAND - Bitwise logical ANDNOT of floating point values. This
+      /// FANDN - Bitwise logical ANDNOT of floating point values. This
       /// corresponds to X86::ANDNPS or X86::ANDNPD.
       FANDN,
 
@@ -254,6 +254,12 @@ namespace llvm {
       // VSEXT - Vector integer signed-extend.
       VSEXT,
 
+      // VTRUNC - Vector integer truncate.
+      VTRUNC,
+
+      // VTRUNC - Vector integer truncate with mask.
+      VTRUNCM,
+
       // VFPEXT - Vector FP extend.
       VFPEXT,
 
@@ -274,6 +280,13 @@ namespace llvm {
 
       // PCMP* - Vector integer comparisons.
       PCMPEQ, PCMPGT,
+      // PCMP*M - Vector integer comparisons, the result is in a mask vector.
+      PCMPEQM, PCMPGTM,
+
+      /// CMPM, CMPMU - Vector comparison generating mask bits for fp and
+      /// integer signed and unsigned data types.
+      CMPM,
+      CMPMU,
 
       // ADD, SUB, SMUL, etc. - Arithmetic operations with FLAGS results.
       ADD, SUB, ADC, SBB, SMUL,
@@ -282,17 +295,22 @@ namespace llvm {
       BLSI,   // BLSI - Extract lowest set isolated bit
       BLSMSK, // BLSMSK - Get mask up to lowest set bit
       BLSR,   // BLSR - Reset lowest set bit
+      BZHI,   // BZHI - Zero high bits
+      BEXTR,  // BEXTR - Bit field extract
 
       UMUL, // LOW, HI, FLAGS = umul LHS, RHS
 
       // MUL_IMM - X86 specific multiply by immediate.
       MUL_IMM,
 
-      // PTEST - Vector bitwise comparisons
+      // PTEST - Vector bitwise comparisons.
       PTEST,
 
-      // TESTP - Vector packed fp sign bitwise comparisons
+      // TESTP - Vector packed fp sign bitwise comparisons.
       TESTP,
+
+      // TESTM - Vector "test" in AVX-512, the result is in a mask vector.
+      TESTM,
 
       // OR/AND test for masks
       KORTEST,
@@ -318,11 +336,13 @@ namespace llvm {
       UNPCKH,
       VPERMILP,
       VPERMV,
+      VPERMV3,
       VPERMI,
       VPERM2X128,
       VBROADCAST,
       // masked broadcast
       VBROADCASTM,
+      VINSERT,
 
       // PMULUDQ - Vector multiply packed unsigned doubleword integers
       PMULUDQ,
@@ -755,6 +775,8 @@ namespace llvm {
     SDValue BuildFILD(SDValue Op, EVT SrcVT, SDValue Chain, SDValue StackSlot,
                       SelectionDAG &DAG) const;
 
+    virtual bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const LLVM_OVERRIDE;
+
     /// \brief Reset the operation actions based on target options.
     virtual void resetOperationActions();
 
@@ -831,8 +853,6 @@ namespace llvm {
                                                bool isSigned,
                                                bool isReplace) const;
 
-    SDValue LowerAsSplatVectorLoad(SDValue SrcOp, EVT VT, SDLoc dl,
-                                   SelectionDAG &DAG) const;
     SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerBUILD_VECTORvXi1(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerVECTOR_SHUFFLE(SDValue Op, SelectionDAG &DAG) const;
@@ -846,18 +866,12 @@ namespace llvm {
     SDValue LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerExternalSymbol(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerShiftParts(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerBITCAST(SDValue op, SelectionDAG &DAG) const;
     SDValue LowerSINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP_i64(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerUINT_TO_FP_i32(SDValue Op, SelectionDAG &DAG) const;
     SDValue lowerUINT_TO_FP_vec(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerTRUNCATE(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerZERO_EXTEND(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerZERO_EXTEND_AVX512(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerSIGN_EXTEND(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerSIGN_EXTEND_AVX512(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerANY_EXTEND(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_SINT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFP_TO_UINT(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFABS(SDValue Op, SelectionDAG &DAG) const;
@@ -881,19 +895,7 @@ namespace llvm {
     SDValue lowerEH_SJLJ_LONGJMP(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerINIT_TRAMPOLINE(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerFLT_ROUNDS_(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerShift(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerSDIV(SDValue Op, SelectionDAG &DAG) const;
     SDValue LowerSIGN_EXTEND_INREG(SDValue Op, SelectionDAG &DAG) const;
-    SDValue LowerFSINCOS(SDValue Op, SelectionDAG &DAG) const;
-
-    // Utility functions to help LowerVECTOR_SHUFFLE & LowerBUILD_VECTOR
-    SDValue LowerVectorBroadcast(SDValue Op, SelectionDAG &DAG) const;
-    SDValue NormalizeVectorShuffle(SDValue Op, SelectionDAG &DAG) const;
-    SDValue buildFromShuffleMostly(SDValue Op, SelectionDAG &DAG) const;
-
-    SDValue LowerVectorAllZeroTest(SDValue Op, SelectionDAG &DAG) const;
-
-    SDValue LowerVectorIntExtend(SDValue Op, SelectionDAG &DAG) const;
 
     virtual SDValue
       LowerFormalArguments(SDValue Chain,
@@ -924,6 +926,8 @@ namespace llvm {
                    bool isVarArg,
                    const SmallVectorImpl<ISD::OutputArg> &Outs,
                    LLVMContext &Context) const;
+
+    virtual const uint16_t *getScratchRegisters(CallingConv::ID CC) const;
 
     /// Utility function to emit atomic-load-arith operations (and, or, xor,
     /// nand, max, min, umax, umin). It takes the corresponding instruction to

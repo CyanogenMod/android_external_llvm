@@ -14,6 +14,20 @@ Introduction
 This document describes extensions to tools and formats LLVM seeks compatibility
 with.
 
+General Assembly Syntax
+===========================
+
+C99-style Hexadecimal Floating-point Constants
+----------------------------------------------
+
+LLVM's assemblers allow floating-point constants to be written in C99's
+hexadecimal format instead of decimal if desired.
+
+.. code-block:: gas
+
+  .section .data
+  .float 0x1c2.2ap3
+
 Machine-specific Assembly Syntax
 ================================
 
@@ -91,3 +105,41 @@ Supported COMDAT types:
   .section .xdata$foo
   .linkonce associative .text$foo
     ...
+
+``.section`` Directive
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+MC supports passing the information in ``.linkonce`` at the end of
+``.section``. For example,  these two codes are equivalent
+
+.. code-block:: gas
+
+  .section secName, "dr", discard, "Symbol1"
+  .globl Symbol1
+  Symbol1:
+  .long 1
+
+.. code-block:: gas
+
+  .section secName, "dr"
+  .linkonce discard
+  .globl Symbol1
+  Symbol1:
+  .long 1
+
+Note that in the combined form the COMDAT symbol is explict. This
+extension exits to support multiple sections with the same name in
+different comdats:
+
+
+.. code-block:: gas
+
+  .section secName, "dr", discard, "Symbol1"
+  .globl Symbol1
+  Symbol1:
+  .long 1
+
+  .section secName, "dr", discard, "Symbol2"
+  .globl Symbol2
+  Symbol2:
+  .long 1
