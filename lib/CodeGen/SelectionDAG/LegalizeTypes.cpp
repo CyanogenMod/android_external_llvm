@@ -958,20 +958,6 @@ SDValue DAGTypeLegalizer::DisintegrateMERGE_VALUES(SDNode *N, unsigned ResNo) {
   return SDValue(N->getOperand(ResNo));
 }
 
-/// GetSplitDestVTs - Compute the VTs needed for the low/hi parts of a type
-/// which is split into two not necessarily identical pieces.
-void DAGTypeLegalizer::GetSplitDestVTs(EVT InVT, EVT &LoVT, EVT &HiVT) {
-  // Currently all types are split in half.
-  if (!InVT.isVector()) {
-    LoVT = HiVT = TLI.getTypeToTransformTo(*DAG.getContext(), InVT);
-  } else {
-    unsigned NumElements = InVT.getVectorNumElements();
-    assert(!(NumElements & 1) && "Splitting vector, but not in half!");
-    LoVT = HiVT = EVT::getVectorVT(*DAG.getContext(),
-                                   InVT.getVectorElementType(), NumElements/2);
-  }
-}
-
 /// GetPairElements - Use ISD::EXTRACT_ELEMENT nodes to extract the low and
 /// high parts of the given value.
 void DAGTypeLegalizer::GetPairElements(SDValue Pair,
@@ -988,10 +974,7 @@ SDValue DAGTypeLegalizer::GetVectorElementPointer(SDValue VecPtr, EVT EltVT,
                                                   SDValue Index) {
   SDLoc dl(Index);
   // Make sure the index type is big enough to compute in.
-  if (Index.getValueType().bitsGT(TLI.getPointerTy()))
-    Index = DAG.getNode(ISD::TRUNCATE, dl, TLI.getPointerTy(), Index);
-  else
-    Index = DAG.getNode(ISD::ZERO_EXTEND, dl, TLI.getPointerTy(), Index);
+  Index = DAG.getZExtOrTrunc(Index, dl, TLI.getPointerTy());
 
   // Calculate the element offset and add it to the pointer.
   unsigned EltSize = EltVT.getSizeInBits() / 8; // FIXME: should be ABI size.
@@ -1024,20 +1007,23 @@ SDValue DAGTypeLegalizer::LibCallify(RTLIB::Libcall LC, SDNode *N,
   unsigned NumOps = N->getNumOperands();
   SDLoc dl(N);
   if (NumOps == 0) {
-    return TLI.makeLibCall(DAG, LC, N->getValueType(0), 0, 0, isSigned, dl);
+    return TLI.makeLibCall(DAG, LC, N->getValueType(0), 0, 0, isSigned,
+                           dl).first;
   } else if (NumOps == 1) {
     SDValue Op = N->getOperand(0);
-    return TLI.makeLibCall(DAG, LC, N->getValueType(0), &Op, 1, isSigned, dl);
+    return TLI.makeLibCall(DAG, LC, N->getValueType(0), &Op, 1, isSigned,
+                           dl).first;
   } else if (NumOps == 2) {
     SDValue Ops[2] = { N->getOperand(0), N->getOperand(1) };
-    return TLI.makeLibCall(DAG, LC, N->getValueType(0), Ops, 2, isSigned, dl);
+    return TLI.makeLibCall(DAG, LC, N->getValueType(0), Ops, 2, isSigned,
+                           dl).first;
   }
   SmallVector<SDValue, 8> Ops(NumOps);
   for (unsigned i = 0; i < NumOps; ++i)
     Ops[i] = N->getOperand(i);
 
   return TLI.makeLibCall(DAG, LC, N->getValueType(0),
-                         &Ops[0], NumOps, isSigned, dl);
+                         &Ops[0], NumOps, isSigned, dl).first;
 }
 
 // ExpandChainLibCall - Expand a node into a call to a libcall. Similar to

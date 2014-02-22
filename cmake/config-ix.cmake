@@ -74,12 +74,6 @@ check_symbol_exists(FE_INEXACT "fenv.h" HAVE_DECL_FE_INEXACT)
 check_include_file(mach/mach.h HAVE_MACH_MACH_H)
 check_include_file(mach-o/dyld.h HAVE_MACH_O_DYLD_H)
 
-check_include_file(curses.h HAVE_CURSES_H)
-check_include_file(ncurses.h HAVE_NCURSES_H)
-check_include_file(ncursesw.h HAVE_NCURSESW_H)
-check_include_file(ncurses/curses.h HAVE_NCURSES_CURSES_H)
-check_include_file(ncursesw/curses.h HAVE_NCURSESW_CURSES_H)
-
 # library checks
 if( NOT PURE_WINDOWS )
   check_library_exists(pthread pthread_create "" HAVE_LIBPTHREAD)
@@ -103,18 +97,19 @@ if( NOT PURE_WINDOWS )
   else()
     set(HAVE_LIBZ 0)
   endif()
-  if(LLVM_ENABLE_CURSES)
-    check_library_exists(curses has_colors "" HAVE_CURSES)
-    if(NOT HAVE_CURSES)
-      check_library_exists(ncurses has_colors "" HAVE_NCURSES)
-      set(HAVE_CURSES ${HAVE_NCURSES})
-      if(NOT HAVE_CURSES)
-        check_library_exists(ncursesw has_colors "" HAVE_NCURSESW)
-        set(HAVE_CURSES ${HAVE_NCURSESW})
+  if(LLVM_ENABLE_TERMINFO)
+    set(HAVE_TERMINFO 0)
+    foreach(library tinfo terminfo curses ncurses ncursesw)
+      string(TOUPPER ${library} library_suffix)
+      check_library_exists(${library} setupterm "" HAVE_TERMINFO_${library_suffix})
+      if(HAVE_TERMINFO_${library_suffix})
+        set(HAVE_TERMINFO 1)
+        set(TERMINFO_LIBS "${library}")
+        break()
       endif()
-    endif()
+    endforeach()
   else()
-    set(HAVE_CURSES 0)
+    set(HAVE_TERMINFO 0)
   endif()
 endif()
 
@@ -165,6 +160,7 @@ check_symbol_exists(gettimeofday sys/time.h HAVE_GETTIMEOFDAY)
 check_symbol_exists(getrlimit "sys/types.h;sys/time.h;sys/resource.h" HAVE_GETRLIMIT)
 check_symbol_exists(posix_spawn spawn.h HAVE_POSIX_SPAWN)
 check_symbol_exists(pread unistd.h HAVE_PREAD)
+check_symbol_exists(realpath stdlib.h HAVE_REALPATH)
 check_symbol_exists(sbrk unistd.h HAVE_SBRK)
 check_symbol_exists(srand48 stdlib.h HAVE_RAND48_SRAND48)
 if( HAVE_RAND48_SRAND48 )
@@ -304,6 +300,20 @@ endif()
 find_package(LibXml2)
 if (LIBXML2_FOUND)
   set(CLANG_HAVE_LIBXML 1)
+  # When cross-compiling, liblzma is not detected as a dependency for libxml2,
+  # which makes linking c-index-test fail. But for native builds, all libraries
+  # are installed and checked by CMake before Makefiles are generated and everything
+  # works according to the plan. However, if a -llzma is added to native builds,
+  # an additional requirement on the static liblzma.a is required, but will not
+  # be checked by CMake, breaking native compilation.
+  # Since this is only pertinent to cross-compilations, and there's no way CMake
+  # can check for every foreign library on every OS, we add the dep and warn the dev.
+  if ( CMAKE_CROSSCOMPILING )
+    if (NOT PC_LIBXML_VERSION VERSION_LESS "2.8.0")
+      message(STATUS "Adding LZMA as a dep to XML2 for cross-compilation, make sure liblzma.a is available.")
+      set(LIBXML2_LIBRARIES ${LIBXML2_LIBRARIES} "-llzma")
+    endif ()
+  endif ()
 endif ()
 
 include(CheckCXXCompilerFlag)
@@ -405,6 +415,7 @@ endif ()
 if( MINGW )
   set(HAVE_LIBIMAGEHLP 1)
   set(HAVE_LIBPSAPI 1)
+  set(HAVE_LIBSHELL32 1)
   # TODO: Check existence of libraries.
   #   include(CheckLibraryExists)
   #   CHECK_LIBRARY_EXISTS(imagehlp ??? . HAVE_LIBIMAGEHLP)
@@ -465,3 +476,25 @@ if (LLVM_ENABLE_ZLIB )
 endif()
 
 set(LLVM_PREFIX ${CMAKE_INSTALL_PREFIX})
+
+if (LLVM_ENABLE_DOXYGEN)
+  message(STATUS "Doxygen enabled.")
+  find_package(Doxygen)
+
+  if (DOXYGEN_FOUND)
+    # If we find doxygen and we want to enable doxygen by default create a
+    # global aggregate doxygen target for generating llvm and any/all
+    # subprojects doxygen documentation.
+    if (LLVM_BUILD_DOCS)
+      add_custom_target(doxygen ALL)
+    endif()
+
+    option(LLVM_DOXYGEN_EXTERNAL_SEARCH "Enable doxygen external search." OFF)
+    if (LLVM_DOXYGEN_EXTERNAL_SEARCH)
+      set(LLVM_DOXYGEN_SEARCHENGINE_URL "" CACHE STRING "URL to use for external searhc.")
+      set(LLVM_DOXYGEN_SEARCH_MAPPINGS "" CACHE STRING "Doxygen Search Mappings")
+    endif()
+  endif()
+else()
+  message(STATUS "Doxygen disabled.")
+endif()

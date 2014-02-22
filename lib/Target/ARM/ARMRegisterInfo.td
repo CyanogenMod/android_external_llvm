@@ -172,6 +172,7 @@ def ITSTATE    : ARMReg<4, "itstate">;
 
 // Special Registers - only available in privileged mode.
 def FPSID   : ARMReg<0,  "fpsid">;
+def MVFR2   : ARMReg<5,  "mvfr2">;
 def MVFR1   : ARMReg<6,  "mvfr1">;
 def MVFR0   : ARMReg<7,  "mvfr0">;
 def FPEXC   : ARMReg<8,  "fpexc">;
@@ -251,7 +252,7 @@ def hGPR : RegisterClass<"ARM", [i32], 32, (sub GPR, tGPR)>;
 // to the saved value before the tail call, which would clobber a call address.
 // Note, getMinimalPhysRegClass(R0) returns tGPR because of the names of
 // this class and the preceding one(!)  This is what we want.
-def tcGPR : RegisterClass<"ARM", [i32], 32, (add R0, R1, R2, R3, R9, R12)> {
+def tcGPR : RegisterClass<"ARM", [i32], 32, (add R0, R1, R2, R3, R12)> {
   let AltOrders = [(and tcGPR, tGPR)];
   let AltOrderSelect = [{
       return MF.getTarget().getSubtarget<ARMSubtarget>().isThumb1Only();

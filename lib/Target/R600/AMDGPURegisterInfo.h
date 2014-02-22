@@ -50,6 +50,14 @@ struct AMDGPURegisterInfo : public AMDGPUGenRegisterInfo {
     assert(!"Unimplemented"); return NULL;
   }
 
+  virtual unsigned getHWRegIndex(unsigned Reg) const {
+    assert(!"Unimplemented"); return 0;
+  }
+
+  /// \returns the sub reg enum value for the given \p Channel
+  /// (e.g. getSubRegFromChannel(0) -> AMDGPU::sub0)
+  unsigned getSubRegFromChannel(unsigned Channel) const;
+
   const uint16_t* getCalleeSavedRegs(const MachineFunction *MF) const;
   void eliminateFrameIndex(MachineBasicBlock::iterator MI, int SPAdj,
                            unsigned FIOperandNum,

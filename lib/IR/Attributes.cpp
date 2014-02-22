@@ -196,6 +196,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "noreturn";
   if (hasAttribute(Attribute::NoUnwind))
     return "nounwind";
+  if (hasAttribute(Attribute::OptimizeNone))
+    return "optnone";
   if (hasAttribute(Attribute::OptimizeForSize))
     return "optsize";
   if (hasAttribute(Attribute::ReadNone))
@@ -284,7 +286,11 @@ bool Attribute::operator<(Attribute A) const {
 // AttributeImpl Definition
 //===----------------------------------------------------------------------===//
 
+// Pin the vtabels to this file.
 AttributeImpl::~AttributeImpl() {}
+void EnumAttributeImpl::anchor() {}
+void AlignAttributeImpl::anchor() {}
+void StringAttributeImpl::anchor() {}
 
 bool AttributeImpl::hasAttribute(Attribute::AttrKind A) const {
   if (isStringAttribute()) return false;
@@ -381,6 +387,7 @@ uint64_t AttributeImpl::getAttrMask(Attribute::AttrKind Val) {
   case Attribute::Returned:        return 1ULL << 39;
   case Attribute::Cold:            return 1ULL << 40;
   case Attribute::Builtin:         return 1ULL << 41;
+  case Attribute::OptimizeNone:    return 1ULL << 42;
   }
   llvm_unreachable("Unsupported attribute type");
 }

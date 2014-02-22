@@ -13,7 +13,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "yaml2obj.h"
-#include "llvm/Object/ELF.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/Object/ELFObjectFile.h"
 #include "llvm/Object/ELFYAML.h"
 #include "llvm/Support/ELF.h"
 #include "llvm/Support/MemoryBuffer.h"
@@ -119,13 +120,13 @@ public:
 } // end anonymous namespace
 
 template <class T>
-static size_t vectorDataSize(const std::vector<T> &Vec) {
-  return Vec.size() * sizeof(T);
+static size_t arrayDataSize(ArrayRef<T> A) {
+  return A.size() * sizeof(T);
 }
 
 template <class T>
-static void writeVectorData(raw_ostream &OS, const std::vector<T> &Vec) {
-  OS.write((const char *)Vec.data(), vectorDataSize(Vec));
+static void writeArrayData(raw_ostream &OS, ArrayRef<T> A) {
+  OS.write((const char *)A.data(), arrayDataSize(A));
 }
 
 template <class T>
@@ -157,7 +158,7 @@ class ELFState {
   unsigned DotStrtabSecNo;
   /// \brief The accumulated contents of all sections so far.
   ContiguousBlobAccumulator &SectionContentAccum;
-  typedef typename object::ELFObjectFile<ELFT>::Elf_Ehdr Elf_Ehdr;
+  typedef typename object::ELFFile<ELFT>::Elf_Ehdr Elf_Ehdr;
   /// \brief The ELF file header.
   Elf_Ehdr &Header;
 
@@ -185,9 +186,9 @@ public:
 template <class ELFT>
 static void
 addSymbols(const std::vector<ELFYAML::Symbol> &Symbols, ELFState<ELFT> &State,
-           std::vector<typename object::ELFObjectFile<ELFT>::Elf_Sym> &Syms,
+           std::vector<typename object::ELFFile<ELFT>::Elf_Sym> &Syms,
            unsigned SymbolBinding) {
-  typedef typename object::ELFObjectFile<ELFT>::Elf_Sym Elf_Sym;
+  typedef typename object::ELFFile<ELFT>::Elf_Sym Elf_Sym;
   for (unsigned i = 0, e = Symbols.size(); i != e; ++i) {
     const ELFYAML::Symbol &Sym = Symbols[i];
     Elf_Sym Symbol;
@@ -211,11 +212,12 @@ addSymbols(const std::vector<ELFYAML::Symbol> &Symbols, ELFState<ELFT> &State,
 }
 
 template <class ELFT>
-static void handleSymtabSectionHeader(
-    const ELFYAML::LocalGlobalWeakSymbols &Symbols, ELFState<ELFT> &State,
-    typename object::ELFObjectFile<ELFT>::Elf_Shdr &SHeader) {
+static void
+handleSymtabSectionHeader(const ELFYAML::LocalGlobalWeakSymbols &Symbols,
+                          ELFState<ELFT> &State,
+                          typename object::ELFFile<ELFT>::Elf_Shdr &SHeader) {
 
-  typedef typename object::ELFObjectFile<ELFT>::Elf_Sym Elf_Sym;
+  typedef typename object::ELFFile<ELFT>::Elf_Sym Elf_Sym;
   SHeader.sh_type = ELF::SHT_SYMTAB;
   SHeader.sh_link = State.getDotStrTabSecNo();
   // One greater than symbol table index of the last local symbol.
@@ -234,15 +236,16 @@ static void handleSymtabSectionHeader(
   addSymbols(Symbols.Weak, State, Syms, ELF::STB_WEAK);
 
   ContiguousBlobAccumulator &CBA = State.getSectionContentAccum();
-  writeVectorData(CBA.getOSAndAlignedOffset(SHeader.sh_offset), Syms);
-  SHeader.sh_size = vectorDataSize(Syms);
+  writeArrayData(CBA.getOSAndAlignedOffset(SHeader.sh_offset),
+                 makeArrayRef(Syms));
+  SHeader.sh_size = arrayDataSize(makeArrayRef(Syms));
 }
 
 template <class ELFT>
 static int writeELF(raw_ostream &OS, const ELFYAML::Object &Doc) {
   using namespace llvm::ELF;
-  typedef typename object::ELFObjectFile<ELFT>::Elf_Ehdr Elf_Ehdr;
-  typedef typename object::ELFObjectFile<ELFT>::Elf_Shdr Elf_Shdr;
+  typedef typename object::ELFFile<ELFT>::Elf_Ehdr Elf_Ehdr;
+  typedef typename object::ELFFile<ELFT>::Elf_Shdr Elf_Shdr;
 
   const ELFYAML::FileHeader &Hdr = Doc.Header;
 
@@ -358,7 +361,7 @@ static int writeELF(raw_ostream &OS, const ELFYAML::Object &Doc) {
   SHeaders.push_back(SHStrTabSHeader);
 
   OS.write((const char *)&Header, sizeof(Header));
-  writeVectorData(OS, SHeaders);
+  writeArrayData(OS, makeArrayRef(SHeaders));
   CBA.writeBlobToStream(OS);
   return 0;
 }

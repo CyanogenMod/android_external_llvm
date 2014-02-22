@@ -142,6 +142,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::FCEIL:                      return "fceil";
   case ISD::FRINT:                      return "frint";
   case ISD::FNEARBYINT:                 return "fnearbyint";
+  case ISD::FROUND:                     return "fround";
   case ISD::FEXP:                       return "fexp";
   case ISD::FEXP2:                      return "fexp2";
   case ISD::FLOG:                       return "flog";
@@ -223,6 +224,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::FP_TO_SINT:                 return "fp_to_sint";
   case ISD::FP_TO_UINT:                 return "fp_to_uint";
   case ISD::BITCAST:                    return "bitcast";
+  case ISD::ADDRSPACECAST:              return "addrspacecast";
   case ISD::FP16_TO_FP32:               return "fp16_to_fp32";
   case ISD::FP32_TO_FP16:               return "fp32_to_fp16";
 
@@ -484,6 +486,13 @@ void SDNode::print_details(raw_ostream &OS, const SelectionDAG *G) const {
       OS << " " << offset;
     if (unsigned int TF = BA->getTargetFlags())
       OS << " [TF=" << TF << ']';
+  } else if (const AddrSpaceCastSDNode *ASC =
+               dyn_cast<AddrSpaceCastSDNode>(this)) {
+    OS << '['
+       << ASC->getSrcAddressSpace()
+       << " -> "
+       << ASC->getDestAddressSpace()
+       << ']';
   }
 
   if (unsigned Order = getIROrder())
