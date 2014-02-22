@@ -7,6 +7,7 @@ mc_SRC_FILES := \
   MCAsmInfo.cpp \
   MCAsmInfoCOFF.cpp \
   MCAsmInfoDarwin.cpp \
+  MCAsmInfoELF.cpp \
   MCAsmStreamer.cpp \
   MCAssembler.cpp \
   MCCodeEmitter.cpp \

@@ -36,6 +36,7 @@ codegen_SRC_FILES := \
   LiveRangeCalc.cpp \
   LiveRangeEdit.cpp \
   LiveRegMatrix.cpp \
+  LiveRegUnits.cpp \
   LiveStackAnalysis.cpp \
   LiveVariables.cpp \
   LLVMTargetMachine.cpp \
@@ -90,16 +91,15 @@ codegen_SRC_FILES := \
   ScheduleDAGPrinter.cpp \
   ScoreboardHazardRecognizer.cpp \
   ShadowStackGC.cpp \
-  ShrinkWrapping.cpp \
   SjLjEHPrepare.cpp \
   SlotIndexes.cpp \
   Spiller.cpp \
   SpillPlacement.cpp \
   SplitKit.cpp \
   StackColoring.cpp \
+  StackMaps.cpp \
   StackProtector.cpp \
   StackSlotColoring.cpp \
-  StrongPHIElimination.cpp \
   TailDuplication.cpp \
   TargetFrameLoweringImpl.cpp \
   TargetInstrInfo.cpp \

@@ -10,6 +10,7 @@ transforms_utils_SRC_FILES := \
   CmpInstAnalysis.cpp \
   CodeExtractor.cpp \
   DemoteRegToStack.cpp \
+  GlobalStatus.cpp \
   InlineFunction.cpp \
   InstructionNamer.cpp \
   LCSSA.cpp \

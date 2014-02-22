@@ -227,6 +227,12 @@ def ProcR5      : SubtargetFeature<"r5", "ARMProcFamily", "CortexR5",
                                     FeatureAvoidPartialCPSR,
                                     FeatureT2XtPk]>;
 
+// RenderScript-specific support for 64-bit long types on all targets
+def FeatureLong64 : SubtargetFeature<"long64", "UseLong64",
+                                        "true",
+                                        "long type is forced to be 64-bit">;
+
+
 class ProcNoItin<string Name, list<SubtargetFeature> Features>
  : Processor<Name, NoItineraries, Features>;
 
