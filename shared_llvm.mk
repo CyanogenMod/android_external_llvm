@@ -56,6 +56,13 @@ llvm_post_static_libraries := \
   libLLVMSupport \
   libLLVMVectorize
 
+llvm_host_static_libraries := \
+  libLLVMExecutionEngine \
+  libLLVMMCDisassembler \
+  libLLVMRuntimeDyld \
+  libLLVMJIT \
+  libLLVMMCJIT
+
 ifeq (true,$(FORCE_BUILD_LLVM_COMPONENTS))
 # HOST LLVM shared library build
 include $(CLEAR_VARS)
@@ -71,6 +78,7 @@ LOCAL_WHOLE_STATIC_LIBRARIES := \
   $(llvm_arm_static_libraries) \
   $(llvm_x86_static_libraries) \
   $(llvm_mips_static_libraries) \
+  $(llvm_host_static_libraries) \
   $(llvm_post_static_libraries)
 
 ifeq ($(HOST_OS),windows)
