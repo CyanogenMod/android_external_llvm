@@ -48,6 +48,16 @@ subdirs += \
   lib/Target/ARM/MCTargetDesc \
   lib/Target/ARM/TargetInfo
 
+# ARM64 Code Generation Libraries
+subdirs += \
+  lib/Target/AArch64  \
+  lib/Target/AArch64/AsmParser \
+  lib/Target/AArch64/InstPrinter \
+  lib/Target/AArch64/Disassembler \
+  lib/Target/AArch64/MCTargetDesc \
+  lib/Target/AArch64/TargetInfo \
+  lib/Target/AArch64/Utils
+
 # MIPS Code Generation Libraries
 subdirs += \
   lib/Target/Mips \
