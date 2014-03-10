@@ -194,7 +194,8 @@ namespace bitc {
     CAST_FPEXT    =  8,
     CAST_PTRTOINT =  9,
     CAST_INTTOPTR = 10,
-    CAST_BITCAST  = 11
+    CAST_BITCAST  = 11,
+    CAST_ADDRSPACECAST = 12
   };
 
   /// BinaryOpcodes - These are values used in the bitcode files to encode which
@@ -368,7 +369,8 @@ namespace bitc {
     ATTR_KIND_UW_TABLE = 33,
     ATTR_KIND_Z_EXT = 34,
     ATTR_KIND_BUILTIN = 35,
-    ATTR_KIND_COLD = 36
+    ATTR_KIND_COLD = 36,
+    ATTR_KIND_OPTIMIZE_NONE = 37
   };
 
 } // End bitc namespace

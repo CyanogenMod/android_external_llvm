@@ -1,5 +1,5 @@
 ; RUN: llc < %s -mtriple=armv7-apple-ios | FileCheck %s
-; RUN: llc < %s -mtriple=thumbv7-none-linux-gnueabihf | FileCheck %s --check-prefix=CHECK-THUMB
+; RUN: llc < %s -mtriple=thumbv7-none-linux-gnueabihf -verify-machineinstrs | FileCheck %s --check-prefix=CHECK-THUMB
 
 define i64 @test1(i64* %ptr, i64 %val) {
 ; CHECK-LABEL: test1:
@@ -175,28 +175,14 @@ define i64 @test7(i64* %ptr, i64 %val1, i64 %val2) {
   ret i64 %r
 }
 
-; Compiles down to cmpxchg
-; FIXME: Should compile to a single ldrexd
+; Compiles down to a single ldrexd
 define i64 @test8(i64* %ptr) {
 ; CHECK-LABEL: test8:
 ; CHECK: ldrexd [[REG1:(r[0-9]?[02468])]], [[REG2:(r[0-9]?[13579])]]
-; CHECK: cmp [[REG1]]
-; CHECK: cmpeq [[REG2]]
-; CHECK: bne
-; CHECK: strexd {{[a-z0-9]+}}, {{r[0-9]?[02468]}}, {{r[0-9]?[13579]}}
-; CHECK: cmp
-; CHECK: bne
 ; CHECK: dmb {{ish$}}
 
 ; CHECK-THUMB-LABEL: test8:
 ; CHECK-THUMB: ldrexd [[REG1:[a-z0-9]+]], [[REG2:[a-z0-9]+]]
-; CHECK-THUMB: cmp [[REG1]]
-; CHECK-THUMB: it eq
-; CHECK-THUMB: cmpeq [[REG2]]
-; CHECK-THUMB: bne
-; CHECK-THUMB: strexd {{[a-z0-9]+}}, {{[a-z0-9]+}}, {{[a-z0-9]+}}
-; CHECK-THUMB: cmp
-; CHECK-THUMB: bne
 ; CHECK-THUMB: dmb {{ish$}}
 
   %r = load atomic i64* %ptr seq_cst, align 8
