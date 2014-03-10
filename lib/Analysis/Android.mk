@@ -16,6 +16,7 @@ analysis_SRC_FILES := \
   CodeMetrics.cpp \
   ConstantFolding.cpp \
   CostModel.cpp \
+  Delinearization.cpp \
   DependenceAnalysis.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
@@ -37,17 +38,7 @@ analysis_SRC_FILES := \
   ModuleDebugInfoPrinter.cpp \
   NoAliasAnalysis.cpp \
   PHITransAddr.cpp \
-  PathNumbering.cpp \
-  PathProfileInfo.cpp \
-  PathProfileVerifier.cpp \
   PostDominators.cpp \
-  ProfileDataLoader.cpp \
-  ProfileDataLoaderPass.cpp \
-  ProfileEstimatorPass.cpp \
-  ProfileInfo.cpp \
-  ProfileInfoLoader.cpp \
-  ProfileInfoLoaderPass.cpp \
-  ProfileVerifierPass.cpp \
   PtrUseVisitor.cpp \
   RegionInfo.cpp \
   RegionPass.cpp \
