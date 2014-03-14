@@ -28,7 +28,7 @@
   LLVM_DISASSEMBLER(ARM)
 #elif defined(__mips__)
   LLVM_DISASSEMBLER(Mips)
-#elif defined(__i386__)
+#elif defined(__i386__) || defined(__x86_64__)
   LLVM_DISASSEMBLER(X86)
 #elif defined(__aarch64__)
   LLVM_DISASSEMBLER(AArch64)
