@@ -5734,16 +5734,16 @@ defm : Neon_ScalarXIndexedElem_MLAL_Patterns<int_arm_neon_vqsubs,
 
 // Scalar general arithmetic operation
 class Neon_Scalar_GeneralMath2D_pattern<SDPatternOperator opnode,
-                                        Instruction INST> 
+                                        Instruction INST>
     : Pat<(v1f64 (opnode (v1f64 FPR64:$Rn))), (INST FPR64:$Rn)>;
 
 class Neon_Scalar_GeneralMath3D_pattern<SDPatternOperator opnode,
-                                        Instruction INST> 
+                                        Instruction INST>
     : Pat<(v1f64 (opnode (v1f64 FPR64:$Rn), (v1f64 FPR64:$Rm))),
           (INST FPR64:$Rn, FPR64:$Rm)>;
 
 class Neon_Scalar_GeneralMath4D_pattern<SDPatternOperator opnode,
-                                        Instruction INST> 
+                                        Instruction INST>
     : Pat<(v1f64 (opnode (v1f64 FPR64:$Rn), (v1f64 FPR64:$Rm),
               (v1f64 FPR64:$Ra))),
           (INST FPR64:$Rn, FPR64:$Rm, FPR64:$Ra)>;
@@ -6678,8 +6678,11 @@ def : Pat<(v1f32 (scalar_to_vector (f32 FPR32:$Rn))),
 def : Pat<(v1f64 (scalar_to_vector (f64 FPR64:$Rn))),
           (v1f64 FPR64:$Rn)>;
 
-def : Pat<(v1f64 (scalar_to_vector (f64 FPR64:$src))),
-          (FMOVdd $src)>;
+// begin ANDROID-CHANGED-3-14-2014
+// duplicate symbol error if this is not commented out
+//def : Pat<(v1f64 (scalar_to_vector (f64 FPR64:$src))),
+//          (FMOVdd $src)>;
+// end ANDROID-CHANGED-3-14-2014
 
 def : Pat<(v2f64 (scalar_to_vector (f64 FPR64:$src))),
           (INSERT_SUBREG (v2f64 (IMPLICIT_DEF)),
