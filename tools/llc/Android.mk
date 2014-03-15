@@ -58,6 +58,16 @@ llvm_llc_STATIC_LIBRARIES := \
   libLLVMCore \
   libLLVMSupport
 
+llvm_llc_arm64_STATIC_LIBRARIES := \
+  libLLVMARM64Info \
+  libLLVMARM64AsmParser \
+  libLLVMARM64CodeGen \
+  libLLVMARM64Disassembler \
+  libLLVMARM64Desc \
+  libLLVMARM64AsmPrinter \
+  libLLVMARM64Utils
+
+
 
 #===---------------------------------------------------------------===
 # llc command line tool (host)
@@ -76,6 +86,7 @@ LOCAL_STATIC_LIBRARIES := \
   $(llvm_llc_arm_STATIC_LIBRARIES) \
   $(llvm_llc_mips_STATIC_LIBRARIES) \
   $(llvm_llc_x86_STATIC_LIBRARIES) \
+  $(llvm_llc_arm64_STATIC_LIBRARIES) \
   $(llvm_llc_STATIC_LIBRARIES)
 
 LOCAL_LDLIBS += -lpthread -lm -ldl
@@ -108,6 +119,7 @@ LOCAL_STATIC_LIBRARIES_arm := $(llvm_llc_arm_STATIC_LIBRARIES)
 LOCAL_STATIC_LIBRARIES_mips := $(llvm_llc_mips_STATIC_LIBRARIES)
 LOCAL_STATIC_LIBRARIES_x86 := $(llvm_llc_x86_STATIC_LIBRARIES)
 LOCAL_STATIC_LIBRARIES_x86_64 := $(llvm_llc_x86_STATIC_LIBRARIES)
+LOCAL_STATIC_LIBRARIES_arm64 := $(llvm_llc_arm64_STATIC_LIBRARIES)
 
 LOCAL_STATIC_LIBRARIES += $(llvm_llc_STATIC_LIBRARIES)
 

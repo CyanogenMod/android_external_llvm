@@ -29,8 +29,10 @@
   LLVM_TARGET(Mips)
 #elif defined(__i386__)
   LLVM_TARGET(X86)
+#elif defined(__aarch64__)
+  LLVM_TARGET(AArch64)
 #else
-#  error Unsupported TARGET_ARCH for LLVM_ASM_PRINTER
+#  error Unsupported TARGET_ARCH for LLVM_TARGET
 #endif
 
 #undef LLVM_TARGET
