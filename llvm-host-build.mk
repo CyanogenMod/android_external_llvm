@@ -1,3 +1,5 @@
+LOCAL_CLANG := true
+
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
@@ -7,6 +9,7 @@ LOCAL_CFLAGS :=	\
 	-W	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
+        -Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
 
 ifeq ($(LLVM_ENABLE_ASSERTION),true)
