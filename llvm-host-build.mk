@@ -1,4 +1,7 @@
+# Windows can't use Clang to build yet
+ifneq ($(HOST_OS),windows)
 LOCAL_CLANG := true
+endif
 
 LOCAL_CFLAGS :=	\
 	-D_GNU_SOURCE	\
@@ -9,7 +12,7 @@ LOCAL_CFLAGS :=	\
 	-W	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
-        -Dsprintf=sprintf \
+	-Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
 
 ifeq ($(LLVM_ENABLE_ASSERTION),true)
