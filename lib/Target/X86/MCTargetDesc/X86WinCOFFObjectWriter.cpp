@@ -29,9 +29,8 @@ namespace {
     X86WinCOFFObjectWriter(bool Is64Bit_);
     virtual ~X86WinCOFFObjectWriter();
 
-    virtual unsigned getRelocType(const MCValue &Target,
-                                  const MCFixup &Fixup,
-                                  bool IsCrossSection) const LLVM_OVERRIDE;
+    unsigned getRelocType(const MCValue &Target, const MCFixup &Fixup,
+                          bool IsCrossSection) const override;
   };
 }
 
@@ -65,6 +64,9 @@ unsigned X86WinCOFFObjectWriter::getRelocType(const MCValue &Target,
     if (Is64Bit)
       return COFF::IMAGE_REL_AMD64_ADDR64;
     llvm_unreachable("unsupported relocation type");
+  case FK_SecRel_2:
+    return Is64Bit ? COFF::IMAGE_REL_AMD64_SECTION
+                   : COFF::IMAGE_REL_I386_SECTION;
   case FK_SecRel_4:
     return Is64Bit ? COFF::IMAGE_REL_AMD64_SECREL : COFF::IMAGE_REL_I386_SECREL;
   default:

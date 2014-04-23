@@ -188,10 +188,10 @@ bool SpillPlacement::runOnMachineFunction(MachineFunction &mf) {
 
   // Compute total ingoing and outgoing block frequencies for all bundles.
   BlockFrequencies.resize(mf.getNumBlockIDs());
-  MachineBlockFrequencyInfo &MBFI = getAnalysis<MachineBlockFrequencyInfo>();
+  MBFI = &getAnalysis<MachineBlockFrequencyInfo>();
   for (MachineFunction::iterator I = mf.begin(), E = mf.end(); I != E; ++I) {
     unsigned Num = I->getNumber();
-    BlockFrequencies[Num] = MBFI.getBlockFreq(I);
+    BlockFrequencies[Num] = MBFI->getBlockFreq(I);
   }
 
   // We never change the function.
@@ -221,7 +221,7 @@ void SpillPlacement::activate(unsigned n) {
   // Hopfield network.
   if (bundles->getBlocks(n).size() > 100) {
     nodes[n].BiasP = 0;
-    nodes[n].BiasN = (BlockFrequency::getEntryFrequency() / 16);
+    nodes[n].BiasN = (MBFI->getEntryFreq() / 16);
   }
 }
 
@@ -323,10 +323,12 @@ void SpillPlacement::iterate() {
   // affect the entire network in a single iteration. That means very fast
   // convergence, usually in a single iteration.
   for (unsigned iteration = 0; iteration != 10; ++iteration) {
-    // Scan backwards, skipping the last node which was just updated.
+    // Scan backwards, skipping the last node when iteration is not zero. When
+    // iteration is not zero, the last node was just updated.
     bool Changed = false;
     for (SmallVectorImpl<unsigned>::const_reverse_iterator I =
-           llvm::next(Linked.rbegin()), E = Linked.rend(); I != E; ++I) {
+           iteration == 0 ? Linked.rbegin() : std::next(Linked.rbegin()),
+           E = Linked.rend(); I != E; ++I) {
       unsigned n = *I;
       if (nodes[n].update(nodes)) {
         Changed = true;
@@ -340,7 +342,7 @@ void SpillPlacement::iterate() {
     // Scan forwards, skipping the first node which was just updated.
     Changed = false;
     for (SmallVectorImpl<unsigned>::const_iterator I =
-           llvm::next(Linked.begin()), E = Linked.end(); I != E; ++I) {
+           std::next(Linked.begin()), E = Linked.end(); I != E; ++I) {
       unsigned n = *I;
       if (nodes[n].update(nodes)) {
         Changed = true;

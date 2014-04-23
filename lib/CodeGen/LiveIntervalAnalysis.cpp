@@ -22,6 +22,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/CodeGen/LiveVariables.h"
+#include "llvm/CodeGen/MachineBlockFrequencyInfo.h"
 #include "llvm/CodeGen/MachineDominators.h"
 #include "llvm/CodeGen/MachineInstr.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
@@ -325,8 +326,10 @@ bool LiveIntervals::shrinkToUses(LiveInterval *li,
   SmallPtrSet<MachineBasicBlock*, 16> LiveOut;
 
   // Visit all instructions reading li->reg.
-  for (MachineRegisterInfo::reg_iterator I = MRI->reg_begin(li->reg);
-       MachineInstr *UseMI = I.skipInstruction();) {
+  for (MachineRegisterInfo::reg_instr_iterator
+       I = MRI->reg_instr_begin(li->reg), E = MRI->reg_instr_end();
+       I != E; ) {
+    MachineInstr *UseMI = &*(I++);
     if (UseMI->isDebugValue() || !UseMI->readsVirtualRegister(li->reg))
       continue;
     SlotIndex Idx = getInstructionIndex(UseMI).getRegSlot();
@@ -458,7 +461,7 @@ void LiveIntervals::pruneValue(LiveInterval *LI, SlotIndex Kill,
 
   MachineBasicBlock *KillMBB = Indexes->getMBBFromIndex(Kill);
   SlotIndex MBBStart, MBBEnd;
-  tie(MBBStart, MBBEnd) = Indexes->getMBBRange(KillMBB);
+  std::tie(MBBStart, MBBEnd) = Indexes->getMBBRange(KillMBB);
 
   // If VNI isn't live out from KillMBB, the value is trivially pruned.
   if (LRQ.endPoint() < MBBEnd) {
@@ -485,7 +488,7 @@ void LiveIntervals::pruneValue(LiveInterval *LI, SlotIndex Kill,
       MachineBasicBlock *MBB = *I;
 
       // Check if VNI is live in to MBB.
-      tie(MBBStart, MBBEnd) = Indexes->getMBBRange(MBB);
+      std::tie(MBBStart, MBBEnd) = Indexes->getMBBRange(MBB);
       LiveQueryResult LRQ = LI->Query(MBBStart);
       if (LRQ.valueIn() != VNI) {
         // This block isn't part of the VNI segment. Prune the search.
@@ -620,9 +623,12 @@ LiveIntervals::hasPHIKill(const LiveInterval &LI, const VNInfo *VNI) const {
 }
 
 float
-LiveIntervals::getSpillWeight(bool isDef, bool isUse, BlockFrequency freq) {
-  const float Scale = 1.0f / BlockFrequency::getEntryFrequency();
-  return (isDef + isUse) * (freq.getFrequency() * Scale);
+LiveIntervals::getSpillWeight(bool isDef, bool isUse,
+                              const MachineBlockFrequencyInfo *MBFI,
+                              const MachineInstr *MI) {
+  BlockFrequency Freq = MBFI->getBlockFreq(MI->getParent());
+  const float Scale = 1.0f / MBFI->getEntryFreq();
+  return (isDef + isUse) * (Freq.getFrequency() * Scale);
 }
 
 LiveRange::Segment
@@ -870,8 +876,8 @@ private:
     // values. The new range should be placed immediately before NewI, move any
     // intermediate ranges up.
     assert(NewI != I && "Inconsistent iterators");
-    std::copy(llvm::next(I), NewI, I);
-    *llvm::prior(NewI)
+    std::copy(std::next(I), NewI, I);
+    *std::prev(NewI)
       = LiveRange::Segment(DefVNI->def, NewIdx.getDeadSlot(), DefVNI);
   }
 
@@ -916,7 +922,7 @@ private:
       if (I == E || !SlotIndex::isSameInstr(I->start, OldIdx)) {
         // No def, search for the new kill.
         // This can never be an early clobber kill since there is no def.
-        llvm::prior(I)->end = findLastUseBefore(Reg).getRegSlot();
+        std::prev(I)->end = findLastUseBefore(Reg).getRegSlot();
         return;
       }
     }
@@ -952,7 +958,7 @@ private:
 
     // DefVNI is a dead def. It may have been moved across other values in LR,
     // so move I up to NewI. Slide [NewI;I) down one position.
-    std::copy_backward(NewI, I, llvm::next(I));
+    std::copy_backward(NewI, I, std::next(I));
     *NewI = LiveRange::Segment(DefVNI->def, NewIdx.getDeadSlot(), DefVNI);
   }
 
@@ -964,11 +970,11 @@ private:
            "No RegMask at OldIdx.");
     *RI = NewIdx.getRegSlot();
     assert((RI == LIS.RegMaskSlots.begin() ||
-            SlotIndex::isEarlierInstr(*llvm::prior(RI), *RI)) &&
-            "Cannot move regmask instruction above another call");
-    assert((llvm::next(RI) == LIS.RegMaskSlots.end() ||
-            SlotIndex::isEarlierInstr(*RI, *llvm::next(RI))) &&
-            "Cannot move regmask instruction below another call");
+            SlotIndex::isEarlierInstr(*std::prev(RI), *RI)) &&
+           "Cannot move regmask instruction above another call");
+    assert((std::next(RI) == LIS.RegMaskSlots.end() ||
+            SlotIndex::isEarlierInstr(*RI, *std::next(RI))) &&
+           "Cannot move regmask instruction below another call");
   }
 
   // Return the last use of reg between NewIdx and OldIdx.
@@ -976,10 +982,10 @@ private:
 
     if (TargetRegisterInfo::isVirtualRegister(Reg)) {
       SlotIndex LastUse = NewIdx;
-      for (MachineRegisterInfo::use_nodbg_iterator
-             UI = MRI.use_nodbg_begin(Reg),
-             UE = MRI.use_nodbg_end();
-           UI != UE; UI.skipInstruction()) {
+      for (MachineRegisterInfo::use_instr_nodbg_iterator
+             UI = MRI.use_instr_nodbg_begin(Reg),
+             UE = MRI.use_instr_nodbg_end();
+           UI != UE; ++UI) {
         const MachineInstr* MI = &*UI;
         SlotIndex InstSlot = LIS.getSlotIndexes()->getInstructionIndex(MI);
         if (InstSlot > LastUse && InstSlot < OldIdx)
@@ -1121,7 +1127,7 @@ LiveIntervals::repairIntervalsInRange(MachineBasicBlock *MBB,
             if (LII->end.isDead()) {
               SlotIndex prevStart;
               if (LII != LI.begin())
-                prevStart = llvm::prior(LII)->start;
+                prevStart = std::prev(LII)->start;
 
               // FIXME: This could be more efficient if there was a
               // removeSegment method that returned an iterator.

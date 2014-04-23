@@ -13,22 +13,12 @@
 
 #include "InstCombine.h"
 #include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Intrinsics.h"
-#include "llvm/Support/ConstantRange.h"
-#include "llvm/Support/PatternMatch.h"
+#include "llvm/IR/PatternMatch.h"
 #include "llvm/Transforms/Utils/CmpInstAnalysis.h"
 using namespace llvm;
 using namespace PatternMatch;
-
-
-/// AddOne - Add one to a ConstantInt.
-static Constant *AddOne(ConstantInt *C) {
-  return ConstantInt::get(C->getContext(), C->getValue() + 1);
-}
-/// SubOne - Subtract one from a ConstantInt.
-static Constant *SubOne(ConstantInt *C) {
-  return ConstantInt::get(C->getContext(), C->getValue()-1);
-}
 
 /// isFreeToInvert - Return true if the specified value is free to invert (apply
 /// ~ to).  This happens in cases where the ~ can be eliminated.
@@ -513,31 +503,46 @@ static unsigned conjugateICmpMask(unsigned Mask) {
 /// decomposition fails.
 static bool decomposeBitTestICmp(const ICmpInst *I, ICmpInst::Predicate &Pred,
                                  Value *&X, Value *&Y, Value *&Z) {
-  // X < 0 is equivalent to (X & SignBit) != 0.
-  if (I->getPredicate() == ICmpInst::ICMP_SLT)
-    if (ConstantInt *C = dyn_cast<ConstantInt>(I->getOperand(1)))
-      if (C->isZero()) {
-        X = I->getOperand(0);
-        Y = ConstantInt::get(I->getContext(),
-                             APInt::getSignBit(C->getBitWidth()));
-        Pred = ICmpInst::ICMP_NE;
-        Z = C;
-        return true;
-      }
+  ConstantInt *C = dyn_cast<ConstantInt>(I->getOperand(1));
+  if (!C)
+    return false;
 
-  // X > -1 is equivalent to (X & SignBit) == 0.
-  if (I->getPredicate() == ICmpInst::ICMP_SGT)
-    if (ConstantInt *C = dyn_cast<ConstantInt>(I->getOperand(1)))
-      if (C->isAllOnesValue()) {
-        X = I->getOperand(0);
-        Y = ConstantInt::get(I->getContext(),
-                             APInt::getSignBit(C->getBitWidth()));
-        Pred = ICmpInst::ICMP_EQ;
-        Z = ConstantInt::getNullValue(C->getType());
-        return true;
-      }
+  switch (I->getPredicate()) {
+  default:
+    return false;
+  case ICmpInst::ICMP_SLT:
+    // X < 0 is equivalent to (X & SignBit) != 0.
+    if (!C->isZero())
+      return false;
+    Y = ConstantInt::get(I->getContext(), APInt::getSignBit(C->getBitWidth()));
+    Pred = ICmpInst::ICMP_NE;
+    break;
+  case ICmpInst::ICMP_SGT:
+    // X > -1 is equivalent to (X & SignBit) == 0.
+    if (!C->isAllOnesValue())
+      return false;
+    Y = ConstantInt::get(I->getContext(), APInt::getSignBit(C->getBitWidth()));
+    Pred = ICmpInst::ICMP_EQ;
+    break;
+  case ICmpInst::ICMP_ULT:
+    // X <u 2^n is equivalent to (X & ~(2^n-1)) == 0.
+    if (!C->getValue().isPowerOf2())
+      return false;
+    Y = ConstantInt::get(I->getContext(), -C->getValue());
+    Pred = ICmpInst::ICMP_EQ;
+    break;
+  case ICmpInst::ICMP_UGT:
+    // X >u 2^n-1 is equivalent to (X & ~(2^n-1)) != 0.
+    if (!(C->getValue() + 1).isPowerOf2())
+      return false;
+    Y = ConstantInt::get(I->getContext(), ~C->getValue());
+    Pred = ICmpInst::ICMP_NE;
+    break;
+  }
 
-  return false;
+  X = I->getOperand(0);
+  Z = ConstantInt::getNullValue(C->getType());
+  return true;
 }
 
 /// foldLogOpOfMaskedICmpsHelper:
@@ -1099,7 +1104,7 @@ Instruction *InstCombiner::visitAnd(BinaryOperator &I) {
   bool Changed = SimplifyAssociativeOrCommutative(I);
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
 
-  if (Value *V = SimplifyAndInst(Op0, Op1, TD))
+  if (Value *V = SimplifyAndInst(Op0, Op1, DL))
     return ReplaceInstUsesWith(I, V);
 
   // (A|B)&(A|C) -> A|(B&C) etc
@@ -1543,23 +1548,6 @@ static Instruction *MatchSelectFromAndOr(Value *A, Value *B,
   return 0;
 }
 
-/// IsOneHotValue - Returns true for "one-hot" values (values where at most
-/// one bit can be set).
-static bool IsOneHotValue(Value *V) {
-  // Match 1<<K.
-  if (BinaryOperator *BO = dyn_cast<BinaryOperator>(V))
-    if (BO->getOpcode() == Instruction::Shl) {
-      ConstantInt *One = dyn_cast<ConstantInt>(BO->getOperand(0));
-      return One && One->isOne();
-    }
-
-  // Check for power of two integer constants.
-  if (ConstantInt *K = dyn_cast<ConstantInt>(V))
-    return K->getValue().isPowerOf2();
-
-  return false;
-}
-
 /// FoldOrOfICmps - Fold (icmp)|(icmp) if possible.
 Value *InstCombiner::FoldOrOfICmps(ICmpInst *LHS, ICmpInst *RHS) {
   ICmpInst::Predicate LHSCC = LHS->getPredicate(), RHSCC = RHS->getPredicate();
@@ -1581,13 +1569,13 @@ Value *InstCombiner::FoldOrOfICmps(ICmpInst *LHS, ICmpInst *RHS) {
       Value *Mask = 0;
       Value *Masked = 0;
       if (LAnd->getOperand(0) == RAnd->getOperand(0) &&
-          IsOneHotValue(LAnd->getOperand(1)) &&
-          IsOneHotValue(RAnd->getOperand(1))) {
+          isKnownToBeAPowerOfTwo(LAnd->getOperand(1)) &&
+          isKnownToBeAPowerOfTwo(RAnd->getOperand(1))) {
         Mask = Builder->CreateOr(LAnd->getOperand(1), RAnd->getOperand(1));
         Masked = Builder->CreateAnd(LAnd->getOperand(0), Mask);
       } else if (LAnd->getOperand(1) == RAnd->getOperand(1) &&
-                 IsOneHotValue(LAnd->getOperand(0)) &&
-                 IsOneHotValue(RAnd->getOperand(0))) {
+                 isKnownToBeAPowerOfTwo(LAnd->getOperand(0)) &&
+                 isKnownToBeAPowerOfTwo(RAnd->getOperand(0))) {
         Mask = Builder->CreateOr(LAnd->getOperand(0), RAnd->getOperand(0));
         Masked = Builder->CreateAnd(LAnd->getOperand(1), Mask);
       }
@@ -1917,7 +1905,7 @@ Instruction *InstCombiner::visitOr(BinaryOperator &I) {
   bool Changed = SimplifyAssociativeOrCommutative(I);
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
 
-  if (Value *V = SimplifyOrInst(Op0, Op1, TD))
+  if (Value *V = SimplifyOrInst(Op0, Op1, DL))
     return ReplaceInstUsesWith(I, V);
 
   // (A&B)|(A&C) -> A&(B|C) etc
@@ -2249,7 +2237,7 @@ Instruction *InstCombiner::visitXor(BinaryOperator &I) {
   bool Changed = SimplifyAssociativeOrCommutative(I);
   Value *Op0 = I.getOperand(0), *Op1 = I.getOperand(1);
 
-  if (Value *V = SimplifyXorInst(Op0, Op1, TD))
+  if (Value *V = SimplifyXorInst(Op0, Op1, DL))
     return ReplaceInstUsesWith(I, V);
 
   // (A&B)^(A&C) -> A&(B^C) etc

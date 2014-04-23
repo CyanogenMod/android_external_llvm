@@ -716,7 +716,13 @@ R600InstrInfo::AnalyzeBranch(MachineBasicBlock &MBB,
     return false;
   }
 
-  // Get the last instruction in the block.
+  // Remove successive JUMP
+  while (I != MBB.begin() && std::prev(I)->getOpcode() == AMDGPU::JUMP) {
+      MachineBasicBlock::iterator PriorI = std::prev(I);
+      if (AllowModify)
+        I->removeFromParent();
+      I = PriorI;
+  }
   MachineInstr *LastInst = I;
 
   // If there is only one terminator instruction, process it.
@@ -778,7 +784,7 @@ MachineBasicBlock::iterator FindLastAluClause(MachineBasicBlock &MBB) {
       It != E; ++It) {
     if (It->getOpcode() == AMDGPU::CF_ALU ||
         It->getOpcode() == AMDGPU::CF_ALU_PUSH_BEFORE)
-      return llvm::prior(It.base());
+      return std::prev(It.base());
   }
   return MBB.end();
 }

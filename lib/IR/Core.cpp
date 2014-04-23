@@ -15,24 +15,24 @@
 #include "llvm-c/Core.h"
 #include "llvm/Bitcode/ReaderWriter.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GlobalAlias.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/IntrinsicInst.h"
-#include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
 #include "llvm/PassManager.h"
-#include "llvm/Support/CallSite.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Support/system_error.h"
-#include "llvm/Support/Threading.h"
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
@@ -40,12 +40,11 @@
 using namespace llvm;
 
 void llvm::initializeCore(PassRegistry &Registry) {
-  initializeDominatorTreePass(Registry);
-  initializePrintModulePassPass(Registry);
-  initializePrintFunctionPassPass(Registry);
+  initializeDominatorTreeWrapperPassPass(Registry);
+  initializePrintModulePassWrapperPass(Registry);
+  initializePrintFunctionPassWrapperPass(Registry);
   initializePrintBasicBlockPassPass(Registry);
-  initializeVerifierPass(Registry);
-  initializePreVerifierPass(Registry);
+  initializeVerifierLegacyPassPass(Registry);
 }
 
 void LLVMInitializeCore(LLVMPassRegistryRef R) {
@@ -108,7 +107,7 @@ void LLVMDisposeModule(LLVMModuleRef M) {
 
 /*--.. Data layout .........................................................--*/
 const char * LLVMGetDataLayout(LLVMModuleRef M) {
-  return unwrap(M)->getDataLayout().c_str();
+  return unwrap(M)->getDataLayoutStr().c_str();
 }
 
 void LLVMSetDataLayout(LLVMModuleRef M, const char *Triple) {
@@ -131,7 +130,7 @@ void LLVMDumpModule(LLVMModuleRef M) {
 LLVMBool LLVMPrintModuleToFile(LLVMModuleRef M, const char *Filename,
                                char **ErrorMessage) {
   std::string error;
-  raw_fd_ostream dest(Filename, error);
+  raw_fd_ostream dest(Filename, error, sys::fs::F_Text);
   if (!error.empty()) {
     *ErrorMessage = strdup(error.c_str());
     return true;
@@ -175,7 +174,6 @@ LLVMContextRef LLVMGetModuleContext(LLVMModuleRef M) {
 
 LLVMTypeKind LLVMGetTypeKind(LLVMTypeRef Ty) {
   switch (unwrap(Ty)->getTypeID()) {
-  default: llvm_unreachable("Unhandled TypeID.");
   case Type::VoidTyID:
     return LLVMVoidTypeKind;
   case Type::HalfTyID:
@@ -209,6 +207,7 @@ LLVMTypeKind LLVMGetTypeKind(LLVMTypeRef Ty) {
   case Type::X86_MMXTyID:
     return LLVMX86_MMXTypeKind;
   }
+  llvm_unreachable("Unhandled TypeID.");
 }
 
 LLVMBool LLVMTypeIsSized(LLVMTypeRef Ty)
@@ -515,7 +514,7 @@ LLVMUseRef LLVMGetFirstUse(LLVMValueRef Val) {
   Value::use_iterator I = V->use_begin();
   if (I == V->use_end())
     return 0;
-  return wrap(&(I.getUse()));
+  return wrap(&*I);
 }
 
 LLVMUseRef LLVMGetNextUse(LLVMUseRef U) {
@@ -1160,14 +1159,6 @@ LLVMLinkage LLVMGetLinkage(LLVMValueRef Global) {
     return LLVMInternalLinkage;
   case GlobalValue::PrivateLinkage:
     return LLVMPrivateLinkage;
-  case GlobalValue::LinkerPrivateLinkage:
-    return LLVMLinkerPrivateLinkage;
-  case GlobalValue::LinkerPrivateWeakLinkage:
-    return LLVMLinkerPrivateWeakLinkage;
-  case GlobalValue::DLLImportLinkage:
-    return LLVMDLLImportLinkage;
-  case GlobalValue::DLLExportLinkage:
-    return LLVMDLLExportLinkage;
   case GlobalValue::ExternalWeakLinkage:
     return LLVMExternalWeakLinkage;
   case GlobalValue::CommonLinkage:
@@ -1213,16 +1204,18 @@ void LLVMSetLinkage(LLVMValueRef Global, LLVMLinkage Linkage) {
     GV->setLinkage(GlobalValue::PrivateLinkage);
     break;
   case LLVMLinkerPrivateLinkage:
-    GV->setLinkage(GlobalValue::LinkerPrivateLinkage);
+    GV->setLinkage(GlobalValue::PrivateLinkage);
     break;
   case LLVMLinkerPrivateWeakLinkage:
-    GV->setLinkage(GlobalValue::LinkerPrivateWeakLinkage);
+    GV->setLinkage(GlobalValue::PrivateLinkage);
     break;
   case LLVMDLLImportLinkage:
-    GV->setLinkage(GlobalValue::DLLImportLinkage);
+    DEBUG(errs()
+          << "LLVMSetLinkage(): LLVMDLLImportLinkage is no longer supported.");
     break;
   case LLVMDLLExportLinkage:
-    GV->setLinkage(GlobalValue::DLLExportLinkage);
+    DEBUG(errs()
+          << "LLVMSetLinkage(): LLVMDLLExportLinkage is no longer supported.");
     break;
   case LLVMExternalWeakLinkage:
     GV->setLinkage(GlobalValue::ExternalWeakLinkage);
@@ -1255,30 +1248,54 @@ void LLVMSetVisibility(LLVMValueRef Global, LLVMVisibility Viz) {
     ->setVisibility(static_cast<GlobalValue::VisibilityTypes>(Viz));
 }
 
+LLVMDLLStorageClass LLVMGetDLLStorageClass(LLVMValueRef Global) {
+  return static_cast<LLVMDLLStorageClass>(
+      unwrap<GlobalValue>(Global)->getDLLStorageClass());
+}
+
+void LLVMSetDLLStorageClass(LLVMValueRef Global, LLVMDLLStorageClass Class) {
+  unwrap<GlobalValue>(Global)->setDLLStorageClass(
+      static_cast<GlobalValue::DLLStorageClassTypes>(Class));
+}
+
+LLVMBool LLVMHasUnnamedAddr(LLVMValueRef Global) {
+  return unwrap<GlobalValue>(Global)->hasUnnamedAddr();
+}
+
+void LLVMSetUnnamedAddr(LLVMValueRef Global, LLVMBool HasUnnamedAddr) {
+  unwrap<GlobalValue>(Global)->setUnnamedAddr(HasUnnamedAddr);
+}
+
 /*--.. Operations on global variables, load and store instructions .........--*/
 
 unsigned LLVMGetAlignment(LLVMValueRef V) {
   Value *P = unwrap<Value>(V);
   if (GlobalValue *GV = dyn_cast<GlobalValue>(P))
     return GV->getAlignment();
+  if (AllocaInst *AI = dyn_cast<AllocaInst>(P))
+    return AI->getAlignment();
   if (LoadInst *LI = dyn_cast<LoadInst>(P))
     return LI->getAlignment();
   if (StoreInst *SI = dyn_cast<StoreInst>(P))
     return SI->getAlignment();
 
-  llvm_unreachable("only GlobalValue, LoadInst and StoreInst have alignment");
+  llvm_unreachable(
+      "only GlobalValue, AllocaInst, LoadInst and StoreInst have alignment");
 }
 
 void LLVMSetAlignment(LLVMValueRef V, unsigned Bytes) {
   Value *P = unwrap<Value>(V);
   if (GlobalValue *GV = dyn_cast<GlobalValue>(P))
     GV->setAlignment(Bytes);
+  else if (AllocaInst *AI = dyn_cast<AllocaInst>(P))
+    AI->setAlignment(Bytes);
   else if (LoadInst *LI = dyn_cast<LoadInst>(P))
     LI->setAlignment(Bytes);
   else if (StoreInst *SI = dyn_cast<StoreInst>(P))
     SI->setAlignment(Bytes);
   else
-    llvm_unreachable("only GlobalValue, LoadInst and StoreInst have alignment");
+    llvm_unreachable(
+        "only GlobalValue, AllocaInst, LoadInst and StoreInst have alignment");
 }
 
 /*--.. Operations on global variables ......................................--*/
@@ -2219,6 +2236,29 @@ LLVMValueRef LLVMBuildStore(LLVMBuilderRef B, LLVMValueRef Val,
   return wrap(unwrap(B)->CreateStore(unwrap(Val), unwrap(PointerVal)));
 }
 
+static AtomicOrdering mapFromLLVMOrdering(LLVMAtomicOrdering Ordering) {
+  switch (Ordering) {
+    case LLVMAtomicOrderingNotAtomic: return NotAtomic;
+    case LLVMAtomicOrderingUnordered: return Unordered;
+    case LLVMAtomicOrderingMonotonic: return Monotonic;
+    case LLVMAtomicOrderingAcquire: return Acquire;
+    case LLVMAtomicOrderingRelease: return Release;
+    case LLVMAtomicOrderingAcquireRelease: return AcquireRelease;
+    case LLVMAtomicOrderingSequentiallyConsistent:
+      return SequentiallyConsistent;
+  }
+  
+  llvm_unreachable("Invalid LLVMAtomicOrdering value!");
+}
+
+LLVMValueRef LLVMBuildFence(LLVMBuilderRef B, LLVMAtomicOrdering Ordering,
+                            LLVMBool isSingleThread, const char *Name) {
+  return wrap(
+    unwrap(B)->CreateFence(mapFromLLVMOrdering(Ordering),
+                           isSingleThread ? SingleThread : CrossThread,
+                           Name));
+}
+
 LLVMValueRef LLVMBuildGEP(LLVMBuilderRef B, LLVMValueRef Pointer,
                           LLVMValueRef *Indices, unsigned NumIndices,
                           const char *Name) {
@@ -2476,22 +2516,8 @@ LLVMValueRef LLVMBuildAtomicRMW(LLVMBuilderRef B,LLVMAtomicRMWBinOp op,
     case LLVMAtomicRMWBinOpUMax: intop = AtomicRMWInst::UMax; break;
     case LLVMAtomicRMWBinOpUMin: intop = AtomicRMWInst::UMin; break;
   }
-  AtomicOrdering intordering;
-  switch (ordering) {
-    case LLVMAtomicOrderingNotAtomic: intordering = NotAtomic; break;
-    case LLVMAtomicOrderingUnordered: intordering = Unordered; break;
-    case LLVMAtomicOrderingMonotonic: intordering = Monotonic; break;
-    case LLVMAtomicOrderingAcquire: intordering = Acquire; break;
-    case LLVMAtomicOrderingRelease: intordering = Release; break;
-    case LLVMAtomicOrderingAcquireRelease:
-      intordering = AcquireRelease;
-      break;
-    case LLVMAtomicOrderingSequentiallyConsistent:
-      intordering = SequentiallyConsistent;
-      break;
-  }
   return wrap(unwrap(B)->CreateAtomicRMW(intop, unwrap(PTR), unwrap(Val),
-    intordering, singleThread ? SingleThread : CrossThread));
+    mapFromLLVMOrdering(ordering), singleThread ? SingleThread : CrossThread));
 }
 
 
@@ -2514,10 +2540,10 @@ LLVMBool LLVMCreateMemoryBufferWithContentsOfFile(
     LLVMMemoryBufferRef *OutMemBuf,
     char **OutMessage) {
 
-  OwningPtr<MemoryBuffer> MB;
+  std::unique_ptr<MemoryBuffer> MB;
   error_code ec;
   if (!(ec = MemoryBuffer::getFile(Path, MB))) {
-    *OutMemBuf = wrap(MB.take());
+    *OutMemBuf = wrap(MB.release());
     return 0;
   }
 
@@ -2527,10 +2553,10 @@ LLVMBool LLVMCreateMemoryBufferWithContentsOfFile(
 
 LLVMBool LLVMCreateMemoryBufferWithSTDIN(LLVMMemoryBufferRef *OutMemBuf,
                                          char **OutMessage) {
-  OwningPtr<MemoryBuffer> MB;
+  std::unique_ptr<MemoryBuffer> MB;
   error_code ec;
   if (!(ec = MemoryBuffer::getSTDIN(MB))) {
-    *OutMemBuf = wrap(MB.take());
+    *OutMemBuf = wrap(MB.release());
     return 0;
   }
 

@@ -207,9 +207,9 @@ public:
   /// Fully developed targets will not generally override this.
   virtual void addMachinePasses();
 
-  /// createTargetScheduler - Create an instance of ScheduleDAGInstrs to be run
-  /// within the standard MachineScheduler pass for this function and target at
-  /// the current optimization level.
+  /// Create an instance of ScheduleDAGInstrs to be run within the standard
+  /// MachineScheduler pass for this function and target at the current
+  /// optimization level.
   ///
   /// This can also be used to plug a new MachineSchedStrategy into an instance
   /// of the standard ScheduleDAGMI:
@@ -218,6 +218,13 @@ public:
   /// Return NULL to select the default (generic) machine scheduler.
   virtual ScheduleDAGInstrs *
   createMachineScheduler(MachineSchedContext *C) const {
+    return 0;
+  }
+
+  /// Similar to createMachineScheduler but used when postRA machine scheduling
+  /// is enabled.
+  virtual ScheduleDAGInstrs *
+  createPostMachineScheduler(MachineSchedContext *C) const {
     return 0;
   }
 
@@ -363,6 +370,10 @@ namespace llvm {
   createMachineFunctionPrinterPass(raw_ostream &OS,
                                    const std::string &Banner ="");
 
+  /// createCodeGenPreparePass - Transform the code to expose more pattern
+  /// matching during instruction selection.
+  FunctionPass *createCodeGenPreparePass(const TargetMachine *TM = 0);
+
   /// MachineLoopInfo - This pass is a loop analysis pass.
   extern char &MachineLoopInfoID;
 
@@ -402,6 +413,9 @@ namespace llvm {
 
   /// MachineScheduler - This pass schedules machine instructions.
   extern char &MachineSchedulerID;
+
+  /// PostMachineScheduler - This pass schedules machine instructions postRA.
+  extern char &PostMachineSchedulerID;
 
   /// SpillPlacement analysis. Suggest optimal placement of spill code between
   /// basic blocks.
@@ -567,6 +581,11 @@ namespace llvm {
   /// FinalizeMachineBundles - This pass finalize machine instruction
   /// bundles (created earlier, e.g. during pre-RA scheduling).
   extern char &FinalizeMachineBundlesID;
+
+  /// StackMapLiveness - This pass analyses the register live-out set of
+  /// stackmap/patchpoint intrinsics and attaches the calculated information to
+  /// the intrinsic for later emission to the StackMap.
+  extern char &StackMapLivenessID;
 
 } // End llvm namespace
 

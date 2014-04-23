@@ -19,12 +19,12 @@
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Triple.h"
-#include "llvm/ADT/ValueMap.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/ValueMap.h"
 #include "llvm/Pass.h"
 #include "llvm/Target/TargetLowering.h"
 
 namespace llvm {
-class DominatorTree;
 class Function;
 class Module;
 class PHINode;
@@ -114,13 +114,14 @@ public:
     initializeStackProtectorPass(*PassRegistry::getPassRegistry());
   }
 
-  virtual void getAnalysisUsage(AnalysisUsage &AU) const {
-    AU.addPreserved<DominatorTree>();
+  void getAnalysisUsage(AnalysisUsage &AU) const override {
+    AU.addPreserved<DominatorTreeWrapperPass>();
   }
 
   SSPLayoutKind getSSPLayout(const AllocaInst *AI) const;
+  void adjustForColoring(const AllocaInst *From, const AllocaInst *To);
 
-  virtual bool runOnFunction(Function &Fn);
+  bool runOnFunction(Function &Fn) override;
 };
 } // end namespace llvm
 

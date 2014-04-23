@@ -15,15 +15,15 @@
 #define DEBUG_TYPE "asm-printer"
 #include "AArch64AsmPrinter.h"
 #include "InstPrinter/AArch64InstPrinter.h"
-#include "llvm/DebugInfo.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/CodeGen/MachineModuleInfoImpls.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+#include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInst.h"
 #include "llvm/MC/MCSymbol.h"
 #include "llvm/Support/TargetRegistry.h"
-#include "llvm/Target/Mangler.h"
 
 using namespace llvm;
 
@@ -113,9 +113,6 @@ bool AArch64AsmPrinter::printSymbolicAddress(const MachineOperand &MO,
     break;
   case MachineOperand::MO_BlockAddress:
     Name = GetBlockAddressSymbol(MO.getBlockAddress())->getName();
-    break;
-  case MachineOperand::MO_ExternalSymbol:
-    Name = MO.getSymbolName();
     break;
   case MachineOperand::MO_ConstantPoolIndex:
     Name = GetCPISymbol(MO.getIndex())->getName();
@@ -238,7 +235,6 @@ bool AArch64AsmPrinter::PrintAsmOperand(const MachineInstr *MI, unsigned OpNum,
   case MachineOperand::MO_BlockAddress:
   case MachineOperand::MO_ConstantPoolIndex:
   case MachineOperand::MO_GlobalAddress:
-  case MachineOperand::MO_ExternalSymbol:
     return printSymbolicAddress(MO, false, "", O);
   }
 
@@ -268,7 +264,7 @@ void AArch64AsmPrinter::EmitInstruction(const MachineInstr *MI) {
 
   MCInst TmpInst;
   LowerAArch64MachineInstrToMCInst(MI, TmpInst, *this);
-  OutStreamer.EmitInstruction(TmpInst);
+  EmitToStreamer(OutStreamer, TmpInst);
 }
 
 void AArch64AsmPrinter::EmitEndOfAsmFile(Module &M) {
@@ -300,6 +296,7 @@ bool AArch64AsmPrinter::runOnMachineFunction(MachineFunction &MF) {
 
 // Force static initialization.
 extern "C" void LLVMInitializeAArch64AsmPrinter() {
-    RegisterAsmPrinter<AArch64AsmPrinter> X(TheAArch64Target);
+    RegisterAsmPrinter<AArch64AsmPrinter> X(TheAArch64leTarget);
+    RegisterAsmPrinter<AArch64AsmPrinter> Y(TheAArch64beTarget);
 }
 

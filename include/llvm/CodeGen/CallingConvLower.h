@@ -18,14 +18,14 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
-#include "llvm/CodeGen/ValueTypes.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/Target/TargetCallingConv.h"
 
 namespace llvm {
-  class TargetRegisterInfo;
-  class TargetMachine;
-  class CCState;
+class CCState;
+class MVT;
+class TargetMachine;
+class TargetRegisterInfo;
 
 /// CCValAssign - Represent assignment of one arg/retval to a location.
 class CCValAssign {
@@ -39,6 +39,7 @@ public:
     VExt,   // The value is vector-widened in the location.
             // FIXME: Not implemented yet. Code that uses AExt to mean
             // vector-widen should be fixed to use VExt instead.
+    FPExt,  // The floating-point value is fp-extended in the location.
     Indirect // The location contains pointer to the value.
     // TODO: a subset of the value is in the location.
   };
@@ -347,6 +348,15 @@ public:
     return AllocateStack(Size, Align);
   }
 
+  /// Version of AllocateStack with list of extra registers to be shadowed.
+  /// Note that, unlike AllocateReg, this shadows ALL of the shadow registers.
+  unsigned AllocateStack(unsigned Size, unsigned Align,
+                         const uint16_t *ShadowRegs, unsigned NumShadowRegs) {
+    for (unsigned i = 0; i < NumShadowRegs; ++i)
+      MarkAllocated(ShadowRegs[i]);
+    return AllocateStack(Size, Align);
+  }
+
   // HandleByVal - Allocate a stack slot large enough to pass an argument by
   // value. The size and alignment information of the argument is encoded in its
   // parameter attribute.
@@ -392,6 +402,11 @@ public:
   void clearByValRegsInfo() {
     InRegsParamsProceed = 0;
     ByValRegs.clear();
+  }
+
+  // Rewind byval registers tracking info.
+  void rewindByValRegsInfo() {
+    InRegsParamsProceed = 0;
   }
 
   ParmContext getCallOrPrologue() const { return CallOrPrologue; }

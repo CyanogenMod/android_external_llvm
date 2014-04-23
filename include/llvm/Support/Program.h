@@ -52,27 +52,31 @@ struct ProcessInfo {
   ProcessInfo();
 };
 
-  /// This static constructor (factory) will attempt to locate a program in
-  /// the operating system's file system using some pre-determined set of
-  /// locations to search (e.g. the PATH on Unix). Paths with slashes are
-  /// returned unmodified.
-  /// @returns A Path object initialized to the path of the program or a
-  /// Path object that is empty (invalid) if the program could not be found.
-  /// @brief Construct a Program by finding it by name.
+  /// This function attempts to locate a program in the operating
+  /// system's file system using some pre-determined set of locations to search
+  /// (e.g. the PATH on Unix). Paths with slashes are returned unmodified.
+  ///
+  /// It does not perform hashing as a shell would but instead stats each PATH
+  /// entry individually so should generally be avoided. Core LLVM library
+  /// functions and options should instead require fully specified paths.
+  ///
+  /// @returns A string containing the path of the program or an empty string if
+  /// the program could not be found.
   std::string FindProgramByName(const std::string& name);
 
-  // These functions change the specified standard stream (stdin, stdout, or
-  // stderr) to binary mode. They return errc::success if the specified stream
+  // These functions change the specified standard stream (stdin or stdout) to
+  // binary mode. They return errc::success if the specified stream
   // was changed. Otherwise a platform dependent error is returned.
   error_code ChangeStdinToBinary();
   error_code ChangeStdoutToBinary();
-  error_code ChangeStderrToBinary();
 
   /// This function executes the program using the arguments provided.  The
   /// invoked program will inherit the stdin, stdout, and stderr file
   /// descriptors, the environment and other configuration settings of the
   /// invoking program.
-  /// This function waits the program to finish.
+  /// This function waits for the program to finish, so should be avoided in
+  /// library functions that aren't expected to block. Consider using
+  /// ExecuteNoWait() instead.
   /// @returns an integer result code indicating the status of the program.
   /// A zero or positive value indicates the result code of the program.
   /// -1 indicates failure to execute

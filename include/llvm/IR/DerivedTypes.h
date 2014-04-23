@@ -249,7 +249,7 @@ public:
   bool isOpaque() const { return (getSubclassData() & SCDB_HasBody) == 0; }
 
   /// isSized - Return true if this is a sized type.
-  bool isSized() const;
+  bool isSized(SmallPtrSet<const Type*, 4> *Visited = 0) const;
   
   /// hasName - Return true if this is a named struct that has a non-empty name.
   bool hasName() const { return SymbolTableEntry != 0; }
@@ -398,6 +398,26 @@ public:
            "Cannot truncate vector element with odd bit-width");
     Type *EltTy = IntegerType::get(VTy->getContext(), EltBits / 2);
     return VectorType::get(EltTy, VTy->getNumElements());
+  }
+
+  /// VectorType::getHalfElementsVectorType - This static method returns
+  /// a VectorType with half as many elements as the input type and the
+  /// same element type.
+  ///
+  static VectorType *getHalfElementsVectorType(VectorType *VTy) {
+    unsigned NumElts = VTy->getNumElements();
+    assert ((NumElts & 1) == 0 &&
+            "Cannot halve vector with odd number of elements.");
+    return VectorType::get(VTy->getElementType(), NumElts/2);
+  }
+
+  /// VectorType::getDoubleElementsVectorType - This static method returns
+  /// a VectorType with twice  as many elements as the input type and the
+  /// same element type.
+  ///
+  static VectorType *getDoubleElementsVectorType(VectorType *VTy) {
+    unsigned NumElts = VTy->getNumElements();
+    return VectorType::get(VTy->getElementType(), NumElts*2);
   }
 
   /// isValidElementType - Return true if the specified type is valid as a

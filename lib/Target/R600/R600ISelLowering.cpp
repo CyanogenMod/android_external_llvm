@@ -207,7 +207,7 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
   case AMDGPU::RAT_WRITE_CACHELESS_32_eg:
   case AMDGPU::RAT_WRITE_CACHELESS_64_eg:
   case AMDGPU::RAT_WRITE_CACHELESS_128_eg: {
-    unsigned EOP = (llvm::next(I)->getOpcode() == AMDGPU::RETURN) ? 1 : 0;
+    unsigned EOP = (std::next(I)->getOpcode() == AMDGPU::RETURN) ? 1 : 0;
 
     BuildMI(*BB, I, BB->findDebugLoc(I), TII->get(MI->getOpcode()))
             .addOperand(MI->getOperand(0))
@@ -457,9 +457,9 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
     // Instruction is left unmodified if its not the last one of its type
     bool isLastInstructionOfItsType = true;
     unsigned InstExportType = MI->getOperand(1).getImm();
-    for (MachineBasicBlock::iterator NextExportInst = llvm::next(I),
+    for (MachineBasicBlock::iterator NextExportInst = std::next(I),
          EndBlock = BB->end(); NextExportInst != EndBlock;
-         NextExportInst = llvm::next(NextExportInst)) {
+         NextExportInst = std::next(NextExportInst)) {
       if (NextExportInst->getOpcode() == AMDGPU::EG_ExportSwz ||
           NextExportInst->getOpcode() == AMDGPU::R600_ExportSwz) {
         unsigned CurrentInstExportType = NextExportInst->getOperand(1)
@@ -470,7 +470,7 @@ MachineBasicBlock * R600TargetLowering::EmitInstrWithCustomInserter(
         }
       }
     }
-    bool EOP = (llvm::next(I)->getOpcode() == AMDGPU::RETURN)? 1 : 0;
+    bool EOP = (std::next(I)->getOpcode() == AMDGPU::RETURN) ? 1 : 0;
     if (!EOP && !isLastInstructionOfItsType)
       return BB;
     unsigned CfInst = (MI->getOpcode() == AMDGPU::EG_ExportSwz)? 84 : 40;
@@ -762,7 +762,9 @@ void R600TargetLowering::ReplaceNodeResults(SDNode *N,
                                             SmallVectorImpl<SDValue> &Results,
                                             SelectionDAG &DAG) const {
   switch (N->getOpcode()) {
-  default: return;
+  default:
+    AMDGPUTargetLowering::ReplaceNodeResults(N, Results, DAG);
+    return;
   case ISD::FP_TO_UINT: Results.push_back(LowerFPTOUINT(N->getOperand(0), DAG));
     return;
   case ISD::LOAD: {
@@ -977,7 +979,7 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const 
     HWFalse = DAG.getConstant(0, CompareVT);
   }
   else {
-    assert(!"Unhandled value type in LowerSELECT_CC");
+    llvm_unreachable("Unhandled value type in LowerSELECT_CC");
   }
 
   // Lower this unsupported SELECT_CC into a combination of two supported
@@ -990,7 +992,7 @@ SDValue R600TargetLowering::LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const 
       DAG.getCondCode(ISD::SETNE));
 }
 
-/// LLVM generates byte-addresed pointers.  For indirect addressing, we need to
+/// LLVM generates byte-addressed pointers.  For indirect addressing, we need to
 /// convert these pointers to a register index.  Each register holds
 /// 16 bytes, (4 x 32bit sub-register), but we need to take into account the
 /// \p StackWidth, which tells us how many of the 4 sub-registrers will be used
@@ -1099,7 +1101,7 @@ SDValue R600TargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
                                     Ptr, DAG.getConstant(2, MVT::i32)));
 
       if (StoreNode->isTruncatingStore() || StoreNode->isIndexed()) {
-        assert(!"Truncated and indexed stores not supported yet");
+        llvm_unreachable("Truncated and indexed stores not supported yet");
       } else {
         Chain = DAG.getStore(Chain, DL, Value, Ptr, StoreNode->getMemOperand());
       }
@@ -1113,6 +1115,10 @@ SDValue R600TargetLowering::LowerSTORE(SDValue Op, SelectionDAG &DAG) const {
     return SDValue();
   }
 
+  SDValue Ret = AMDGPUTargetLowering::LowerSTORE(Op, DAG);
+  if (Ret.getNode()) {
+    return Ret;
+  }
   // Lowering for indirect addressing
 
   const MachineFunction &MF = DAG.getMachineFunction();
@@ -1204,6 +1210,15 @@ SDValue R600TargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const
   SDValue Ptr = Op.getOperand(1);
   SDValue LoweredLoad;
 
+  SDValue Ret = AMDGPUTargetLowering::LowerLOAD(Op, DAG);
+  if (Ret.getNode()) {
+    SDValue Ops[2];
+    Ops[0] = Ret;
+    Ops[1] = Chain;
+    return DAG.getMergeValues(Ops, 2, DL);
+  }
+
+
   if (LoadNode->getAddressSpace() == AMDGPUAS::LOCAL_ADDRESS && VT.isVector()) {
     SDValue MergedValues[2] = {
       SplitVectorLoad(Op, DAG),
@@ -1239,7 +1254,7 @@ SDValue R600TargetLowering::LowerLOAD(SDValue Op, SelectionDAG &DAG) const
       }
       Result = DAG.getNode(ISD::BUILD_VECTOR, DL, NewVT, Slots, NumElements);
     } else {
-      // non constant ptr cant be folded, keeps it as a v4f32 load
+      // non-constant ptr can't be folded, keeps it as a v4f32 load
       Result = DAG.getNode(AMDGPUISD::CONST_ADDRESS, DL, MVT::v4i32,
           DAG.getNode(ISD::SRL, DL, MVT::i32, Ptr, DAG.getConstant(4, MVT::i32)),
           DAG.getConstant(LoadNode->getAddressSpace() -
@@ -1370,14 +1385,19 @@ SDValue R600TargetLowering::LowerFormalArguments(
     PointerType *PtrTy = PointerType::get(VT.getTypeForEVT(*DAG.getContext()),
                                                    AMDGPUAS::CONSTANT_BUFFER_0);
 
+    // i64 isn't a legal type, so the register type used ends up as i32, which
+    // isn't expected here. It attempts to create this sextload, but it ends up
+    // being invalid. Somehow this seems to work with i64 arguments, but breaks
+    // for <1 x i64>.
+
     // The first 36 bytes of the input buffer contains information about
     // thread group and global sizes.
     SDValue Arg = DAG.getExtLoad(ISD::SEXTLOAD, DL, VT, Chain,
                                  DAG.getConstant(36 + VA.getLocMemOffset(), MVT::i32),
                                  MachinePointerInfo(UndefValue::get(PtrTy)),
                                  MemVT, false, false, 4);
-                                 // 4 is the prefered alignment for
-                                 // the CONSTANT memory space.
+    // 4 is the preferred alignment for
+    // the CONSTANT memory space.
     InVals.push_back(Arg);
   }
   return Chain;
@@ -1442,17 +1462,20 @@ static SDValue ReorganizeVector(SelectionDAG &DAG, SDValue VectorEntry,
       VectorEntry.getOperand(3)
   };
   bool isUnmovable[4] = { false, false, false, false };
-  for (unsigned i = 0; i < 4; i++)
+  for (unsigned i = 0; i < 4; i++) {
     RemapSwizzle[i] = i;
+    if (NewBldVec[i].getOpcode() == ISD::EXTRACT_VECTOR_ELT) {
+      unsigned Idx = dyn_cast<ConstantSDNode>(NewBldVec[i].getOperand(1))
+          ->getZExtValue();
+      if (i == Idx)
+        isUnmovable[Idx] = true;
+    }
+  }
 
   for (unsigned i = 0; i < 4; i++) {
     if (NewBldVec[i].getOpcode() == ISD::EXTRACT_VECTOR_ELT) {
       unsigned Idx = dyn_cast<ConstantSDNode>(NewBldVec[i].getOperand(1))
           ->getZExtValue();
-      if (i == Idx) {
-        isUnmovable[Idx] = true;
-        continue;
-      }
       if (isUnmovable[Idx])
         continue;
       // Swap i and Idx

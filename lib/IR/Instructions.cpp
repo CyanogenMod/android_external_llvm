@@ -14,14 +14,14 @@
 
 #include "llvm/IR/Instructions.h"
 #include "LLVMContextImpl.h"
+#include "llvm/IR/CallSite.h"
+#include "llvm/IR/ConstantRange.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Operator.h"
-#include "llvm/Support/CallSite.h"
-#include "llvm/Support/ConstantRange.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MathExtras.h"
 using namespace llvm;
@@ -893,7 +893,8 @@ void AllocaInst::setAlignment(unsigned Align) {
   assert((Align & (Align-1)) == 0 && "Alignment is not a power of 2!");
   assert(Align <= MaximumAlignment &&
          "Alignment is greater than MaximumAlignment!");
-  setInstructionSubclassData(Log2_32(Align) + 1);
+  setInstructionSubclassData((getSubclassDataFromInstruction() & ~31) |
+                             (Log2_32(Align) + 1));
   assert(getAlignment() == Align && "Alignment representation error!");
 }
 
@@ -916,7 +917,7 @@ bool AllocaInst::isStaticAlloca() const {
   
   // Must be in the entry block.
   const BasicBlock *Parent = getParent();
-  return Parent == &Parent->getParent()->front();
+  return Parent == &Parent->getParent()->front() && !isUsedWithInAlloca();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1083,7 +1084,7 @@ void StoreInst::AssertOK() {
                  cast<PointerType>(getOperand(1)->getType())->getElementType()
          && "Ptr must be a pointer to Val type!");
   assert(!(isAtomic() && getAlignment() == 0) &&
-         "Alignment required for atomic load");
+         "Alignment required for atomic store");
 }
 
 
@@ -1215,12 +1216,14 @@ void StoreInst::setAlignment(unsigned Align) {
 //===----------------------------------------------------------------------===//
 
 void AtomicCmpXchgInst::Init(Value *Ptr, Value *Cmp, Value *NewVal,
-                             AtomicOrdering Ordering,
+                             AtomicOrdering SuccessOrdering,
+                             AtomicOrdering FailureOrdering,
                              SynchronizationScope SynchScope) {
   Op<0>() = Ptr;
   Op<1>() = Cmp;
   Op<2>() = NewVal;
-  setOrdering(Ordering);
+  setSuccessOrdering(SuccessOrdering);
+  setFailureOrdering(FailureOrdering);
   setSynchScope(SynchScope);
 
   assert(getOperand(0) && getOperand(1) && getOperand(2) &&
@@ -1233,30 +1236,38 @@ void AtomicCmpXchgInst::Init(Value *Ptr, Value *Cmp, Value *NewVal,
   assert(getOperand(2)->getType() ==
                  cast<PointerType>(getOperand(0)->getType())->getElementType()
          && "Ptr must be a pointer to NewVal type!");
-  assert(Ordering != NotAtomic &&
+  assert(SuccessOrdering != NotAtomic &&
          "AtomicCmpXchg instructions must be atomic!");
+  assert(FailureOrdering != NotAtomic &&
+         "AtomicCmpXchg instructions must be atomic!");
+  assert(SuccessOrdering >= FailureOrdering &&
+         "AtomicCmpXchg success ordering must be at least as strong as fail");
+  assert(FailureOrdering != Release && FailureOrdering != AcquireRelease &&
+         "AtomicCmpXchg failure ordering cannot include release semantics");
 }
 
 AtomicCmpXchgInst::AtomicCmpXchgInst(Value *Ptr, Value *Cmp, Value *NewVal,
-                                     AtomicOrdering Ordering,
+                                     AtomicOrdering SuccessOrdering,
+                                     AtomicOrdering FailureOrdering,
                                      SynchronizationScope SynchScope,
                                      Instruction *InsertBefore)
   : Instruction(Cmp->getType(), AtomicCmpXchg,
                 OperandTraits<AtomicCmpXchgInst>::op_begin(this),
                 OperandTraits<AtomicCmpXchgInst>::operands(this),
                 InsertBefore) {
-  Init(Ptr, Cmp, NewVal, Ordering, SynchScope);
+  Init(Ptr, Cmp, NewVal, SuccessOrdering, FailureOrdering, SynchScope);
 }
 
 AtomicCmpXchgInst::AtomicCmpXchgInst(Value *Ptr, Value *Cmp, Value *NewVal,
-                                     AtomicOrdering Ordering,
+                                     AtomicOrdering SuccessOrdering,
+                                     AtomicOrdering FailureOrdering,
                                      SynchronizationScope SynchScope,
                                      BasicBlock *InsertAtEnd)
   : Instruction(Cmp->getType(), AtomicCmpXchg,
                 OperandTraits<AtomicCmpXchgInst>::op_begin(this),
                 OperandTraits<AtomicCmpXchgInst>::operands(this),
                 InsertAtEnd) {
-  Init(Ptr, Cmp, NewVal, Ordering, SynchScope);
+  Init(Ptr, Cmp, NewVal, SuccessOrdering, FailureOrdering, SynchScope);
 }
  
 //===----------------------------------------------------------------------===//
@@ -1577,11 +1588,11 @@ bool ShuffleVectorInst::isValidOperands(const Value *V1, const Value *V2,
 
   if (const ConstantVector *MV = dyn_cast<ConstantVector>(Mask)) {
     unsigned V1Size = cast<VectorType>(V1->getType())->getNumElements();
-    for (unsigned i = 0, e = MV->getNumOperands(); i != e; ++i) {
-      if (ConstantInt *CI = dyn_cast<ConstantInt>(MV->getOperand(i))) {
+    for (Value *Op : MV->operands()) {
+      if (ConstantInt *CI = dyn_cast<ConstantInt>(Op)) {
         if (CI->uge(V1Size*2))
           return false;
-      } else if (!isa<UndefValue>(MV->getOperand(i))) {
+      } else if (!isa<UndefValue>(Op)) {
         return false;
       }
     }
@@ -1701,8 +1712,7 @@ ExtractValueInst::ExtractValueInst(const ExtractValueInst &EVI)
 //
 Type *ExtractValueInst::getIndexedType(Type *Agg,
                                        ArrayRef<unsigned> Idxs) {
-  for (unsigned CurIdx = 0; CurIdx != Idxs.size(); ++CurIdx) {
-    unsigned Index = Idxs[CurIdx];
+  for (unsigned Index : Idxs) {
     // We can't use CompositeType::indexValid(Index) here.
     // indexValid() always returns true for arrays because getelementptr allows
     // out-of-bounds indices. Since we don't allow those for extractvalue and
@@ -2114,8 +2124,27 @@ bool CastInst::isNoopCast(Type *IntPtrTy) const {
   return isNoopCast(getOpcode(), getOperand(0)->getType(), getType(), IntPtrTy);
 }
 
-/// This function determines if a pair of casts can be eliminated and what 
-/// opcode should be used in the elimination. This assumes that there are two 
+bool CastInst::isNoopCast(const DataLayout *DL) const {
+  if (!DL) {
+    // Assume maximum pointer size.
+    return isNoopCast(Type::getInt64Ty(getContext()));
+  }
+
+  Type *PtrOpTy = 0;
+  if (getOpcode() == Instruction::PtrToInt)
+    PtrOpTy = getOperand(0)->getType();
+  else if (getOpcode() == Instruction::IntToPtr)
+    PtrOpTy = getType();
+
+  Type *IntPtrTy = PtrOpTy
+                 ? DL->getIntPtrType(PtrOpTy)
+                 : DL->getIntPtrType(getContext(), 0);
+
+  return isNoopCast(getOpcode(), getOperand(0)->getType(), getType(), IntPtrTy);
+}
+
+/// This function determines if a pair of casts can be eliminated and what
+/// opcode should be used in the elimination. This assumes that there are two
 /// instructions like this:
 /// *  %F = firstOpcode SrcTy %x to MidTy
 /// *  %S = secondOpcode MidTy %F to DstTy
@@ -2206,7 +2235,7 @@ unsigned CastInst::isEliminableCastPair(
     case 3: 
       // No-op cast in second op implies firstOp as long as the DestTy
       // is integer and we are not converting between a vector and a
-      // non vector type.
+      // non-vector type.
       if (!SrcTy->isVectorTy() && DstTy->isIntegerTy())
         return firstOp;
       return 0;
@@ -2817,30 +2846,55 @@ CastInst::castIsValid(Instruction::CastOps op, Value *S, Type *DstTy) {
         return false;
     return SrcTy->getScalarType()->isIntegerTy() &&
            DstTy->getScalarType()->isPointerTy();
-  case Instruction::BitCast:
+  case Instruction::BitCast: {
+    PointerType *SrcPtrTy = dyn_cast<PointerType>(SrcTy->getScalarType());
+    PointerType *DstPtrTy = dyn_cast<PointerType>(DstTy->getScalarType());
+
     // BitCast implies a no-op cast of type only. No bits change.
     // However, you can't cast pointers to anything but pointers.
-    if (SrcTy->isPtrOrPtrVectorTy() != DstTy->isPtrOrPtrVectorTy())
+    if (!SrcPtrTy != !DstPtrTy)
       return false;
 
-    // For non pointer cases, the cast is okay if the source and destination bit
+    // For non-pointer cases, the cast is okay if the source and destination bit
     // widths are identical.
-    if (!SrcTy->isPtrOrPtrVectorTy())
+    if (!SrcPtrTy)
       return SrcTy->getPrimitiveSizeInBits() == DstTy->getPrimitiveSizeInBits();
 
-    // If both are pointers then the address spaces must match and vector of
-    // pointers must have the same number of elements.
-    return SrcTy->getPointerAddressSpace() == DstTy->getPointerAddressSpace() &&
-           SrcTy->isVectorTy() == DstTy->isVectorTy() &&
-           (!SrcTy->isVectorTy() ||
-            SrcTy->getVectorNumElements() == SrcTy->getVectorNumElements());
+    // If both are pointers then the address spaces must match.
+    if (SrcPtrTy->getAddressSpace() != DstPtrTy->getAddressSpace())
+      return false;
 
-  case Instruction::AddrSpaceCast:
-    return SrcTy->isPtrOrPtrVectorTy() && DstTy->isPtrOrPtrVectorTy() &&
-           SrcTy->getPointerAddressSpace() != DstTy->getPointerAddressSpace() &&
-           SrcTy->isVectorTy() == DstTy->isVectorTy() &&
-           (!SrcTy->isVectorTy() ||
-            SrcTy->getVectorNumElements() == SrcTy->getVectorNumElements());
+    // A vector of pointers must have the same number of elements.
+    if (VectorType *SrcVecTy = dyn_cast<VectorType>(SrcTy)) {
+      if (VectorType *DstVecTy = dyn_cast<VectorType>(DstTy))
+        return (SrcVecTy->getNumElements() == DstVecTy->getNumElements());
+
+      return false;
+    }
+
+    return true;
+  }
+  case Instruction::AddrSpaceCast: {
+    PointerType *SrcPtrTy = dyn_cast<PointerType>(SrcTy->getScalarType());
+    if (!SrcPtrTy)
+      return false;
+
+    PointerType *DstPtrTy = dyn_cast<PointerType>(DstTy->getScalarType());
+    if (!DstPtrTy)
+      return false;
+
+    if (SrcPtrTy->getAddressSpace() == DstPtrTy->getAddressSpace())
+      return false;
+
+    if (VectorType *SrcVecTy = dyn_cast<VectorType>(SrcTy)) {
+      if (VectorType *DstVecTy = dyn_cast<VectorType>(DstTy))
+        return (SrcVecTy->getNumElements() == DstVecTy->getNumElements());
+
+      return false;
+    }
+
+    return true;
+  }
   }
 }
 
@@ -3552,7 +3606,8 @@ StoreInst *StoreInst::clone_impl() const {
 AtomicCmpXchgInst *AtomicCmpXchgInst::clone_impl() const {
   AtomicCmpXchgInst *Result =
     new AtomicCmpXchgInst(getOperand(0), getOperand(1), getOperand(2),
-                          getOrdering(), getSynchScope());
+                          getSuccessOrdering(), getFailureOrdering(),
+                          getSynchScope());
   Result->setVolatile(isVolatile());
   return Result;
 }

@@ -33,8 +33,10 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/GraphTraits.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Analysis/Dominators.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/Instruction.h"
 #include "llvm/Pass.h"
 #include <algorithm>
 
@@ -53,6 +55,7 @@ class Loop;
 class MDNode;
 class PHINode;
 class raw_ostream;
+template<class N> class DominatorTreeBase;
 template<class N, class M> class LoopInfoBase;
 template<class N, class M> class LoopBase;
 
@@ -227,6 +230,18 @@ public:
   /// getLoopLatch - If there is a single latch block for this loop, return it.
   /// A latch block is a block that contains a branch back to the header.
   BlockT *getLoopLatch() const;
+
+  /// getLoopLatches - Return all loop latch blocks of this loop. A latch block
+  /// is a block that contains a branch back to the header.
+  void getLoopLatches(SmallVectorImpl<BlockT *> &LoopLatches) const {
+    BlockT *H = getHeader();
+    typedef GraphTraits<Inverse<BlockT*> > InvBlockTraits;
+    for (typename InvBlockTraits::ChildIteratorType I =
+         InvBlockTraits::child_begin(H),
+         E = InvBlockTraits::child_end(H); I != E; ++I)
+      if (contains(*I))
+        LoopLatches.push_back(*I);
+  }
 
   //===--------------------------------------------------------------------===//
   // APIs for updating loop information after changing the CFG
@@ -639,15 +654,15 @@ public:
 
   /// runOnFunction - Calculate the natural loop information.
   ///
-  virtual bool runOnFunction(Function &F);
+  bool runOnFunction(Function &F) override;
 
-  virtual void verifyAnalysis() const;
+  void verifyAnalysis() const override;
 
-  virtual void releaseMemory() { LI.releaseMemory(); }
+  void releaseMemory() override { LI.releaseMemory(); }
 
-  virtual void print(raw_ostream &O, const Module* M = 0) const;
+  void print(raw_ostream &O, const Module* M = 0) const override;
 
-  virtual void getAnalysisUsage(AnalysisUsage &AU) const;
+  void getAnalysisUsage(AnalysisUsage &AU) const override;
 
   /// removeLoop - This removes the specified top-level loop from this loop info
   /// object.  The loop is not deleted, as it will presumably be inserted into

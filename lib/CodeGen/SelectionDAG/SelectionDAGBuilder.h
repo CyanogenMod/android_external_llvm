@@ -18,9 +18,8 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
-#include "llvm/CodeGen/ValueTypes.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
-#include "llvm/Support/CallSite.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <vector>
 
@@ -57,6 +56,7 @@ class MachineBasicBlock;
 class MachineInstr;
 class MachineRegisterInfo;
 class MDNode;
+class MVT;
 class PHINode;
 class PtrToIntInst;
 class ReturnInst;
@@ -488,8 +488,12 @@ private:
 private:
   const TargetMachine &TM;
 public:
+  /// Lowest valid SDNodeOrder. The special case 0 is reserved for scheduling
+  /// nodes without a corresponding SDNode.
+  static const unsigned LowestSDNodeOrder = 1;
+
   SelectionDAG &DAG;
-  const DataLayout *TD;
+  const DataLayout *DL;
   AliasAnalysis *AA;
   const TargetLibraryInfo *LibInfo;
 
@@ -534,7 +538,7 @@ public:
 
   SelectionDAGBuilder(SelectionDAG &dag, FunctionLoweringInfo &funcinfo,
                       CodeGenOpt::Level ol)
-    : CurInst(NULL), SDNodeOrder(0), TM(dag.getTarget()),
+    : CurInst(NULL), SDNodeOrder(LowestSDNodeOrder), TM(dag.getTarget()),
       DAG(dag), FuncInfo(funcinfo), OptLevel(ol),
       HasTailCall(false) {
   }
@@ -608,11 +612,13 @@ public:
 
   void FindMergedConditions(const Value *Cond, MachineBasicBlock *TBB,
                             MachineBasicBlock *FBB, MachineBasicBlock *CurBB,
-                            MachineBasicBlock *SwitchBB, unsigned Opc);
+                            MachineBasicBlock *SwitchBB, unsigned Opc,
+                            uint32_t TW, uint32_t FW);
   void EmitBranchForMergedCondition(const Value *Cond, MachineBasicBlock *TBB,
                                     MachineBasicBlock *FBB,
                                     MachineBasicBlock *CurBB,
-                                    MachineBasicBlock *SwitchBB);
+                                    MachineBasicBlock *SwitchBB,
+                                    uint32_t TW, uint32_t FW);
   bool ShouldEmitAsBranches(const std::vector<CaseBlock> &Cases);
   bool isExportableFromCurrentBlock(const Value *V, const BasicBlock *FromBB);
   void CopyToExportRegsIfNeeded(const Value *V);
@@ -627,7 +633,7 @@ public:
                                                 bool useVoidTy = false);
 
   /// UpdateSplitBlock - When an MBB was split during scheduling, update the
-  /// references that ned to refer to the last resulting block.
+  /// references that need to refer to the last resulting block.
   void UpdateSplitBlock(MachineBasicBlock *First, MachineBasicBlock *Last);
 
 private:

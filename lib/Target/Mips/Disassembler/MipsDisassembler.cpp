@@ -263,6 +263,11 @@ static DecodeStatus DecodeExtSize(MCInst &Inst,
                                   uint64_t Address,
                                   const void *Decoder);
 
+/// INSVE_[BHWD] have an implicit operand that the generated decoder doesn't
+/// handle.
+template <typename InsnType>
+static DecodeStatus DecodeINSVE_DF(MCInst &MI, InsnType insn, uint64_t Address,
+                                   const void *Decoder);
 namespace llvm {
 extern Target TheMipselTarget, TheMipsTarget, TheMips64Target,
               TheMips64elTarget;
@@ -304,8 +309,53 @@ extern "C" void LLVMInitializeMipsDisassembler() {
                                          createMips64elDisassembler);
 }
 
-
 #include "MipsGenDisassemblerTables.inc"
+
+template <typename InsnType>
+static DecodeStatus DecodeINSVE_DF(MCInst &MI, InsnType insn, uint64_t Address,
+                                   const void *Decoder) {
+  typedef DecodeStatus (*DecodeFN)(MCInst &, unsigned, uint64_t, const void *);
+  // The size of the n field depends on the element size
+  // The register class also depends on this.
+  InsnType tmp = fieldFromInstruction(insn, 17, 5);
+  unsigned NSize = 0;
+  DecodeFN RegDecoder = nullptr;
+  if ((tmp & 0x18) == 0x00) { // INSVE_B
+    NSize = 4;
+    RegDecoder = DecodeMSA128BRegisterClass;
+  } else if ((tmp & 0x1c) == 0x10) { // INSVE_H
+    NSize = 3;
+    RegDecoder = DecodeMSA128HRegisterClass;
+  } else if ((tmp & 0x1e) == 0x18) { // INSVE_W
+    NSize = 2;
+    RegDecoder = DecodeMSA128WRegisterClass;
+  } else if ((tmp & 0x1f) == 0x1c) { // INSVE_D
+    NSize = 1;
+    RegDecoder = DecodeMSA128DRegisterClass;
+  } else
+    llvm_unreachable("Invalid encoding");
+
+  assert(NSize != 0 && RegDecoder != nullptr);
+
+  // $wd
+  tmp = fieldFromInstruction(insn, 6, 5);
+  if (RegDecoder(MI, tmp, Address, Decoder) == MCDisassembler::Fail)
+    return MCDisassembler::Fail;
+  // $wd_in
+  if (RegDecoder(MI, tmp, Address, Decoder) == MCDisassembler::Fail)
+    return MCDisassembler::Fail;
+  // $n
+  tmp = fieldFromInstruction(insn, 16, NSize);
+  MI.addOperand(MCOperand::CreateImm(tmp));
+  // $ws
+  tmp = fieldFromInstruction(insn, 11, 5);
+  if (RegDecoder(MI, tmp, Address, Decoder) == MCDisassembler::Fail)
+    return MCDisassembler::Fail;
+  // $n2
+  MI.addOperand(MCOperand::CreateImm(0));
+
+  return MCDisassembler::Success;
+}
 
   /// readInstruction - read four bytes from the MemoryObject
   /// and return 32 bit word sorted according to the given endianess
@@ -565,7 +615,37 @@ static DecodeStatus DecodeMSA128Mem(MCInst &Inst, unsigned Insn,
 
   Inst.addOperand(MCOperand::CreateReg(Reg));
   Inst.addOperand(MCOperand::CreateReg(Base));
-  Inst.addOperand(MCOperand::CreateImm(Offset));
+
+  // The immediate field of an LD/ST instruction is scaled which means it must
+  // be multiplied (when decoding) by the size (in bytes) of the instructions'
+  // data format.
+  // .b - 1 byte
+  // .h - 2 bytes
+  // .w - 4 bytes
+  // .d - 8 bytes
+  switch(Inst.getOpcode())
+  {
+  default:
+    assert (0 && "Unexpected instruction");
+    return MCDisassembler::Fail;
+    break;
+  case Mips::LD_B:
+  case Mips::ST_B:
+    Inst.addOperand(MCOperand::CreateImm(Offset));
+    break;
+  case Mips::LD_H:
+  case Mips::ST_H:
+    Inst.addOperand(MCOperand::CreateImm(Offset << 1));
+    break;
+  case Mips::LD_W:
+  case Mips::ST_W:
+    Inst.addOperand(MCOperand::CreateImm(Offset << 2));
+    break;
+  case Mips::LD_D:
+  case Mips::ST_D:
+    Inst.addOperand(MCOperand::CreateImm(Offset << 3));
+    break;
+  }
 
   return MCDisassembler::Success;
 }
@@ -580,6 +660,9 @@ static DecodeStatus DecodeMemMMImm12(MCInst &Inst,
 
   Reg = getReg(Decoder, Mips::GPR32RegClassID, Reg);
   Base = getReg(Decoder, Mips::GPR32RegClassID, Base);
+
+  if (Inst.getOpcode() == Mips::SC_MM)
+    Inst.addOperand(MCOperand::CreateReg(Reg));
 
   Inst.addOperand(MCOperand::CreateReg(Reg));
   Inst.addOperand(MCOperand::CreateReg(Base));

@@ -263,12 +263,12 @@ bool DWARFUnit::parseDWO() {
     sys::path::append(AbsolutePath, CompilationDir);
   }
   sys::path::append(AbsolutePath, DWOFileName);
-  object::ObjectFile *DWOFile =
+  ErrorOr<object::ObjectFile *> DWOFile =
       object::ObjectFile::createObjectFile(AbsolutePath);
   if (!DWOFile)
     return false;
   // Reset DWOHolder.
-  DWO.reset(new DWOHolder(DWOFile));
+  DWO.reset(new DWOHolder(DWOFile.get()));
   DWARFUnit *DWOCU = DWO->getUnit();
   // Verify that compile unit in .dwo file is valid.
   if (DWOCU == 0 || DWOCU->getDWOId() != getDWOId()) {
@@ -331,11 +331,12 @@ DWARFUnit::buildAddressRangeTable(DWARFDebugAranges *debug_aranges,
 const DWARFDebugInfoEntryMinimal *
 DWARFUnit::getSubprogramForAddress(uint64_t Address) {
   extractDIEsIfNeeded(false);
-  for (size_t i = 0, n = DieArray.size(); i != n; i++)
-    if (DieArray[i].isSubprogramDIE() &&
-        DieArray[i].addressRangeContainsAddress(this, Address)) {
-      return &DieArray[i];
+  for (const DWARFDebugInfoEntryMinimal &DIE : DieArray) {
+    if (DIE.isSubprogramDIE() &&
+        DIE.addressRangeContainsAddress(this, Address)) {
+      return &DIE;
     }
+  }
   return 0;
 }
 

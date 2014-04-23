@@ -271,7 +271,7 @@ void llvm::sys::PrintStackTrace(FILE *FD) {
   // Use backtrace() to output a backtrace on Linux systems with glibc.
   int depth = backtrace(StackTrace,
                         static_cast<int>(array_lengthof(StackTrace)));
-#if HAVE_DLFCN_H && HAVE_CXXABI_H && __GNUG__
+#if HAVE_DLFCN_H && __GNUG__
   int width = 0;
   for (int i = 0; i < depth; ++i) {
     Dl_info dlinfo;
