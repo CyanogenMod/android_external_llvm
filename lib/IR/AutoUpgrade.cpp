@@ -11,17 +11,18 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "llvm/AutoUpgrade.h"
-#include "llvm/DebugInfo.h"
+#include "llvm/IR/AutoUpgrade.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugInfo.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instruction.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/Support/CFG.h"
-#include "llvm/Support/CallSite.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <cstring>
 using namespace llvm;
@@ -410,7 +411,7 @@ void llvm::UpgradeCallsToIntrinsic(Function* F) {
   if (UpgradeIntrinsicFunction(F, NewFn)) {
     if (NewFn != F) {
       // Replace all uses to the old function with the new one if necessary.
-      for (Value::use_iterator UI = F->use_begin(), UE = F->use_end();
+      for (Value::user_iterator UI = F->user_begin(), UE = F->user_end();
            UI != UE; ) {
         if (CallInst *CI = dyn_cast<CallInst>(*UI++))
           UpgradeIntrinsicCall(CI, NewFn);
@@ -494,8 +495,14 @@ Value *llvm::UpgradeBitCastExpr(unsigned Opc, Constant *C, Type *DestTy) {
 /// Check the debug info version number, if it is out-dated, drop the debug
 /// info. Return true if module is modified.
 bool llvm::UpgradeDebugInfo(Module &M) {
-  if (getDebugMetadataVersionFromModule(M) == DEBUG_METADATA_VERSION)
+  unsigned Version = getDebugMetadataVersionFromModule(M);
+  if (Version == DEBUG_METADATA_VERSION)
     return false;
 
-  return StripDebugInfo(M);
+  bool RetCode = StripDebugInfo(M);
+  if (RetCode) {
+    DiagnosticInfoDebugMetadataVersion DiagVersion(M, Version);
+    M.getContext().diagnose(DiagVersion);
+  }
+  return RetCode;
 }

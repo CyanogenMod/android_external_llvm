@@ -193,10 +193,10 @@ SDValue DAGTypeLegalizer::PromoteIntRes_Atomic1(AtomicSDNode *N) {
 SDValue DAGTypeLegalizer::PromoteIntRes_Atomic2(AtomicSDNode *N) {
   SDValue Op2 = GetPromotedInteger(N->getOperand(2));
   SDValue Op3 = GetPromotedInteger(N->getOperand(3));
-  SDValue Res = DAG.getAtomic(N->getOpcode(), SDLoc(N),
-                              N->getMemoryVT(), N->getChain(), N->getBasePtr(),
-                              Op2, Op3, N->getMemOperand(), N->getOrdering(),
-                              N->getSynchScope());
+  SDValue Res = DAG.getAtomic(N->getOpcode(), SDLoc(N), N->getMemoryVT(),
+                              N->getChain(), N->getBasePtr(), Op2, Op3,
+                              N->getMemOperand(), N->getSuccessOrdering(),
+                              N->getFailureOrdering(), N->getSynchScope());
   // Legalized the chain result - switch anything that used the old chain to
   // use the new one.
   ReplaceValueWith(SDValue(N, 1), Res.getValue(1));
@@ -2448,6 +2448,7 @@ void DAGTypeLegalizer::ExpandIntRes_ATOMIC_LOAD(SDNode *N,
                                N->getOperand(1), Zero, Zero,
                                cast<AtomicSDNode>(N)->getMemOperand(),
                                cast<AtomicSDNode>(N)->getOrdering(),
+                               cast<AtomicSDNode>(N)->getOrdering(),
                                cast<AtomicSDNode>(N)->getSynchScope());
   ReplaceValueWith(SDValue(N, 0), Swap.getValue(0));
   ReplaceValueWith(SDValue(N, 1), Swap.getValue(1));
@@ -2577,13 +2578,17 @@ void DAGTypeLegalizer::IntegerExpandSetCCOperands(SDValue &NewLHS,
   // this identity: (B1 ? B2 : B3) --> (B1 & B2)|(!B1&B3)
   TargetLowering::DAGCombinerInfo DagCombineInfo(DAG, AfterLegalizeTypes, true, NULL);
   SDValue Tmp1, Tmp2;
-  Tmp1 = TLI.SimplifySetCC(getSetCCResultType(LHSLo.getValueType()),
-                           LHSLo, RHSLo, LowCC, false, DagCombineInfo, dl);
+  if (TLI.isTypeLegal(LHSLo.getValueType()) &&
+      TLI.isTypeLegal(RHSLo.getValueType()))
+    Tmp1 = TLI.SimplifySetCC(getSetCCResultType(LHSLo.getValueType()),
+                             LHSLo, RHSLo, LowCC, false, DagCombineInfo, dl);
   if (!Tmp1.getNode())
     Tmp1 = DAG.getSetCC(dl, getSetCCResultType(LHSLo.getValueType()),
                         LHSLo, RHSLo, LowCC);
-  Tmp2 = TLI.SimplifySetCC(getSetCCResultType(LHSHi.getValueType()),
-                           LHSHi, RHSHi, CCCode, false, DagCombineInfo, dl);
+  if (TLI.isTypeLegal(LHSHi.getValueType()) &&
+      TLI.isTypeLegal(RHSHi.getValueType()))
+    Tmp2 = TLI.SimplifySetCC(getSetCCResultType(LHSHi.getValueType()),
+                             LHSHi, RHSHi, CCCode, false, DagCombineInfo, dl);
   if (!Tmp2.getNode())
     Tmp2 = DAG.getNode(ISD::SETCC, dl,
                        getSetCCResultType(LHSHi.getValueType()),

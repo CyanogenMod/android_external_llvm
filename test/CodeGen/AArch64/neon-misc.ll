@@ -894,13 +894,13 @@ define <4 x float> @test_vcvt_high_f32_f64(<2 x float> %a, <2 x double> %b) #0 {
 
 define <2 x float> @test_vcvtx_f32_f64(<2 x double> %a) #0 {
 ; CHECK: fcvtxn v{{[0-9]+}}.2s, v{{[0-9]+}}.2d
-  %vcvtx_f32_f641.i = tail call <2 x float> @llvm.aarch64.neon.fcvtxn.v2f32.v2f64(<2 x double> %a) #4
+  %vcvtx_f32_f641.i = call <2 x float> @llvm.aarch64.neon.vcvtxn.v2f32.v2f64(<2 x double> %a) #4
   ret <2 x float> %vcvtx_f32_f641.i
 }
 
 define <4 x float> @test_vcvtx_high_f32_f64(<2 x float> %a, <2 x double> %b) #0 {
 ; CHECK: fcvtxn2 v{{[0-9]+}}.4s, v{{[0-9]+}}.2d
-  %vcvtx_f32_f641.i.i = tail call <2 x float> @llvm.aarch64.neon.fcvtxn.v2f32.v2f64(<2 x double> %b) #4
+  %vcvtx_f32_f641.i.i = tail call <2 x float> @llvm.aarch64.neon.vcvtxn.v2f32.v2f64(<2 x double> %b) #4
   %shuffle.i = shufflevector <2 x float> %a, <2 x float> %vcvtx_f32_f641.i.i, <4 x i32> <i32 0, i32 1, i32 2, i32 3>
   ret <4 x float> %shuffle.i
 }
@@ -1080,147 +1080,255 @@ define <2 x i64> @test_vcvtq_u64_f64(<2 x double> %a) #0 {
   ret <2 x i64> %vcvt.i
 }
 
-define <2 x i32> @test_vcvtn_s32_f32(<2 x float> %a) #0 {
+define <2 x i64> @test_vcvt_s64_f32(<2 x float> %a) #0 {
+; CHECK: fcvtl v{{[0-9]+}}.2d, v{{[0-9]+}}.2s
+; CHECK: fcvtzs v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
+  %vcvt.i = fptosi <2 x float> %a to <2 x i64>
+  ret <2 x i64> %vcvt.i
+}
+
+define <2 x i64> @test_vcvt_u64_f32(<2 x float> %a) #0 {
+; CHECK: fcvtl v{{[0-9]+}}.2d, v{{[0-9]+}}.2s
+; CHECK: fcvtzu v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
+  %vcvt.i = fptoui <2 x float> %a to <2 x i64>
+  ret <2 x i64> %vcvt.i
+}
+
+define <4 x i16> @test_vcvt_s16_f32(<4 x float> %a) #0 {
+; CHECK: fcvtzs v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
+; CHECK: xtn v{{[0-9]+}}.4h, v{{[0-9]+}}.4s
+  %vcvt.i = fptosi <4 x float> %a to <4 x i16>
+  ret <4 x i16> %vcvt.i
+}
+
+define <4 x i16> @test_vcvt_u16_f32(<4 x float> %a) #0 {
+; CHECK: fcvtzu v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
+; CHECK: xtn v{{[0-9]+}}.4h, v{{[0-9]+}}.4s
+  %vcvt.i = fptoui <4 x float> %a to <4 x i16>
+  ret <4 x i16> %vcvt.i
+}
+
+define <2 x i32> @test_vcvt_s32_f64(<2 x double> %a) #0 {
+; CHECK: fcvtzs v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
+; CHECK: xtn v{{[0-9]+}}.2s, v{{[0-9]+}}.2d
+  %vcvt.i = fptosi <2 x double> %a to <2 x i32>
+  ret <2 x i32> %vcvt.i
+}
+
+define <2 x i32> @test_vcvt_u32_f64(<2 x double> %a) #0 {
+; CHECK: fcvtzu v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
+; CHECK: xtn v{{[0-9]+}}.2s, v{{[0-9]+}}.2d
+  %vcvt.i = fptoui <2 x double> %a to <2 x i32>
+  ret <2 x i32> %vcvt.i
+}
+
+define <1 x i8> @test_vcvt_s8_f64(<1 x double> %a) #0 {
+; CHECK: fcvtzs w{{[0-9]+}}, d{{[0-9]+}}
+; CHECK: ins v{{[0-9]+}}.b[0], w{{[0-9]+}}
+  %vcvt.i = fptosi <1 x double> %a to <1 x i8>
+  ret <1 x i8> %vcvt.i
+}
+
+define <1 x i8> @test_vcvt_u8_f64(<1 x double> %a) #0 {
+; CHECK: fcvtzs w{{[0-9]+}}, d{{[0-9]+}}
+; CHECK: ins v{{[0-9]+}}.b[0], w{{[0-9]+}}
+  %vcvt.i = fptoui <1 x double> %a to <1 x i8>
+  ret <1 x i8> %vcvt.i
+}
+
+define <1 x i16> @test_vcvt_s16_f64(<1 x double> %a) #0 {
+; CHECK: fcvtzs w{{[0-9]+}}, d{{[0-9]+}}
+; CHECK: ins v{{[0-9]+}}.h[0], w{{[0-9]+}}
+  %vcvt.i = fptosi <1 x double> %a to <1 x i16>
+  ret <1 x i16> %vcvt.i
+}
+
+define <1 x i16> @test_vcvt_u16_f64(<1 x double> %a) #0 {
+; CHECK: fcvtzs w{{[0-9]+}}, d{{[0-9]+}}
+; CHECK: ins v{{[0-9]+}}.h[0], w{{[0-9]+}}
+  %vcvt.i = fptoui <1 x double> %a to <1 x i16>
+  ret <1 x i16> %vcvt.i
+}
+
+define <1 x i32> @test_vcvt_s32_f64_v1(<1 x double> %a) #0 {
+; CHECK: fcvtzs w{{[0-9]+}}, d{{[0-9]+}}
+; CHECK: fmov s{{[0-9]+}}, w{{[0-9]+}}
+  %vcvt.i = fptosi <1 x double> %a to <1 x i32>
+  ret <1 x i32> %vcvt.i
+}
+
+define <1 x i32> @test_vcvt_u32_f64_v1(<1 x double> %a) #0 {
+; CHECK: fcvtzu w{{[0-9]+}}, d{{[0-9]+}}
+; CHECK: fmov s{{[0-9]+}}, w{{[0-9]+}}
+  %vcvt.i = fptoui <1 x double> %a to <1 x i32>
+  ret <1 x i32> %vcvt.i
+}
+
+define <2 x i32> @test_vcvtn_s32_f32(<2 x float> %a) {
+; CHECK-LABEL: test_vcvtn_s32_f32
 ; CHECK: fcvtns v{{[0-9]+}}.2s, v{{[0-9]+}}.2s
-  %vcvtns_f321.i = tail call <2 x i32> @llvm.aarch64.neon.fcvtns.v2i32.v2f32(<2 x float> %a) #4
+  %vcvtns_f321.i = call <2 x i32> @llvm.arm.neon.vcvtns.v2i32.v2f32(<2 x float> %a)
   ret <2 x i32> %vcvtns_f321.i
 }
 
-define <4 x i32> @test_vcvtnq_s32_f32(<4 x float> %a) #0 {
+define <4 x i32> @test_vcvtnq_s32_f32(<4 x float> %a) {
+; CHECK-LABEL: test_vcvtnq_s32_f32
 ; CHECK: fcvtns v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
-  %vcvtns_f321.i = tail call <4 x i32> @llvm.aarch64.neon.fcvtns.v4i32.v4f32(<4 x float> %a) #4
+  %vcvtns_f321.i = call <4 x i32> @llvm.arm.neon.vcvtns.v4i32.v4f32(<4 x float> %a)
   ret <4 x i32> %vcvtns_f321.i
 }
 
-define <2 x i64> @test_vcvtnq_s64_f64(<2 x double> %a) #0 {
+define <2 x i64> @test_vcvtnq_s64_f64(<2 x double> %a) {
+; CHECK-LABEL: test_vcvtnq_s64_f64
 ; CHECK: fcvtns v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
-  %vcvtns_f641.i = tail call <2 x i64> @llvm.aarch64.neon.fcvtns.v2i64.v2f64(<2 x double> %a) #4
+  %vcvtns_f641.i = call <2 x i64> @llvm.arm.neon.vcvtns.v2i64.v2f64(<2 x double> %a)
   ret <2 x i64> %vcvtns_f641.i
 }
 
-define <2 x i32> @test_vcvtn_u32_f32(<2 x float> %a) #0 {
+define <2 x i32> @test_vcvtn_u32_f32(<2 x float> %a) {
+; CHECK-LABEL: test_vcvtn_u32_f32
 ; CHECK: fcvtnu v{{[0-9]+}}.2s, v{{[0-9]+}}.2s
-  %vcvtnu_f321.i = tail call <2 x i32> @llvm.aarch64.neon.fcvtnu.v2i32.v2f32(<2 x float> %a) #4
+  %vcvtnu_f321.i = call <2 x i32> @llvm.arm.neon.vcvtnu.v2i32.v2f32(<2 x float> %a)
   ret <2 x i32> %vcvtnu_f321.i
 }
 
-define <4 x i32> @test_vcvtnq_u32_f32(<4 x float> %a) #0 {
+define <4 x i32> @test_vcvtnq_u32_f32(<4 x float> %a) {
+; CHECK-LABEL: test_vcvtnq_u32_f32
 ; CHECK: fcvtnu v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
-  %vcvtnu_f321.i = tail call <4 x i32> @llvm.aarch64.neon.fcvtnu.v4i32.v4f32(<4 x float> %a) #4
+  %vcvtnu_f321.i = call <4 x i32> @llvm.arm.neon.vcvtnu.v4i32.v4f32(<4 x float> %a)
   ret <4 x i32> %vcvtnu_f321.i
 }
 
-define <2 x i64> @test_vcvtnq_u64_f64(<2 x double> %a) #0 {
+define <2 x i64> @test_vcvtnq_u64_f64(<2 x double> %a) {
+; CHECK-LABEL: test_vcvtnq_u64_f64
 ; CHECK: fcvtnu v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
-  %vcvtnu_f641.i = tail call <2 x i64> @llvm.aarch64.neon.fcvtnu.v2i64.v2f64(<2 x double> %a) #4
+  %vcvtnu_f641.i = call <2 x i64> @llvm.arm.neon.vcvtnu.v2i64.v2f64(<2 x double> %a)
   ret <2 x i64> %vcvtnu_f641.i
 }
 
-define <2 x i32> @test_vcvtp_s32_f32(<2 x float> %a) #0 {
+define <2 x i32> @test_vcvtp_s32_f32(<2 x float> %a) {
+; CHECK-LABEL: test_vcvtp_s32_f32
 ; CHECK: fcvtps v{{[0-9]+}}.2s, v{{[0-9]+}}.2s
-  %vcvtps_f321.i = tail call <2 x i32> @llvm.aarch64.neon.fcvtps.v2i32.v2f32(<2 x float> %a) #4
+  %vcvtps_f321.i = call <2 x i32> @llvm.arm.neon.vcvtps.v2i32.v2f32(<2 x float> %a)
   ret <2 x i32> %vcvtps_f321.i
 }
 
-define <4 x i32> @test_vcvtpq_s32_f32(<4 x float> %a) #0 {
+define <4 x i32> @test_vcvtpq_s32_f32(<4 x float> %a) {
+; CHECK-LABEL: test_vcvtpq_s32_f32
 ; CHECK: fcvtps v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
-  %vcvtps_f321.i = tail call <4 x i32> @llvm.aarch64.neon.fcvtps.v4i32.v4f32(<4 x float> %a) #4
+  %vcvtps_f321.i = call <4 x i32> @llvm.arm.neon.vcvtps.v4i32.v4f32(<4 x float> %a)
   ret <4 x i32> %vcvtps_f321.i
 }
 
-define <2 x i64> @test_vcvtpq_s64_f64(<2 x double> %a) #0 {
+define <2 x i64> @test_vcvtpq_s64_f64(<2 x double> %a) {
+; CHECK-LABEL: test_vcvtpq_s64_f64
 ; CHECK: fcvtps v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
-  %vcvtps_f641.i = tail call <2 x i64> @llvm.aarch64.neon.fcvtps.v2i64.v2f64(<2 x double> %a) #4
+  %vcvtps_f641.i = call <2 x i64> @llvm.arm.neon.vcvtps.v2i64.v2f64(<2 x double> %a)
   ret <2 x i64> %vcvtps_f641.i
 }
 
-define <2 x i32> @test_vcvtp_u32_f32(<2 x float> %a) #0 {
+define <2 x i32> @test_vcvtp_u32_f32(<2 x float> %a) {
+; CHECK-LABEL: test_vcvtp_u32_f32
 ; CHECK: fcvtpu v{{[0-9]+}}.2s, v{{[0-9]+}}.2s
-  %vcvtpu_f321.i = tail call <2 x i32> @llvm.aarch64.neon.fcvtpu.v2i32.v2f32(<2 x float> %a) #4
+  %vcvtpu_f321.i = call <2 x i32> @llvm.arm.neon.vcvtpu.v2i32.v2f32(<2 x float> %a)
   ret <2 x i32> %vcvtpu_f321.i
 }
 
-define <4 x i32> @test_vcvtpq_u32_f32(<4 x float> %a) #0 {
+define <4 x i32> @test_vcvtpq_u32_f32(<4 x float> %a) {
+; CHECK-LABEL: test_vcvtpq_u32_f32
 ; CHECK: fcvtpu v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
-  %vcvtpu_f321.i = tail call <4 x i32> @llvm.aarch64.neon.fcvtpu.v4i32.v4f32(<4 x float> %a) #4
+  %vcvtpu_f321.i = call <4 x i32> @llvm.arm.neon.vcvtpu.v4i32.v4f32(<4 x float> %a)
   ret <4 x i32> %vcvtpu_f321.i
 }
 
-define <2 x i64> @test_vcvtpq_u64_f64(<2 x double> %a) #0 {
+define <2 x i64> @test_vcvtpq_u64_f64(<2 x double> %a) {
+; CHECK-LABEL: test_vcvtpq_u64_f64
 ; CHECK: fcvtpu v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
-  %vcvtpu_f641.i = tail call <2 x i64> @llvm.aarch64.neon.fcvtpu.v2i64.v2f64(<2 x double> %a) #4
+  %vcvtpu_f641.i = call <2 x i64> @llvm.arm.neon.vcvtpu.v2i64.v2f64(<2 x double> %a)
   ret <2 x i64> %vcvtpu_f641.i
 }
 
-define <2 x i32> @test_vcvtm_s32_f32(<2 x float> %a) #0 {
+define <2 x i32> @test_vcvtm_s32_f32(<2 x float> %a) {
+; CHECK-LABEL: test_vcvtm_s32_f32
 ; CHECK: fcvtms v{{[0-9]+}}.2s, v{{[0-9]+}}.2s
-  %vcvtms_f321.i = tail call <2 x i32> @llvm.aarch64.neon.fcvtms.v2i32.v2f32(<2 x float> %a) #4
+  %vcvtms_f321.i = call <2 x i32> @llvm.arm.neon.vcvtms.v2i32.v2f32(<2 x float> %a)
   ret <2 x i32> %vcvtms_f321.i
 }
 
-define <4 x i32> @test_vcvtmq_s32_f32(<4 x float> %a) #0 {
+define <4 x i32> @test_vcvtmq_s32_f32(<4 x float> %a) {
+; CHECK-LABEL: test_vcvtmq_s32_f32
 ; CHECK: fcvtms v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
-  %vcvtms_f321.i = tail call <4 x i32> @llvm.aarch64.neon.fcvtms.v4i32.v4f32(<4 x float> %a) #4
+  %vcvtms_f321.i = call <4 x i32> @llvm.arm.neon.vcvtms.v4i32.v4f32(<4 x float> %a)
   ret <4 x i32> %vcvtms_f321.i
 }
 
-define <2 x i64> @test_vcvtmq_s64_f64(<2 x double> %a) #0 {
+define <2 x i64> @test_vcvtmq_s64_f64(<2 x double> %a) {
+; CHECK-LABEL: test_vcvtmq_s64_f64
 ; CHECK: fcvtms v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
-  %vcvtms_f641.i = tail call <2 x i64> @llvm.aarch64.neon.fcvtms.v2i64.v2f64(<2 x double> %a) #4
+  %vcvtms_f641.i = call <2 x i64> @llvm.arm.neon.vcvtms.v2i64.v2f64(<2 x double> %a)
   ret <2 x i64> %vcvtms_f641.i
 }
 
-define <2 x i32> @test_vcvtm_u32_f32(<2 x float> %a) #0 {
+define <2 x i32> @test_vcvtm_u32_f32(<2 x float> %a) {
+; CHECK-LABEL: test_vcvtm_u32_f32
 ; CHECK: fcvtmu v{{[0-9]+}}.2s, v{{[0-9]+}}.2s
-  %vcvtmu_f321.i = tail call <2 x i32> @llvm.aarch64.neon.fcvtmu.v2i32.v2f32(<2 x float> %a) #4
+  %vcvtmu_f321.i = call <2 x i32> @llvm.arm.neon.vcvtmu.v2i32.v2f32(<2 x float> %a)
   ret <2 x i32> %vcvtmu_f321.i
 }
 
-define <4 x i32> @test_vcvtmq_u32_f32(<4 x float> %a) #0 {
+define <4 x i32> @test_vcvtmq_u32_f32(<4 x float> %a) {
+; CHECK-LABEL: test_vcvtmq_u32_f32
 ; CHECK: fcvtmu v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
-  %vcvtmu_f321.i = tail call <4 x i32> @llvm.aarch64.neon.fcvtmu.v4i32.v4f32(<4 x float> %a) #4
+  %vcvtmu_f321.i = call <4 x i32> @llvm.arm.neon.vcvtmu.v4i32.v4f32(<4 x float> %a)
   ret <4 x i32> %vcvtmu_f321.i
 }
 
-define <2 x i64> @test_vcvtmq_u64_f64(<2 x double> %a) #0 {
+define <2 x i64> @test_vcvtmq_u64_f64(<2 x double> %a) {
+; CHECK-LABEL: test_vcvtmq_u64_f64
 ; CHECK: fcvtmu v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
-  %vcvtmu_f641.i = tail call <2 x i64> @llvm.aarch64.neon.fcvtmu.v2i64.v2f64(<2 x double> %a) #4
+  %vcvtmu_f641.i = call <2 x i64> @llvm.arm.neon.vcvtmu.v2i64.v2f64(<2 x double> %a)
   ret <2 x i64> %vcvtmu_f641.i
 }
 
-define <2 x i32> @test_vcvta_s32_f32(<2 x float> %a) #0 {
+define <2 x i32> @test_vcvta_s32_f32(<2 x float> %a) {
+; CHECK-LABEL: test_vcvta_s32_f32
 ; CHECK: fcvtas v{{[0-9]+}}.2s, v{{[0-9]+}}.2s
-  %vcvtas_f321.i = tail call <2 x i32> @llvm.aarch64.neon.fcvtas.v2i32.v2f32(<2 x float> %a) #4
+  %vcvtas_f321.i = call <2 x i32> @llvm.arm.neon.vcvtas.v2i32.v2f32(<2 x float> %a)
   ret <2 x i32> %vcvtas_f321.i
 }
 
-define <4 x i32> @test_vcvtaq_s32_f32(<4 x float> %a) #0 {
+define <4 x i32> @test_vcvtaq_s32_f32(<4 x float> %a) {
+; CHECK-LABEL: test_vcvtaq_s32_f32
 ; CHECK: fcvtas v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
-  %vcvtas_f321.i = tail call <4 x i32> @llvm.aarch64.neon.fcvtas.v4i32.v4f32(<4 x float> %a) #4
+  %vcvtas_f321.i = call <4 x i32> @llvm.arm.neon.vcvtas.v4i32.v4f32(<4 x float> %a)
   ret <4 x i32> %vcvtas_f321.i
 }
 
-define <2 x i64> @test_vcvtaq_s64_f64(<2 x double> %a) #0 {
+define <2 x i64> @test_vcvtaq_s64_f64(<2 x double> %a) {
+; CHECK-LABEL: test_vcvtaq_s64_f64
 ; CHECK: fcvtas v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
-  %vcvtas_f641.i = tail call <2 x i64> @llvm.aarch64.neon.fcvtas.v2i64.v2f64(<2 x double> %a) #4
+  %vcvtas_f641.i = call <2 x i64> @llvm.arm.neon.vcvtas.v2i64.v2f64(<2 x double> %a)
   ret <2 x i64> %vcvtas_f641.i
 }
 
-define <2 x i32> @test_vcvta_u32_f32(<2 x float> %a) #0 {
+define <2 x i32> @test_vcvta_u32_f32(<2 x float> %a) {
+; CHECK-LABEL: test_vcvta_u32_f32
 ; CHECK: fcvtau v{{[0-9]+}}.2s, v{{[0-9]+}}.2s
-  %vcvtau_f321.i = tail call <2 x i32> @llvm.aarch64.neon.fcvtau.v2i32.v2f32(<2 x float> %a) #4
+  %vcvtau_f321.i = call <2 x i32> @llvm.arm.neon.vcvtau.v2i32.v2f32(<2 x float> %a)
   ret <2 x i32> %vcvtau_f321.i
 }
 
-define <4 x i32> @test_vcvtaq_u32_f32(<4 x float> %a) #0 {
+define <4 x i32> @test_vcvtaq_u32_f32(<4 x float> %a) {
+; CHECK-LABEL: test_vcvtaq_u32_f32
 ; CHECK: fcvtau v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
-  %vcvtau_f321.i = tail call <4 x i32> @llvm.aarch64.neon.fcvtau.v4i32.v4f32(<4 x float> %a) #4
+  %vcvtau_f321.i = call <4 x i32> @llvm.arm.neon.vcvtau.v4i32.v4f32(<4 x float> %a)
   ret <4 x i32> %vcvtau_f321.i
 }
 
-define <2 x i64> @test_vcvtaq_u64_f64(<2 x double> %a) #0 {
+define <2 x i64> @test_vcvtaq_u64_f64(<2 x double> %a) {
+; CHECK-LABEL: test_vcvtaq_u64_f64
 ; CHECK: fcvtau v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
-  %vcvtau_f641.i = tail call <2 x i64> @llvm.aarch64.neon.fcvtau.v2i64.v2f64(<2 x double> %a) #4
+  %vcvtau_f641.i = call <2 x i64> @llvm.arm.neon.vcvtau.v2i64.v2f64(<2 x double> %a)
   ret <2 x i64> %vcvtau_f641.i
 }
 
@@ -1326,6 +1434,94 @@ define <2 x double> @test_vcvtq_f64_u64(<2 x i64> %a) #0 {
   ret <2 x double> %vcvt.i
 }
 
+define <2 x float> @test_vcvt_f32_s64(<2 x i64> %a) #0 {
+; CHECK: scvtf v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
+; CHECK: fcvtn v{{[0-9]+}}.2s, v{{[0-9]+}}.2d
+  %vcvt.i = sitofp <2 x i64> %a to <2 x float>
+  ret <2 x float> %vcvt.i
+}
+
+define <2 x float> @test_vcvt_f32_u64(<2 x i64> %a) #0 {
+; CHECK: ucvtf v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
+; CHECK: fcvtn v{{[0-9]+}}.2s, v{{[0-9]+}}.2d
+  %vcvt.i = uitofp <2 x i64> %a to <2 x float>
+  ret <2 x float> %vcvt.i
+}
+
+define <4 x float> @test_vcvt_f32_s16(<4 x i16> %a) #0 {
+; CHECK: sshll v{{[0-9]+}}.4s, v{{[0-9]+}}.4h, #0
+; CHECK: scvtf v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
+  %vcvt.i = sitofp <4 x i16> %a to <4 x float>
+  ret <4 x float> %vcvt.i
+}
+
+define <4 x float> @test_vcvt_f32_u16(<4 x i16> %a) #0 {
+; CHECK: ushll v{{[0-9]+}}.4s, v{{[0-9]+}}.4h, #0
+; CHECK: ucvtf v{{[0-9]+}}.4s, v{{[0-9]+}}.4s
+  %vcvt.i = uitofp <4 x i16> %a to <4 x float>
+  ret <4 x float> %vcvt.i
+}
+
+define <2 x double> @test_vcvt_f64_s32(<2 x i32> %a) #0 {
+; CHECK: sshll v{{[0-9]+}}.2d, v{{[0-9]+}}.2s, #0
+; CHECK: scvtf v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
+  %vcvt.i = sitofp <2 x i32> %a to <2 x double>
+  ret <2 x double> %vcvt.i
+}
+
+define <2 x double> @test_vcvt_f64_u32(<2 x i32> %a) #0 {
+; CHECK: ushll v{{[0-9]+}}.2d, v{{[0-9]+}}.2s, #0
+; CHECK: ucvtf v{{[0-9]+}}.2d, v{{[0-9]+}}.2d
+  %vcvt.i = uitofp <2 x i32> %a to <2 x double>
+  ret <2 x double> %vcvt.i
+}
+
+define <1 x double> @test_vcvt_f64_s8(<1 x i8> %a) #0 {
+; CHECK: umov w{{[0-9]+}}, v{{[0-9]+}}.b[0]
+; CHECK: sxtb w{{[0-9]+}}, w{{[0-9]+}}
+; CHECK: scvtf d{{[0-9]+}}, w{{[0-9]+}}
+  %vcvt.i = sitofp <1 x i8> %a to <1 x double>
+  ret <1 x double> %vcvt.i
+}
+
+define <1 x double> @test_vcvt_f64_u8(<1 x i8> %a) #0 {
+; CHECK: umov w{{[0-9]+}}, v{{[0-9]+}}.b[0]
+; CHECK: and w{{[0-9]+}}, w{{[0-9]+}}, #0xff
+; CHECK: ucvtf d{{[0-9]+}}, w{{[0-9]+}}
+  %vcvt.i = uitofp <1 x i8> %a to <1 x double>
+  ret <1 x double> %vcvt.i
+}
+
+define <1 x double> @test_vcvt_f64_s16(<1 x i16> %a) #0 {
+; CHECK: umov w{{[0-9]+}}, v{{[0-9]+}}.h[0]
+; CHECK: sxth w{{[0-9]+}}, w{{[0-9]+}}
+; CHECK: scvtf d{{[0-9]+}}, w{{[0-9]+}}
+  %vcvt.i = sitofp <1 x i16> %a to <1 x double>
+  ret <1 x double> %vcvt.i
+}
+
+define <1 x double> @test_vcvt_f64_u16(<1 x i16> %a) #0 {
+; CHECK: umov w{{[0-9]+}}, v{{[0-9]+}}.h[0]
+; CHECK: and w{{[0-9]+}}, w{{[0-9]+}}, #0xffff
+; CHECK: ucvtf d{{[0-9]+}}, w{{[0-9]+}}
+  %vcvt.i = uitofp <1 x i16> %a to <1 x double>
+  ret <1 x double> %vcvt.i
+}
+
+define <1 x double> @test_vcvt_f64_s32_v1(<1 x i32> %a) #0 {
+; CHECK: fmov w{{[0-9]+}}, s{{[0-9]+}}
+; CHECK: scvtf d{{[0-9]+}}, w{{[0-9]+}}
+  %vcvt.i = sitofp <1 x i32> %a to <1 x double>
+  ret <1 x double> %vcvt.i
+}
+
+define <1 x double> @test_vcvt_f64_u32_v1(<1 x i32> %a) #0 {
+; CHECK: fmov w{{[0-9]+}}, s{{[0-9]+}}
+; CHECK: ucvtf d{{[0-9]+}}, w{{[0-9]+}}
+  %vcvt.i = uitofp <1 x i32> %a to <1 x double>
+  ret <1 x double> %vcvt.i
+}
+
 declare <2 x double> @llvm.sqrt.v2f64(<2 x double>) #2
 
 declare <4 x float> @llvm.sqrt.v4f32(<4 x float>) #2
@@ -1348,53 +1544,53 @@ declare <4 x float> @llvm.arm.neon.vrsqrte.v4f32(<4 x float>) #2
 
 declare <2 x float> @llvm.arm.neon.vrsqrte.v2f32(<2 x float>) #2
 
-declare <2 x i64> @llvm.aarch64.neon.fcvtau.v2i64.v2f64(<2 x double>) #2
+declare <2 x i64> @llvm.arm.neon.vcvtau.v2i64.v2f64(<2 x double>)
 
-declare <4 x i32> @llvm.aarch64.neon.fcvtau.v4i32.v4f32(<4 x float>) #2
+declare <4 x i32> @llvm.arm.neon.vcvtau.v4i32.v4f32(<4 x float>)
 
-declare <2 x i32> @llvm.aarch64.neon.fcvtau.v2i32.v2f32(<2 x float>) #2
+declare <2 x i32> @llvm.arm.neon.vcvtau.v2i32.v2f32(<2 x float>)
 
-declare <2 x i64> @llvm.aarch64.neon.fcvtas.v2i64.v2f64(<2 x double>) #2
+declare <2 x i64> @llvm.arm.neon.vcvtas.v2i64.v2f64(<2 x double>)
 
-declare <4 x i32> @llvm.aarch64.neon.fcvtas.v4i32.v4f32(<4 x float>) #2
+declare <4 x i32> @llvm.arm.neon.vcvtas.v4i32.v4f32(<4 x float>)
 
-declare <2 x i32> @llvm.aarch64.neon.fcvtas.v2i32.v2f32(<2 x float>) #2
+declare <2 x i32> @llvm.arm.neon.vcvtas.v2i32.v2f32(<2 x float>)
 
-declare <2 x i64> @llvm.aarch64.neon.fcvtmu.v2i64.v2f64(<2 x double>) #2
+declare <2 x i64> @llvm.arm.neon.vcvtmu.v2i64.v2f64(<2 x double>)
 
-declare <4 x i32> @llvm.aarch64.neon.fcvtmu.v4i32.v4f32(<4 x float>) #2
+declare <4 x i32> @llvm.arm.neon.vcvtmu.v4i32.v4f32(<4 x float>)
 
-declare <2 x i32> @llvm.aarch64.neon.fcvtmu.v2i32.v2f32(<2 x float>) #2
+declare <2 x i32> @llvm.arm.neon.vcvtmu.v2i32.v2f32(<2 x float>)
 
-declare <2 x i64> @llvm.aarch64.neon.fcvtms.v2i64.v2f64(<2 x double>) #2
+declare <2 x i64> @llvm.arm.neon.vcvtms.v2i64.v2f64(<2 x double>)
 
-declare <4 x i32> @llvm.aarch64.neon.fcvtms.v4i32.v4f32(<4 x float>) #2
+declare <4 x i32> @llvm.arm.neon.vcvtms.v4i32.v4f32(<4 x float>)
 
-declare <2 x i32> @llvm.aarch64.neon.fcvtms.v2i32.v2f32(<2 x float>) #2
+declare <2 x i32> @llvm.arm.neon.vcvtms.v2i32.v2f32(<2 x float>)
 
-declare <2 x i64> @llvm.aarch64.neon.fcvtpu.v2i64.v2f64(<2 x double>) #2
+declare <2 x i64> @llvm.arm.neon.vcvtpu.v2i64.v2f64(<2 x double>)
 
-declare <4 x i32> @llvm.aarch64.neon.fcvtpu.v4i32.v4f32(<4 x float>) #2
+declare <4 x i32> @llvm.arm.neon.vcvtpu.v4i32.v4f32(<4 x float>)
 
-declare <2 x i32> @llvm.aarch64.neon.fcvtpu.v2i32.v2f32(<2 x float>) #2
+declare <2 x i32> @llvm.arm.neon.vcvtpu.v2i32.v2f32(<2 x float>)
 
-declare <2 x i64> @llvm.aarch64.neon.fcvtps.v2i64.v2f64(<2 x double>) #2
+declare <2 x i64> @llvm.arm.neon.vcvtps.v2i64.v2f64(<2 x double>)
 
-declare <4 x i32> @llvm.aarch64.neon.fcvtps.v4i32.v4f32(<4 x float>) #2
+declare <4 x i32> @llvm.arm.neon.vcvtps.v4i32.v4f32(<4 x float>)
 
-declare <2 x i32> @llvm.aarch64.neon.fcvtps.v2i32.v2f32(<2 x float>) #2
+declare <2 x i32> @llvm.arm.neon.vcvtps.v2i32.v2f32(<2 x float>)
 
-declare <2 x i64> @llvm.aarch64.neon.fcvtnu.v2i64.v2f64(<2 x double>) #2
+declare <2 x i64> @llvm.arm.neon.vcvtnu.v2i64.v2f64(<2 x double>)
 
-declare <4 x i32> @llvm.aarch64.neon.fcvtnu.v4i32.v4f32(<4 x float>) #2
+declare <4 x i32> @llvm.arm.neon.vcvtnu.v4i32.v4f32(<4 x float>)
 
-declare <2 x i32> @llvm.aarch64.neon.fcvtnu.v2i32.v2f32(<2 x float>) #2
+declare <2 x i32> @llvm.arm.neon.vcvtnu.v2i32.v2f32(<2 x float>)
 
-declare <2 x i64> @llvm.aarch64.neon.fcvtns.v2i64.v2f64(<2 x double>) #2
+declare <2 x i64> @llvm.arm.neon.vcvtns.v2i64.v2f64(<2 x double>)
 
-declare <4 x i32> @llvm.aarch64.neon.fcvtns.v4i32.v4f32(<4 x float>) #2
+declare <4 x i32> @llvm.arm.neon.vcvtns.v4i32.v4f32(<4 x float>)
 
-declare <2 x i32> @llvm.aarch64.neon.fcvtns.v2i32.v2f32(<2 x float>) #2
+declare <2 x i32> @llvm.arm.neon.vcvtns.v2i32.v2f32(<2 x float>)
 
 declare <2 x double> @llvm.nearbyint.v2f64(<2 x double>) #3
 
@@ -1438,7 +1634,7 @@ declare <4 x float> @llvm.aarch64.neon.frintn.v4f32(<4 x float>) #2
 
 declare <2 x float> @llvm.aarch64.neon.frintn.v2f32(<2 x float>) #2
 
-declare <2 x float> @llvm.aarch64.neon.fcvtxn.v2f32.v2f64(<2 x double>) #2
+declare <2 x float> @llvm.aarch64.neon.vcvtxn.v2f32.v2f64(<2 x double>) #2
 
 declare <2 x float> @llvm.aarch64.neon.fcvtn.v2f32.v2f64(<2 x double>) #2
 
@@ -1624,56 +1820,56 @@ define <1 x i64> @test_vcvt_u64_f64(<1 x double> %a) {
 define <1 x i64> @test_vcvtn_s64_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vcvtn_s64_f64
 ; CHECK: fcvtns d{{[0-9]+}}, d{{[0-9]+}}
-  %1 = tail call <1 x i64> @llvm.aarch64.neon.fcvtns.v1i64.v1f64(<1 x double> %a)
+  %1 = call <1 x i64> @llvm.arm.neon.vcvtns.v1i64.v1f64(<1 x double> %a)
   ret <1 x i64> %1
 }
 
 define <1 x i64> @test_vcvtn_u64_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vcvtn_u64_f64
 ; CHECK: fcvtnu d{{[0-9]+}}, d{{[0-9]+}}
-  %1 = tail call <1 x i64> @llvm.aarch64.neon.fcvtnu.v1i64.v1f64(<1 x double> %a)
+  %1 = call <1 x i64> @llvm.arm.neon.vcvtnu.v1i64.v1f64(<1 x double> %a)
   ret <1 x i64> %1
 }
 
 define <1 x i64> @test_vcvtp_s64_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vcvtp_s64_f64
 ; CHECK: fcvtps d{{[0-9]+}}, d{{[0-9]+}}
-  %1 = tail call <1 x i64> @llvm.aarch64.neon.fcvtps.v1i64.v1f64(<1 x double> %a)
+  %1 = call <1 x i64> @llvm.arm.neon.vcvtps.v1i64.v1f64(<1 x double> %a)
   ret <1 x i64> %1
 }
 
 define <1 x i64> @test_vcvtp_u64_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vcvtp_u64_f64
 ; CHECK: fcvtpu d{{[0-9]+}}, d{{[0-9]+}}
-  %1 = tail call <1 x i64> @llvm.aarch64.neon.fcvtpu.v1i64.v1f64(<1 x double> %a)
+  %1 = call <1 x i64> @llvm.arm.neon.vcvtpu.v1i64.v1f64(<1 x double> %a)
   ret <1 x i64> %1
 }
 
 define <1 x i64> @test_vcvtm_s64_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vcvtm_s64_f64
 ; CHECK: fcvtms d{{[0-9]+}}, d{{[0-9]+}}
-  %1 = tail call <1 x i64> @llvm.aarch64.neon.fcvtms.v1i64.v1f64(<1 x double> %a)
+  %1 = call <1 x i64> @llvm.arm.neon.vcvtms.v1i64.v1f64(<1 x double> %a)
   ret <1 x i64> %1
 }
 
 define <1 x i64> @test_vcvtm_u64_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vcvtm_u64_f64
 ; CHECK: fcvtmu d{{[0-9]+}}, d{{[0-9]+}}
-  %1 = tail call <1 x i64> @llvm.aarch64.neon.fcvtmu.v1i64.v1f64(<1 x double> %a)
+  %1 = call <1 x i64> @llvm.arm.neon.vcvtmu.v1i64.v1f64(<1 x double> %a)
   ret <1 x i64> %1
 }
 
 define <1 x i64> @test_vcvta_s64_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vcvta_s64_f64
 ; CHECK: fcvtas d{{[0-9]+}}, d{{[0-9]+}}
-  %1 = tail call <1 x i64> @llvm.aarch64.neon.fcvtas.v1i64.v1f64(<1 x double> %a)
+  %1 = call <1 x i64> @llvm.arm.neon.vcvtas.v1i64.v1f64(<1 x double> %a)
   ret <1 x i64> %1
 }
 
 define <1 x i64> @test_vcvta_u64_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vcvta_u64_f64
 ; CHECK: fcvtau d{{[0-9]+}}, d{{[0-9]+}}
-  %1 = tail call <1 x i64> @llvm.aarch64.neon.fcvtau.v1i64.v1f64(<1 x double> %a)
+  %1 = call <1 x i64> @llvm.arm.neon.vcvtau.v1i64.v1f64(<1 x double> %a)
   ret <1 x i64> %1
 }
 
@@ -1691,14 +1887,14 @@ define <1 x double> @test_vcvt_f64_u64(<1 x i64> %a) {
   ret <1 x double> %1
 }
 
-declare <1 x i64> @llvm.aarch64.neon.fcvtau.v1i64.v1f64(<1 x double>)
-declare <1 x i64> @llvm.aarch64.neon.fcvtas.v1i64.v1f64(<1 x double>)
-declare <1 x i64> @llvm.aarch64.neon.fcvtmu.v1i64.v1f64(<1 x double>)
-declare <1 x i64> @llvm.aarch64.neon.fcvtms.v1i64.v1f64(<1 x double>)
-declare <1 x i64> @llvm.aarch64.neon.fcvtpu.v1i64.v1f64(<1 x double>)
-declare <1 x i64> @llvm.aarch64.neon.fcvtps.v1i64.v1f64(<1 x double>)
-declare <1 x i64> @llvm.aarch64.neon.fcvtnu.v1i64.v1f64(<1 x double>)
-declare <1 x i64> @llvm.aarch64.neon.fcvtns.v1i64.v1f64(<1 x double>)
+declare <1 x i64> @llvm.arm.neon.vcvtau.v1i64.v1f64(<1 x double>)
+declare <1 x i64> @llvm.arm.neon.vcvtas.v1i64.v1f64(<1 x double>)
+declare <1 x i64> @llvm.arm.neon.vcvtmu.v1i64.v1f64(<1 x double>)
+declare <1 x i64> @llvm.arm.neon.vcvtms.v1i64.v1f64(<1 x double>)
+declare <1 x i64> @llvm.arm.neon.vcvtpu.v1i64.v1f64(<1 x double>)
+declare <1 x i64> @llvm.arm.neon.vcvtps.v1i64.v1f64(<1 x double>)
+declare <1 x i64> @llvm.arm.neon.vcvtnu.v1i64.v1f64(<1 x double>)
+declare <1 x i64> @llvm.arm.neon.vcvtns.v1i64.v1f64(<1 x double>)
 
 define <1 x double> @test_vrndn_f64(<1 x double> %a) {
 ; CHECK-LABEL: test_vrndn_f64
@@ -1797,3 +1993,22 @@ declare <1 x double> @llvm.arm.neon.vrecps.v1f64(<1 x double>, <1 x double>)
 declare <1 x double> @llvm.sqrt.v1f64(<1 x double>)
 declare <1 x double> @llvm.arm.neon.vrecpe.v1f64(<1 x double>)
 declare <1 x double> @llvm.arm.neon.vrsqrte.v1f64(<1 x double>)
+
+define i64 @test_vaddlv_s32(<2 x i32> %a) {
+; CHECK-LABEL: test_vaddlv_s32
+; CHECK: saddlp {{v[0-9]+}}.1d, {{v[0-9]+}}.2s
+  %1 = tail call <1 x i64> @llvm.aarch64.neon.saddlv.v1i64.v2i32(<2 x i32> %a)
+  %2 = extractelement <1 x i64> %1, i32 0
+  ret i64 %2
+}
+
+define i64 @test_vaddlv_u32(<2 x i32> %a) {
+; CHECK-LABEL: test_vaddlv_u32
+; CHECK: uaddlp {{v[0-9]+}}.1d, {{v[0-9]+}}.2s
+  %1 = tail call <1 x i64> @llvm.aarch64.neon.uaddlv.v1i64.v2i32(<2 x i32> %a)
+  %2 = extractelement <1 x i64> %1, i32 0
+  ret i64 %2
+}
+
+declare <1 x i64> @llvm.aarch64.neon.saddlv.v1i64.v2i32(<2 x i32>)
+declare <1 x i64> @llvm.aarch64.neon.uaddlv.v1i64.v2i32(<2 x i32>)

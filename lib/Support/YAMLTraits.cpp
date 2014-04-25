@@ -14,8 +14,8 @@
 #include "llvm/Support/Format.h"
 #include "llvm/Support/YAMLParser.h"
 #include "llvm/Support/raw_ostream.h"
-#include <cstring>
 #include <cctype>
+#include <cstring>
 using namespace llvm;
 using namespace yaml;
 
@@ -65,7 +65,7 @@ void Input::HNode::anchor() {}
 void Input::EmptyHNode::anchor() {}
 void Input::ScalarHNode::anchor() {}
 
-bool Input::outputting() const {
+bool Input::outputting() {
   return false;
 }
 
@@ -406,7 +406,7 @@ Output::Output(raw_ostream &yout, void *context)
 Output::~Output() {
 }
 
-bool Output::outputting() const {
+bool Output::outputting() {
   return true;
 }
 
@@ -687,6 +687,17 @@ void ScalarTraits<StringRef>::output(const StringRef &Val, void *,
 StringRef ScalarTraits<StringRef>::input(StringRef Scalar, void *,
                                          StringRef &Val) {
   Val = Scalar;
+  return StringRef();
+}
+ 
+void ScalarTraits<std::string>::output(const std::string &Val, void *,
+                                     raw_ostream &Out) {
+  Out << Val;
+}
+
+StringRef ScalarTraits<std::string>::input(StringRef Scalar, void *,
+                                         std::string &Val) {
+  Val = Scalar.str();
   return StringRef();
 }
 

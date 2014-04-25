@@ -16,7 +16,6 @@ set(NVPTXCodeGen_sources
   NVPTXRegisterInfo.cpp
   NVPTXSubtarget.cpp
   NVPTXTargetMachine.cpp
-  NVPTXSplitBBatBar.cpp
   NVPTXLowerAggrCopies.cpp
   NVPTXutil.cpp
   NVPTXAllocaHoisting.cpp
@@ -24,13 +23,12 @@ set(NVPTXCodeGen_sources
   NVPTXUtilities.cpp
   NVVMReflect.cpp
   NVPTXGenericToNVVM.cpp
+  NVPTXAssignValidGlobalNames.cpp
   NVPTXPrologEpilogPass.cpp
   NVPTXMCExpr.cpp
   )
 
 add_llvm_target(NVPTXCodeGen ${NVPTXCodeGen_sources})
-
-add_dependencies(LLVMNVPTXCodeGen NVPTXCommonTableGen intrinsics_gen)
 
 add_subdirectory(TargetInfo)
 add_subdirectory(InstPrinter)

@@ -21,6 +21,7 @@
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/GetElementPtrTypeIterator.h"
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -28,7 +29,6 @@
 #include "llvm/Support/Compiler.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/GetElementPtrTypeIterator.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/Support/raw_ostream.h"
@@ -218,7 +218,7 @@ void Constant::destroyConstantImpl() {
   // Constants) that they are, in fact, invalid now and should be deleted.
   //
   while (!use_empty()) {
-    Value *V = use_back();
+    Value *V = user_back();
 #ifndef NDEBUG      // Only in -g mode...
     if (!isa<Constant>(V)) {
       dbgs() << "While deleting: " << *this
@@ -230,7 +230,7 @@ void Constant::destroyConstantImpl() {
     cast<Constant>(V)->destroyConstant();
 
     // The constant should remove itself from our use list...
-    assert((use_empty() || use_back() != V) && "Constant not removed!");
+    assert((use_empty() || user_back() != V) && "Constant not removed!");
   }
 
   // Value has no outstanding references it is safe to delete it now...
@@ -307,8 +307,8 @@ bool Constant::isThreadDependent() const {
 /// isConstantUsed - Return true if the constant has users other than constant
 /// exprs and other dangling things.
 bool Constant::isConstantUsed() const {
-  for (const_use_iterator UI = use_begin(), E = use_end(); UI != E; ++UI) {
-    const Constant *UC = dyn_cast<Constant>(*UI);
+  for (const User *U : users()) {
+    const Constant *UC = dyn_cast<Constant>(U);
     if (UC == 0 || isa<GlobalValue>(UC))
       return true;
 
@@ -377,7 +377,7 @@ static bool removeDeadUsersOfConstant(const Constant *C) {
   if (isa<GlobalValue>(C)) return false; // Cannot remove this
 
   while (!C->use_empty()) {
-    const Constant *User = dyn_cast<Constant>(C->use_back());
+    const Constant *User = dyn_cast<Constant>(C->user_back());
     if (!User) return false; // Non-constant usage;
     if (!removeDeadUsersOfConstant(User))
       return false; // Constant wasn't dead
@@ -393,8 +393,8 @@ static bool removeDeadUsersOfConstant(const Constant *C) {
 /// that want to check to see if a global is unused, but don't want to deal
 /// with potentially dead constants hanging off of the globals.
 void Constant::removeDeadConstantUsers() const {
-  Value::const_use_iterator I = use_begin(), E = use_end();
-  Value::const_use_iterator LastNonDeadUser = E;
+  Value::const_user_iterator I = user_begin(), E = user_end();
+  Value::const_user_iterator LastNonDeadUser = E;
   while (I != E) {
     const Constant *User = dyn_cast<Constant>(*I);
     if (User == 0) {
@@ -413,7 +413,7 @@ void Constant::removeDeadConstantUsers() const {
 
     // If the constant was dead, then the iterator is invalidated.
     if (LastNonDeadUser == E) {
-      I = use_begin();
+      I = user_begin();
       if (I == E) break;
     } else {
       I = LastNonDeadUser;
@@ -584,23 +584,21 @@ Constant *ConstantFP::get(Type *Ty, StringRef Str) {
   return C; 
 }
 
+Constant *ConstantFP::getNegativeZero(Type *Ty) {
+  const fltSemantics &Semantics = *TypeToFloatSemantics(Ty->getScalarType());
+  APFloat NegZero = APFloat::getZero(Semantics, /*Negative=*/true);
+  Constant *C = get(Ty->getContext(), NegZero);
 
-ConstantFP *ConstantFP::getNegativeZero(Type *Ty) {
-  LLVMContext &Context = Ty->getContext();
-  APFloat apf = cast<ConstantFP>(Constant::getNullValue(Ty))->getValueAPF();
-  apf.changeSign();
-  return get(Context, apf);
+  if (VectorType *VTy = dyn_cast<VectorType>(Ty))
+    return ConstantVector::getSplat(VTy->getNumElements(), C);
+
+  return C;
 }
 
 
 Constant *ConstantFP::getZeroValueForNegation(Type *Ty) {
-  Type *ScalarTy = Ty->getScalarType();
-  if (ScalarTy->isFloatingPointTy()) {
-    Constant *C = getNegativeZero(ScalarTy);
-    if (VectorType *VTy = dyn_cast<VectorType>(Ty))
-      return ConstantVector::getSplat(VTy->getNumElements(), C);
-    return C;
-  }
+  if (Ty->isFPOrFPVectorTy())
+    return getNegativeZero(Ty);
 
   return Constant::getNullValue(Ty);
 }
@@ -635,10 +633,14 @@ ConstantFP* ConstantFP::get(LLVMContext &Context, const APFloat& V) {
   return Slot;
 }
 
-ConstantFP *ConstantFP::getInfinity(Type *Ty, bool Negative) {
-  const fltSemantics &Semantics = *TypeToFloatSemantics(Ty);
-  return ConstantFP::get(Ty->getContext(),
-                         APFloat::getInf(Semantics, Negative));
+Constant *ConstantFP::getInfinity(Type *Ty, bool Negative) {
+  const fltSemantics &Semantics = *TypeToFloatSemantics(Ty->getScalarType());
+  Constant *C = get(Ty->getContext(), APFloat::getInf(Semantics, Negative));
+
+  if (VectorType *VTy = dyn_cast<VectorType>(Ty))
+    return ConstantVector::getSplat(VTy->getNumElements(), C);
+
+  return C;
 }
 
 ConstantFP::ConstantFP(Type *Ty, const APFloat& V)
@@ -1045,7 +1047,7 @@ bool ConstantExpr::isGEPWithNoNotionalOverIndexing() const {
   if (getOpcode() != Instruction::GetElementPtr) return false;
 
   gep_type_iterator GEPI = gep_type_begin(this), E = gep_type_end(this);
-  User::const_op_iterator OI = llvm::next(this->op_begin());
+  User::const_op_iterator OI = std::next(this->op_begin());
 
   // Skip the first index, as it has no static limit.
   ++GEPI;
@@ -1373,6 +1375,17 @@ BlockAddress::BlockAddress(Function *F, BasicBlock *BB)
   BB->AdjustBlockAddressRefCount(1);
 }
 
+BlockAddress *BlockAddress::lookup(const BasicBlock *BB) {
+  if (!BB->hasAddressTaken())
+    return 0;
+
+  const Function *F = BB->getParent();
+  assert(F != 0 && "Block must have a parent");
+  BlockAddress *BA =
+      F->getContext().pImpl->BlockAddresses.lookup(std::make_pair(F, BB));
+  assert(BA && "Refcount and block address map disagree!");
+  return BA;
+}
 
 // destroyConstant - Remove the constant from the constant table.
 //
@@ -2781,6 +2794,7 @@ Instruction *ConstantExpr::getAsInstruction() {
   case Instruction::PtrToInt:
   case Instruction::IntToPtr:
   case Instruction::BitCast:
+  case Instruction::AddrSpaceCast:
     return CastInst::Create((Instruction::CastOps)getOpcode(),
                             Ops[0], getType());
   case Instruction::Select:

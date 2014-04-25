@@ -28,9 +28,9 @@
 #include "llvm/CodeGen/RuntimeLibcalls.h"
 #include "llvm/CodeGen/SelectionDAGNodes.h"
 #include "llvm/IR/Attributes.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/CallingConv.h"
 #include "llvm/IR/InlineAsm.h"
-#include "llvm/Support/CallSite.h"
 #include "llvm/Target/TargetCallingConv.h"
 #include "llvm/Target/TargetMachine.h"
 #include <climits>
@@ -48,8 +48,10 @@ namespace llvm {
   class MachineFunction;
   class MachineInstr;
   class MachineJumpTableInfo;
+  class Mangler;
   class MCContext;
   class MCExpr;
+  class MCSymbol;
   template<typename T> class SmallVectorImpl;
   class DataLayout;
   class TargetRegisterClass;
@@ -143,7 +145,7 @@ protected:
 
 public:
   const TargetMachine &getTargetMachine() const { return TM; }
-  const DataLayout *getDataLayout() const { return TD; }
+  const DataLayout *getDataLayout() const { return DL; }
   const TargetLoweringObjectFile &getObjFileLowering() const { return TLOF; }
 
   bool isBigEndian() const { return !IsLittleEndian; }
@@ -173,10 +175,30 @@ public:
     return true;
   }
 
+  /// Return true if multiple condition registers are available.
+  bool hasMultipleConditionRegisters() const {
+    return HasMultipleConditionRegisters;
+  }
+
   /// Return true if a vector of the given type should be split
   /// (TypeSplitVector) instead of promoted (TypePromoteInteger) during type
   /// legalization.
-  virtual bool shouldSplitVectorElementType(EVT /*VT*/) const { return false; }
+  virtual bool shouldSplitVectorType(EVT /*VT*/) const { return false; }
+
+  // There are two general methods for expanding a BUILD_VECTOR node:
+  //  1. Use SCALAR_TO_VECTOR on the defined scalar values and then shuffle
+  //     them together.
+  //  2. Build the vector on the stack and then load it.
+  // If this function returns true, then method (1) will be used, subject to
+  // the constraint that all of the necessary shuffles are legal (as determined
+  // by isShuffleMaskLegal). If this function returns false, then method (2) is
+  // always used. The vector type, and the number of defined values, are
+  // provided.
+  virtual bool
+  shouldExpandBuildVectorWithShuffles(EVT /* VT */,
+                                      unsigned DefinedValues) const {
+    return DefinedValues < 3;
+  }
 
   /// Return true if integer divide is usually cheaper than a sequence of
   /// several shifts, adds, and multiplies for this target.
@@ -213,6 +235,21 @@ public:
   /// dag combiner.
   virtual bool isLoadBitCastBeneficial(EVT /* Load */, EVT /* Bitcast */) const {
     return true;
+  }
+
+  /// \brief Return if the target supports combining a
+  /// chain like:
+  /// \code
+  ///   %andResult = and %val1, #imm-with-one-bit-set;
+  ///   %icmpResult = icmp %andResult, 0
+  ///   br i1 %icmpResult, label %dest1, label %dest2
+  /// \endcode
+  /// into a single machine instruction of a form like:
+  /// \code
+  ///   brOnBitSet %register, #bitNumber, dest
+  /// \endcode
+  bool isMaskAndBranchFoldingLegal() const {
+    return MaskAndBranchFoldingIsLegal;
   }
 
   /// Return the ValueType of the result of SETCC operations.  Also used to
@@ -604,8 +641,9 @@ public:
     return getValueType(Ty, AllowUnknown).getSimpleVT();
   }
 
-  /// Return the desired alignment for ByVal aggregate function arguments in the
-  /// caller parameter area.  This is the actual alignment, not its logarithm.
+  /// Return the desired alignment for ByVal or InAlloca aggregate function
+  /// arguments in the caller parameter area.  This is the actual alignment, not
+  /// its logarithm.
   virtual unsigned getByValTypeAlignment(Type *Ty) const;
 
   /// Return the type of registers that this ValueType will eventually require.
@@ -707,14 +745,16 @@ public:
 
   /// \brief Determine if the target supports unaligned memory accesses.
   ///
-  /// This function returns true if the target allows unaligned memory accesses.
-  /// of the specified type. If true, it also returns whether the unaligned
-  /// memory access is "fast" in the second argument by reference. This is used,
-  /// for example, in situations where an array copy/move/set is converted to a
-  /// sequence of store operations. It's use helps to ensure that such
-  /// replacements don't generate code that causes an alignment error (trap) on
-  /// the target machine.
-  virtual bool allowsUnalignedMemoryAccesses(EVT, bool * /*Fast*/ = 0) const {
+  /// This function returns true if the target allows unaligned memory accesses
+  /// of the specified type in the given address space. If true, it also returns
+  /// whether the unaligned memory access is "fast" in the third argument by
+  /// reference. This is used, for example, in situations where an array
+  /// copy/move/set is converted to a sequence of store operations. Its use
+  /// helps to ensure that such replacements don't generate code that causes an
+  /// alignment error (trap) on the target machine.
+  virtual bool allowsUnalignedMemoryAccesses(EVT,
+                                             unsigned AddrSpace = 0,
+                                             bool * /*Fast*/ = 0) const {
     return false;
   }
 
@@ -880,13 +920,13 @@ protected:
   }
 
   /// Indicate whether this target prefers to use _setjmp to implement
-  /// llvm.setjmp or the non _ version.  Defaults to false.
+  /// llvm.setjmp or the version without _.  Defaults to false.
   void setUseUnderscoreSetJmp(bool Val) {
     UseUnderscoreSetJmp = Val;
   }
 
   /// Indicate whether this target prefers to use _longjmp to implement
-  /// llvm.longjmp or the non _ version.  Defaults to false.
+  /// llvm.longjmp or the version without _.  Defaults to false.
   void setUseUnderscoreLongJmp(bool Val) {
     UseUnderscoreLongJmp = Val;
   }
@@ -924,6 +964,15 @@ protected:
   /// the select operations if possible.
   void setSelectIsExpensive(bool isExpensive = true) {
     SelectIsExpensive = isExpensive;
+  }
+
+  /// Tells the code generator that the target has multiple (allocatable)
+  /// condition registers that can be used to store the results of comparisons
+  /// for use by selects and conditional branches. With multiple condition
+  /// registers, the code generator will not aggressively sink comparisons into
+  /// the blocks of their users.
+  void setHasMultipleConditionRegisters(bool hasManyRegs = true) {
+    HasMultipleConditionRegisters = hasManyRegs;
   }
 
   /// Tells the code generator not to expand sequence of operations into a
@@ -1166,6 +1215,14 @@ public:
     return true;
   }
 
+  /// Return true if it's significantly cheaper to shift a vector by a uniform
+  /// scalar than by an amount which will vary across each lane. On x86, for
+  /// example, there is a "psllw" instruction for the former case, but no simple
+  /// instruction for a general "a << b" operation on vectors.
+  virtual bool isVectorShiftByScalarCheap(Type *Ty) const {
+    return false;
+  }
+
   /// Return true if it's free to truncate a value of type Ty1 to type
   /// Ty2. e.g. On x86 it's free to truncate a i32 value in register EAX to i16
   /// by referencing its sub-register AX.
@@ -1273,6 +1330,15 @@ public:
     return false;
   }
 
+  /// \brief Return true if it is beneficial to convert a load of a constant to
+  /// just the constant itself.
+  /// On some targets it might be more efficient to use a combination of
+  /// arithmetic instructions to materialize the constant instead of loading it
+  /// from a constant pool.
+  virtual bool shouldConvertConstantLoadToIntImm(const APInt &Imm,
+                                                 Type *Ty) const {
+    return false;
+  }
   //===--------------------------------------------------------------------===//
   // Runtime Library hooks
   //
@@ -1311,7 +1377,7 @@ public:
 
 private:
   const TargetMachine &TM;
-  const DataLayout *TD;
+  const DataLayout *DL;
   const TargetLoweringObjectFile &TLOF;
 
   /// True if this is a little endian target.
@@ -1320,6 +1386,13 @@ private:
   /// Tells the code generator not to expand operations into sequences that use
   /// the select operations if possible.
   bool SelectIsExpensive;
+
+  /// Tells the code generator that the target has multiple (allocatable)
+  /// condition registers that can be used to store the results of comparisons
+  /// for use by selects and conditional branches. With multiple condition
+  /// registers, the code generator will not aggressively sink comparisons into
+  /// the blocks of their users.
+  bool HasMultipleConditionRegisters;
 
   /// Tells the code generator not to expand integer divides by constants into a
   /// sequence of muls, adds, and shifts.  This is a hack until a real cost
@@ -1681,10 +1754,18 @@ protected:
   /// the branch is usually predicted right.
   bool PredictableSelectIsExpensive;
 
+  /// MaskAndBranchFoldingIsLegal - Indicates if the target supports folding
+  /// a mask of a single bit, a compare, and a branch into a single instruction.
+  bool MaskAndBranchFoldingIsLegal;
+
 protected:
   /// Return true if the value types that can be represented by the specified
   /// register class are all legal.
   bool isLegalRC(const TargetRegisterClass *RC) const;
+
+  /// Replace/modify any TargetFrameIndex operands with a targte-dependent
+  /// sequence of memory operands that is recognized by PrologEpilogInserter.
+  MachineBasicBlock *emitPatchPoint(MachineInstr *MI, MachineBasicBlock *MBB) const;
 };
 
 /// This class defines information used to lower LLVM code to legal SelectionDAG
@@ -1853,6 +1934,14 @@ public:
     void CommitTargetLoweringOpt(const TargetLoweringOpt &TLO);
   };
 
+  /// Return if the N is a constant or constant vector equal to the true value
+  /// from getBooleanContents().
+  bool isConstTrueVal(const SDNode *N) const;
+
+  /// Return if the N is a constant or constant vector equal to the false value
+  /// from getBooleanContents().
+  bool isConstFalseVal(const SDNode *N) const;
+
   /// Try to simplify a setcc built with the specified operands and cc. If it is
   /// unable to simplify it, return a null SDValue.
   SDValue SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
@@ -1931,12 +2020,13 @@ public:
     bool isSRet     : 1;
     bool isNest     : 1;
     bool isByVal    : 1;
+    bool isInAlloca : 1;
     bool isReturned : 1;
     uint16_t Alignment;
 
     ArgListEntry() : isSExt(false), isZExt(false), isInReg(false),
-      isSRet(false), isNest(false), isByVal(false), isReturned(false),
-      Alignment(0) { }
+      isSRet(false), isNest(false), isByVal(false), isInAlloca(false),
+      isReturned(false), Alignment(0) { }
 
     void setAttributes(ImmutableCallSite *CS, unsigned AttrIdx);
   };
@@ -2060,6 +2150,12 @@ public:
     return false;
   }
 
+  /// Return the builtin name for the __builtin___clear_cache intrinsic
+  /// Default is to invoke the clear cache library call
+  virtual const char * getClearCacheBuiltinName() const {
+    return "__clear_cache";
+  }
+
   /// Return the type that should be used to zero or sign extend a
   /// zeroext/signext integer argument or return value.  FIXME: Most C calling
   /// convention requires the return type to be promoted, but this is not true
@@ -2076,6 +2172,18 @@ public:
   /// scratch registers.
   virtual const uint16_t *getScratchRegisters(CallingConv::ID CC) const {
     return NULL;
+  }
+
+  /// This callback is used to prepare for a volatile or atomic load.
+  /// It takes a chain node as input and returns the chain for the load itself.
+  ///
+  /// Having a callback like this is necessary for targets like SystemZ,
+  /// which allows a CPU to reuse the result of a previous load indefinitely,
+  /// even if a cache-coherent store is performed by another CPU.  The default
+  /// implementation does nothing.
+  virtual SDValue prepareVolatileOrAtomicLoad(SDValue Chain, SDLoc DL,
+                                              SelectionDAG &DAG) const {
+    return Chain;
   }
 
   /// This callback is invoked by the type legalizer to legalize nodes with an
@@ -2126,6 +2234,10 @@ public:
                                    const TargetLibraryInfo *) const {
     return 0;
   }
+
+
+  bool verifyReturnAddressArgumentIsConstant(SDValue Op,
+                                             SelectionDAG &DAG) const;
 
   //===--------------------------------------------------------------------===//
   // Inline Asm Support hooks
@@ -2189,15 +2301,6 @@ public:
     /// If this is an input matching constraint, this method returns the output
     /// operand it matches.
     unsigned getMatchedOperand() const;
-
-    /// Copy constructor for copying from an AsmOperandInfo.
-    AsmOperandInfo(const AsmOperandInfo &info)
-      : InlineAsm::ConstraintInfo(info),
-        ConstraintCode(info.ConstraintCode),
-        ConstraintType(info.ConstraintType),
-        CallOperandVal(info.CallOperandVal),
-        ConstraintVT(info.ConstraintVT) {
-    }
 
     /// Copy constructor for copying from a ConstraintInfo.
     AsmOperandInfo(const InlineAsm::ConstraintInfo &info)

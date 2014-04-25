@@ -60,11 +60,11 @@
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Operator.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
-#include "llvm/Support/InstIterator.h"
 #include "llvm/Support/raw_ostream.h"
 
 using namespace llvm;
@@ -1275,8 +1275,8 @@ bool DependenceAnalysis::weakCrossingSIVtest(const SCEV *Coeff,
 //
 // Program 2.1, page 29.
 // Computes the GCD of AM and BM.
-// Also finds a solution to the equation ax - by = gdc(a, b).
-// Returns true iff the gcd divides Delta.
+// Also finds a solution to the equation ax - by = gcd(a, b).
+// Returns true if dependence disproved; i.e., gcd does not divide Delta.
 static
 bool findGCD(unsigned Bits, APInt AM, APInt BM, APInt Delta,
              APInt &G, APInt &X, APInt &Y) {
@@ -3178,7 +3178,7 @@ void DependenceAnalysis::updateDirection(Dependence::DVEntry &Level,
 
 /// Check if we can delinearize the subscripts. If the SCEVs representing the
 /// source and destination array references are recurrences on a nested loop,
-/// this function flattens the nested recurrences into seperate recurrences
+/// this function flattens the nested recurrences into separate recurrences
 /// for each loop level.
 bool
 DependenceAnalysis::tryDelinearize(const SCEV *SrcSCEV, const SCEV *DstSCEV,
@@ -3189,13 +3189,41 @@ DependenceAnalysis::tryDelinearize(const SCEV *SrcSCEV, const SCEV *DstSCEV,
     return false;
 
   SmallVector<const SCEV *, 4> SrcSubscripts, DstSubscripts, SrcSizes, DstSizes;
-  SrcAR->delinearize(*SE, SrcSubscripts, SrcSizes);
-  DstAR->delinearize(*SE, DstSubscripts, DstSizes);
+  const SCEV *RemainderS = SrcAR->delinearize(*SE, SrcSubscripts, SrcSizes);
+  const SCEV *RemainderD = DstAR->delinearize(*SE, DstSubscripts, DstSizes);
 
   int size = SrcSubscripts.size();
-  int dstSize = DstSubscripts.size();
-  if (size != dstSize || size < 2)
+  // Fail when there is only a subscript: that's a linearized access function.
+  if (size < 2)
     return false;
+
+  int dstSize = DstSubscripts.size();
+  // Fail when the number of subscripts in Src and Dst differ.
+  if (size != dstSize)
+    return false;
+
+  // Fail when the size of any of the subscripts in Src and Dst differs: the
+  // dependence analysis assumes that elements in the same array have same size.
+  // SCEV delinearization does not have a context based on which it would decide
+  // globally the size of subscripts that would best fit all the array accesses.
+  for (int i = 0; i < size; ++i)
+    if (SrcSizes[i] != DstSizes[i])
+      return false;
+
+  // When the difference in remainders is different than a constant it might be
+  // that the base address of the arrays is not the same.
+  const SCEV *DiffRemainders = SE->getMinusSCEV(RemainderS, RemainderD);
+  if (!isa<SCEVConstant>(DiffRemainders))
+    return false;
+
+  // Normalize the last dimension: integrate the size of the "scalar dimension"
+  // and the remainder of the delinearization.
+  DstSubscripts[size-1] = SE->getMulExpr(DstSubscripts[size-1],
+                                         DstSizes[size-1]);
+  SrcSubscripts[size-1] = SE->getMulExpr(SrcSubscripts[size-1],
+                                         SrcSizes[size-1]);
+  SrcSubscripts[size-1] = SE->getAddExpr(SrcSubscripts[size-1], RemainderS);
+  DstSubscripts[size-1] = SE->getAddExpr(DstSubscripts[size-1], RemainderD);
 
 #ifndef NDEBUG
   DEBUG(errs() << "\nSrcSubscripts: ");

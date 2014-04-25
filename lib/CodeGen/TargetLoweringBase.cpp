@@ -18,11 +18,15 @@
 #include "llvm/CodeGen/Analysis.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
+#include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineJumpTableInfo.h"
+#include "llvm/CodeGen/StackMaps.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -201,6 +205,11 @@ static void InitLibcallNames(const char **Names, const TargetMachine &TM) {
   Names[RTLIB::FLOOR_F80] = "floorl";
   Names[RTLIB::FLOOR_F128] = "floorl";
   Names[RTLIB::FLOOR_PPCF128] = "floorl";
+  Names[RTLIB::ROUND_F32] = "roundf";
+  Names[RTLIB::ROUND_F64] = "round";
+  Names[RTLIB::ROUND_F80] = "roundl";
+  Names[RTLIB::ROUND_F128] = "roundl";
+  Names[RTLIB::ROUND_PPCF128] = "roundl";
   Names[RTLIB::COPYSIGN_F32] = "copysignf";
   Names[RTLIB::COPYSIGN_F64] = "copysign";
   Names[RTLIB::COPYSIGN_F80] = "copysignl";
@@ -659,21 +668,23 @@ static void InitCmpLibcallCCs(ISD::CondCode *CCs) {
 /// NOTE: The constructor takes ownership of TLOF.
 TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm,
                                        const TargetLoweringObjectFile *tlof)
-  : TM(tm), TD(TM.getDataLayout()), TLOF(*tlof) {
+  : TM(tm), DL(TM.getDataLayout()), TLOF(*tlof) {
   initActions();
 
   // Perform these initializations only once.
-  IsLittleEndian = TD->isLittleEndian();
+  IsLittleEndian = DL->isLittleEndian();
   MaxStoresPerMemset = MaxStoresPerMemcpy = MaxStoresPerMemmove = 8;
   MaxStoresPerMemsetOptSize = MaxStoresPerMemcpyOptSize
     = MaxStoresPerMemmoveOptSize = 4;
   UseUnderscoreSetJmp = false;
   UseUnderscoreLongJmp = false;
   SelectIsExpensive = false;
+  HasMultipleConditionRegisters = false;
   IntDivIsCheap = false;
   Pow2DivIsCheap = false;
   JumpIsExpensive = false;
   PredictableSelectIsExpensive = false;
+  MaskAndBranchFoldingIsLegal = false;
   StackPointerRegisterToSaveRestore = 0;
   ExceptionPointerRegister = 0;
   ExceptionSelectorRegister = 0;
@@ -754,6 +765,7 @@ void TargetLoweringBase::initActions() {
   setOperationAction(ISD::FCEIL,  MVT::f16, Expand);
   setOperationAction(ISD::FRINT,  MVT::f16, Expand);
   setOperationAction(ISD::FTRUNC, MVT::f16, Expand);
+  setOperationAction(ISD::FROUND, MVT::f16, Expand);
   setOperationAction(ISD::FLOG ,  MVT::f32, Expand);
   setOperationAction(ISD::FLOG2,  MVT::f32, Expand);
   setOperationAction(ISD::FLOG10, MVT::f32, Expand);
@@ -764,6 +776,7 @@ void TargetLoweringBase::initActions() {
   setOperationAction(ISD::FCEIL,  MVT::f32, Expand);
   setOperationAction(ISD::FRINT,  MVT::f32, Expand);
   setOperationAction(ISD::FTRUNC, MVT::f32, Expand);
+  setOperationAction(ISD::FROUND, MVT::f32, Expand);
   setOperationAction(ISD::FLOG ,  MVT::f64, Expand);
   setOperationAction(ISD::FLOG2,  MVT::f64, Expand);
   setOperationAction(ISD::FLOG10, MVT::f64, Expand);
@@ -774,6 +787,7 @@ void TargetLoweringBase::initActions() {
   setOperationAction(ISD::FCEIL,  MVT::f64, Expand);
   setOperationAction(ISD::FRINT,  MVT::f64, Expand);
   setOperationAction(ISD::FTRUNC, MVT::f64, Expand);
+  setOperationAction(ISD::FROUND, MVT::f64, Expand);
   setOperationAction(ISD::FLOG ,  MVT::f128, Expand);
   setOperationAction(ISD::FLOG2,  MVT::f128, Expand);
   setOperationAction(ISD::FLOG10, MVT::f128, Expand);
@@ -784,6 +798,7 @@ void TargetLoweringBase::initActions() {
   setOperationAction(ISD::FCEIL,  MVT::f128, Expand);
   setOperationAction(ISD::FRINT,  MVT::f128, Expand);
   setOperationAction(ISD::FTRUNC, MVT::f128, Expand);
+  setOperationAction(ISD::FROUND, MVT::f128, Expand);
 
   // Default ISD::TRAP to expand (which turns it into abort).
   setOperationAction(ISD::TRAP, MVT::Other, Expand);
@@ -799,7 +814,7 @@ MVT TargetLoweringBase::getPointerTy(uint32_t AS) const {
 }
 
 unsigned TargetLoweringBase::getPointerSizeInBits(uint32_t AS) const {
-  return TD->getPointerSizeInBits(AS);
+  return DL->getPointerSizeInBits(AS);
 }
 
 unsigned TargetLoweringBase::getPointerTypeSizeInBits(Type *Ty) const {
@@ -808,7 +823,7 @@ unsigned TargetLoweringBase::getPointerTypeSizeInBits(Type *Ty) const {
 }
 
 MVT TargetLoweringBase::getScalarShiftAmountTy(EVT LHSTy) const {
-  return MVT::getIntegerVT(8*TD->getPointerSize(0));
+  return MVT::getIntegerVT(8*DL->getPointerSize(0));
 }
 
 EVT TargetLoweringBase::getShiftAmountTy(EVT LHSTy) const {
@@ -892,6 +907,59 @@ bool TargetLoweringBase::isLegalRC(const TargetRegisterClass *RC) const {
       return true;
   }
   return false;
+}
+
+/// Replace/modify any TargetFrameIndex operands with a targte-dependent
+/// sequence of memory operands that is recognized by PrologEpilogInserter.
+MachineBasicBlock*
+TargetLoweringBase::emitPatchPoint(MachineInstr *MI,
+                                   MachineBasicBlock *MBB) const {
+  const TargetMachine &TM = getTargetMachine();
+  MachineFunction &MF = *MI->getParent()->getParent();
+
+  // MI changes inside this loop as we grow operands.
+  for(unsigned OperIdx = 0; OperIdx != MI->getNumOperands(); ++OperIdx) {
+    MachineOperand &MO = MI->getOperand(OperIdx);
+    if (!MO.isFI())
+      continue;
+
+    // foldMemoryOperand builds a new MI after replacing a single FI operand
+    // with the canonical set of five x86 addressing-mode operands.
+    int FI = MO.getIndex();
+    MachineInstrBuilder MIB = BuildMI(MF, MI->getDebugLoc(), MI->getDesc());
+
+    // Copy operands before the frame-index.
+    for (unsigned i = 0; i < OperIdx; ++i)
+      MIB.addOperand(MI->getOperand(i));
+    // Add frame index operands: direct-mem-ref tag, #FI, offset.
+    MIB.addImm(StackMaps::DirectMemRefOp);
+    MIB.addOperand(MI->getOperand(OperIdx));
+    MIB.addImm(0);
+    // Copy the operands after the frame index.
+    for (unsigned i = OperIdx + 1; i != MI->getNumOperands(); ++i)
+      MIB.addOperand(MI->getOperand(i));
+
+    // Inherit previous memory operands.
+    MIB->setMemRefs(MI->memoperands_begin(), MI->memoperands_end());
+    assert(MIB->mayLoad() && "Folded a stackmap use to a non-load!");
+
+    // Add a new memory operand for this FI.
+    const MachineFrameInfo &MFI = *MF.getFrameInfo();
+    assert(MFI.getObjectOffset(FI) != -1);
+    MachineMemOperand *MMO =
+      MF.getMachineMemOperand(MachinePointerInfo::getFixedStack(FI),
+                              MachineMemOperand::MOLoad,
+                              TM.getDataLayout()->getPointerSize(),
+                              MFI.getObjectAlignment(FI));
+    MIB->addMemOperand(MF, MMO);
+
+    // Replace the instruction and update the operand index.
+    MBB->insert(MachineBasicBlock::iterator(MI), MIB);
+    OperIdx += (MIB->getNumOperands() - MI->getNumOperands()) - 1;
+    MI->eraseFromParent();
+    MI = MIB;
+  }
+  return MBB;
 }
 
 /// findRepresentativeClass - Return the largest legal super-reg register class
@@ -1019,7 +1087,7 @@ void TargetLoweringBase::computeRegisterProperties() {
     // that wider vector type.
     MVT EltVT = VT.getVectorElementType();
     unsigned NElts = VT.getVectorNumElements();
-    if (NElts != 1 && !shouldSplitVectorElementType(EltVT)) {
+    if (NElts != 1 && !shouldSplitVectorType(VT)) {
       bool IsLegalWiderType = false;
       // First try to promote the elements of integer vectors. If no legal
       // promotion was found, fallback to the widen-vector method.
@@ -1087,7 +1155,7 @@ void TargetLoweringBase::computeRegisterProperties() {
   for (unsigned i = 0; i != MVT::LAST_VALUETYPE; ++i) {
     const TargetRegisterClass* RRC;
     uint8_t Cost;
-    tie(RRC, Cost) =  findRepresentativeClass((MVT::SimpleValueType)i);
+    std::tie(RRC, Cost) = findRepresentativeClass((MVT::SimpleValueType)i);
     RepRegClassForVT[i] = RRC;
     RepRegClassCostForVT[i] = Cost;
   }
@@ -1230,7 +1298,7 @@ void llvm::GetReturnInfo(Type* ReturnType, AttributeSet attr,
 /// function arguments in the caller parameter area.  This is the actual
 /// alignment, not its logarithm.
 unsigned TargetLoweringBase::getByValTypeAlignment(Type *Ty) const {
-  return TD->getCallFrameTypeAlignment(Ty);
+  return DL->getABITypeAlignment(Ty);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1364,6 +1432,8 @@ bool TargetLoweringBase::isLegalAddressingMode(const AddrMode &AM,
       return false;
     // Allow 2*r as r+r.
     break;
+  default: // Don't allow n * r
+    return false;
   }
 
   return true;

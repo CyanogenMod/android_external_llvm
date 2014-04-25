@@ -24,8 +24,8 @@
 #include "llvm/CodeGen/MachineConstantPool.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstr.h"
-#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/MachineJumpTableInfo.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/MachineOperand.h"
 #include "llvm/CodeGen/Passes.h"
@@ -112,12 +112,10 @@ private:
   unsigned getBranchTargetOpValue(const MachineInstr &MI, unsigned OpNo) const;
   unsigned getMemEncoding(const MachineInstr &MI, unsigned OpNo) const;
   unsigned getMemEncodingMMImm12(const MachineInstr &MI, unsigned OpNo) const;
+  unsigned getMSAMemEncoding(const MachineInstr &MI, unsigned OpNo) const;
   unsigned getSizeExtEncoding(const MachineInstr &MI, unsigned OpNo) const;
   unsigned getSizeInsEncoding(const MachineInstr &MI, unsigned OpNo) const;
   unsigned getLSAImmEncoding(const MachineInstr &MI, unsigned OpNo) const;
-
-  void emitGlobalAddressUnaligned(const GlobalValue *GV, unsigned Reloc,
-                                  int Offset) const;
 
   /// Expand pseudo instructions with accumulator register operands.
   void expandACCInstr(MachineBasicBlock::instr_iterator MI,
@@ -224,6 +222,12 @@ unsigned MipsCodeEmitter::getMemEncodingMMImm12(const MachineInstr &MI,
   return 0;
 }
 
+unsigned MipsCodeEmitter::getMSAMemEncoding(const MachineInstr &MI,
+                                            unsigned OpNo) const {
+  llvm_unreachable("Unimplemented function.");
+  return 0;
+}
+
 unsigned MipsCodeEmitter::getSizeExtEncoding(const MachineInstr &MI,
                                              unsigned OpNo) const {
   // size is encoded as size-1.
@@ -271,14 +275,6 @@ void MipsCodeEmitter::emitGlobalAddress(const GlobalValue *GV, unsigned Reloc,
   MCE.addRelocation(MachineRelocation::getGV(MCE.getCurrentPCOffset(), Reloc,
                                              const_cast<GlobalValue *>(GV), 0,
                                              MayNeedFarStub));
-}
-
-void MipsCodeEmitter::emitGlobalAddressUnaligned(const GlobalValue *GV,
-                                           unsigned Reloc, int Offset) const {
-  MCE.addRelocation(MachineRelocation::getGV(MCE.getCurrentPCOffset(), Reloc,
-                             const_cast<GlobalValue *>(GV), 0, false));
-  MCE.addRelocation(MachineRelocation::getGV(MCE.getCurrentPCOffset() + Offset,
-                      Reloc, const_cast<GlobalValue *>(GV), 0, false));
 }
 
 void MipsCodeEmitter::

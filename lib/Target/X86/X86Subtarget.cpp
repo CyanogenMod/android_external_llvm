@@ -55,7 +55,7 @@ unsigned char X86Subtarget::
 ClassifyGlobalReference(const GlobalValue *GV, const TargetMachine &TM) const {
   // DLLImport only exists on windows, it is implemented as a load from a
   // DLLIMPORT stub.
-  if (GV->hasDLLImportLinkage())
+  if (GV->hasDLLImportStorageClass())
     return X86II::MO_DLLIMPORT;
 
   // Determine whether this is a reference to a definition or a declaration.
@@ -165,7 +165,10 @@ bool X86Subtarget::hasSinCos() const {
 /// IsLegalToCallImmediateAddr - Return true if the subtarget allows calls
 /// to immediate address.
 bool X86Subtarget::IsLegalToCallImmediateAddr(const TargetMachine &TM) const {
-  if (In64BitMode)
+  // FIXME: I386 PE/COFF supports PC relative calls using IMAGE_REL_I386_REL32
+  // but WinCOFFObjectWriter::RecordRelocation cannot emit them.  Once it does,
+  // the following check for Win32 should be removed.
+  if (In64BitMode || isTargetWin32())
     return false;
   return isTargetELF() || TM.getRelocationModel() == Reloc::Static;
 }
@@ -261,6 +264,15 @@ void X86Subtarget::AutoDetectSubtargetFeatures() {
     if (IsAMD || (Family == 6 && Model >= 13)) {
       IsBTMemSlow = true;
       ToggleFeature(X86::FeatureSlowBTMem);
+    }
+
+    // Determine if SHLD/SHRD instructions have higher latency then the
+    // equivalent series of shifts/or instructions. 
+    // FIXME: Add Intel's processors that have SHLD instructions with very
+    // poor latency. 
+    if (IsAMD) {
+      IsSHLDSlow = true;
+      ToggleFeature(X86::FeatureSlowSHLD);
     }
 
     // If it's an Intel chip since Nehalem and not an Atom chip, unaligned
@@ -473,6 +485,12 @@ void X86Subtarget::resetSubtargetFeatures(StringRef CPU, StringRef FS) {
   // target data structure which is shared with MC code emitter, etc.
   if (In64BitMode)
     ToggleFeature(X86::Mode64Bit);
+  else if (In32BitMode)
+    ToggleFeature(X86::Mode32Bit);
+  else if (In16BitMode)
+    ToggleFeature(X86::Mode16Bit);
+  else
+    llvm_unreachable("Not 16-bit, 32-bit or 64-bit mode!");
 
   DEBUG(dbgs() << "Subtarget features: SSELevel " << X86SSELevel
                << ", 3DNowLevel " << X863DNowLevel
@@ -519,6 +537,7 @@ void X86Subtarget::initializeEnvironment() {
   HasPRFCHW = false;
   HasRDSEED = false;
   IsBTMemSlow = false;
+  IsSHLDSlow = false;
   IsUAMemFast = false;
   HasVectorUAMem = false;
   HasCmpxchg16b = false;
@@ -535,13 +554,17 @@ void X86Subtarget::initializeEnvironment() {
 
 X86Subtarget::X86Subtarget(const std::string &TT, const std::string &CPU,
                            const std::string &FS,
-                           unsigned StackAlignOverride, bool is64Bit)
+                           unsigned StackAlignOverride)
   : X86GenSubtargetInfo(TT, CPU, FS)
   , X86ProcFamily(Others)
   , PICStyle(PICStyles::None)
   , TargetTriple(TT)
   , StackAlignOverride(StackAlignOverride)
-  , In64BitMode(is64Bit) {
+  , In64BitMode(TargetTriple.getArch() == Triple::x86_64)
+  , In32BitMode(TargetTriple.getArch() == Triple::x86 &&
+                TargetTriple.getEnvironment() != Triple::CODE16)
+  , In16BitMode(TargetTriple.getArch() == Triple::x86 &&
+                TargetTriple.getEnvironment() == Triple::CODE16) {
   initializeEnvironment();
   resetSubtargetFeatures(CPU, FS);
 }

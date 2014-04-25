@@ -16,13 +16,16 @@
 #ifndef LLVM_CODEGEN_ASMPRINTER_H
 #define LLVM_CODEGEN_ASMPRINTER_H
 
+#include "llvm/ADT/Twine.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/ErrorHandling.h"
 
 namespace llvm {
+  class AsmPrinterHandler;
   class BlockAddress;
+  class ByteStreamer;
   class GCStrategy;
   class Constant;
   class ConstantArray;
@@ -41,9 +44,11 @@ namespace llvm {
   class MCAsmInfo;
   class MCCFIInstruction;
   class MCContext;
+  class MCInst;
   class MCInstrInfo;
   class MCSection;
   class MCStreamer;
+  class MCSubtargetInfo;
   class MCSymbol;
   class MDNode;
   class DwarfDebug;
@@ -110,12 +115,20 @@ namespace llvm {
     /// function.
     MachineLoopInfo *LI;
 
+    struct HandlerInfo {
+      AsmPrinterHandler *Handler;
+      const char *TimerName, *TimerGroupName;
+      HandlerInfo(AsmPrinterHandler *Handler, const char *TimerName,
+                  const char *TimerGroupName)
+          : Handler(Handler), TimerName(TimerName),
+            TimerGroupName(TimerGroupName) {}
+    };
+    /// Handlers - a vector of all debug/EH info emitters we should use.
+    /// This vector maintains ownership of the emitters.
+    SmallVector<HandlerInfo, 1> Handlers;
+
     /// DD - If the target supports dwarf debug info, this pointer is non-null.
     DwarfDebug *DD;
-
-    /// DE - If the target supports dwarf exception info, this pointer is
-    /// non-null.
-    DwarfException *DE;
 
   protected:
     explicit AsmPrinter(TargetMachine &TM, MCStreamer &Streamer);
@@ -123,7 +136,7 @@ namespace llvm {
   public:
     virtual ~AsmPrinter();
 
-    const DwarfDebug *getDwarfDebug() const { return DD; }
+    DwarfDebug *getDwarfDebug() { return DD; }
 
     /// isVerbose - Return true if assembly output should contain comments.
     ///
@@ -139,11 +152,19 @@ namespace llvm {
     /// getDataLayout - Return information about data layout.
     const DataLayout &getDataLayout() const;
 
+    /// getSubtargetInfo - Return information about subtarget.
+    const MCSubtargetInfo &getSubtargetInfo() const;
+
+    void EmitToStreamer(MCStreamer &S, const MCInst &Inst);
+
     /// getTargetTriple - Return the target triple string.
     StringRef getTargetTriple() const;
 
     /// getCurrentSection() - Return the current section we are emitting to.
     const MCSection *getCurrentSection() const;
+
+    void getNameWithPrefix(SmallVectorImpl<char> &Name,
+                           const GlobalValue *GV) const;
 
     MCSymbol *getSymbol(const GlobalValue *GV) const;
 
@@ -153,20 +174,20 @@ namespace llvm {
 
     /// getAnalysisUsage - Record analysis usage.
     ///
-    void getAnalysisUsage(AnalysisUsage &AU) const;
+    void getAnalysisUsage(AnalysisUsage &AU) const override;
 
     /// doInitialization - Set up the AsmPrinter when we are working on a new
     /// module.  If your pass overrides this, it must make sure to explicitly
     /// call this implementation.
-    bool doInitialization(Module &M);
+    bool doInitialization(Module &M) override;
 
     /// doFinalization - Shut down the asmprinter.  If you override this in your
     /// pass, you must make sure to call it explicitly.
-    bool doFinalization(Module &M);
+    bool doFinalization(Module &M) override;
 
     /// runOnMachineFunction - Emit the specified function out to the
     /// OutStreamer.
-    virtual bool runOnMachineFunction(MachineFunction &MF) {
+    bool runOnMachineFunction(MachineFunction &MF) override {
       SetupMachineFunction(MF);
       EmitFunctionHeader();
       EmitFunctionBody();
@@ -189,7 +210,7 @@ namespace llvm {
     /// function.
     void EmitFunctionBody();
 
-    void emitPrologLabel(const MachineInstr &MI);
+    void emitCFIInstruction(const MachineInstr &MI);
 
     enum CFIMoveType {
       CFI_M_None,
@@ -199,11 +220,6 @@ namespace llvm {
     CFIMoveType needsCFIMoves();
 
     bool needsSEHMoves();
-
-    /// needsRelocationsForDwarfStringPool - Specifies whether the object format
-    /// expects to use relocations to refer to debug entries. Alternatively we
-    /// emit section offsets in bytes from the start of the string pool.
-    bool needsRelocationsForDwarfStringPool() const;
 
     /// EmitConstantPool - Print to the current output stream assembly
     /// representations of the constants in the constant pool MCP. This is
@@ -270,6 +286,9 @@ namespace llvm {
       llvm_unreachable("EmitInstruction not implemented");
     }
 
+    /// GetCPISymbol - Return the symbol for the specified constant pool entry.
+    virtual MCSymbol *GetCPISymbol(unsigned CPID) const;
+
     virtual void EmitFunctionEntryLabel();
 
     virtual void EmitMachineConstantPoolValue(MachineConstantPoolValue *MCPV);
@@ -298,26 +317,20 @@ namespace llvm {
 
     /// GetTempSymbol - Return the MCSymbol corresponding to the assembler
     /// temporary label with the specified stem and unique ID.
-    MCSymbol *GetTempSymbol(StringRef Name, unsigned ID) const;
+    MCSymbol *GetTempSymbol(Twine Name, unsigned ID) const;
 
     /// GetTempSymbol - Return an assembler temporary label with the specified
     /// stem.
-    MCSymbol *GetTempSymbol(StringRef Name) const;
+    MCSymbol *GetTempSymbol(Twine Name) const;
 
-
-    /// GetSymbolWithGlobalValueBase - Return the MCSymbol for a symbol with
-    /// global value name as its base, with the specified suffix, and where the
-    /// symbol is forced to have private linkage if ForcePrivate is true.
-    MCSymbol *GetSymbolWithGlobalValueBase(const GlobalValue *GV,
-                                           StringRef Suffix,
-                                           bool ForcePrivate = true) const;
+    /// Return the MCSymbol for a private symbol with global value name as its
+    /// base, with the specified suffix.
+    MCSymbol *getSymbolWithGlobalValueBase(const GlobalValue *GV,
+                                           StringRef Suffix) const;
 
     /// GetExternalSymbolSymbol - Return the MCSymbol for the specified
     /// ExternalSymbol.
     MCSymbol *GetExternalSymbolSymbol(StringRef Sym) const;
-
-    /// GetCPISymbol - Return the symbol for the specified constant pool entry.
-    MCSymbol *GetCPISymbol(unsigned CPID) const;
 
     /// GetJTISymbol - Return the symbol for the specified jump table entry.
     MCSymbol *GetJTISymbol(unsigned JTID, bool isLinkerPrivate = false) const;
@@ -418,7 +431,7 @@ namespace llvm {
     virtual unsigned getISAEncoding() { return 0; }
 
     /// EmitDwarfRegOp - Emit dwarf register operation.
-    virtual void EmitDwarfRegOp(const MachineLocation &MLoc,
+    virtual void EmitDwarfRegOp(ByteStreamer &BS, const MachineLocation &MLoc,
                                 bool Indirect) const;
 
     //===------------------------------------------------------------------===//
@@ -459,6 +472,15 @@ namespace llvm {
     virtual bool PrintAsmMemoryOperand(const MachineInstr *MI, unsigned OpNo,
                                        unsigned AsmVariant,
                                        const char *ExtraCode, raw_ostream &OS);
+
+    /// Let the target do anything it needs to do after emitting inlineasm.
+    /// This callback can be used restore the original mode in case the
+    /// inlineasm contains directives to switch modes.
+    /// \p StartInfo - the original subtarget info before inline asm
+    /// \p EndInfo   - the final subtarget info after parsing the inline asm,
+    ///                or NULL if the value is unknown.
+    virtual void emitInlineAsmEnd(const MCSubtargetInfo &StartInfo,
+                                  const MCSubtargetInfo *EndInfo) const;
 
   private:
     /// Private state for PrintSpecial()
