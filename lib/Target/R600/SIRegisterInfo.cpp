@@ -56,7 +56,7 @@ const TargetRegisterClass * SIRegisterInfo::getCFGStructurizerRegClass(
 }
 
 unsigned SIRegisterInfo::getHWRegIndex(unsigned Reg) const {
-  return getEncodingValue(Reg);
+  return getEncodingValue(Reg) & 0xff;
 }
 
 const TargetRegisterClass *SIRegisterInfo::getPhysRegClass(unsigned Reg) const {
@@ -122,7 +122,7 @@ const TargetRegisterClass *SIRegisterInfo::getSubRegClass(
     return RC;
 
   // If this register has a sub-register, we can safely assume it is a 32-bit
-  // register, becuase all of SI's sub-registers are 32-bit.
+  // register, because all of SI's sub-registers are 32-bit.
   if (isSGPRClass(RC)) {
     return &AMDGPU::SGPR_32RegClass;
   } else {

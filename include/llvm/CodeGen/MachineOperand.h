@@ -43,21 +43,23 @@ class MCSymbol;
 class MachineOperand {
 public:
   enum MachineOperandType {
-    MO_Register,               ///< Register operand.
-    MO_Immediate,              ///< Immediate operand
-    MO_CImmediate,             ///< Immediate >64bit operand
-    MO_FPImmediate,            ///< Floating-point immediate operand
-    MO_MachineBasicBlock,      ///< MachineBasicBlock reference
-    MO_FrameIndex,             ///< Abstract Stack Frame Index
-    MO_ConstantPoolIndex,      ///< Address of indexed Constant in Constant Pool
-    MO_TargetIndex,            ///< Target-dependent index+offset operand.
-    MO_JumpTableIndex,         ///< Address of indexed Jump Table for switch
-    MO_ExternalSymbol,         ///< Name of external global symbol
-    MO_GlobalAddress,          ///< Address of a global value
-    MO_BlockAddress,           ///< Address of a basic block
-    MO_RegisterMask,           ///< Mask of preserved registers.
-    MO_Metadata,               ///< Metadata reference (for debug info)
-    MO_MCSymbol                ///< MCSymbol reference (for debug/eh info)
+    MO_Register,          ///< Register operand.
+    MO_Immediate,         ///< Immediate operand
+    MO_CImmediate,        ///< Immediate >64bit operand
+    MO_FPImmediate,       ///< Floating-point immediate operand
+    MO_MachineBasicBlock, ///< MachineBasicBlock reference
+    MO_FrameIndex,        ///< Abstract Stack Frame Index
+    MO_ConstantPoolIndex, ///< Address of indexed Constant in Constant Pool
+    MO_TargetIndex,       ///< Target-dependent index+offset operand.
+    MO_JumpTableIndex,    ///< Address of indexed Jump Table for switch
+    MO_ExternalSymbol,    ///< Name of external global symbol
+    MO_GlobalAddress,     ///< Address of a global value
+    MO_BlockAddress,      ///< Address of a basic block
+    MO_RegisterMask,      ///< Mask of preserved registers.
+    MO_RegisterLiveOut,   ///< Mask of live-out registers.
+    MO_Metadata,          ///< Metadata reference (for debug info)
+    MO_MCSymbol,          ///< MCSymbol reference (for debug/eh info)
+    MO_CFIIndex           ///< MCCFIInstruction index.
   };
 
 private:
@@ -149,13 +151,14 @@ private:
 
   /// Contents union - This contains the payload for the various operand types.
   union {
-    MachineBasicBlock *MBB;   // For MO_MachineBasicBlock.
-    const ConstantFP *CFP;    // For MO_FPImmediate.
-    const ConstantInt *CI;    // For MO_CImmediate. Integers > 64bit.
-    int64_t ImmVal;           // For MO_Immediate.
-    const uint32_t *RegMask;  // For MO_RegisterMask.
-    const MDNode *MD;         // For MO_Metadata.
-    MCSymbol *Sym;            // For MO_MCSymbol
+    MachineBasicBlock *MBB;  // For MO_MachineBasicBlock.
+    const ConstantFP *CFP;   // For MO_FPImmediate.
+    const ConstantInt *CI;   // For MO_CImmediate. Integers > 64bit.
+    int64_t ImmVal;          // For MO_Immediate.
+    const uint32_t *RegMask; // For MO_RegisterMask and MO_RegisterLiveOut.
+    const MDNode *MD;        // For MO_Metadata.
+    MCSymbol *Sym;           // For MO_MCSymbol.
+    unsigned CFIIndex;       // For MO_CFI.
 
     struct {                  // For MO_Register.
       // Register number is in SmallContents.RegNo.
@@ -246,10 +249,12 @@ public:
   bool isBlockAddress() const { return OpKind == MO_BlockAddress; }
   /// isRegMask - Tests if this is a MO_RegisterMask operand.
   bool isRegMask() const { return OpKind == MO_RegisterMask; }
+  /// isRegLiveOut - Tests if this is a MO_RegisterLiveOut operand.
+  bool isRegLiveOut() const { return OpKind == MO_RegisterLiveOut; }
   /// isMetadata - Tests if this is a MO_Metadata operand.
   bool isMetadata() const { return OpKind == MO_Metadata; }
   bool isMCSymbol() const { return OpKind == MO_MCSymbol; }
-
+  bool isCFIIndex() const { return OpKind == MO_CFIIndex; }
 
   //===--------------------------------------------------------------------===//
   // Accessors for Register Operands
@@ -440,6 +445,11 @@ public:
     return Contents.Sym;
   }
 
+  unsigned getCFIIndex() const {
+    assert(isCFIIndex() && "Wrong MachineOperand accessor");
+    return Contents.CFIIndex;
+  }
+
   /// getOffset - Return the offset from the symbol in this operand. This always
   /// returns 0 for ExternalSymbol operands.
   int64_t getOffset() const {
@@ -473,6 +483,12 @@ public:
   /// operand.
   const uint32_t *getRegMask() const {
     assert(isRegMask() && "Wrong MachineOperand accessor");
+    return Contents.RegMask;
+  }
+
+  /// getRegLiveOut - Returns a bit mask of live-out registers.
+  const uint32_t *getRegLiveOut() const {
+    assert(isRegLiveOut() && "Wrong MachineOperand accessor");
     return Contents.RegMask;
   }
 
@@ -659,6 +675,12 @@ public:
     Op.Contents.RegMask = Mask;
     return Op;
   }
+  static MachineOperand CreateRegLiveOut(const uint32_t *Mask) {
+    assert(Mask && "Missing live-out register mask");
+    MachineOperand Op(MachineOperand::MO_RegisterLiveOut);
+    Op.Contents.RegMask = Mask;
+    return Op;
+  }
   static MachineOperand CreateMetadata(const MDNode *Meta) {
     MachineOperand Op(MachineOperand::MO_Metadata);
     Op.Contents.MD = Meta;
@@ -668,6 +690,12 @@ public:
   static MachineOperand CreateMCSymbol(MCSymbol *Sym) {
     MachineOperand Op(MachineOperand::MO_MCSymbol);
     Op.Contents.Sym = Sym;
+    return Op;
+  }
+
+  static MachineOperand CreateCFIIndex(unsigned CFIIndex) {
+    MachineOperand Op(MachineOperand::MO_CFIIndex);
+    Op.Contents.CFIIndex = CFIIndex;
     return Op;
   }
 

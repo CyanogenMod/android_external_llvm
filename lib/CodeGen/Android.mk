@@ -9,6 +9,7 @@ codegen_SRC_FILES := \
   CalcSpillWeights.cpp \
   CallingConvLower.cpp \
   CodeGen.cpp \
+  CodeGenPrepare.cpp \
   CriticalAntiDepBreaker.cpp \
   DeadMachineInstructionElim.cpp \
   DFAPacketizer.cpp \
@@ -33,10 +34,10 @@ codegen_SRC_FILES := \
   LiveIntervalAnalysis.cpp \
   LiveInterval.cpp \
   LiveIntervalUnion.cpp \
+  LivePhysRegs.cpp \
   LiveRangeCalc.cpp \
   LiveRangeEdit.cpp \
   LiveRegMatrix.cpp \
-  LiveRegUnits.cpp \
   LiveStackAnalysis.cpp \
   LiveVariables.cpp \
   LLVMTargetMachine.cpp \
@@ -97,6 +98,7 @@ codegen_SRC_FILES := \
   SpillPlacement.cpp \
   SplitKit.cpp \
   StackColoring.cpp \
+  StackMapLivenessAnalysis.cpp \
   StackMaps.cpp \
   StackProtector.cpp \
   StackSlotColoring.cpp \
@@ -127,6 +129,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device
 # =====================================================
+ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(codegen_SRC_FILES)
@@ -137,3 +140,4 @@ LOCAL_MODULE_TAGS := optional
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
+endif

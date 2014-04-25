@@ -22,6 +22,7 @@
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCExpr.h"
 #include "llvm/Support/CommandLine.h"
@@ -74,6 +75,7 @@ void TargetLowering::ArgListEntry::setAttributes(ImmutableCallSite *CS,
   isSRet     = CS->paramHasAttr(AttrIdx, Attribute::StructRet);
   isNest     = CS->paramHasAttr(AttrIdx, Attribute::Nest);
   isByVal    = CS->paramHasAttr(AttrIdx, Attribute::ByVal);
+  isInAlloca = CS->paramHasAttr(AttrIdx, Attribute::InAlloca);
   isReturned = CS->paramHasAttr(AttrIdx, Attribute::Returned);
   Alignment  = CS->getParamAlignment(AttrIdx);
 }
@@ -1115,6 +1117,54 @@ static bool ValueHasExactlyOneBitSet(SDValue Val, const SelectionDAG &DAG) {
          (KnownOne.countPopulation() == 1);
 }
 
+bool TargetLowering::isConstTrueVal(const SDNode *N) const {
+  if (!N)
+    return false;
+
+  bool IsVec = false;
+  const ConstantSDNode *CN = dyn_cast<ConstantSDNode>(N);
+  if (!CN) {
+    const BuildVectorSDNode *BV = dyn_cast<BuildVectorSDNode>(N);
+    if (!BV)
+      return false;
+
+    IsVec = true;
+    CN = BV->getConstantSplatValue();
+  }
+
+  switch (getBooleanContents(IsVec)) {
+  case UndefinedBooleanContent:
+    return CN->getAPIntValue()[0];
+  case ZeroOrOneBooleanContent:
+    return CN->isOne();
+  case ZeroOrNegativeOneBooleanContent:
+    return CN->isAllOnesValue();
+  }
+
+  llvm_unreachable("Invalid boolean contents");
+}
+
+bool TargetLowering::isConstFalseVal(const SDNode *N) const {
+  if (!N)
+    return false;
+
+  bool IsVec = false;
+  const ConstantSDNode *CN = dyn_cast<ConstantSDNode>(N);
+  if (!CN) {
+    const BuildVectorSDNode *BV = dyn_cast<BuildVectorSDNode>(N);
+    if (!BV)
+      return false;
+
+    IsVec = true;
+    CN = BV->getConstantSplatValue();
+  }
+
+  if (getBooleanContents(IsVec) == UndefinedBooleanContent)
+    return !CN->getAPIntValue()[0];
+
+  return CN->isNullValue();
+}
+
 /// SimplifySetCC - Try to simplify a setcc built with the specified operands
 /// and cc. If it is unable to simplify it, return a null SDValue.
 SDValue
@@ -1468,18 +1518,32 @@ TargetLowering::SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
     // Canonicalize GE/LE comparisons to use GT/LT comparisons.
     if (Cond == ISD::SETGE || Cond == ISD::SETUGE) {
       if (C1 == MinVal) return DAG.getConstant(1, VT);   // X >= MIN --> true
-      // X >= C0 --> X > (C0-1)
-      return DAG.getSetCC(dl, VT, N0,
-                          DAG.getConstant(C1-1, N1.getValueType()),
-                          (Cond == ISD::SETGE) ? ISD::SETGT : ISD::SETUGT);
+      // X >= C0 --> X > (C0 - 1)
+      APInt C = C1 - 1;
+      ISD::CondCode NewCC = (Cond == ISD::SETGE) ? ISD::SETGT : ISD::SETUGT;
+      if ((DCI.isBeforeLegalizeOps() ||
+           isCondCodeLegal(NewCC, VT.getSimpleVT())) &&
+          (!N1C->isOpaque() || (N1C->isOpaque() && C.getBitWidth() <= 64 &&
+                                isLegalICmpImmediate(C.getSExtValue())))) {
+        return DAG.getSetCC(dl, VT, N0,
+                            DAG.getConstant(C, N1.getValueType()),
+                            NewCC);
+      }
     }
 
     if (Cond == ISD::SETLE || Cond == ISD::SETULE) {
       if (C1 == MaxVal) return DAG.getConstant(1, VT);   // X <= MAX --> true
-      // X <= C0 --> X < (C0+1)
-      return DAG.getSetCC(dl, VT, N0,
-                          DAG.getConstant(C1+1, N1.getValueType()),
-                          (Cond == ISD::SETLE) ? ISD::SETLT : ISD::SETULT);
+      // X <= C0 --> X < (C0 + 1)
+      APInt C = C1 + 1;
+      ISD::CondCode NewCC = (Cond == ISD::SETLE) ? ISD::SETLT : ISD::SETULT;
+      if ((DCI.isBeforeLegalizeOps() ||
+           isCondCodeLegal(NewCC, VT.getSimpleVT())) &&
+          (!N1C->isOpaque() || (N1C->isOpaque() && C.getBitWidth() <= 64 &&
+                                isLegalICmpImmediate(C.getSExtValue())))) {
+        return DAG.getSetCC(dl, VT, N0,
+                            DAG.getConstant(C, N1.getValueType()),
+                            NewCC);
+      }
     }
 
     if ((Cond == ISD::SETLT || Cond == ISD::SETULT) && C1 == MinVal)
@@ -1535,7 +1599,7 @@ TargetLowering::SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
         N0.getOpcode() == ISD::AND)
       if (ConstantSDNode *AndRHS =
                   dyn_cast<ConstantSDNode>(N0.getOperand(1))) {
-        EVT ShiftTy = DCI.isBeforeLegalizeOps() ?
+        EVT ShiftTy = DCI.isBeforeLegalize() ?
           getPointerTy() : getShiftAmountTy(N0.getValueType());
         if (Cond == ISD::SETNE && C1 == 0) {// (X & 8) != 0  -->  (X & 8) >> 3
           // Perform the xform if the AND RHS is a single bit.
@@ -1565,7 +1629,7 @@ TargetLowering::SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
           const APInt &AndRHSC = AndRHS->getAPIntValue();
           if ((-AndRHSC).isPowerOf2() && (AndRHSC & C1) == C1) {
             unsigned ShiftBits = AndRHSC.countTrailingZeros();
-            EVT ShiftTy = DCI.isBeforeLegalizeOps() ?
+            EVT ShiftTy = DCI.isBeforeLegalize() ?
               getPointerTy() : getShiftAmountTy(N0.getValueType());
             EVT CmpTy = N0.getValueType();
             SDValue Shift = DAG.getNode(ISD::SRL, dl, CmpTy, N0.getOperand(0),
@@ -1593,7 +1657,7 @@ TargetLowering::SimplifySetCC(EVT VT, SDValue N0, SDValue N1,
         }
         NewC = NewC.lshr(ShiftBits);
         if (ShiftBits && isLegalICmpImmediate(NewC.getSExtValue())) {
-          EVT ShiftTy = DCI.isBeforeLegalizeOps() ?
+          EVT ShiftTy = DCI.isBeforeLegalize() ?
             getPointerTy() : getShiftAmountTy(N0.getValueType());
           EVT CmpTy = N0.getValueType();
           SDValue Shift = DAG.getNode(ISD::SRL, dl, CmpTy, N0,
@@ -2662,4 +2726,15 @@ BuildUDIV(SDNode *N, SelectionDAG &DAG, bool IsAfterLegalization,
     return DAG.getNode(ISD::SRL, dl, VT, NPQ,
              DAG.getConstant(magics.s-1, getShiftAmountTy(NPQ.getValueType())));
   }
+}
+
+bool TargetLowering::
+verifyReturnAddressArgumentIsConstant(SDValue Op, SelectionDAG &DAG) const {
+  if (!isa<ConstantSDNode>(Op.getOperand(0))) {
+    DAG.getContext()->emitError("argument to '__builtin_return_address' must "
+                                "be a constant integer");
+    return true;
+  }
+
+  return false;
 }

@@ -20,7 +20,6 @@
 #include "llvm/Analysis/AliasAnalysis.h"
 #include "llvm/Analysis/BranchProbabilityInfo.h"
 #include "llvm/Analysis/CFG.h"
-#include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/FastISel.h"
 #include "llvm/CodeGen/FunctionLoweringInfo.h"
 #include "llvm/CodeGen/GCMetadata.h"
@@ -33,8 +32,8 @@
 #include "llvm/CodeGen/ScheduleHazardRecognizer.h"
 #include "llvm/CodeGen/SchedulerRegistry.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/DebugInfo.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InlineAsm.h"
 #include "llvm/IR/Instructions.h"
@@ -213,7 +212,7 @@ MachinePassRegistry RegisterScheduler::Registry;
 static cl::opt<RegisterScheduler::FunctionPassCtor, false,
                RegisterPassParser<RegisterScheduler> >
 ISHeuristic("pre-RA-sched",
-            cl::init(&createDefaultScheduler),
+            cl::init(&createDefaultScheduler), cl::Hidden,
             cl::desc("Instruction schedulers available (before register"
                      " allocation):"));
 
@@ -400,7 +399,6 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
   RegInfo = &MF->getRegInfo();
   AA = &getAnalysis<AliasAnalysis>();
   LibInfo = &getAnalysis<TargetLibraryInfo>();
-  TTI = getAnalysisIfAvailable<TargetTransformInfo>();
   GFI = Fn.hasGC() ? &getAnalysis<GCModuleInfo>().getFunctionInfo(Fn) : 0;
 
   TargetSubtargetInfo &ST =
@@ -418,8 +416,8 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
 
   SplitCriticalSideEffectEdges(const_cast<Function&>(Fn), this);
 
-  CurDAG->init(*MF, TTI, TLI);
-  FuncInfo->set(Fn, *MF);
+  CurDAG->init(*MF, TLI);
+  FuncInfo->set(Fn, *MF, CurDAG);
 
   if (UseMBPI && OptLevel != CodeGenOpt::None)
     FuncInfo->BPI = &getAnalysis<BranchProbabilityInfo>();
@@ -428,7 +426,8 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
 
   SDB->init(GFI, *AA, LibInfo);
 
-  MF->setHasMSInlineAsm(false);
+  MF->setHasInlineAsm(false);
+
   SelectAllBasicBlocks(Fn);
 
   // If the first basic block in the function has live ins that need to be
@@ -448,7 +447,8 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
   for (unsigned i = 0, e = FuncInfo->ArgDbgValues.size(); i != e; ++i) {
     MachineInstr *MI = FuncInfo->ArgDbgValues[e-i-1];
     bool hasFI = MI->getOperand(0).isFI();
-    unsigned Reg = hasFI ? TRI.getFrameRegister(*MF) : MI->getOperand(0).getReg();
+    unsigned Reg =
+        hasFI ? TRI.getFrameRegister(*MF) : MI->getOperand(0).getReg();
     if (TargetRegisterInfo::isPhysicalRegister(Reg))
       EntryMBB->insert(EntryMBB->begin(), MI);
     else {
@@ -456,7 +456,7 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
       if (Def) {
         MachineBasicBlock::iterator InsertPos = Def;
         // FIXME: VR def may not be in entry block.
-        Def->getParent()->insert(llvm::next(InsertPos), MI);
+        Def->getParent()->insert(std::next(InsertPos), MI);
       } else
         DEBUG(dbgs() << "Dropping debug info for dead vreg"
               << TargetRegisterInfo::virtReg2Index(Reg) << "\n");
@@ -483,9 +483,10 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
       // that COPY instructions also need DBG_VALUE, if it is the only
       // user of LDI->second.
       MachineInstr *CopyUseMI = NULL;
-      for (MachineRegisterInfo::use_iterator
-             UI = RegInfo->use_begin(LDI->second);
-           MachineInstr *UseMI = UI.skipInstruction();) {
+      for (MachineRegisterInfo::use_instr_iterator
+           UI = RegInfo->use_instr_begin(LDI->second),
+           E = RegInfo->use_instr_end(); UI != E; ) {
+        MachineInstr *UseMI = &*(UI++);
         if (UseMI->isDebugValue()) continue;
         if (UseMI->isCopy() && !CopyUseMI && UseMI->getParent() == EntryMBB) {
           CopyUseMI = UseMI; continue;
@@ -511,7 +512,7 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
   for (MachineFunction::const_iterator I = MF->begin(), E = MF->end(); I != E;
        ++I) {
 
-    if (MFI->hasCalls() && MF->hasMSInlineAsm())
+    if (MFI->hasCalls() && MF->hasInlineAsm())
       break;
 
     const MachineBasicBlock *MBB = I;
@@ -522,8 +523,8 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
           II->isStackAligningInlineAsm()) {
         MFI->setHasCalls(true);
       }
-      if (II->isMSInlineAsm()) {
-        MF->setHasMSInlineAsm(true);
+      if (II->isInlineAsm()) {
+        MF->setHasInlineAsm(true);
       }
     }
   }
@@ -562,6 +563,9 @@ bool SelectionDAGISel::runOnMachineFunction(MachineFunction &mf) {
   // Release function-specific state. SDB and CurDAG are already cleared
   // at this point.
   FuncInfo->clear();
+
+  DEBUG(dbgs() << "*** MachineFunction at end of ISel ***\n");
+  DEBUG(MF->print(dbgs()));
 
   return true;
 }
@@ -800,7 +804,7 @@ public:
   /// NodeDeleted - Handle nodes deleted from the graph. If the node being
   /// deleted is the current ISelPosition node, update ISelPosition.
   ///
-  virtual void NodeDeleted(SDNode *N, SDNode *E) {
+  void NodeDeleted(SDNode *N, SDNode *E) override {
     if (ISelPosition == SelectionDAG::allnodes_iterator(N))
       ++ISelPosition;
   }
@@ -1063,7 +1067,7 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
         // where they are, so we can be sure to emit subsequent instructions
         // after them.
         if (FuncInfo->InsertPt != FuncInfo->MBB->begin())
-          FastIS->setLastLocalValue(llvm::prior(FuncInfo->InsertPt));
+          FastIS->setLastLocalValue(std::prev(FuncInfo->InsertPt));
         else
           FastIS->setLastLocalValue(0);
       }
@@ -1071,7 +1075,7 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
       unsigned NumFastIselRemaining = std::distance(Begin, End);
       // Do FastISel on as many instructions as possible.
       for (; BI != Begin; --BI) {
-        const Instruction *Inst = llvm::prior(BI);
+        const Instruction *Inst = std::prev(BI);
 
         // If we no longer require this instruction, skip it.
         if (isFoldedOrDeadInstruction(Inst, FuncInfo)) {
@@ -1092,7 +1096,7 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
           // Try to fold the load if so.
           const Instruction *BeforeInst = Inst;
           while (BeforeInst != Begin) {
-            BeforeInst = llvm::prior(BasicBlock::const_iterator(BeforeInst));
+            BeforeInst = std::prev(BasicBlock::const_iterator(BeforeInst));
             if (!isFoldedOrDeadInstruction(BeforeInst, FuncInfo))
               break;
           }
@@ -1100,7 +1104,7 @@ void SelectionDAGISel::SelectAllBasicBlocks(const Function &Fn) {
               BeforeInst->hasOneUse() &&
               FastIS->tryToFoldLoad(cast<LoadInst>(BeforeInst), Inst)) {
             // If we succeeded, don't re-select the load.
-            BI = llvm::next(BasicBlock::const_iterator(BeforeInst));
+            BI = std::next(BasicBlock::const_iterator(BeforeInst));
             --NumFastIselRemaining;
             ++NumFastIselSuccess;
           }
@@ -2194,8 +2198,7 @@ CheckType(const unsigned char *MatcherTable, unsigned &MatcherIndex,
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE static bool
 CheckChildType(const unsigned char *MatcherTable, unsigned &MatcherIndex,
-               SDValue N, const TargetLowering *TLI,
-               unsigned ChildNo) {
+               SDValue N, const TargetLowering *TLI, unsigned ChildNo) {
   if (ChildNo >= N.getNumOperands())
     return false;  // Match fails if out of range child #.
   return ::CheckType(MatcherTable, MatcherIndex, N.getOperand(ChildNo), TLI);
@@ -2228,6 +2231,14 @@ CheckInteger(const unsigned char *MatcherTable, unsigned &MatcherIndex,
 
   ConstantSDNode *C = dyn_cast<ConstantSDNode>(N);
   return C != 0 && C->getSExtValue() == Val;
+}
+
+LLVM_ATTRIBUTE_ALWAYS_INLINE static bool
+CheckChildInteger(const unsigned char *MatcherTable, unsigned &MatcherIndex,
+                  SDValue N, unsigned ChildNo) {
+  if (ChildNo >= N.getNumOperands())
+    return false;  // Match fails if out of range child #.
+  return ::CheckInteger(MatcherTable, MatcherIndex, N.getOperand(ChildNo));
 }
 
 LLVM_ATTRIBUTE_ALWAYS_INLINE static bool
@@ -2312,6 +2323,14 @@ static unsigned IsPredicateKnownToFail(const unsigned char *Table,
     return Index;
   case SelectionDAGISel::OPC_CheckInteger:
     Result = !::CheckInteger(Table, Index, N);
+    return Index;
+  case SelectionDAGISel::OPC_CheckChild0Integer:
+  case SelectionDAGISel::OPC_CheckChild1Integer:
+  case SelectionDAGISel::OPC_CheckChild2Integer:
+  case SelectionDAGISel::OPC_CheckChild3Integer:
+  case SelectionDAGISel::OPC_CheckChild4Integer:
+    Result = !::CheckChildInteger(Table, Index, N,
+                     Table[Index-1] - SelectionDAGISel::OPC_CheckChild0Integer);
     return Index;
   case SelectionDAGISel::OPC_CheckAndImm:
     Result = !::CheckAndImm(Table, Index, N, SDISel);
@@ -2692,6 +2711,12 @@ SelectCodeCommon(SDNode *NodeToMatch, const unsigned char *MatcherTable,
       continue;
     case OPC_CheckInteger:
       if (!::CheckInteger(MatcherTable, MatcherIndex, N)) break;
+      continue;
+    case OPC_CheckChild0Integer: case OPC_CheckChild1Integer:
+    case OPC_CheckChild2Integer: case OPC_CheckChild3Integer:
+    case OPC_CheckChild4Integer:
+      if (!::CheckChildInteger(MatcherTable, MatcherIndex, N,
+                               Opcode-OPC_CheckChild0Integer)) break;
       continue;
     case OPC_CheckAndImm:
       if (!::CheckAndImm(MatcherTable, MatcherIndex, N, *this)) break;

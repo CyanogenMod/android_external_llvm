@@ -1,4 +1,8 @@
-LOCAL_CFLAGS :=	\
+LOCAL_CLANG := true
+
+include external/libcxx/libcxx.mk
+
+LOCAL_CFLAGS +=	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
 	-O2	\
@@ -7,6 +11,7 @@ LOCAL_CFLAGS :=	\
 	-W	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
+        -Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
 
 ifeq ($(LLVM_ENABLE_ASSERTION),true)
@@ -32,13 +37,15 @@ endif
 LOCAL_CPPFLAGS :=	\
 	$(LOCAL_CPPFLAGS)	\
 	-Woverloaded-virtual	\
-	-Wno-sign-promo
+	-Wno-sign-promo         \
+	-std=c++11
 
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\
 	$(LLVM_ROOT_PATH)	\
 	$(LLVM_ROOT_PATH)/include	\
 	$(LLVM_ROOT_PATH)/host/include	\
+        external/libcxx/include \
 	$(LOCAL_C_INCLUDES)
 
 LOCAL_IS_HOST_MODULE := true

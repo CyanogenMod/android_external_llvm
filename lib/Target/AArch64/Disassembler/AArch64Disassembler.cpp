@@ -19,15 +19,15 @@
 #include "AArch64RegisterInfo.h"
 #include "AArch64Subtarget.h"
 #include "Utils/AArch64BaseInfo.h"
-#include "llvm/MC/MCInst.h"
-#include "llvm/MC/MCInstrDesc.h"
-#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/MC/MCDisassembler.h"
+#include "llvm/MC/MCExpr.h"
 #include "llvm/MC/MCFixedLenDisassembler.h"
+#include "llvm/MC/MCInst.h"
+#include "llvm/MC/MCInstrDesc.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/MemoryObject.h"
 #include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MemoryObject.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -245,7 +245,6 @@ static DecodeStatus DecodeSHLLInstruction(MCInst &Inst, unsigned Insn,
 static bool Check(DecodeStatus &Out, DecodeStatus In);
 
 #include "AArch64GenDisassemblerTables.inc"
-#include "AArch64GenInstrInfo.inc"
 
 static bool Check(DecodeStatus &Out, DecodeStatus In) {
   switch (In) {
@@ -997,7 +996,9 @@ static MCDisassembler *createAArch64Disassembler(const Target &T,
 }
 
 extern "C" void LLVMInitializeAArch64Disassembler() {
-  TargetRegistry::RegisterMCDisassembler(TheAArch64Target,
+  TargetRegistry::RegisterMCDisassembler(TheAArch64leTarget,
+                                         createAArch64Disassembler);
+  TargetRegistry::RegisterMCDisassembler(TheAArch64beTarget,
                                          createAArch64Disassembler);
 }
 
@@ -1517,7 +1518,7 @@ static DecodeStatus DecodeVLDSTLanePostInstruction(MCInst &Inst, unsigned Insn,
   unsigned Q = fieldFromInstruction(Insn, 30, 1);
   unsigned S = fieldFromInstruction(Insn, 10, 3);
   unsigned lane = 0;
-  // Calculate the number of lanes by number of vectors and transfered bytes.
+  // Calculate the number of lanes by number of vectors and transferred bytes.
   // NumLanes = 16 bytes / bytes of each lane
   unsigned NumLanes = 16 / (TransferBytes / NumVecs);
   switch (NumLanes) {

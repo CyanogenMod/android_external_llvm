@@ -17,6 +17,7 @@ arm_codegen_TBLGEN_TABLES := \
 arm_codegen_SRC_FILES := \
   A15SDOptimizer.cpp \
   ARMAsmPrinter.cpp \
+  ARMAtomicExpandPass.cpp \
   ARMBaseInstrInfo.cpp \
   ARMBaseRegisterInfo.cpp \
   ARMCodeEmitter.cpp \
@@ -33,6 +34,7 @@ arm_codegen_SRC_FILES := \
   ARMLoadStoreOptimizer.cpp \
   ARMMCInstLower.cpp \
   ARMMachineFunctionInfo.cpp \
+  ARMOptimizeBarriersPass.cpp \
   ARMRegisterInfo.cpp \
   ARMSelectionDAGInfo.cpp \
   ARMSubtarget.cpp \
@@ -67,6 +69,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device only
 # =====================================================
+ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
@@ -81,3 +84,4 @@ include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
+endif

@@ -10,7 +10,6 @@
 #ifndef LLVM_DEBUGINFO_DWARFUNIT_H
 #define LLVM_DEBUGINFO_DWARFUNIT_H
 
-#include "llvm/ADT/OwningPtr.h"
 #include "DWARFDebugAbbrev.h"
 #include "DWARFDebugInfoEntry.h"
 #include "DWARFDebugRangeList.h"
@@ -50,14 +49,14 @@ class DWARFUnit {
   std::vector<DWARFDebugInfoEntryMinimal> DieArray;
 
   class DWOHolder {
-    OwningPtr<object::ObjectFile> DWOFile;
-    OwningPtr<DWARFContext> DWOContext;
+    std::unique_ptr<object::ObjectFile> DWOFile;
+    std::unique_ptr<DWARFContext> DWOContext;
     DWARFUnit *DWOU;
   public:
     DWOHolder(object::ObjectFile *DWOFile);
     DWARFUnit *getUnit() const { return DWOU; }
   };
-  OwningPtr<DWOHolder> DWO;
+  std::unique_ptr<DWOHolder> DWO;
 
 protected:
   virtual bool extractImpl(DataExtractor debug_info, uint32_t *offset_ptr);
