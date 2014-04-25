@@ -46,6 +46,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 #===---------------------------------------------------------------===
 # libARMAsmParser (target)
 #===---------------------------------------------------------------===
+ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
@@ -59,3 +60,4 @@ TBLGEN_TD_DIR := $(arm_asm_parser_TBLGEN_TD_DIR)
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
 include $(BUILD_STATIC_LIBRARY)
+endif

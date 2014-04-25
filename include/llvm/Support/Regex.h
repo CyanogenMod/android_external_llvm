@@ -17,6 +17,7 @@
 #ifndef LLVM_SUPPORT_REGEX_H
 #define LLVM_SUPPORT_REGEX_H
 
+#include "llvm/Support/Compiler.h"
 #include <string>
 
 struct llvm_regex;
@@ -45,6 +46,17 @@ namespace llvm {
 
     /// Compiles the given regular expression \p Regex.
     Regex(StringRef Regex, unsigned Flags = NoFlags);
+    Regex(const Regex &) LLVM_DELETED_FUNCTION;
+    Regex &operator=(Regex regex) {
+      std::swap(preg, regex.preg);
+      std::swap(error, regex.error);
+      return *this;
+    }
+    Regex(Regex &&regex) {
+      preg = regex.preg;
+      error = regex.error;
+      regex.preg = NULL;
+    }
     ~Regex();
 
     /// isValid - returns the error encountered during regex compilation, or
@@ -80,6 +92,9 @@ namespace llvm {
     /// \brief If this function returns true, ^Str$ is an extended regular
     /// expression that matches Str and only Str.
     static bool isLiteralERE(StringRef Str);
+
+    /// \brief Turn String into a regex by escaping its special characters.
+    static std::string escape(StringRef String);
 
   private:
     struct llvm_regex *preg;

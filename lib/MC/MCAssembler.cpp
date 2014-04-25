@@ -28,6 +28,9 @@
 #include "llvm/Support/LEB128.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Compression.h"
+#include "llvm/Support/Host.h"
 
 using namespace llvm;
 
@@ -122,7 +125,7 @@ uint64_t MCAsmLayout::getSymbolOffset(const MCSymbolData *SD) const {
   // If this is a variable, then recursively evaluate now.
   if (S.isVariable()) {
     MCValue Target;
-    if (!S.getVariableValue()->EvaluateAsRelocatable(Target, *this))
+    if (!S.getVariableValue()->EvaluateAsRelocatable(Target, this))
       report_fatal_error("unable to evaluate offset for variable '" +
                          S.getName() + "'");
 
@@ -212,8 +215,7 @@ MCFragment::~MCFragment() {
 }
 
 MCFragment::MCFragment(FragmentType _Kind, MCSectionData *_Parent)
-  : Kind(_Kind), Parent(_Parent), Atom(0), Offset(~UINT64_C(0)),
-    LayoutOrder(~(0U))
+  : Kind(_Kind), Parent(_Parent), Atom(0), Offset(~UINT64_C(0))
 {
   if (Parent)
     Parent->getFragmentList().push_back(this);
@@ -227,6 +229,39 @@ MCEncodedFragment::~MCEncodedFragment() {
 /* *** */
 
 MCEncodedFragmentWithFixups::~MCEncodedFragmentWithFixups() {
+}
+
+/* *** */
+
+const SmallVectorImpl<char> &MCCompressedFragment::getCompressedContents() const {
+  assert(getParent()->size() == 1 &&
+         "Only compress sections containing a single fragment");
+  if (CompressedContents.empty()) {
+    std::unique_ptr<MemoryBuffer> CompressedSection;
+    zlib::Status Success =
+        zlib::compress(StringRef(getContents().data(), getContents().size()),
+                       CompressedSection);
+    (void)Success;
+    assert(Success == zlib::StatusOK);
+    CompressedContents.push_back('Z');
+    CompressedContents.push_back('L');
+    CompressedContents.push_back('I');
+    CompressedContents.push_back('B');
+    uint64_t Size = getContents().size();
+    if (sys::IsLittleEndianHost)
+      Size = sys::SwapByteOrder(Size);
+    CompressedContents.append(reinterpret_cast<char *>(&Size),
+                              reinterpret_cast<char *>(&Size + 1));
+    CompressedContents.append(CompressedSection->getBuffer().begin(),
+                              CompressedSection->getBuffer().end());
+  }
+  return CompressedContents;
+}
+
+SmallVectorImpl<char> &MCCompressedFragment::getContents() {
+  assert(CompressedContents.empty() &&
+         "Fragment contents should not be altered after compression");
+  return MCDataFragment::getContents();
 }
 
 /* *** */
@@ -294,17 +329,13 @@ MCSymbolData::MCSymbolData(const MCSymbol &_Symbol, MCFragment *_Fragment,
 MCAssembler::MCAssembler(MCContext &Context_, MCAsmBackend &Backend_,
                          MCCodeEmitter &Emitter_, MCObjectWriter &Writer_,
                          raw_ostream &OS_)
-  : Context(Context_), Backend(Backend_), Emitter(Emitter_), Writer(&Writer_),
+  : Context(Context_), Backend(Backend_), Emitter(Emitter_), Writer(Writer_),
     OS(OS_), BundleAlignSize(0), RelaxAll(false), NoExecStack(false),
     SubsectionsViaSymbols(false), ELFHeaderEFlags(0) {
+  VersionMinInfo.Major = 0; // Major version == 0 for "none specified"
 }
 
 MCAssembler::~MCAssembler() {
-}
-
-void MCAssembler::setWriter(MCObjectWriter &ObjectWriter) {
-  delete Writer;
-  Writer = &ObjectWriter;
 }
 
 void MCAssembler::reset() {
@@ -324,6 +355,7 @@ void MCAssembler::reset() {
   getBackend().reset();
   getEmitter().reset();
   getWriter().reset();
+  getLOHContainer().reset();
 }
 
 bool MCAssembler::isSymbolLinkerVisible(const MCSymbol &Symbol) const {
@@ -363,7 +395,7 @@ bool MCAssembler::evaluateFixup(const MCAsmLayout &Layout,
                                 MCValue &Target, uint64_t &Value) const {
   ++stats::evaluateFixup;
 
-  if (!Fixup.getValue()->EvaluateAsRelocatable(Target, Layout))
+  if (!Fixup.getValue()->EvaluateAsRelocatable(Target, &Layout))
     getContext().FatalError(Fixup.getLoc(), "expected relocatable expression");
 
   bool IsPCRel = Backend.getFixupKindInfo(
@@ -435,6 +467,8 @@ uint64_t MCAssembler::computeFragmentSize(const MCAsmLayout &Layout,
   case MCFragment::FT_Relaxable:
   case MCFragment::FT_CompactEncodedInst:
     return cast<MCEncodedFragment>(F).getContents().size();
+  case MCFragment::FT_Compressed:
+    return cast<MCCompressedFragment>(F).getCompressedContents().size();
   case MCFragment::FT_Fill:
     return cast<MCFillFragment>(F).getSize();
 
@@ -623,6 +657,11 @@ static void writeFragment(const MCAssembler &Asm, const MCAsmLayout &Layout,
     break;
   }
 
+  case MCFragment::FT_Compressed:
+    ++stats::EmittedDataFragments;
+    OW->WriteBytes(cast<MCCompressedFragment>(F).getCompressedContents());
+    break;
+
   case MCFragment::FT_Data: 
     ++stats::EmittedDataFragments;
     writeFragmentContents(F, OW);
@@ -699,6 +738,7 @@ void MCAssembler::writeSectionData(const MCSectionData *SD,
            ie = SD->end(); it != ie; ++it) {
       switch (it->getKind()) {
       default: llvm_unreachable("Invalid fragment in virtual section!");
+      case MCFragment::FT_Compressed:
       case MCFragment::FT_Data: {
         // Check that we aren't trying to write a non-zero contents (or fixups)
         // into a virtual section. This is to support clients which use standard
@@ -740,21 +780,23 @@ void MCAssembler::writeSectionData(const MCSectionData *SD,
          Layout.getSectionAddressSize(SD));
 }
 
-
-uint64_t MCAssembler::handleFixup(const MCAsmLayout &Layout,
-                                  MCFragment &F,
-                                  const MCFixup &Fixup) {
-   // Evaluate the fixup.
-   MCValue Target;
-   uint64_t FixedValue;
-   if (!evaluateFixup(Layout, Fixup, &F, Target, FixedValue)) {
-     // The fixup was unresolved, we need a relocation. Inform the object
-     // writer of the relocation, and give it an opportunity to adjust the
-     // fixup value if need be.
-     getWriter().RecordRelocation(*this, Layout, &F, Fixup, Target, FixedValue);
-   }
-   return FixedValue;
- }
+std::pair<uint64_t, bool> MCAssembler::handleFixup(const MCAsmLayout &Layout,
+                                                   MCFragment &F,
+                                                   const MCFixup &Fixup) {
+  // Evaluate the fixup.
+  MCValue Target;
+  uint64_t FixedValue;
+  bool IsPCRel = Backend.getFixupKindInfo(Fixup.getKind()).Flags &
+                 MCFixupKindInfo::FKF_IsPCRel;
+  if (!evaluateFixup(Layout, Fixup, &F, Target, FixedValue)) {
+    // The fixup was unresolved, we need a relocation. Inform the object
+    // writer of the relocation, and give it an opportunity to adjust the
+    // fixup value if need be.
+    getWriter().RecordRelocation(*this, Layout, &F, Fixup, Target, IsPCRel,
+                                 FixedValue);
+  }
+  return std::make_pair(FixedValue, IsPCRel);
+}
 
 void MCAssembler::Finish() {
   DEBUG_WITH_TYPE("mc-dump", {
@@ -817,9 +859,11 @@ void MCAssembler::Finish() {
         for (MCEncodedFragmentWithFixups::fixup_iterator it3 = F->fixup_begin(),
              ie3 = F->fixup_end(); it3 != ie3; ++it3) {
           MCFixup &Fixup = *it3;
-          uint64_t FixedValue = handleFixup(Layout, *F, Fixup);
+          uint64_t FixedValue;
+          bool IsPCRel;
+          std::tie(FixedValue, IsPCRel) = handleFixup(Layout, *F, Fixup);
           getBackend().applyFixup(Fixup, F->getContents().data(),
-                                  F->getContents().size(), FixedValue);
+                                  F->getContents().size(), FixedValue, IsPCRel);
         }
       }
     }
@@ -881,7 +925,7 @@ bool MCAssembler::relaxInstruction(MCAsmLayout &Layout,
   SmallVector<MCFixup, 4> Fixups;
   SmallString<256> Code;
   raw_svector_ostream VecOS(Code);
-  getEmitter().EncodeInstruction(Relaxed, VecOS, Fixups);
+  getEmitter().EncodeInstruction(Relaxed, VecOS, Fixups, F.getSubtargetInfo());
   VecOS.flush();
 
   // Update the fragment.
@@ -1026,6 +1070,8 @@ void MCFragment::dump() {
   switch (getKind()) {
   case MCFragment::FT_Align: OS << "MCAlignFragment"; break;
   case MCFragment::FT_Data:  OS << "MCDataFragment"; break;
+  case MCFragment::FT_Compressed:
+    OS << "MCCompressedFragment"; break;
   case MCFragment::FT_CompactEncodedInst:
     OS << "MCCompactEncodedInstFragment"; break;
   case MCFragment::FT_Fill:  OS << "MCFillFragment"; break;
@@ -1052,6 +1098,7 @@ void MCFragment::dump() {
        << " MaxBytesToEmit:" << AF->getMaxBytesToEmit() << ">";
     break;
   }
+  case MCFragment::FT_Compressed:
   case MCFragment::FT_Data:  {
     const MCDataFragment *DF = cast<MCDataFragment>(this);
     OS << "\n       ";

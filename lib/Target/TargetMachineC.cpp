@@ -19,9 +19,9 @@
 #include "llvm/PassManager.h"
 #include "llvm/Support/CodeGen.h"
 #include "llvm/Support/FormattedStream.h"
+#include "llvm/Support/Host.h"
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/Host.h"
 #include "llvm/Target/TargetMachine.h"
 #include <cassert>
 #include <cstdlib>
@@ -212,7 +212,8 @@ static LLVMBool LLVMTargetMachineEmit(LLVMTargetMachineRef T, LLVMModuleRef M,
     *ErrorMessage = strdup(error.c_str());
     return true;
   }
-  pass.add(new DataLayout(*td));
+  Mod->setDataLayout(td);
+  pass.add(new DataLayoutPass(Mod));
 
   TargetMachine::CodeGenFileType ft;
   switch (codegen) {
@@ -238,7 +239,7 @@ static LLVMBool LLVMTargetMachineEmit(LLVMTargetMachineRef T, LLVMModuleRef M,
 LLVMBool LLVMTargetMachineEmitToFile(LLVMTargetMachineRef T, LLVMModuleRef M,
   char* Filename, LLVMCodeGenFileType codegen, char** ErrorMessage) {
   std::string error;
-  raw_fd_ostream dest(Filename, error, sys::fs::F_Binary);
+  raw_fd_ostream dest(Filename, error, sys::fs::F_None);
   if (!error.empty()) {
     *ErrorMessage = strdup(error.c_str());
     return true;
@@ -266,4 +267,8 @@ LLVMBool LLVMTargetMachineEmitToMemoryBuffer(LLVMTargetMachineRef T,
 
 char *LLVMGetDefaultTargetTriple(void) {
   return strdup(sys::getDefaultTargetTriple().c_str());
+}
+
+void LLVMAddAnalysisPasses(LLVMTargetMachineRef T, LLVMPassManagerRef PM) {
+  unwrap(T)->addAnalysisPasses(*unwrap(PM));
 }

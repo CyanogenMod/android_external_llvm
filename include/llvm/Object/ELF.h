@@ -33,8 +33,6 @@
 #include <limits>
 #include <utility>
 
-#include <ctype.h>
-
 namespace llvm {
 namespace object {
 
@@ -53,8 +51,8 @@ template <class ELFT>
 class ELFFile {
 public:
   LLVM_ELF_IMPORT_TYPES_ELFT(ELFT)
-  typedef typename conditional<ELFT::Is64Bits,
-                               uint64_t, uint32_t>::type uintX_t;
+  typedef typename std::conditional<ELFT::Is64Bits,
+                                    uint64_t, uint32_t>::type uintX_t;
 
   /// \brief Iterate over constant sized entities.
   template <class EntT>

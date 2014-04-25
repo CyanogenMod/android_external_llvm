@@ -14,17 +14,20 @@
 #include "llvm/ExecutionEngine/MCJIT.h"
 #include "llvm/ExecutionEngine/ObjectBuffer.h"
 #include "llvm/ExecutionEngine/ObjectImage.h"
-#include "llvm/PassManager.h"
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/MCAsmInfo.h"
+#include "llvm/Object/Archive.h"
+#include "llvm/PassManager.h"
 #include "llvm/Support/DynamicLibrary.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/MutexGuard.h"
+#include "llvm/Target/TargetLowering.h"
 
 using namespace llvm;
 
@@ -77,15 +80,24 @@ MCJIT::~MCJIT() {
   Modules.clear();
   Dyld.deregisterEHFrames();
 
-  LoadedObjectMap::iterator it, end = LoadedObjects.end();
-  for (it = LoadedObjects.begin(); it != end; ++it) {
-    ObjectImage *Obj = it->second;
+  LoadedObjectList::iterator it, end;
+  for (it = LoadedObjects.begin(), end = LoadedObjects.end(); it != end; ++it) {
+    ObjectImage *Obj = *it;
     if (Obj) {
       NotifyFreeingObject(*Obj);
       delete Obj;
     }
   }
   LoadedObjects.clear();
+
+
+  SmallVector<object::Archive *, 2>::iterator ArIt, ArEnd;
+  for (ArIt = Archives.begin(), ArEnd = Archives.end(); ArIt != ArEnd; ++ArIt) {
+    object::Archive *A = *ArIt;
+    delete A;
+  }
+  Archives.clear();
+
   delete TM;
 }
 
@@ -99,6 +111,21 @@ bool MCJIT::removeModule(Module *M) {
   return OwnedModules.removeModule(M);
 }
 
+
+
+void MCJIT::addObjectFile(object::ObjectFile *Obj) {
+  ObjectImage *LoadedObject = Dyld.loadObject(Obj);
+  if (!LoadedObject || Dyld.hasError())
+    report_fatal_error(Dyld.getErrorString());
+
+  LoadedObjects.push_back(LoadedObject);
+
+  NotifyObjectEmitted(*LoadedObject);
+}
+
+void MCJIT::addArchive(object::Archive *A) {
+  Archives.push_back(A);
+}
 
 
 void MCJIT::setObjectCache(ObjectCache* NewCache) {
@@ -115,10 +142,11 @@ ObjectBufferStream* MCJIT::emitObject(Module *M) {
 
   PassManager PM;
 
-  PM.add(new DataLayout(*TM->getDataLayout()));
+  M->setDataLayout(TM->getDataLayout());
+  PM.add(new DataLayoutPass(M));
 
   // The RuntimeDyld will take ownership of this shortly
-  OwningPtr<ObjectBufferStream> CompiledObject(new ObjectBufferStream());
+  std::unique_ptr<ObjectBufferStream> CompiledObject(new ObjectBufferStream());
 
   // Turn the machine code intermediate representation into bytes in memory
   // that may be executed.
@@ -136,11 +164,11 @@ ObjectBufferStream* MCJIT::emitObject(Module *M) {
   if (ObjCache) {
     // MemoryBuffer is a thin wrapper around the actual memory, so it's OK
     // to create a temporary object here and delete it after the call.
-    OwningPtr<MemoryBuffer> MB(CompiledObject->getMemBuffer());
+    std::unique_ptr<MemoryBuffer> MB(CompiledObject->getMemBuffer());
     ObjCache->notifyObjectCompiled(M, MB.get());
   }
 
-  return CompiledObject.take();
+  return CompiledObject.release();
 }
 
 void MCJIT::generateCodeForModule(Module *M) {
@@ -155,12 +183,12 @@ void MCJIT::generateCodeForModule(Module *M) {
   if (OwnedModules.hasModuleBeenLoaded(M))
     return;
 
-  OwningPtr<ObjectBuffer> ObjectToLoad;
+  std::unique_ptr<ObjectBuffer> ObjectToLoad;
   // Try to load the pre-compiled object from cache if possible
   if (0 != ObjCache) {
-    OwningPtr<MemoryBuffer> PreCompiledObject(ObjCache->getObject(M));
+    std::unique_ptr<MemoryBuffer> PreCompiledObject(ObjCache->getObject(M));
     if (0 != PreCompiledObject.get())
-      ObjectToLoad.reset(new ObjectBuffer(PreCompiledObject.take()));
+      ObjectToLoad.reset(new ObjectBuffer(PreCompiledObject.release()));
   }
 
   // If the cache did not contain a suitable object, compile the object
@@ -170,9 +198,9 @@ void MCJIT::generateCodeForModule(Module *M) {
   }
 
   // Load the object into the dynamic linker.
-  // MCJIT now owns the ObjectImage pointer (via its LoadedObjects map).
-  ObjectImage *LoadedObject = Dyld.loadObject(ObjectToLoad.take());
-  LoadedObjects[M] = LoadedObject;
+  // MCJIT now owns the ObjectImage pointer (via its LoadedObjects list).
+  ObjectImage *LoadedObject = Dyld.loadObject(ObjectToLoad.release());
+  LoadedObjects.push_back(LoadedObject);
   if (!LoadedObject)
     report_fatal_error(Dyld.getErrorString());
 
@@ -231,11 +259,10 @@ void *MCJIT::getPointerToBasicBlock(BasicBlock *BB) {
 }
 
 uint64_t MCJIT::getExistingSymbolAddress(const std::string &Name) {
-  // Check with the RuntimeDyld to see if we already have this symbol.
-  if (Name[0] == '\1')
-    return Dyld.getSymbolLoadAddress(Name.substr(1));
-  return Dyld.getSymbolLoadAddress((TM->getMCAsmInfo()->getGlobalPrefix()
-                                       + Name));
+  Mangler Mang(TM->getDataLayout());
+  SmallString<128> FullName;
+  Mang.getNameWithPrefix(FullName, Name);
+  return Dyld.getSymbolLoadAddress(FullName);
 }
 
 Module *MCJIT::findModuleForSymbol(const std::string &Name,
@@ -270,6 +297,27 @@ uint64_t MCJIT::getSymbolAddress(const std::string &Name,
   uint64_t Addr = getExistingSymbolAddress(Name);
   if (Addr)
     return Addr;
+
+  SmallVector<object::Archive*, 2>::iterator I, E;
+  for (I = Archives.begin(), E = Archives.end(); I != E; ++I) {
+    object::Archive *A = *I;
+    // Look for our symbols in each Archive
+    object::Archive::child_iterator ChildIt = A->findSym(Name);
+    if (ChildIt != A->child_end()) {
+      std::unique_ptr<object::Binary> ChildBin;
+      // FIXME: Support nested archives?
+      if (!ChildIt->getAsBinary(ChildBin) && ChildBin->isObject()) {
+        object::ObjectFile *OF = reinterpret_cast<object::ObjectFile *>(
+                                                            ChildBin.release());
+        // This causes the object file to be loaded.
+        addObjectFile(OF);
+        // The address should be here now.
+        Addr = getExistingSymbolAddress(Name);
+        if (Addr)
+          return Addr;
+      }
+    }
+  }
 
   // If it hasn't already been generated, see if it's in one of our modules.
   Module *M = findModuleForSymbol(Name, CheckFunctionsOnly);
@@ -320,15 +368,13 @@ void *MCJIT::getPointerToFunction(Function *F) {
     return NULL;
 
   // FIXME: Should the Dyld be retaining module information? Probably not.
-  // FIXME: Should we be using the mangler for this? Probably.
   //
   // This is the accessor for the target address, so make sure to check the
   // load address of the symbol, not the local address.
-  StringRef BaseName = F->getName();
-  if (BaseName[0] == '\1')
-    return (void*)Dyld.getSymbolLoadAddress(BaseName.substr(1));
-  return (void*)Dyld.getSymbolLoadAddress((TM->getMCAsmInfo()->getGlobalPrefix()
-                                       + BaseName).str());
+  Mangler Mang(TM->getDataLayout());
+  SmallString<128> Name;
+  TM->getNameWithPrefix(Name, F, Mang);
+  return (void*)Dyld.getSymbolLoadAddress(Name);
 }
 
 void *MCJIT::recompileAndRelinkFunction(Function *F) {

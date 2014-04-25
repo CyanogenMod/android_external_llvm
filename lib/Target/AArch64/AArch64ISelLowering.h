@@ -18,8 +18,8 @@
 #include "Utils/AArch64BaseInfo.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/SelectionDAG.h"
-#include "llvm/Target/TargetLowering.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/Target/TargetLowering.h"
 
 namespace llvm {
 namespace AArch64ISD {
@@ -112,9 +112,6 @@ namespace AArch64ISD {
     // adrp/mem-op. This exists to prevent bare TargetAddresses which may never
     // get selected.
     WrapperSmall,
-
-    // Vector bitwise select
-    NEON_BSL,
 
     // Vector move immediate
     NEON_MOVIMM,
@@ -224,6 +221,8 @@ public:
                       const SmallVectorImpl<SDValue> &OutVals,
                       SDLoc dl, SelectionDAG &DAG) const;
 
+  virtual unsigned getByValTypeAlignment(Type *Ty) const override;
+
   SDValue LowerCall(CallLoweringInfo &CLI,
                     SmallVectorImpl<SDValue> &InVals) const;
 
@@ -233,7 +232,14 @@ public:
                           SDLoc dl, SelectionDAG &DAG,
                           SmallVectorImpl<SDValue> &InVals) const;
 
-  bool isKnownShuffleVector(SDValue Op, SelectionDAG &DAG, SDValue &Res) const;
+  SDValue LowerShiftLeftParts(SDValue Op, SelectionDAG &DAG) const;
+  SDValue LowerShiftRightParts(SDValue Op, SelectionDAG &DAG) const;
+
+  bool isConcatVector(SDValue Op, SelectionDAG &DAG, SDValue V0, SDValue V1,
+                      const int *Mask, SDValue &Res) const;
+
+  bool isKnownShuffleVector(SDValue Op, SelectionDAG &DAG, SDValue &V0,
+                            SDValue &V1, int *Mask) const;
 
   SDValue LowerBUILD_VECTOR(SDValue Op, SelectionDAG &DAG,
                             const AArch64Subtarget *ST) const;
@@ -309,6 +315,8 @@ public:
   SDValue LowerGlobalAddressELFLarge(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerGlobalAddressELF(SDValue Op, SelectionDAG &DAG) const;
 
+  SDValue LowerConstantPool(SDValue Op, SelectionDAG &DAG) const;
+
   SDValue LowerTLSDescCall(SDValue SymAddr, SDValue DescAddr, SDLoc DL,
                            SelectionDAG &DAG) const;
   SDValue LowerGlobalTLSAddress(SDValue Op, SelectionDAG &DAG) const;
@@ -341,7 +349,7 @@ public:
   getRegForInlineAsmConstraint(const std::string &Constraint, MVT VT) const;
 
   virtual bool getTgtMemIntrinsic(IntrinsicInfo &Info, const CallInst &I,
-                                  unsigned Intrinsic) const LLVM_OVERRIDE;
+                                  unsigned Intrinsic) const override;
 
 protected:
   std::pair<const TargetRegisterClass*, uint8_t>

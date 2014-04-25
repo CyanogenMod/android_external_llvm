@@ -22,6 +22,7 @@
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/MachineRegisterInfo.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
+#include "llvm/IR/CallSite.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalValue.h"
@@ -29,7 +30,6 @@
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/Module.h"
 #include "llvm/MC/MCSectionELF.h"
-#include "llvm/Support/CallSite.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -331,8 +331,8 @@ const char *NVPTXTargetLowering::getTargetNodeName(unsigned Opcode) const {
   }
 }
 
-bool NVPTXTargetLowering::shouldSplitVectorElementType(EVT VT) const {
-  return VT == MVT::i1;
+bool NVPTXTargetLowering::shouldSplitVectorType(EVT VT) const {
+  return VT.getScalarType() == MVT::i1;
 }
 
 SDValue
@@ -361,7 +361,7 @@ NVPTXTargetLowering::getPrototype(Type *retTy, const ArgListTy &Args,
     O << "()";
   } else {
     O << "(";
-    if (retTy->isPrimitiveType() || retTy->isIntegerTy()) {
+    if (retTy->isFloatingPointTy() || retTy->isIntegerTy()) {
       unsigned size = 0;
       if (const IntegerType *ITy = dyn_cast<IntegerType>(retTy)) {
         size = ITy->getBitWidth();
@@ -856,8 +856,7 @@ SDValue NVPTXTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     //  .param .align 16 .b8 retval0[<size-in-bytes>], or
     //  .param .b<size-in-bits> retval0
     unsigned resultsz = TD->getTypeAllocSizeInBits(retTy);
-    if (retTy->isPrimitiveType() || retTy->isIntegerTy() ||
-        retTy->isPointerTy()) {
+    if (retTy->isSingleValueType()) {
       // Scalar needs to be at least 32bit wide
       if (resultsz < 32)
         resultsz = 32;
@@ -1259,7 +1258,7 @@ NVPTXTargetLowering::LowerSTOREVector(SDValue Op, SelectionDAG &DAG) const {
 
     // Since StoreV2 is a target node, we cannot rely on DAG type legalization.
     // Therefore, we must ensure the type is legal.  For i1 and i8, we set the
-    // stored type to i16 and propogate the "real" type as the memory type.
+    // stored type to i16 and propagate the "real" type as the memory type.
     bool NeedExt = false;
     if (EltVT.getSizeInBits() < 16)
       NeedExt = true;
@@ -2075,7 +2074,7 @@ static void ReplaceLoadVector(SDNode *N, SelectionDAG &DAG,
 
   // Since LoadV2 is a target node, we cannot rely on DAG type legalization.
   // Therefore, we must ensure the type is legal.  For i1 and i8, we set the
-  // loaded type to i16 and propogate the "real" type as the memory type.
+  // loaded type to i16 and propagate the "real" type as the memory type.
   bool NeedTrunc = false;
   if (EltVT.getSizeInBits() < 16) {
     EltVT = MVT::i16;
@@ -2162,7 +2161,7 @@ static void ReplaceINTRINSIC_W_CHAIN(SDNode *N, SelectionDAG &DAG,
       // Since LDU/LDG are target nodes, we cannot rely on DAG type
       // legalization.
       // Therefore, we must ensure the type is legal.  For i1 and i8, we set the
-      // loaded type to i16 and propogate the "real" type as the memory type.
+      // loaded type to i16 and propagate the "real" type as the memory type.
       bool NeedTrunc = false;
       if (EltVT.getSizeInBits() < 16) {
         EltVT = MVT::i16;

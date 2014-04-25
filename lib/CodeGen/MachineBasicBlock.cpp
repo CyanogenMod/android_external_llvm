@@ -14,7 +14,6 @@
 #include "llvm/CodeGen/MachineBasicBlock.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallString.h"
-#include "llvm/Assembly/Writer.h"
 #include "llvm/CodeGen/LiveIntervalAnalysis.h"
 #include "llvm/CodeGen/LiveVariables.h"
 #include "llvm/CodeGen/MachineDominators.h"
@@ -25,10 +24,10 @@
 #include "llvm/CodeGen/SlotIndexes.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/LeakDetector.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCContext.h"
 #include "llvm/Support/Debug.h"
-#include "llvm/Support/LeakDetector.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetInstrInfo.h"
 #include "llvm/Target/TargetMachine.h"
@@ -52,7 +51,8 @@ MCSymbol *MachineBasicBlock::getSymbol() const {
   if (!CachedMCSymbol) {
     const MachineFunction *MF = getParent();
     MCContext &Ctx = MF->getContext();
-    const char *Prefix = Ctx.getAsmInfo()->getPrivateGlobalPrefix();
+    const TargetMachine &TM = MF->getTarget();
+    const char *Prefix = TM.getDataLayout()->getPrivateGlobalPrefix();
     CachedMCSymbol = Ctx.GetOrCreateSymbol(Twine(Prefix) + "BB" +
                                            Twine(MF->getFunctionNumber()) +
                                            "_" + Twine(getNumber()));
@@ -160,7 +160,7 @@ MachineBasicBlock::iterator MachineBasicBlock::getFirstNonPHI() {
 MachineBasicBlock::iterator
 MachineBasicBlock::SkipPHIsAndLabels(MachineBasicBlock::iterator I) {
   iterator E = end();
-  while (I != E && (I->isPHI() || I->isLabel() || I->isDebugValue()))
+  while (I != E && (I->isPHI() || I->isPosition() || I->isDebugValue()))
     ++I;
   // FIXME: This needs to change if we wish to bundle labels / dbg_values
   // inside the bundle.
@@ -277,7 +277,7 @@ void MachineBasicBlock::print(raw_ostream &OS, SlotIndexes *Indexes) const {
   const char *Comma = "";
   if (const BasicBlock *LBB = getBasicBlock()) {
     OS << Comma << "derived from LLVM BB ";
-    WriteAsOperand(OS, LBB, /*PrintType=*/false);
+    LBB->printAsOperand(OS, /*PrintType=*/false);
     Comma = ", ";
   }
   if (isLandingPad()) { OS << Comma << "EH LANDING PAD"; Comma = ", "; }
@@ -328,6 +328,10 @@ void MachineBasicBlock::print(raw_ostream &OS, SlotIndexes *Indexes) const {
     }
     OS << '\n';
   }
+}
+
+void MachineBasicBlock::printAsOperand(raw_ostream &OS, bool /*PrintType*/) {
+  OS << "BB#" << getNumber();
 }
 
 void MachineBasicBlock::removeLiveIn(unsigned Reg) {
@@ -622,7 +626,7 @@ bool MachineBasicBlock::isSuccessor(const MachineBasicBlock *MBB) const {
 
 bool MachineBasicBlock::isLayoutSuccessor(const MachineBasicBlock *MBB) const {
   MachineFunction::const_iterator I(this);
-  return llvm::next(I) == MachineFunction::const_iterator(MBB);
+  return std::next(I) == MachineFunction::const_iterator(MBB);
 }
 
 bool MachineBasicBlock::canFallThrough() {
@@ -677,6 +681,11 @@ MachineBasicBlock::SplitCriticalEdge(MachineBasicBlock *Succ, Pass *P) {
   MachineFunction *MF = getParent();
   DebugLoc dl;  // FIXME: this is nowhere
 
+  // Performance might be harmed on HW that implements branching using exec mask
+  // where both sides of the branches are always executed.
+  if (MF->getTarget().requiresStructuredCFG())
+    return NULL;
+
   // We may need to update this's terminator, but we can't do that if
   // AnalyzeBranch fails. If this uses a jump table, we won't touch it.
   const TargetInstrInfo *TII = MF->getTarget().getInstrInfo();
@@ -696,7 +705,7 @@ MachineBasicBlock::SplitCriticalEdge(MachineBasicBlock *Succ, Pass *P) {
   }
 
   MachineBasicBlock *NMBB = MF->CreateMachineBasicBlock();
-  MF->insert(llvm::next(MachineFunction::iterator(this)), NMBB);
+  MF->insert(std::next(MachineFunction::iterator(this)), NMBB);
   DEBUG(dbgs() << "Splitting critical edge:"
         " BB#" << getNumber()
         << " -- BB#" << NMBB->getNumber()
@@ -839,7 +848,7 @@ MachineBasicBlock::SplitCriticalEdge(MachineBasicBlock *Succ, Pass *P) {
     // extend to the end of the new split block.
 
     bool isLastMBB =
-      llvm::next(MachineFunction::iterator(NMBB)) == getParent()->end();
+      std::next(MachineFunction::iterator(NMBB)) == getParent()->end();
 
     SlotIndex StartIndex = Indexes->getMBBEndIdx(this);
     SlotIndex PrevIndex = StartIndex.getPrevSlot();
@@ -1054,7 +1063,7 @@ bool MachineBasicBlock::CorrectExtraCFGEdges(MachineBasicBlock *DestA,
   bool Changed = false;
 
   MachineFunction::iterator FallThru =
-    llvm::next(MachineFunction::iterator(this));
+    std::next(MachineFunction::iterator(this));
 
   if (DestA == 0 && DestB == 0) {
     // Block falls through to successor.
@@ -1112,6 +1121,13 @@ uint32_t MachineBasicBlock::getSuccWeight(const_succ_iterator Succ) const {
     return 0;
 
   return *getWeightIterator(Succ);
+}
+
+/// Set successor weight of a given iterator.
+void MachineBasicBlock::setSuccWeight(succ_iterator I, uint32_t weight) {
+  if (Weights.empty())
+    return;
+  *getWeightIterator(I) = weight;
 }
 
 /// getWeightIterator - Return wight iterator corresonding to the I successor
@@ -1210,9 +1226,3 @@ MachineBasicBlock::computeRegisterLiveness(const TargetRegisterInfo *TRI,
   // At this point we have no idea of the liveness of the register.
   return LQR_Unknown;
 }
-
-void llvm::WriteAsOperand(raw_ostream &OS, const MachineBasicBlock *MBB,
-                          bool t) {
-  OS << "BB#" << MBB->getNumber();
-}
-

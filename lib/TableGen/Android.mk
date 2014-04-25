@@ -26,6 +26,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 ## For the device
 ## =====================================================
+ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 #include $(CLEAR_VARS)
 #
 #LOCAL_SRC_FILES := $(libtablegen_SRC_FILES)
@@ -35,3 +36,4 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 #
 #include $(LLVM_DEVICE_BUILD_MK)
 #include $(BUILD_STATIC_LIBRARY)
+endif

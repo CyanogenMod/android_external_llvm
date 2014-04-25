@@ -82,7 +82,7 @@ namespace llvm {
 
     /// LinkerRequiresNonEmptyDwarfLines - True if the linker has a bug and
     /// requires that the debug_line section be of a minimum size. In practice
-    /// such a linker requires a non empty line sequence if a file is present.
+    /// such a linker requires a non-empty line sequence if a file is present.
     bool LinkerRequiresNonEmptyDwarfLines; // Default to false.
 
     /// MaxInstLength - This is the maximum possible length of an instruction,
@@ -101,10 +101,6 @@ namespace llvm {
     /// instructions from each other when on the same line.
     const char *SeparatorString;             // Defaults to ';'
 
-    /// CommentColumn - This indicates the comment num (zero-based) at
-    /// which asm comments should be printed.
-    unsigned CommentColumn;                  // Defaults to 40
-
     /// CommentString - This indicates the comment character used by the
     /// assembler.
     const char *CommentString;               // Defaults to "#"
@@ -115,19 +111,17 @@ namespace llvm {
     /// LabelSuffix - This is appended to emitted labels.
     const char *DebugLabelSuffix;                 // Defaults to ":"
 
-    /// GlobalPrefix - If this is set to a non-empty string, it is prepended
-    /// onto all global symbols.  This is often used for "_" or ".".
-    const char *GlobalPrefix;                // Defaults to ""
+    /// This prefix is used for globals like constant pool entries that are
+    /// completely private to the .s file and should not have names in the .o
+    /// file.
+    const char *PrivateGlobalPrefix;         // Defaults to "L"
 
-    /// PrivateGlobalPrefix - This prefix is used for globals like constant
-    /// pool entries that are completely private to the .s file and should not
-    /// have names in the .o file.  This is often "." or "L".
-    const char *PrivateGlobalPrefix;         // Defaults to "."
-
-    /// LinkerPrivateGlobalPrefix - This prefix is used for symbols that should
-    /// be passed through the assembler but be removed by the linker.  This
-    /// is "l" on Darwin, currently used for some ObjC metadata.
-    const char *LinkerPrivateGlobalPrefix;   // Defaults to ""
+    /// This prefix is used for symbols that should be passed through the
+    /// assembler but be removed by the linker.  This is 'l' on Darwin,
+    /// currently used for some ObjC metadata.
+    /// The default of "" meast that for this system a plain private symbol
+    /// should be used.
+    const char *LinkerPrivateGlobalPrefix;    // Defaults to "".
 
     /// InlineAsmStart/End - If these are nonempty, they contain a directive to
     /// emit before and after an inline assembly statement.
@@ -198,19 +192,9 @@ namespace llvm {
     /// which doesn't support the '.bss' directive only.
     bool UsesELFSectionDirectiveForBSS;      // Defaults to false.
 
-    /// HasMicrosoftFastStdCallMangling - True if this target uses microsoft
-    /// style mangling for functions with X86_StdCall/X86_FastCall calling
-    /// convention.
-    bool HasMicrosoftFastStdCallMangling;    // Defaults to false.
-
     bool NeedsDwarfSectionOffsetDirective;
 
     //===--- Alignment Information ----------------------------------------===//
-
-    /// AlignDirective - The directive used to emit round up to an alignment
-    /// boundary.
-    ///
-    const char *AlignDirective;              // Defaults to "\t.align\t"
 
     /// AlignmentIsInBytes - If this is true (the default) then the asmprinter
     /// emits ".align N" directives, where N is the number of bytes to align to.
@@ -266,13 +250,16 @@ namespace llvm {
     /// global as being a weak undefined symbol.
     const char *WeakRefDirective;            // Defaults to NULL.
 
-    /// WeakDefDirective - This directive, if non-null, is used to declare a
-    /// global as being a weak defined symbol.
-    const char *WeakDefDirective;            // Defaults to NULL.
+    /// True if we have a directive to declare a global as being a weak
+    /// defined symbol.
+    bool HasWeakDefDirective;                // Defaults to false.
 
-    /// LinkOnceDirective - This directive, if non-null is used to declare a
-    /// global as being a weak defined symbol.  This is used on cygwin/mingw.
-    const char *LinkOnceDirective;           // Defaults to NULL.
+    /// True if we have a directive to declare a global as being a weak
+    /// defined symbol that can be hidden (unexported).
+    bool HasWeakDefCanBeHiddenDirective;     // Defaults to false.
+
+    /// True if we have a .linkonce directive.  This is used on cygwin/mingw.
+    bool HasLinkOnceDirective;               // Defaults to false.
 
     /// HiddenVisibilityAttr - This attribute, if not MCSA_Invalid, is used to
     /// declare a symbol as having hidden visibility.
@@ -303,21 +290,36 @@ namespace llvm {
     /// uses relocations for references to other .debug_* sections.
     bool DwarfUsesRelocationsAcrossSections;
 
+    /// DwarfFDESymbolsUseAbsDiff - true if DWARF FDE symbol reference
+    /// relocations should be replaced by an absolute difference.
+    bool DwarfFDESymbolsUseAbsDiff;
+
     /// DwarfRegNumForCFI - True if dwarf register numbers are printed
     /// instead of symbolic register names in .cfi_* directives.
     bool DwarfRegNumForCFI;  // Defaults to false;
+
+    /// UseParensForSymbolVariant - True if target uses parens to indicate the
+    /// symbol variant instead of @. For example, foo(plt) instead of foo@plt.
+    bool UseParensForSymbolVariant; // Defaults to false;
 
     //===--- Prologue State ----------------------------------------------===//
 
     std::vector<MCCFIInstruction> InitialFrameState;
 
+    //===--- Integrated Assembler State ----------------------------------===//
+    /// Should we use the integrated assembler?
+    /// The integrated assembler should be enabled by default (by the
+    /// constructors) when failing to parse a valid piece of assembly (inline
+    /// or otherwise) is considered a bug. It may then be overridden after
+    /// construction (see LLVMTargetMachine::initAsmInfo()).
+    bool UseIntegratedAssembler;
+
+    /// Compress DWARF debug sections. Defaults to false.
+    bool CompressDebugSections;
+
   public:
     explicit MCAsmInfo();
     virtual ~MCAsmInfo();
-
-    // FIXME: move these methods to DwarfPrinter when the JIT stops using them.
-    static unsigned getSLEB128Size(int64_t Value);
-    static unsigned getULEB128Size(uint64_t Value);
 
     /// getPointerSize - Get the pointer size in bytes.
     unsigned getPointerSize() const {
@@ -371,7 +373,7 @@ namespace llvm {
                                 unsigned Encoding,
                                 MCStreamer &Streamer) const;
 
-    const MCExpr *
+    virtual const MCExpr *
     getExprForFDESymbol(const MCSymbol *Sym,
                         unsigned Encoding,
                         MCStreamer &Streamer) const;
@@ -382,10 +384,6 @@ namespace llvm {
 
     bool usesELFSectionDirectiveForBSS() const {
       return UsesELFSectionDirectiveForBSS;
-    }
-
-    bool hasMicrosoftFastStdCallMangling() const {
-      return HasMicrosoftFastStdCallMangling;
     }
 
     bool needsDwarfSectionOffsetDirective() const {
@@ -414,9 +412,13 @@ namespace llvm {
     const char *getSeparatorString() const {
       return SeparatorString;
     }
+
+    /// This indicates the column (zero-based) at which asm comments should be
+    /// printed.
     unsigned getCommentColumn() const {
-      return CommentColumn;
+      return 40;
     }
+
     const char *getCommentString() const {
       return CommentString;
     }
@@ -427,15 +429,16 @@ namespace llvm {
     const char *getDebugLabelSuffix() const {
       return DebugLabelSuffix;
     }
-
-    const char *getGlobalPrefix() const {
-      return GlobalPrefix;
-    }
     const char *getPrivateGlobalPrefix() const {
       return PrivateGlobalPrefix;
     }
+    bool hasLinkerPrivateGlobalPrefix() const {
+      return LinkerPrivateGlobalPrefix[0] != '\0';
+    }
     const char *getLinkerPrivateGlobalPrefix() const {
-      return LinkerPrivateGlobalPrefix;
+      if (hasLinkerPrivateGlobalPrefix())
+        return LinkerPrivateGlobalPrefix;
+      return getPrivateGlobalPrefix();
     }
     const char *getInlineAsmStart() const {
       return InlineAsmStart;
@@ -470,9 +473,6 @@ namespace llvm {
     const char *getAscizDirective() const {
       return AscizDirective;
     }
-    const char *getAlignDirective() const {
-      return AlignDirective;
-    }
     bool getAlignmentIsInBytes() const {
       return AlignmentIsInBytes;
     }
@@ -497,8 +497,11 @@ namespace llvm {
     bool hasIdentDirective() const { return HasIdentDirective; }
     bool hasNoDeadStrip() const { return HasNoDeadStrip; }
     const char *getWeakRefDirective() const { return WeakRefDirective; }
-    const char *getWeakDefDirective() const { return WeakDefDirective; }
-    const char *getLinkOnceDirective() const { return LinkOnceDirective; }
+    bool hasWeakDefDirective() const { return HasWeakDefDirective; }
+    bool hasWeakDefCanBeHiddenDirective() const {
+      return HasWeakDefCanBeHiddenDirective;
+    }
+    bool hasLinkOnceDirective() const { return HasLinkOnceDirective; }
 
     MCSymbolAttr getHiddenVisibilityAttr() const { return HiddenVisibilityAttr;}
     MCSymbolAttr getHiddenDeclarationVisibilityAttr() const {
@@ -528,8 +531,14 @@ namespace llvm {
     bool doesDwarfUseRelocationsAcrossSections() const {
       return DwarfUsesRelocationsAcrossSections;
     }
+    bool doDwarfFDESymbolsUseAbsDiff() const {
+      return DwarfFDESymbolsUseAbsDiff;
+    }
     bool useDwarfRegNumForCFI() const {
       return DwarfRegNumForCFI;
+    }
+    bool useParensForSymbolVariant() const {
+      return UseParensForSymbolVariant;
     }
 
     void addInitialFrameState(const MCCFIInstruction &Inst) {
@@ -538,6 +547,20 @@ namespace llvm {
 
     const std::vector<MCCFIInstruction> &getInitialFrameState() const {
       return InitialFrameState;
+    }
+
+    /// Return true if assembly (inline or otherwise) should be parsed.
+    bool useIntegratedAssembler() const { return UseIntegratedAssembler; }
+
+    /// Set whether assembly (inline or otherwise) should be parsed.
+    virtual void setUseIntegratedAssembler(bool Value) {
+      UseIntegratedAssembler = Value;
+    }
+
+    bool compressDebugSections() const { return CompressDebugSections; }
+
+    void setCompressDebugSections(bool CompressDebugSections) {
+      this->CompressDebugSections = CompressDebugSections;
     }
   };
 }

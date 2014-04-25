@@ -322,7 +322,7 @@ class POW_Common <AMDGPUInst log_ieee, AMDGPUInst exp_ieee, AMDGPUInst mul>
 /* --------------------- */
 
 /* Extract element pattern */
-class Extract_Element <ValueType sub_type, ValueType vec_type, int sub_idx, 
+class Extract_Element <ValueType sub_type, ValueType vec_type, int sub_idx,
                        SubRegIndex sub_reg>
   : Pat<
   (sub_type (vector_extract vec_type:$src, sub_idx)),
@@ -335,12 +335,6 @@ class Insert_Element <ValueType elem_type, ValueType vec_type,
   : Pat <
   (vector_insert vec_type:$vec, elem_type:$elem, sub_idx),
   (INSERT_SUBREG $vec, $elem, sub_reg)
->;
-
-class Vector4_Build <ValueType vecType, ValueType elemType> : Pat <
-  (vecType (build_vector elemType:$x, elemType:$y, elemType:$z, elemType:$w)),
-  (INSERT_SUBREG (INSERT_SUBREG (INSERT_SUBREG (INSERT_SUBREG
-    (vecType (IMPLICIT_DEF)), $x, sub0), $y, sub1), $z, sub2), $w, sub3)
 >;
 
 // XXX: Convert to new syntax and use COPY_TO_REG, once the DFAPacketizer
@@ -388,6 +382,11 @@ class SHA256MaPattern <Instruction BFI_INT, Instruction XOR> : Pat <
 
 // Bitfield extract patterns
 
+/*
+
+XXX: The BFE pattern is not working correctly because the XForm is not being
+applied.
+
 def legalshift32 : ImmLeaf <i32, [{return Imm >=0 && Imm < 32;}]>;
 def bfemask : PatLeaf <(imm), [{return isMask_32(N->getZExtValue());}],
                             SDNodeXForm<imm, [{ return CurDAG->getTargetConstant(CountTrailingOnes_32(N->getZExtValue()), MVT::i32);}]>>;
@@ -396,6 +395,8 @@ class BFEPattern <Instruction BFE> : Pat <
   (and (srl i32:$x, legalshift32:$y), bfemask:$z),
   (BFE $x, $y, $z)
 >;
+
+*/
 
 // rotr pattern
 class ROTRPattern <Instruction BIT_ALIGN> : Pat <
@@ -414,6 +415,9 @@ class UMUL24Pattern <Instruction UMUL24> : Pat <
 */
 
 include "R600Instructions.td"
+include "R700Instructions.td"
+include "EvergreenInstructions.td"
+include "CaymanInstructions.td"
 
 include "SIInstrInfo.td"
 

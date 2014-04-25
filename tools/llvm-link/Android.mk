@@ -34,6 +34,7 @@ include $(BUILD_HOST_EXECUTABLE)
 # llvm-link command line tool (target)
 #===---------------------------------------------------------------===
 
+ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := llvm-link
@@ -42,7 +43,8 @@ LOCAL_SRC_FILES := $(llvm_link_SRC_FILES)
 LOCAL_STATIC_LIBRARIES := $(llvm_link_STATIC_LIBRARIES)
 LOCAL_SHARED_LIBRARIES := \
   libcutils  \
-  libstlport
+  libc++
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_EXECUTABLE)
+endif

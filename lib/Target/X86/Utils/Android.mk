@@ -5,6 +5,7 @@ x86_utils_SRC_FILES := \
 
 # For the device
 # =====================================================
+ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(x86_utils_SRC_FILES)
@@ -17,6 +18,7 @@ LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_STATIC_LIBRARY)
+endif
 
 # For the host
 # =====================================================
