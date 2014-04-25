@@ -14,6 +14,7 @@
 #ifndef MIPSASMPRINTER_H
 #define MIPSASMPRINTER_H
 
+#include "Mips16HardFloatInfo.h"
 #include "MipsMCInstLower.h"
 #include "MipsMachineFunction.h"
 #include "MipsSubtarget.h"
@@ -50,7 +51,29 @@ private:
   /// pool entries so we can properly mark them as data regions.
   bool InConstantPool;
 
-  bool UsingConstantPools;
+  std::map<const char *, const llvm::Mips16HardFloatInfo::FuncSignature *>
+  StubsNeeded;
+
+  void EmitJal(MCSymbol *Symbol);
+
+  void EmitInstrReg(unsigned Opcode, unsigned Reg);
+
+  void EmitInstrRegReg(unsigned Opcode, unsigned Reg1, unsigned Reg2);
+
+  void EmitInstrRegRegReg(unsigned Opcode, unsigned Reg1, unsigned Reg2,
+                          unsigned Reg3);
+
+  void EmitMovFPIntPair(unsigned MovOpc, unsigned Reg1, unsigned Reg2,
+                        unsigned FPReg1, unsigned FPReg2, bool LE);
+
+  void EmitSwapFPIntParams(Mips16HardFloatInfo::FPParamVariant, bool LE,
+                           bool ToFP);
+
+  void EmitSwapFPIntRetval(Mips16HardFloatInfo::FPReturnVariant, bool LE);
+
+  void EmitFPCallStub(const char *, const Mips16HardFloatInfo::FuncSignature *);
+
+  void NaClAlignIndirectJumpTargets(MachineFunction &MF);
 
 public:
 
@@ -62,8 +85,6 @@ public:
     : AsmPrinter(TM, Streamer), MCP(0), InConstantPool(false),
       MCInstLowering(*this) {
     Subtarget = &TM.getSubtarget<MipsSubtarget>();
-    UsingConstantPools =
-      (Subtarget->inMips16Mode() && Subtarget->useConstantIslands());
   }
 
   virtual const char *getPassName() const {
@@ -72,15 +93,16 @@ public:
 
   virtual bool runOnMachineFunction(MachineFunction &MF);
 
-  virtual void EmitConstantPool() LLVM_OVERRIDE {
+  virtual void EmitConstantPool() override {
+    bool UsingConstantPools =
+      (Subtarget->inMips16Mode() && Subtarget->useConstantIslands());
     if (!UsingConstantPools)
       AsmPrinter::EmitConstantPool();
     // we emit constant pools customly!
   }
 
   void EmitInstruction(const MachineInstr *MI);
-  void printSavedRegsBitmask(raw_ostream &O);
-  void printHex32(unsigned int Value, raw_ostream &O);
+  void printSavedRegsBitmask();
   void emitFrameDirective();
   const char *getCurrentABIString() const;
   virtual void EmitFunctionEntryLabel();

@@ -42,70 +42,17 @@ namespace llvm {
   public:
     TargetOptions()
         : PrintMachineCode(false), NoFramePointerElim(false),
-          LessPreciseFPMADOption(false),
-          UnsafeFPMath(false), NoInfsFPMath(false),
-          NoNaNsFPMath(false), HonorSignDependentRoundingFPMathOption(false),
-          UseSoftFloat(false), NoZerosInBSS(false),
-          JITEmitDebugInfo(false), JITEmitDebugInfoToDisk(false),
-          GuaranteedTailCallOpt(false), DisableTailCalls(false),
-          StackAlignmentOverride(0),
+          LessPreciseFPMADOption(false), UnsafeFPMath(false),
+          NoInfsFPMath(false), NoNaNsFPMath(false),
+          HonorSignDependentRoundingFPMathOption(false), UseSoftFloat(false),
+          NoZerosInBSS(false), JITEmitDebugInfo(false),
+          JITEmitDebugInfoToDisk(false), GuaranteedTailCallOpt(false),
+          DisableTailCalls(false), StackAlignmentOverride(0),
           EnableFastISel(false), PositionIndependentExecutable(false),
-          EnableSegmentedStacks(false), UseInitArray(false), TrapFuncName(""),
-          FloatABIType(FloatABI::Default), AllowFPOpFusion(FPOpFusion::Standard)
-    {}
-
-    TargetOptions(const TargetOptions& rhs)
-        : PrintMachineCode(rhs.PrintMachineCode),
-          NoFramePointerElim(rhs.NoFramePointerElim),
-          LessPreciseFPMADOption(rhs.LessPreciseFPMADOption),
-          UnsafeFPMath(rhs.UnsafeFPMath),
-          NoInfsFPMath(rhs.NoInfsFPMath),
-          NoNaNsFPMath(rhs.NoNaNsFPMath),
-          HonorSignDependentRoundingFPMathOption(rhs.HonorSignDependentRoundingFPMathOption),
-          UseSoftFloat(rhs.UseSoftFloat),
-          NoZerosInBSS(rhs.NoZerosInBSS),
-          JITEmitDebugInfo(rhs.JITEmitDebugInfo),
-          JITEmitDebugInfoToDisk(rhs.JITEmitDebugInfoToDisk),
-          GuaranteedTailCallOpt(rhs.GuaranteedTailCallOpt),
-          DisableTailCalls(rhs.DisableTailCalls),
-          StackAlignmentOverride(rhs.StackAlignmentOverride),
-          EnableFastISel(rhs.EnableFastISel),
-          PositionIndependentExecutable(rhs.PositionIndependentExecutable),
-          EnableSegmentedStacks(rhs.EnableSegmentedStacks),
-          UseInitArray(rhs.UseInitArray),
-          TrapFuncName(rhs.TrapFuncName),
-          FloatABIType(rhs.FloatABIType),
-          AllowFPOpFusion(rhs.AllowFPOpFusion)
-    {}
-
-    TargetOptions& operator =(const TargetOptions& rhs)
-    {
-        if (&rhs == this)
-            return *this;
-
-        PrintMachineCode = rhs.PrintMachineCode;
-        NoFramePointerElim = rhs.NoFramePointerElim;
-        LessPreciseFPMADOption = rhs.LessPreciseFPMADOption;
-        UnsafeFPMath = rhs.UnsafeFPMath;
-        NoInfsFPMath = rhs.NoInfsFPMath;
-        NoNaNsFPMath = rhs.NoNaNsFPMath;
-        HonorSignDependentRoundingFPMathOption = rhs.HonorSignDependentRoundingFPMathOption;
-        UseSoftFloat = rhs.UseSoftFloat;
-        NoZerosInBSS = rhs.NoZerosInBSS;
-        JITEmitDebugInfo = rhs.JITEmitDebugInfo;
-        JITEmitDebugInfoToDisk = rhs.JITEmitDebugInfoToDisk;
-        GuaranteedTailCallOpt = rhs.GuaranteedTailCallOpt;
-        DisableTailCalls = rhs.DisableTailCalls;
-        StackAlignmentOverride = rhs.StackAlignmentOverride;
-        EnableFastISel = rhs.EnableFastISel;
-        PositionIndependentExecutable = rhs.PositionIndependentExecutable;
-        EnableSegmentedStacks = rhs.EnableSegmentedStacks;
-        UseInitArray = rhs.UseInitArray;
-        TrapFuncName = rhs.TrapFuncName;
-        FloatABIType = rhs.FloatABIType;
-        AllowFPOpFusion = rhs.AllowFPOpFusion;
-        return *this;
-    }
+          EnableSegmentedStacks(false), UseInitArray(false),
+          DisableIntegratedAS(false), CompressDebugSections(false),
+          TrapFuncName(""), FloatABIType(FloatABI::Default),
+          AllowFPOpFusion(FPOpFusion::Standard) {}
 
     /// PrintMachineCode - This flag is enabled when the -print-machineinstrs
     /// option is specified on the command line, and should enable debugging
@@ -210,6 +157,12 @@ namespace llvm {
     /// UseInitArray - Use .init_array instead of .ctors for static
     /// constructors.
     unsigned UseInitArray : 1;
+
+    /// Disable the integrated assembler.
+    unsigned DisableIntegratedAS : 1;
+
+    /// Compress DWARF debug sections.
+    unsigned CompressDebugSections : 1;
 
     /// getTrapFunctionName - If this returns a non-empty string, this means
     /// isel should lower Intrinsic::trap to a call to the specified function

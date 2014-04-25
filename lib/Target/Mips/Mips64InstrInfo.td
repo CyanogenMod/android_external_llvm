@@ -54,7 +54,7 @@ let isPseudo = 1, isCodeGenOnly = 1 in {
 let DecoderNamespace = "Mips64" in {
 /// Arithmetic Instructions (ALU Immediate)
 def DADDi   : ArithLogicI<"daddi", simm16_64, GPR64Opnd>, ADDI_FM<0x18>;
-def DADDiu  : ArithLogicI<"daddiu", simm16_64, GPR64Opnd, IIArith,
+def DADDiu  : ArithLogicI<"daddiu", simm16_64, GPR64Opnd, II_DADDIU,
                           immSExt16, add>,
               ADDI_FM<0x19>, IsAsCheapAsAMove;
 
@@ -63,86 +63,91 @@ def SLTi64  : SetCC_I<"slti", setlt, simm16_64, immSExt16, GPR64Opnd>,
               SLTI_FM<0xa>;
 def SLTiu64 : SetCC_I<"sltiu", setult, simm16_64, immSExt16, GPR64Opnd>,
               SLTI_FM<0xb>;
-def ANDi64 : ArithLogicI<"andi", uimm16_64, GPR64Opnd, IILogic, immZExt16,
-                         and>,
+def ANDi64 : ArithLogicI<"andi", uimm16_64, GPR64Opnd, II_AND, immZExt16, and>,
              ADDI_FM<0xc>;
-def ORi64   : ArithLogicI<"ori", uimm16_64, GPR64Opnd, IILogic, immZExt16,
-                          or>,
+def ORi64   : ArithLogicI<"ori", uimm16_64, GPR64Opnd, II_OR, immZExt16, or>,
               ADDI_FM<0xd>;
-def XORi64  : ArithLogicI<"xori", uimm16_64, GPR64Opnd, IILogic, immZExt16,
-                          xor>,
+def XORi64  : ArithLogicI<"xori", uimm16_64, GPR64Opnd, II_XOR, immZExt16, xor>,
               ADDI_FM<0xe>;
 def LUi64   : LoadUpper<"lui", GPR64Opnd, uimm16_64>, LUI_FM;
 }
 
 /// Arithmetic Instructions (3-Operand, R-Type)
-def DADD   : ArithLogicR<"dadd", GPR64Opnd>, ADD_FM<0, 0x2c>;
-def DADDu  : ArithLogicR<"daddu", GPR64Opnd, 1, IIArith, add>,
+def DADD   : ArithLogicR<"dadd", GPR64Opnd, 1, II_DADD>, ADD_FM<0, 0x2c>;
+def DADDu  : ArithLogicR<"daddu", GPR64Opnd, 1, II_DADDU, add>,
                               ADD_FM<0, 0x2d>;
-def DSUBu  : ArithLogicR<"dsubu", GPR64Opnd, 0, IIArith, sub>,
+def DSUBu  : ArithLogicR<"dsubu", GPR64Opnd, 0, II_DSUBU, sub>,
                               ADD_FM<0, 0x2f>;
+def DSUB   : ArithLogicR<"dsub", GPR64Opnd, 0, II_DSUB, sub>, ADD_FM<0, 0x2e>;
 
 let isCodeGenOnly = 1 in {
 def SLT64  : SetCC_R<"slt", setlt, GPR64Opnd>, ADD_FM<0, 0x2a>;
 def SLTu64 : SetCC_R<"sltu", setult, GPR64Opnd>, ADD_FM<0, 0x2b>;
-def AND64  : ArithLogicR<"and", GPR64Opnd, 1, IIArith, and>, ADD_FM<0, 0x24>;
-def OR64   : ArithLogicR<"or", GPR64Opnd, 1, IIArith, or>, ADD_FM<0, 0x25>;
-def XOR64  : ArithLogicR<"xor", GPR64Opnd, 1, IIArith, xor>, ADD_FM<0, 0x26>;
+def AND64  : ArithLogicR<"and", GPR64Opnd, 1, II_AND, and>, ADD_FM<0, 0x24>;
+def OR64   : ArithLogicR<"or", GPR64Opnd, 1, II_OR, or>, ADD_FM<0, 0x25>;
+def XOR64  : ArithLogicR<"xor", GPR64Opnd, 1, II_XOR, xor>, ADD_FM<0, 0x26>;
 def NOR64  : LogicNOR<"nor", GPR64Opnd>, ADD_FM<0, 0x27>;
 }
 
 /// Shift Instructions
-def DSLL   : shift_rotate_imm<"dsll", uimm6, GPR64Opnd, shl, immZExt6>,
+def DSLL   : shift_rotate_imm<"dsll", uimm6, GPR64Opnd, II_DSLL, shl, immZExt6>,
              SRA_FM<0x38, 0>;
-def DSRL   : shift_rotate_imm<"dsrl", uimm6, GPR64Opnd, srl, immZExt6>,
+def DSRL   : shift_rotate_imm<"dsrl", uimm6, GPR64Opnd, II_DSRL, srl, immZExt6>,
              SRA_FM<0x3a, 0>;
-def DSRA   : shift_rotate_imm<"dsra", uimm6, GPR64Opnd, sra, immZExt6>,
+def DSRA   : shift_rotate_imm<"dsra", uimm6, GPR64Opnd, II_DSRA, sra, immZExt6>,
              SRA_FM<0x3b, 0>;
-def DSLLV  : shift_rotate_reg<"dsllv", GPR64Opnd, shl>, SRLV_FM<0x14, 0>;
-def DSRLV  : shift_rotate_reg<"dsrlv", GPR64Opnd, srl>, SRLV_FM<0x16, 0>;
-def DSRAV  : shift_rotate_reg<"dsrav", GPR64Opnd, sra>, SRLV_FM<0x17, 0>;
-def DSLL32 : shift_rotate_imm<"dsll32", uimm5, GPR64Opnd>, SRA_FM<0x3c, 0>;
-def DSRL32 : shift_rotate_imm<"dsrl32", uimm5, GPR64Opnd>, SRA_FM<0x3e, 0>;
-def DSRA32 : shift_rotate_imm<"dsra32", uimm5, GPR64Opnd>, SRA_FM<0x3f, 0>;
+def DSLLV  : shift_rotate_reg<"dsllv", GPR64Opnd, II_DSLLV, shl>,
+             SRLV_FM<0x14, 0>;
+def DSRLV  : shift_rotate_reg<"dsrlv", GPR64Opnd, II_DSRLV, srl>,
+             SRLV_FM<0x16, 0>;
+def DSRAV  : shift_rotate_reg<"dsrav", GPR64Opnd, II_DSRAV, sra>,
+             SRLV_FM<0x17, 0>;
+def DSLL32 : shift_rotate_imm<"dsll32", uimm5, GPR64Opnd, II_DSLL32>,
+             SRA_FM<0x3c, 0>;
+def DSRL32 : shift_rotate_imm<"dsrl32", uimm5, GPR64Opnd, II_DSRL32>,
+             SRA_FM<0x3e, 0>;
+def DSRA32 : shift_rotate_imm<"dsra32", uimm5, GPR64Opnd, II_DSRA32>,
+             SRA_FM<0x3f, 0>;
 
 // Rotate Instructions
 let Predicates = [HasMips64r2, HasStdEnc] in {
-  def DROTR  : shift_rotate_imm<"drotr", uimm6, GPR64Opnd, rotr, immZExt6>,
-               SRA_FM<0x3a, 1>;
-  def DROTRV : shift_rotate_reg<"drotrv", GPR64Opnd, rotr>,
+  def DROTR  : shift_rotate_imm<"drotr", uimm6, GPR64Opnd, II_DROTR, rotr,
+                                immZExt6>, SRA_FM<0x3a, 1>;
+  def DROTRV : shift_rotate_reg<"drotrv", GPR64Opnd, II_DROTRV, rotr>,
                SRLV_FM<0x16, 1>;
-  def DROTR32 : shift_rotate_imm<"drotr32", uimm5, GPR64Opnd>, SRA_FM<0x3e, 1>;
+  def DROTR32 : shift_rotate_imm<"drotr32", uimm5, GPR64Opnd, II_DROTR32>,
+                SRA_FM<0x3e, 1>;
 }
 
 /// Load and Store Instructions
 ///  aligned
 let isCodeGenOnly = 1 in {
-def LB64  : Load<"lb", GPR64Opnd, sextloadi8, IILoad>, LW_FM<0x20>;
-def LBu64 : Load<"lbu", GPR64Opnd, zextloadi8, IILoad>, LW_FM<0x24>;
-def LH64  : Load<"lh", GPR64Opnd, sextloadi16, IILoad>, LW_FM<0x21>;
-def LHu64 : Load<"lhu", GPR64Opnd, zextloadi16, IILoad>, LW_FM<0x25>;
-def LW64  : Load<"lw", GPR64Opnd, sextloadi32, IILoad>, LW_FM<0x23>;
-def SB64  : Store<"sb", GPR64Opnd, truncstorei8, IIStore>, LW_FM<0x28>;
-def SH64  : Store<"sh", GPR64Opnd, truncstorei16, IIStore>, LW_FM<0x29>;
-def SW64  : Store<"sw", GPR64Opnd, truncstorei32, IIStore>, LW_FM<0x2b>;
+def LB64  : Load<"lb", GPR64Opnd, sextloadi8, II_LB>, LW_FM<0x20>;
+def LBu64 : Load<"lbu", GPR64Opnd, zextloadi8, II_LBU>, LW_FM<0x24>;
+def LH64  : Load<"lh", GPR64Opnd, sextloadi16, II_LH>, LW_FM<0x21>;
+def LHu64 : Load<"lhu", GPR64Opnd, zextloadi16, II_LHU>, LW_FM<0x25>;
+def LW64  : Load<"lw", GPR64Opnd, sextloadi32, II_LW>, LW_FM<0x23>;
+def SB64  : Store<"sb", GPR64Opnd, truncstorei8, II_SB>, LW_FM<0x28>;
+def SH64  : Store<"sh", GPR64Opnd, truncstorei16, II_SH>, LW_FM<0x29>;
+def SW64  : Store<"sw", GPR64Opnd, truncstorei32, II_SW>, LW_FM<0x2b>;
 }
 
-def LWu   : Load<"lwu", GPR64Opnd, zextloadi32, IILoad>, LW_FM<0x27>;
-def LD    : Load<"ld", GPR64Opnd, load, IILoad>, LW_FM<0x37>;
-def SD    : Store<"sd", GPR64Opnd, store, IIStore>, LW_FM<0x3f>;
+def LWu   : Load<"lwu", GPR64Opnd, zextloadi32, II_LWU>, LW_FM<0x27>;
+def LD    : Load<"ld", GPR64Opnd, load, II_LD>, LW_FM<0x37>;
+def SD    : Store<"sd", GPR64Opnd, store, II_SD>, LW_FM<0x3f>;
 
 /// load/store left/right
 let isCodeGenOnly = 1 in {
-def LWL64 : LoadLeftRight<"lwl", MipsLWL, GPR64Opnd, IILoad>, LW_FM<0x22>;
-def LWR64 : LoadLeftRight<"lwr", MipsLWR, GPR64Opnd, IILoad>, LW_FM<0x26>;
-def SWL64 : StoreLeftRight<"swl", MipsSWL, GPR64Opnd, IIStore>, LW_FM<0x2a>;
-def SWR64 : StoreLeftRight<"swr", MipsSWR, GPR64Opnd, IIStore>, LW_FM<0x2e>;
+def LWL64 : LoadLeftRight<"lwl", MipsLWL, GPR64Opnd, II_LWL>, LW_FM<0x22>;
+def LWR64 : LoadLeftRight<"lwr", MipsLWR, GPR64Opnd, II_LWR>, LW_FM<0x26>;
+def SWL64 : StoreLeftRight<"swl", MipsSWL, GPR64Opnd, II_SWL>, LW_FM<0x2a>;
+def SWR64 : StoreLeftRight<"swr", MipsSWR, GPR64Opnd, II_SWR>, LW_FM<0x2e>;
 }
 
-def LDL   : LoadLeftRight<"ldl", MipsLDL, GPR64Opnd, IILoad>, LW_FM<0x1a>;
-def LDR   : LoadLeftRight<"ldr", MipsLDR, GPR64Opnd, IILoad>, LW_FM<0x1b>;
-def SDL   : StoreLeftRight<"sdl", MipsSDL, GPR64Opnd, IIStore>, LW_FM<0x2c>;
-def SDR   : StoreLeftRight<"sdr", MipsSDR, GPR64Opnd, IIStore>, LW_FM<0x2d>;
+def LDL   : LoadLeftRight<"ldl", MipsLDL, GPR64Opnd, II_LDL>, LW_FM<0x1a>;
+def LDR   : LoadLeftRight<"ldr", MipsLDR, GPR64Opnd, II_LDR>, LW_FM<0x1b>;
+def SDL   : StoreLeftRight<"sdl", MipsSDL, GPR64Opnd, II_SDL>, LW_FM<0x2c>;
+def SDR   : StoreLeftRight<"sdr", MipsSDR, GPR64Opnd, II_SDR>, LW_FM<0x2d>;
 
 /// Load-linked, Store-conditional
 def LLD : LLBase<"lld", GPR64Opnd>, LW_FM<0x34>;
@@ -159,25 +164,26 @@ def BLEZ64 : CBranchZero<"blez", brtarget, setle, GPR64Opnd>, BGEZ_FM<6, 0>;
 def BLTZ64 : CBranchZero<"bltz", brtarget, setlt, GPR64Opnd>, BGEZ_FM<1, 0>;
 def JALR64 : JumpLinkReg<"jalr", GPR64Opnd>, JALR_FM;
 def JALR64Pseudo : JumpLinkRegPseudo<GPR64Opnd, JALR, RA, GPR32Opnd>;
-def TAILCALL64_R : JumpFR<"tcallr", GPR64Opnd, MipsTailCall>,
-                   MTLO_FM<8>, IsTailCall;
+def TAILCALL64_R : TailCallReg<GPR64Opnd, JR, GPR32Opnd>;
 }
 
 /// Multiply and Divide Instructions.
-def DMULT  : Mult<"dmult", IIImult, GPR64Opnd, [HI0_64, LO0_64]>,
+def DMULT  : Mult<"dmult", II_DMULT, GPR64Opnd, [HI0_64, LO0_64]>,
              MULT_FM<0, 0x1c>;
-def DMULTu : Mult<"dmultu", IIImult, GPR64Opnd, [HI0_64, LO0_64]>,
+def DMULTu : Mult<"dmultu", II_DMULTU, GPR64Opnd, [HI0_64, LO0_64]>,
              MULT_FM<0, 0x1d>;
 def PseudoDMULT  : MultDivPseudo<DMULT, ACC128, GPR64Opnd, MipsMult,
-                                 IIImult>;
+                                 II_DMULT>;
 def PseudoDMULTu : MultDivPseudo<DMULTu, ACC128, GPR64Opnd, MipsMultu,
-                                 IIImult>;
-def DSDIV : Div<"ddiv", IIIdiv, GPR64Opnd, [HI0_64, LO0_64]>, MULT_FM<0, 0x1e>;
-def DUDIV : Div<"ddivu", IIIdiv, GPR64Opnd, [HI0_64, LO0_64]>, MULT_FM<0, 0x1f>;
+                                 II_DMULTU>;
+def DSDIV : Div<"ddiv", II_DDIV, GPR64Opnd, [HI0_64, LO0_64]>,
+            MULT_FM<0, 0x1e>;
+def DUDIV : Div<"ddivu", II_DDIVU, GPR64Opnd, [HI0_64, LO0_64]>,
+            MULT_FM<0, 0x1f>;
 def PseudoDSDIV : MultDivPseudo<DSDIV, ACC128, GPR64Opnd, MipsDivRem,
-                                IIIdiv, 0, 1, 1>;
+                                II_DDIV, 0, 1, 1>;
 def PseudoDUDIV : MultDivPseudo<DUDIV, ACC128, GPR64Opnd, MipsDivRemU,
-                                IIIdiv, 0, 1, 1>;
+                                II_DDIVU, 0, 1, 1>;
 
 let isCodeGenOnly = 1 in {
 def MTHI64 : MoveToLOHI<"mthi", GPR64Opnd, [HI0_64]>, MTLO_FM<0x11>;
@@ -189,8 +195,8 @@ def PseudoMFLO64 : PseudoMFLOHI<GPR64, ACC128, MipsMFLO>;
 def PseudoMTLOHI64 : PseudoMTLOHI<ACC128, GPR64>;
 
 /// Sign Ext In Register Instructions.
-def SEB64 : SignExtInReg<"seb", i8, GPR64Opnd>, SEB_FM<0x10, 0x20>;
-def SEH64 : SignExtInReg<"seh", i16, GPR64Opnd>, SEB_FM<0x18, 0x20>;
+def SEB64 : SignExtInReg<"seb", i8, GPR64Opnd, II_SEB>, SEB_FM<0x10, 0x20>;
+def SEH64 : SignExtInReg<"seh", i16, GPR64Opnd, II_SEH>, SEB_FM<0x18, 0x20>;
 }
 
 /// Count Leading
@@ -216,13 +222,76 @@ def DINSM : InsBase<"dinsm", GPR64Opnd, uimm5>, EXT_FM<5>;
 
 let isCodeGenOnly = 1, rs = 0, shamt = 0 in {
   def DSLL64_32 : FR<0x00, 0x3c, (outs GPR64:$rd), (ins GPR32:$rt),
-                     "dsll\t$rd, $rt, 32", [], IIArith>;
+                     "dsll\t$rd, $rt, 32", [], II_DSLL>;
   def SLL64_32 : FR<0x0, 0x00, (outs GPR64:$rd), (ins GPR32:$rt),
-                    "sll\t$rd, $rt, 0", [], IIArith>;
+                    "sll\t$rd, $rt, 0", [], II_SLL>;
   def SLL64_64 : FR<0x0, 0x00, (outs GPR64:$rd), (ins GPR64:$rt),
-                    "sll\t$rd, $rt, 0", [], IIArith>;
+                    "sll\t$rd, $rt, 0", [], II_SLL>;
 }
+
+// Cavium Octeon cmMIPS instructions
+let Predicates = [HasCnMips] in {
+
+class Count1s<string opstr, RegisterOperand RO>:
+  InstSE<(outs RO:$rd), (ins RO:$rs), !strconcat(opstr, "\t$rd, $rs"),
+         [(set RO:$rd, (ctpop RO:$rs))], II_POP, FrmR, opstr> {
+  let TwoOperandAliasConstraint = "$rd = $rs";
 }
+
+class ExtsCins<string opstr, SDPatternOperator Op = null_frag>:
+  InstSE<(outs GPR64Opnd:$rt), (ins GPR64Opnd:$rs, uimm5:$pos, uimm5:$lenm1),
+         !strconcat(opstr, " $rt, $rs, $pos, $lenm1"),
+         [(set GPR64Opnd:$rt, (Op GPR64Opnd:$rs, imm:$pos, imm:$lenm1))],
+         NoItinerary, FrmR, opstr> {
+  let TwoOperandAliasConstraint = "$rt = $rs";
+}
+
+class SetCC64_R<string opstr, PatFrag cond_op> :
+  InstSE<(outs GPR64Opnd:$rd), (ins GPR64Opnd:$rs, GPR64Opnd:$rt),
+         !strconcat(opstr, "\t$rd, $rs, $rt"),
+         [(set GPR64Opnd:$rd, (cond_op GPR64Opnd:$rs, GPR64Opnd:$rt))],
+         II_SEQ_SNE, FrmR, opstr> {
+  let TwoOperandAliasConstraint = "$rd = $rs";
+}
+
+// Unsigned Byte Add
+let Pattern = [(set GPR64Opnd:$rd,
+                    (and (add GPR64Opnd:$rs, GPR64Opnd:$rt), 255))] in
+def BADDu  : ArithLogicR<"baddu", GPR64Opnd, 1, II_BADDU>,
+                              ADD_FM<0x1c, 0x28>;
+
+// Multiply Doubleword to GPR
+let Defs = [HI0, LO0, P0, P1, P2] in
+def DMUL  : ArithLogicR<"dmul", GPR64Opnd, 1, II_DMUL, mul>,
+                              ADD_FM<0x1c, 0x03>;
+
+// Extract a signed bit field /+32
+def EXTS  : ExtsCins<"exts">, EXTS_FM<0x3a>;
+def EXTS32: ExtsCins<"exts32">, EXTS_FM<0x3b>;
+
+// Clear and insert a bit field /+32
+def CINS  : ExtsCins<"cins">, EXTS_FM<0x32>;
+def CINS32: ExtsCins<"cins32">, EXTS_FM<0x33>;
+
+// Move to multiplier/product register
+def MTM0   : MoveToLOHI<"mtm0", GPR64Opnd, [MPL0, P0, P1, P2]>, MTMR_FM<0x08>;
+def MTM1   : MoveToLOHI<"mtm1", GPR64Opnd, [MPL1, P0, P1, P2]>, MTMR_FM<0x0c>;
+def MTM2   : MoveToLOHI<"mtm2", GPR64Opnd, [MPL2, P0, P1, P2]>, MTMR_FM<0x0d>;
+def MTP0   : MoveToLOHI<"mtp0", GPR64Opnd, [P0]>, MTMR_FM<0x09>;
+def MTP1   : MoveToLOHI<"mtp1", GPR64Opnd, [P1]>, MTMR_FM<0x0a>;
+def MTP2   : MoveToLOHI<"mtp2", GPR64Opnd, [P2]>, MTMR_FM<0x0b>;
+
+// Count Ones in a Word/Doubleword
+def POP   : Count1s<"pop", GPR32Opnd>, POP_FM<0x2c>;
+def DPOP  : Count1s<"dpop", GPR64Opnd>, POP_FM<0x2d>;
+
+// Set on equal/not equal
+def SEQ   : SetCC64_R<"seq", seteq>, SEQ_FM<0x2a>;
+def SNE   : SetCC64_R<"sne", setne>, SEQ_FM<0x2b>;
+}
+
+}
+
 //===----------------------------------------------------------------------===//
 //  Arbitrary patterns that map to one or more instructions
 //===----------------------------------------------------------------------===//
@@ -312,6 +381,43 @@ def : InstAlias<"daddu $rs, $rt, $imm",
                 0>;
 def : InstAlias<"dadd $rs, $rt, $imm",
                 (DADDi GPR64Opnd:$rs, GPR64Opnd:$rt, simm16_64:$imm),
+                0>;
+def : InstAlias<"daddu $rs, $imm",
+                (DADDiu GPR64Opnd:$rs, GPR64Opnd:$rs, simm16_64:$imm),
+                0>;
+def : InstAlias<"dadd $rs, $imm",
+                (DADDi GPR64Opnd:$rs, GPR64Opnd:$rs, simm16_64:$imm),
+                0>;
+def : InstAlias<"add $rs, $imm",
+                (ADDi GPR32Opnd:$rs, GPR32Opnd:$rs, simm16:$imm),
+                0>;
+def : InstAlias<"addu $rs, $imm",
+                (ADDiu GPR32Opnd:$rs, GPR32Opnd:$rs, simm16:$imm),
+                0>;
+let isPseudo=1, usesCustomInserter=1, isCodeGenOnly=1 in {
+def SUBi : MipsInst<(outs GPR32Opnd: $rt), (ins GPR32Opnd: $rs, simm16: $imm),
+                    "sub\t$rt, $rs, $imm", [], II_DSUB, Pseudo>;
+def SUBiu : MipsInst<(outs GPR32Opnd: $rt), (ins GPR32Opnd: $rs, simm16: $imm),
+                    "subu\t$rt, $rs, $imm", [], II_DSUB, Pseudo>;
+def DSUBi : MipsInst<(outs GPR64Opnd: $rt), (ins GPR64Opnd: $rs, simm16_64: $imm),
+                    "ssub\t$rt, $rs, $imm", [], II_DSUB, Pseudo>;
+def DSUBiu : MipsInst<(outs GPR64Opnd: $rt), (ins GPR64Opnd: $rs, simm16_64: $imm),
+                    "ssubu\t$rt, $rs, $imm", [], II_DSUB, Pseudo>;
+}
+def : InstAlias<"dsubu $rt, $rs, $imm",
+                (DSUBiu GPR64Opnd:$rt, GPR64Opnd:$rs, simm16_64: $imm),
+                0>;
+def : InstAlias<"sub $rs, $imm",
+                (SUBi GPR32Opnd:$rs, GPR32Opnd:$rs, simm16:$imm),
+                0>;
+def : InstAlias<"subu $rs, $imm",
+                (SUBiu GPR32Opnd:$rs, GPR32Opnd:$rs, simm16:$imm),
+                0>;
+def : InstAlias<"dsub $rs, $imm",
+                (DSUBi GPR64Opnd:$rs, GPR64Opnd:$rs, simm16_64:$imm),
+                0>;
+def : InstAlias<"dsubu $rs, $imm",
+                (DSUBiu GPR64Opnd:$rs, GPR64Opnd:$rs, simm16_64:$imm),
                 0>;
 
 /// Move between CPU and coprocessor registers

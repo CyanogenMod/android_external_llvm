@@ -147,7 +147,7 @@ HexagonInstrInfo::InsertBranch(MachineBasicBlock &MBB,MachineBasicBlock *TBB,
         if (isPredicated(Term) && !AnalyzeBranch(MBB, NewTBB, NewFBB, Cond,
                                                  false)) {
           MachineBasicBlock *NextBB =
-            llvm::next(MachineFunction::iterator(&MBB));
+            std::next(MachineFunction::iterator(&MBB));
           if (NewTBB == NextBB) {
             ReverseBranchCondition(Cond);
             RemoveBranch(MBB);
@@ -1539,7 +1539,7 @@ int HexagonInstrInfo::GetDotOldOp(const int opc) const {
       assert(0 && "Couldn't change predicate new instruction to its old form.");
   }
 
-  if (isNewValueStore(NewOp)) { // Convert into non new-value format
+  if (isNewValueStore(NewOp)) { // Convert into non-new-value format
     NewOp = Hexagon::getNonNVStore(NewOp);
     if (NewOp < 0)
       assert(0 && "Couldn't change new-value store to its old form.");
@@ -1654,7 +1654,7 @@ bool HexagonInstrInfo::isSchedulingBoundary(const MachineInstr *MI,
     return false;
 
   // Terminators and labels can't be scheduled around.
-  if (MI->getDesc().isTerminator() || MI->isLabel() || MI->isInlineAsm())
+  if (MI->getDesc().isTerminator() || MI->isPosition() || MI->isInlineAsm())
     return true;
 
   return false;
@@ -1793,7 +1793,7 @@ bool HexagonInstrInfo::NonExtEquivalentExists (const MachineInstr *MI) const {
     return true;
 
   if (MI->getDesc().mayLoad() || MI->getDesc().mayStore()) {
-    // Check addressing mode and retreive non-ext equivalent instruction.
+    // Check addressing mode and retrieve non-ext equivalent instruction.
 
     switch (getAddrMode(MI)) {
     case HexagonII::Absolute :
@@ -1827,7 +1827,7 @@ short HexagonInstrInfo::getNonExtOpcode (const MachineInstr *MI) const {
       return NonExtOpcode;
 
   if (MI->getDesc().mayLoad() || MI->getDesc().mayStore()) {
-    // Check addressing mode and retreive non-ext equivalent instruction.
+    // Check addressing mode and retrieve non-ext equivalent instruction.
     switch (getAddrMode(MI)) {
     case HexagonII::Absolute :
       return Hexagon::getBasedWithImmOffset(MI->getOpcode());

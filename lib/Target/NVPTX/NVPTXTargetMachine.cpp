@@ -16,16 +16,15 @@
 #include "NVPTX.h"
 #include "NVPTXAllocaHoisting.h"
 #include "NVPTXLowerAggrCopies.h"
-#include "NVPTXSplitBBatBar.h"
 #include "llvm/ADT/OwningPtr.h"
 #include "llvm/Analysis/Passes.h"
-#include "llvm/Analysis/Verifier.h"
-#include "llvm/Assembly/PrintModulePass.h"
 #include "llvm/CodeGen/AsmPrinter.h"
 #include "llvm/CodeGen/MachineFunctionAnalysis.h"
 #include "llvm/CodeGen/MachineModuleInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/IR/DataLayout.h"
+#include "llvm/IR/IRPrintingPasses.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/MC/MCAsmInfo.h"
 #include "llvm/MC/MCInstrInfo.h"
 #include "llvm/MC/MCStreamer.h"
@@ -50,6 +49,7 @@ using namespace llvm;
 namespace llvm {
 void initializeNVVMReflectPass(PassRegistry&);
 void initializeGenericToNVVMPass(PassRegistry&);
+void initializeNVPTXAssignValidGlobalNamesPass(PassRegistry&);
 }
 
 extern "C" void LLVMInitializeNVPTXTarget() {
@@ -61,6 +61,18 @@ extern "C" void LLVMInitializeNVPTXTarget() {
   // but it's very NVPTX-specific.
   initializeNVVMReflectPass(*PassRegistry::getPassRegistry());
   initializeGenericToNVVMPass(*PassRegistry::getPassRegistry());
+  initializeNVPTXAssignValidGlobalNamesPass(*PassRegistry::getPassRegistry());
+}
+
+static std::string computeDataLayout(const NVPTXSubtarget &ST) {
+  std::string Ret = "e";
+
+  if (!ST.is64Bit())
+    Ret += "-p:32:32";
+
+  Ret += "-i64:64-v16:16-v32:32-n16:32:64";
+
+  return Ret;
 }
 
 NVPTXTargetMachine::NVPTXTargetMachine(
@@ -68,7 +80,7 @@ NVPTXTargetMachine::NVPTXTargetMachine(
     const TargetOptions &Options, Reloc::Model RM, CodeModel::Model CM,
     CodeGenOpt::Level OL, bool is64bit)
     : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-      Subtarget(TT, CPU, FS, is64bit), DL(Subtarget.getDataLayout()),
+      Subtarget(TT, CPU, FS, is64bit), DL(computeDataLayout(Subtarget)),
       InstrInfo(*this), TLInfo(*this), TSInfo(*this),
       FrameLowering(
           *this, is64bit) /*FrameInfo(TargetFrameInfo::StackGrowsUp, 8, 0)*/ {
@@ -106,7 +118,7 @@ public:
   virtual bool addPreRegAlloc();
   virtual bool addPostRegAlloc();
 
-  virtual FunctionPass *createTargetRegisterAllocator(bool) LLVM_OVERRIDE;
+  virtual FunctionPass *createTargetRegisterAllocator(bool) override;
   virtual void addFastRegAlloc(FunctionPass *RegAllocPass);
   virtual void addOptimizedRegAlloc(FunctionPass *RegAllocPass);
 };
@@ -129,12 +141,12 @@ void NVPTXPassConfig::addIRPasses() {
   disablePass(&TailDuplicateID);
 
   TargetPassConfig::addIRPasses();
+  addPass(createNVPTXAssignValidGlobalNamesPass());
   addPass(createGenericToNVVMPass());
 }
 
 bool NVPTXPassConfig::addInstSelector() {
   addPass(createLowerAggrCopies());
-  addPass(createSplitBBatBarPass());
   addPass(createAllocaHoisting());
   addPass(createNVPTXISelDag(getNVPTXTargetMachine(), getOptLevel()));
   return false;

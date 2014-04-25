@@ -8,7 +8,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "llvm/IR/IRBuilder.h"
-#include "llvm/ADT/OwningPtr.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/IR/Function.h"
@@ -16,6 +15,7 @@
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/MDBuilder.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/NoFolder.h"
 #include "gtest/gtest.h"
 
 using namespace llvm;
@@ -40,7 +40,7 @@ protected:
   }
 
   LLVMContext Ctx;
-  OwningPtr<Module> M;
+  std::unique_ptr<Module> M;
   Function *F;
   BasicBlock *BB;
   GlobalVariable *GV;
@@ -107,6 +107,14 @@ TEST_F(IRBuilderTest, LandingPadName) {
   EXPECT_EQ(LP->getName(), "LP");
 }
 
+TEST_F(IRBuilderTest, DataLayout) {
+  std::unique_ptr<Module> M(new Module("test", Ctx));
+  M->setDataLayout("e-n32");
+  EXPECT_TRUE(M->getDataLayout()->isLegalInteger(32));
+  M->setDataLayout("e");
+  EXPECT_FALSE(M->getDataLayout()->isLegalInteger(32));
+}
+
 TEST_F(IRBuilderTest, GetIntTy) {
   IRBuilder<> Builder(BB);
   IntegerType *Ty1 = Builder.getInt1Ty();
@@ -147,6 +155,13 @@ TEST_F(IRBuilderTest, FastMathFlags) {
   FAdd = cast<Instruction>(F);
   EXPECT_TRUE(FAdd->hasNoNaNs());
 
+  // Now, try it with CreateBinOp
+  F = Builder.CreateBinOp(Instruction::FAdd, F, F);
+  EXPECT_TRUE(Builder.getFastMathFlags().any());
+  ASSERT_TRUE(isa<Instruction>(F));
+  FAdd = cast<Instruction>(F);
+  EXPECT_TRUE(FAdd->hasNoNaNs());
+
   F = Builder.CreateFDiv(F, F);
   EXPECT_TRUE(Builder.getFastMathFlags().any());
   EXPECT_TRUE(Builder.getFastMathFlags().UnsafeAlgebra);
@@ -181,6 +196,56 @@ TEST_F(IRBuilderTest, FastMathFlags) {
   FDiv->copyFastMathFlags(FAdd);
   EXPECT_TRUE(FDiv->hasNoNaNs());
 
+}
+
+TEST_F(IRBuilderTest, WrapFlags) {
+  IRBuilder<true, NoFolder> Builder(BB);
+
+  // Test instructions.
+  GlobalVariable *G = new GlobalVariable(*M, Builder.getInt32Ty(), true,
+                                         GlobalValue::ExternalLinkage, 0);
+  Value *V = Builder.CreateLoad(G);
+  EXPECT_TRUE(
+      cast<BinaryOperator>(Builder.CreateNSWAdd(V, V))->hasNoSignedWrap());
+  EXPECT_TRUE(
+      cast<BinaryOperator>(Builder.CreateNSWMul(V, V))->hasNoSignedWrap());
+  EXPECT_TRUE(
+      cast<BinaryOperator>(Builder.CreateNSWSub(V, V))->hasNoSignedWrap());
+  EXPECT_TRUE(cast<BinaryOperator>(
+                  Builder.CreateShl(V, V, "", /* NUW */ false, /* NSW */ true))
+                  ->hasNoSignedWrap());
+
+  EXPECT_TRUE(
+      cast<BinaryOperator>(Builder.CreateNUWAdd(V, V))->hasNoUnsignedWrap());
+  EXPECT_TRUE(
+      cast<BinaryOperator>(Builder.CreateNUWMul(V, V))->hasNoUnsignedWrap());
+  EXPECT_TRUE(
+      cast<BinaryOperator>(Builder.CreateNUWSub(V, V))->hasNoUnsignedWrap());
+  EXPECT_TRUE(cast<BinaryOperator>(
+                  Builder.CreateShl(V, V, "", /* NUW */ true, /* NSW */ false))
+                  ->hasNoUnsignedWrap());
+
+  // Test operators created with constants.
+  Constant *C = Builder.getInt32(42);
+  EXPECT_TRUE(cast<OverflowingBinaryOperator>(Builder.CreateNSWAdd(C, C))
+                  ->hasNoSignedWrap());
+  EXPECT_TRUE(cast<OverflowingBinaryOperator>(Builder.CreateNSWSub(C, C))
+                  ->hasNoSignedWrap());
+  EXPECT_TRUE(cast<OverflowingBinaryOperator>(Builder.CreateNSWMul(C, C))
+                  ->hasNoSignedWrap());
+  EXPECT_TRUE(cast<OverflowingBinaryOperator>(
+                  Builder.CreateShl(C, C, "", /* NUW */ false, /* NSW */ true))
+                  ->hasNoSignedWrap());
+
+  EXPECT_TRUE(cast<OverflowingBinaryOperator>(Builder.CreateNUWAdd(C, C))
+                  ->hasNoUnsignedWrap());
+  EXPECT_TRUE(cast<OverflowingBinaryOperator>(Builder.CreateNUWSub(C, C))
+                  ->hasNoUnsignedWrap());
+  EXPECT_TRUE(cast<OverflowingBinaryOperator>(Builder.CreateNUWMul(C, C))
+                  ->hasNoUnsignedWrap());
+  EXPECT_TRUE(cast<OverflowingBinaryOperator>(
+                  Builder.CreateShl(C, C, "", /* NUW */ true, /* NSW */ false))
+                  ->hasNoUnsignedWrap());
 }
 
 TEST_F(IRBuilderTest, RAIIHelpersTest) {

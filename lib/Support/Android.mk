@@ -5,11 +5,12 @@ support_SRC_FILES := \
   APFloat.cpp \
   APInt.cpp \
   APSInt.cpp \
+  ARMBuildAttrs.cpp \
   Atomic.cpp \
   BlockFrequency.cpp \
   BranchProbability.cpp \
   CommandLine.cpp \
-  ConstantRange.cpp \
+  Compression.cpp \
   ConvertUTF.c \
   ConvertUTFWrapper.cpp \
   CrashRecoveryContext.cpp \
@@ -33,6 +34,8 @@ support_SRC_FILES := \
   IntrusiveRefCntPtr.cpp \
   IsInf.cpp \
   IsNAN.cpp \
+  LEB128.cpp \
+  LineIterator.cpp \
   Locale.cpp \
   LockFileManager.cpp \
   MD5.cpp \
@@ -71,6 +74,8 @@ support_SRC_FILES := \
   Unicode.cpp \
   Valgrind.cpp \
   Watchdog.cpp \
+  YAMLParser.cpp \
+  YAMLTraits.cpp \
   circular_raw_ostream.cpp \
   raw_os_ostream.cpp \
   raw_ostream.cpp \
@@ -80,6 +85,7 @@ support_SRC_FILES := \
   regfree.c \
   regstrlcpy.c \
   system_error.cpp
+
 
 # For the host
 # =====================================================
@@ -101,6 +107,7 @@ include $(BUILD_HOST_STATIC_LIBRARY)
 
 # For the device
 # =====================================================
+ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(support_SRC_FILES)
@@ -113,3 +120,4 @@ LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_STATIC_LIBRARY)
+endif

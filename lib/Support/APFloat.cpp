@@ -683,6 +683,20 @@ APFloat::operator=(const APFloat &rhs)
   return *this;
 }
 
+APFloat &
+APFloat::operator=(APFloat &&rhs) {
+  freeSignificand();
+
+  semantics = rhs.semantics;
+  significand = rhs.significand;
+  exponent = rhs.exponent;
+  category = rhs.category;
+  sign = rhs.sign;
+
+  rhs.semantics = &Bogus;
+  return *this;
+}
+
 bool
 APFloat::isDenormal() const {
   return isFiniteNonZero() && (exponent == semantics->minExponent) &&
@@ -804,6 +818,10 @@ APFloat::APFloat(const fltSemantics &ourSemantics, StringRef text) {
 APFloat::APFloat(const APFloat &rhs) {
   initialize(rhs.semantics);
   assign(rhs);
+}
+
+APFloat::APFloat(APFloat &&rhs) : semantics(&Bogus) {
+  *this = std::move(rhs);
 }
 
 APFloat::~APFloat()
@@ -3776,7 +3794,7 @@ APFloat::opStatus APFloat::next(bool nextDown) {
     //                     change the payload.
     if (isSignaling()) {
       result = opInvalidOp;
-      // For consistency, propogate the sign of the sNaN to the qNaN.
+      // For consistency, propagate the sign of the sNaN to the qNaN.
       makeNaN(false, isNegative(), 0);
     }
     break;
@@ -3816,7 +3834,7 @@ APFloat::opStatus APFloat::next(bool nextDown) {
       // Decrement the significand.
       //
       // We always do this since:
-      //   1. If we are dealing with a non binade decrement, by definition we
+      //   1. If we are dealing with a non-binade decrement, by definition we
       //   just decrement the significand.
       //   2. If we are dealing with a normal -> normal binade decrement, since
       //   we have an explicit integral bit the fact that all bits but the

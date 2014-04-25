@@ -59,11 +59,11 @@ namespace {
     explicit InternalizePass();
     explicit InternalizePass(ArrayRef<const char *> ExportList);
     void LoadFile(const char *Filename);
-    virtual bool runOnModule(Module &M);
+    bool runOnModule(Module &M) override;
 
-    virtual void getAnalysisUsage(AnalysisUsage &AU) const {
+    void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.setPreservesCFG();
-      AU.addPreserved<CallGraph>();
+      AU.addPreserved<CallGraphWrapperPass>();
     }
   };
 } // end anonymous namespace
@@ -72,8 +72,7 @@ char InternalizePass::ID = 0;
 INITIALIZE_PASS(InternalizePass, "internalize",
                 "Internalize Global Symbols", false, false)
 
-InternalizePass::InternalizePass()
-  : ModulePass(ID) {
+InternalizePass::InternalizePass() : ModulePass(ID) {
   initializeInternalizePassPass(*PassRegistry::getPassRegistry());
   if (!APIFile.empty())           // If a filename is specified, use it.
     LoadFile(APIFile.c_str());
@@ -81,7 +80,7 @@ InternalizePass::InternalizePass()
 }
 
 InternalizePass::InternalizePass(ArrayRef<const char *> ExportList)
-  : ModulePass(ID){
+    : ModulePass(ID) {
   initializeInternalizePassPass(*PassRegistry::getPassRegistry());
   for(ArrayRef<const char *>::const_iterator itr = ExportList.begin();
         itr != ExportList.end(); itr++) {
@@ -115,6 +114,10 @@ static bool shouldInternalize(const GlobalValue &GV,
   if (GV.hasAvailableExternallyLinkage())
     return false;
 
+  // Assume that dllexported symbols are referenced elsewhere
+  if (GV.hasDLLExportStorageClass())
+    return false;
+
   // Already has internal linkage
   if (GV.hasLocalLinkage())
     return false;
@@ -127,7 +130,8 @@ static bool shouldInternalize(const GlobalValue &GV,
 }
 
 bool InternalizePass::runOnModule(Module &M) {
-  CallGraph *CG = getAnalysisIfAvailable<CallGraph>();
+  CallGraphWrapperPass *CGPass = getAnalysisIfAvailable<CallGraphWrapperPass>();
+  CallGraph *CG = CGPass ? &CGPass->getCallGraph() : 0;
   CallGraphNode *ExternalNode = CG ? CG->getExternalCallingNode() : 0;
   bool Changed = false;
 
@@ -150,7 +154,6 @@ bool InternalizePass::runOnModule(Module &M) {
   }
 
   // Mark all functions not in the api as internal.
-  // FIXME: maybe use private linkage?
   for (Module::iterator I = M.begin(), E = M.end(); I != E; ++I) {
     if (!shouldInternalize(*I, ExternalNames))
       continue;
@@ -186,7 +189,6 @@ bool InternalizePass::runOnModule(Module &M) {
 
   // Mark all global variables with initializers that are not in the api as
   // internal as well.
-  // FIXME: maybe use private linkage?
   for (Module::global_iterator I = M.global_begin(), E = M.global_end();
        I != E; ++I) {
     if (!shouldInternalize(*I, ExternalNames))
@@ -213,9 +215,7 @@ bool InternalizePass::runOnModule(Module &M) {
   return Changed;
 }
 
-ModulePass *llvm::createInternalizePass() {
-  return new InternalizePass();
-}
+ModulePass *llvm::createInternalizePass() { return new InternalizePass(); }
 
 ModulePass *llvm::createInternalizePass(ArrayRef<const char *> ExportList) {
   return new InternalizePass(ExportList);
