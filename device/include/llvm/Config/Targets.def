@@ -30,6 +30,7 @@
 #elif defined(__i386__) || defined(__x86_64__)
   LLVM_TARGET(X86)
 #elif defined(__aarch64__)
+  LLVM_TARGET(ARM)
   LLVM_TARGET(AArch64)
 #else
 #  error Unsupported TARGET_ARCH for LLVM_TARGET
