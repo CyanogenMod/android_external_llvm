@@ -14,7 +14,8 @@ x86_mc_desc_SRC_FILES := \
   X86MCCodeEmitter.cpp \
   X86MachORelocationInfo.cpp \
   X86MachObjectWriter.cpp \
-  X86WinCOFFObjectWriter.cpp
+  X86WinCOFFObjectWriter.cpp \
+  X86WinCOFFStreamer.cpp
 
 # For the host
 # =====================================================

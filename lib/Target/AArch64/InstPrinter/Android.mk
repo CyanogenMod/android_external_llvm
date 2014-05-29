@@ -2,6 +2,7 @@ LOCAL_PATH := $(call my-dir)
 
 arm64_asm_printer_TBLGEN_TABLES := \
   AArch64GenAsmWriter.inc \
+  AArch64GenAsmWriter1.inc \
   AArch64GenRegisterInfo.inc \
   AArch64GenSubtargetInfo.inc \
   AArch64GenInstrInfo.inc

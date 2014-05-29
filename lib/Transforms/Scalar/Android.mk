@@ -32,6 +32,7 @@ transforms_scalar_SRC_FILES := \
   Scalar.cpp \
   Scalarizer.cpp \
   ScalarReplAggregates.cpp \
+  SeparateConstOffsetFromGEP.cpp \
   SimplifyCFGPass.cpp \
   Sink.cpp \
   StructurizeCFG.cpp \
@@ -59,11 +60,6 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(transforms_scalar_SRC_FILES)
 LOCAL_MODULE:= libLLVMScalarOpts
-
-# Override the default optimization level to work around a SIGSEGV
-# on x86 target builds for SROA.cpp.
-# Bug: 8047767
-LOCAL_CFLAGS_x86 += -O1
 
 LOCAL_MODULE_TAGS := optional
 

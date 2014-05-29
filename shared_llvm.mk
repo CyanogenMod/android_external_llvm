@@ -63,14 +63,15 @@ llvm_post_static_libraries := \
   libLLVMAsmParser \
   libLLVMOption \
   libLLVMSupport \
-  libLLVMVectorize
+  libLLVMVectorize \
 
 llvm_host_static_libraries := \
   libLLVMExecutionEngine \
   libLLVMMCDisassembler \
   libLLVMRuntimeDyld \
   libLLVMJIT \
-  libLLVMMCJIT
+  libLLVMMCJIT \
+  libLLVMProfileData
 
 ifeq (true,$(FORCE_BUILD_LLVM_COMPONENTS))
 # HOST LLVM shared library build
@@ -135,4 +136,3 @@ include $(BUILD_SHARED_LIBRARY)
 endif
 
 endif # don't build in unbundled branches
-

@@ -17,7 +17,6 @@ arm_codegen_TBLGEN_TABLES := \
 arm_codegen_SRC_FILES := \
   A15SDOptimizer.cpp \
   ARMAsmPrinter.cpp \
-  ARMAtomicExpandPass.cpp \
   ARMBaseInstrInfo.cpp \
   ARMBaseRegisterInfo.cpp \
   ARMCodeEmitter.cpp \

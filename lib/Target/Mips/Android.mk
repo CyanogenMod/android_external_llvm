@@ -24,6 +24,7 @@ mips_codegen_SRC_FILES := \
   MipsCodeEmitter.cpp \
   MipsConstantIslandPass.cpp \
   MipsDelaySlotFiller.cpp \
+  MipsFastISel.cpp \
   MipsFrameLowering.cpp \
   MipsInstrInfo.cpp \
   MipsISelDAGToDAG.cpp \

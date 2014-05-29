@@ -89,7 +89,6 @@ protected:
                                    bool &Result) const override;
   relocation_iterator section_rel_begin(DataRefImpl Sec) const override;
   relocation_iterator section_rel_end(DataRefImpl Sec) const override;
-  bool section_rel_empty(DataRefImpl Sec) const override;
   section_iterator getRelocatedSection(DataRefImpl Sec) const override;
 
   void moveRelocationNext(DataRefImpl &Rel) const override;
@@ -256,8 +255,7 @@ error_code ELFObjectFile<ELFT>::getSymbolAddress(DataRefImpl Symb,
   Result = ESym->st_value;
 
   // Clear the ARM/Thumb indicator flag.
-  if (EF.getHeader()->e_machine == ELF::EM_ARM &&
-      ESym->getType() == ELF::STT_FUNC)
+  if (Header->e_machine == ELF::EM_ARM && ESym->getType() == ELF::STT_FUNC)
     Result &= ~1;
 
   if (Header->e_type == ELF::ET_REL)
@@ -497,12 +495,6 @@ ELFObjectFile<ELFT>::section_rel_end(DataRefImpl Sec) const {
 }
 
 template <class ELFT>
-bool ELFObjectFile<ELFT>::section_rel_empty(DataRefImpl Sec) const {
-  const Elf_Shdr *S = reinterpret_cast<const Elf_Shdr *>(Sec.p);
-  return S->sh_size == 0;
-}
-
-template <class ELFT>
 section_iterator
 ELFObjectFile<ELFT>::getRelocatedSection(DataRefImpl Sec) const {
   if (EF.getHeader()->e_type != ELF::ET_REL)
@@ -563,10 +555,17 @@ ELFObjectFile<ELFT>::getRelocationSymbol(DataRefImpl Rel) const {
 template <class ELFT>
 error_code ELFObjectFile<ELFT>::getRelocationAddress(DataRefImpl Rel,
                                                      uint64_t &Result) const {
-  assert((EF.getHeader()->e_type == ELF::ET_EXEC ||
-          EF.getHeader()->e_type == ELF::ET_DYN) &&
-         "Only executable and shared objects files have relocation addresses");
-  Result = getROffset(Rel);
+  uint64_t ROffset = getROffset(Rel);
+  const Elf_Ehdr *Header = EF.getHeader();
+
+  if (Header->e_type == ELF::ET_REL) {
+    const Elf_Shdr *RelocationSec = getRelSection(Rel);
+    const Elf_Shdr *RelocatedSec = EF.getSection(RelocationSec->sh_info);
+    Result = ROffset + RelocatedSec->sh_addr;
+  } else {
+    Result = ROffset;
+  }
+
   return object_error::success;
 }
 

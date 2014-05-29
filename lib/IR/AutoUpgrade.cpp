@@ -115,7 +115,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
         Name == "x86.avx.movnt.ps.256" ||
         Name == "x86.sse42.crc32.64.8" ||
         (Name.startswith("x86.xop.vpcom") && F->arg_size() == 2)) {
-      NewFn = 0;
+      NewFn = nullptr;
       return true;
     }
     // SSE4.1 ptest functions may have an old signature.
@@ -158,7 +158,7 @@ static bool UpgradeIntrinsicFunction1(Function *F, Function *&NewFn) {
 }
 
 bool llvm::UpgradeIntrinsicFunction(Function *F, Function *&NewFn) {
-  NewFn = 0;
+  NewFn = nullptr;
   bool Upgraded = UpgradeIntrinsicFunction1(F, NewFn);
 
   // Upgrade intrinsic attributes.  This does not change the function.
@@ -170,7 +170,62 @@ bool llvm::UpgradeIntrinsicFunction(Function *F, Function *&NewFn) {
   return Upgraded;
 }
 
+static bool UpgradeGlobalStructors(GlobalVariable *GV) {
+  ArrayType *ATy = dyn_cast<ArrayType>(GV->getType()->getElementType());
+  StructType *OldTy =
+      ATy ? dyn_cast<StructType>(ATy->getElementType()) : nullptr;
+
+  // Only upgrade an array of a two field struct with the appropriate field
+  // types.
+  if (!OldTy || OldTy->getNumElements() != 2)
+    return false;
+
+  // Get the upgraded 3 element type.
+  PointerType *VoidPtrTy = Type::getInt8Ty(GV->getContext())->getPointerTo();
+  Type *Tys[3] = {
+    OldTy->getElementType(0),
+    OldTy->getElementType(1),
+    VoidPtrTy
+  };
+  StructType *NewTy =
+      StructType::get(GV->getContext(), Tys, /*isPacked=*/false);
+
+  // Build new constants with a null third field filled in.
+  Constant *OldInitC = GV->getInitializer();
+  ConstantArray *OldInit = dyn_cast<ConstantArray>(OldInitC);
+  if (!OldInit && !isa<ConstantAggregateZero>(OldInitC))
+    return false;
+  std::vector<Constant *> Initializers;
+  if (OldInit) {
+    for (Use &U : OldInit->operands()) {
+      ConstantStruct *Init = cast<ConstantStruct>(&U);
+      Constant *NewInit =
+        ConstantStruct::get(NewTy, Init->getOperand(0), Init->getOperand(1),
+                            Constant::getNullValue(VoidPtrTy), nullptr);
+      Initializers.push_back(NewInit);
+    }
+  }
+  assert(Initializers.size() == ATy->getNumElements());
+
+  // Replace the old GV with a new one.
+  ATy = ArrayType::get(NewTy, Initializers.size());
+  Constant *NewInit = ConstantArray::get(ATy, Initializers);
+  GlobalVariable *NewGV = new GlobalVariable(
+      *GV->getParent(), ATy, GV->isConstant(), GV->getLinkage(), NewInit, "",
+      GV, GV->getThreadLocalMode(), GV->getType()->getAddressSpace(),
+      GV->isExternallyInitialized());
+  NewGV->copyAttributesFrom(GV);
+  NewGV->takeName(GV);
+  assert(GV->use_empty() && "program cannot use initializer list");
+  GV->eraseFromParent();
+  return true;
+}
+
 bool llvm::UpgradeGlobalVariable(GlobalVariable *GV) {
+  if (GV->getName() == "llvm.global_ctors" ||
+      GV->getName() == "llvm.global_dtors")
+    return UpgradeGlobalStructors(GV);
+
   // Nothing to do yet.
   return false;
 }
@@ -453,9 +508,9 @@ void llvm::UpgradeInstWithTBAATag(Instruction *I) {
 Instruction *llvm::UpgradeBitCastInst(unsigned Opc, Value *V, Type *DestTy,
                                       Instruction *&Temp) {
   if (Opc != Instruction::BitCast)
-    return 0;
+    return nullptr;
 
-  Temp = 0;
+  Temp = nullptr;
   Type *SrcTy = V->getType();
   if (SrcTy->isPtrOrPtrVectorTy() && DestTy->isPtrOrPtrVectorTy() &&
       SrcTy->getPointerAddressSpace() != DestTy->getPointerAddressSpace()) {
@@ -469,12 +524,12 @@ Instruction *llvm::UpgradeBitCastInst(unsigned Opc, Value *V, Type *DestTy,
     return CastInst::Create(Instruction::IntToPtr, Temp, DestTy);
   }
 
-  return 0;
+  return nullptr;
 }
 
 Value *llvm::UpgradeBitCastExpr(unsigned Opc, Constant *C, Type *DestTy) {
   if (Opc != Instruction::BitCast)
-    return 0;
+    return nullptr;
 
   Type *SrcTy = C->getType();
   if (SrcTy->isPtrOrPtrVectorTy() && DestTy->isPtrOrPtrVectorTy() &&
@@ -489,7 +544,7 @@ Value *llvm::UpgradeBitCastExpr(unsigned Opc, Constant *C, Type *DestTy) {
                                      DestTy);
   }
 
-  return 0;
+  return nullptr;
 }
 
 /// Check the debug info version number, if it is out-dated, drop the debug
