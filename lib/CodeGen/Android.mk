@@ -4,6 +4,7 @@ codegen_SRC_FILES := \
   AggressiveAntiDepBreaker.cpp \
   AllocationOrder.cpp \
   Analysis.cpp \
+  AtomicExpandLoadLinkedPass.cpp \
   BasicTargetTransformInfo.cpp \
   BranchFolding.cpp \
   CalcSpillWeights.cpp \

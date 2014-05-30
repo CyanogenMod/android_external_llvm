@@ -12,6 +12,7 @@ object_SRC_FILES := \
   MachOUniversal.cpp \
   Object.cpp \
   ObjectFile.cpp \
+  StringTableBuilder.cpp \
   SymbolicFile.cpp
 
 

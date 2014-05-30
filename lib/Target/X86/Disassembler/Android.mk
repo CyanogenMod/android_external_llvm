@@ -8,7 +8,8 @@ x86_disassembler_TBLGEN_TABLES := \
 
 x86_disassembler_SRC_FILES := \
   X86Disassembler.cpp \
-  X86DisassemblerDecoder.c
+  X86DisassemblerDecoder.cpp
+
 
 # For the device
 # =====================================================
