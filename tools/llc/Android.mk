@@ -56,7 +56,8 @@ llvm_llc_STATIC_LIBRARIES := \
   libLLVMAnalysis \
   libLLVMTarget \
   libLLVMCore \
-  libLLVMSupport
+  libLLVMSupport \
+  libLLVMObject
 
 llvm_llc_arm64_STATIC_LIBRARIES := \
   libLLVMARM64Info \

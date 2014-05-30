@@ -38,10 +38,10 @@
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetOptions.h"
 
+using namespace llvm;
+
 #define GET_REGINFO_TARGET_DESC
 #include "X86GenRegisterInfo.inc"
-
-using namespace llvm;
 
 cl::opt<bool>
 ForceStackAlign("force-align-stack",
@@ -129,7 +129,7 @@ X86RegisterInfo::getMatchingSuperRegClass(const TargetRegisterClass *A,
   if (!Is64Bit && SubIdx == X86::sub_8bit) {
     A = X86GenRegisterInfo::getSubClassWithSubReg(A, X86::sub_8bit_hi);
     if (!A)
-      return 0;
+      return nullptr;
   }
   return X86GenRegisterInfo::getMatchingSuperRegClass(A, B, SubIdx);
 }
@@ -231,7 +231,7 @@ X86RegisterInfo::getRegPressureLimit(const TargetRegisterClass *RC,
   }
 }
 
-const uint16_t *
+const MCPhysReg *
 X86RegisterInfo::getCalleeSavedRegs(const MachineFunction *MF) const {
   bool HasAVX = TM.getSubtarget<X86Subtarget>().hasAVX();
   bool HasAVX512 = TM.getSubtarget<X86Subtarget>().hasAVX512();

@@ -165,15 +165,30 @@ class file_status
   file_type Type;
   perms Perms;
 public:
-  file_status() : Type(file_type::status_error) {}
-  file_status(file_type Type) : Type(Type) {}
-
   #if defined(LLVM_ON_UNIX)
+    file_status() : fs_st_dev(0), fs_st_ino(0), fs_st_mtime(0),
+        fs_st_uid(0), fs_st_gid(0), fs_st_size(0),
+        Type(file_type::status_error), Perms(perms_not_known) {}
+
+    file_status(file_type Type) : fs_st_dev(0), fs_st_ino(0), fs_st_mtime(0),
+        fs_st_uid(0), fs_st_gid(0), fs_st_size(0), Type(Type),
+        Perms(perms_not_known) {}
+
     file_status(file_type Type, perms Perms, dev_t Dev, ino_t Ino, time_t MTime,
                 uid_t UID, gid_t GID, off_t Size)
         : fs_st_dev(Dev), fs_st_ino(Ino), fs_st_mtime(MTime), fs_st_uid(UID),
           fs_st_gid(GID), fs_st_size(Size), Type(Type), Perms(Perms) {}
   #elif defined(LLVM_ON_WIN32)
+    file_status() : LastWriteTimeHigh(0), LastWriteTimeLow(0),
+        VolumeSerialNumber(0), FileSizeHigh(0), FileSizeLow(0),
+        FileIndexHigh(0), FileIndexLow(0), Type(file_type::status_error),
+        Perms(perms_not_known) {}
+
+    file_status(file_type Type) : LastWriteTimeHigh(0), LastWriteTimeLow(0),
+        VolumeSerialNumber(0), FileSizeHigh(0), FileSizeLow(0),
+        FileIndexHigh(0), FileIndexLow(0), Type(Type),
+        Perms(perms_not_known) {}
+
     file_status(file_type Type, uint32_t LastWriteTimeHigh,
                 uint32_t LastWriteTimeLow, uint32_t VolumeSerialNumber,
                 uint32_t FileSizeHigh, uint32_t FileSizeLow,
@@ -562,7 +577,7 @@ error_code createTemporaryFile(const Twine &Prefix, StringRef Suffix,
 error_code createUniqueDirectory(const Twine &Prefix,
                                  SmallVectorImpl<char> &ResultPath);
 
-enum OpenFlags {
+enum OpenFlags : unsigned {
   F_None = 0,
 
   /// F_Excl - When opening a file, this flag makes raw_fd_ostream
@@ -814,7 +829,7 @@ public:
   }
 
   /// Construct end iterator.
-  directory_iterator() : State(0) {}
+  directory_iterator() : State(nullptr) {}
 
   // No operator++ because we need error_code.
   directory_iterator &increment(error_code &ec) {
@@ -828,9 +843,9 @@ public:
   bool operator==(const directory_iterator &RHS) const {
     if (State == RHS.State)
       return true;
-    if (RHS.State == 0)
+    if (!RHS.State)
       return State->CurrentEntry == directory_entry();
-    if (State == 0)
+    if (!State)
       return RHS.State->CurrentEntry == directory_entry();
     return State->CurrentEntry == RHS.State->CurrentEntry;
   }

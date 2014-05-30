@@ -3,31 +3,41 @@ LOCAL_PATH := $(call my-dir)
 arm64_codegen_TBLGEN_TABLES := \
   AArch64GenRegisterInfo.inc \
   AArch64GenInstrInfo.inc \
-  AArch64GenCodeEmitter.inc \
-  AArch64GenMCCodeEmitter.inc \
-  AArch64GenMCPseudoLowering.inc \
   AArch64GenAsmWriter.inc \
-  AArch64GenAsmMatcher.inc \
+  AArch64GenAsmWriter1.inc \
   AArch64GenDAGISel.inc \
-  AArch64GenFastISel.inc \
   AArch64GenCallingConv.inc \
+  AArch64GenAsmMatcher.inc \
   AArch64GenSubtargetInfo.inc \
-  AArch64GenDisassemblerTables.inc
+  AArch64GenMCCodeEmitter.inc \
+  AArch64GenFastISel.inc \
+  AArch64GenDisassemblerTables.inc \
+  AArch64GenMCPseudoLowering.inc \
 
 arm64_codegen_SRC_FILES := \
+  AArch64AddressTypePromotion.cpp \
+  AArch64AdvSIMDScalarPass.cpp \
   AArch64AsmPrinter.cpp \
+  AArch64BranchRelaxation.cpp \
+  AArch64CleanupLocalDynamicTLSPass.cpp \
+  AArch64CollectLOH.cpp \
+  AArch64ConditionalCompares.cpp \
+  AArch64DeadRegisterDefinitionsPass.cpp \
+  AArch64ExpandPseudoInsts.cpp \
+  AArch64FastISel.cpp \
   AArch64FrameLowering.cpp \
-  AArch64ISelDAGToDAG.cpp \
-  AArch64MachineFunctionInfo.cpp \
-  AArch64RegisterInfo.cpp \
-  AArch64Subtarget.cpp \
-  AArch64TargetObjectFile.cpp \
-  AArch64BranchFixupPass.cpp \
   AArch64InstrInfo.cpp \
+  AArch64ISelDAGToDAG.cpp \
   AArch64ISelLowering.cpp \
+  AArch64LoadStoreOptimizer.cpp \
   AArch64MCInstLower.cpp \
+  AArch64PromoteConstant.cpp \
+  AArch64RegisterInfo.cpp \
   AArch64SelectionDAGInfo.cpp \
+  AArch64StorePairSuppress.cpp \
+  AArch64Subtarget.cpp \
   AArch64TargetMachine.cpp \
+  AArch64TargetObjectFile.cpp \
   AArch64TargetTransformInfo.cpp
 
 # For the host

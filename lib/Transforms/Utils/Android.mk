@@ -11,6 +11,7 @@ transforms_utils_SRC_FILES := \
   CloneModule.cpp \
   CmpInstAnalysis.cpp \
   CodeExtractor.cpp \
+  CtorUtils.cpp \
   DemoteRegToStack.cpp \
   GlobalStatus.cpp \
   InlineFunction.cpp \

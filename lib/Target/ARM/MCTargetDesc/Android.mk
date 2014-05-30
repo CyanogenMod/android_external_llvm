@@ -17,7 +17,9 @@ arm_mc_desc_SRC_FILES := \
   ARMMachObjectWriter.cpp \
   ARMMachORelocationInfo.cpp \
   ARMTargetStreamer.cpp \
-  ARMUnwindOpAsm.cpp
+  ARMUnwindOpAsm.cpp \
+  ARMWinCOFFObjectWriter.cpp \
+  ARMWinCOFFStreamer.cpp \
 
 # For the host
 # =====================================================

@@ -38,7 +38,7 @@ class RelocationRef {
   const ObjectFile *OwningObject;
 
 public:
-  RelocationRef() : OwningObject(NULL) { }
+  RelocationRef() : OwningObject(nullptr) { }
 
   RelocationRef(DataRefImpl RelocationP, const ObjectFile *Owner);
 
@@ -82,7 +82,7 @@ class SectionRef {
   const ObjectFile *OwningObject;
 
 public:
-  SectionRef() : OwningObject(NULL) { }
+  SectionRef() : OwningObject(nullptr) { }
 
   SectionRef(DataRefImpl SectionP, const ObjectFile *Owner);
 
@@ -113,11 +113,10 @@ public:
 
   relocation_iterator relocation_begin() const;
   relocation_iterator relocation_end() const;
-  typedef iterator_range<relocation_iterator> relocation_iterator_range;
-  relocation_iterator_range relocations() const {
-    return relocation_iterator_range(relocation_begin(), relocation_end());
+  iterator_range<relocation_iterator> relocations() const {
+    return iterator_range<relocation_iterator>(relocation_begin(),
+                                               relocation_end());
   }
-  bool relocation_empty() const;
   section_iterator getRelocatedSection() const;
 
   DataRefImpl getRawDataRefImpl() const;
@@ -146,7 +145,6 @@ public:
   /// Returns the symbol virtual address (i.e. address at which it will be
   /// mapped).
   error_code getAddress(uint64_t &Result) const;
-  error_code getFileOffset(uint64_t &Result) const;
   /// @brief Get the alignment of this symbol as the actual value (not log 2).
   error_code getAlignment(uint32_t &Result) const;
   error_code getSize(uint64_t &Result) const;
@@ -185,7 +183,7 @@ class LibraryRef {
   const ObjectFile *OwningObject;
 
 public:
-  LibraryRef() : OwningObject(NULL) { }
+  LibraryRef() : OwningObject(nullptr) { }
 
   LibraryRef(DataRefImpl LibraryP, const ObjectFile *Owner);
 
@@ -256,7 +254,6 @@ protected:
                                            bool &Result) const = 0;
   virtual relocation_iterator section_rel_begin(DataRefImpl Sec) const = 0;
   virtual relocation_iterator section_rel_end(DataRefImpl Sec) const = 0;
-  virtual bool section_rel_empty(DataRefImpl Sec) const = 0;
   virtual section_iterator getRelocatedSection(DataRefImpl Sec) const;
 
   // Same as above for RelocationRef.
@@ -348,42 +345,6 @@ inline error_code SymbolRef::getName(StringRef &Result) const {
 
 inline error_code SymbolRef::getAddress(uint64_t &Result) const {
   return getObject()->getSymbolAddress(getRawDataRefImpl(), Result);
-}
-
-inline error_code SymbolRef::getFileOffset(uint64_t &Result) const {
-  uint64_t Address;
-  if (error_code EC = getAddress(Address))
-    return EC;
-  if (Address == UnknownAddressOrSize) {
-    Result = UnknownAddressOrSize;
-    return object_error::success;
-  }
-
-  const ObjectFile *Obj = getObject();
-  section_iterator SecI(Obj->section_begin());
-  if (error_code EC = getSection(SecI))
-    return EC;
-
-  if (SecI == Obj->section_end()) {
-    Result = UnknownAddressOrSize;
-    return object_error::success;
-  }
-
-  uint64_t SectionAddress;
-  if (error_code EC = SecI->getAddress(SectionAddress))
-    return EC;
-
-  uint64_t OffsetInSection = Address - SectionAddress;
-
-  StringRef SecContents;
-  if (error_code EC = SecI->getContents(SecContents))
-    return EC;
-
-  // FIXME: this is a hack.
-  uint64_t SectionOffset = (uint64_t)SecContents.data() - (uint64_t)Obj->base();
-
-  Result = SectionOffset + OffsetInSection;
-  return object_error::success;
 }
 
 inline error_code SymbolRef::getAlignment(uint32_t &Result) const {
@@ -489,10 +450,6 @@ inline relocation_iterator SectionRef::relocation_begin() const {
 
 inline relocation_iterator SectionRef::relocation_end() const {
   return OwningObject->section_rel_end(SectionPimpl);
-}
-
-inline bool SectionRef::relocation_empty() const {
-  return OwningObject->section_rel_empty(SectionPimpl);
 }
 
 inline section_iterator SectionRef::getRelocatedSection() const {
