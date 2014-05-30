@@ -228,7 +228,7 @@ TargetPassConfig *ARMBaseTargetMachine::createPassConfig(PassManagerBase &PM) {
 bool ARMPassConfig::addPreISel() {
   const ARMSubtarget *Subtarget = &getARMSubtarget();
   if (Subtarget->hasAnyDataBarrier() && !Subtarget->isThumb1Only())
-    addPass(createARMAtomicExpandPass(TM));
+    addPass(createAtomicExpandLoadLinkedPass(TM));
 
   if (TM->getOptLevel() != CodeGenOpt::None)
     addPass(createGlobalMergePass(TM));
@@ -247,8 +247,7 @@ bool ARMPassConfig::addInstSelector() {
 }
 
 bool ARMPassConfig::addPreRegAlloc() {
-  // FIXME: temporarily disabling load / store optimization pass for Thumb1.
-  if (getOptLevel() != CodeGenOpt::None && !getARMSubtarget().isThumb1Only())
+  if (getOptLevel() != CodeGenOpt::None)
     addPass(createARMLoadStoreOptimizationPass(true));
   if (getOptLevel() != CodeGenOpt::None && getARMSubtarget().isCortexA9())
     addPass(createMLxExpansionPass());
@@ -262,12 +261,10 @@ bool ARMPassConfig::addPreRegAlloc() {
 }
 
 bool ARMPassConfig::addPreSched2() {
-  // FIXME: temporarily disabling load / store optimization pass for Thumb1.
   if (getOptLevel() != CodeGenOpt::None) {
-    if (!getARMSubtarget().isThumb1Only()) {
-      addPass(createARMLoadStoreOptimizationPass());
-      printAndVerify("After ARM load / store optimizer");
-    }
+    addPass(createARMLoadStoreOptimizationPass());
+    printAndVerify("After ARM load / store optimizer");
+
     if (getARMSubtarget().hasNEON())
       addPass(createExecutionDependencyFixPass(&ARM::DPRRegClass));
   }

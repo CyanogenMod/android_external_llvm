@@ -30,6 +30,7 @@ vmcore_SRC_FILES := \
   LeakDetector.cpp \
   LegacyPassManager.cpp \
   Mangler.cpp \
+  MDBuilder.cpp \
   Metadata.cpp \
   Module.cpp \
   Pass.cpp \

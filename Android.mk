@@ -26,6 +26,7 @@ subdirs := \
   lib/MC/MCParser \
   lib/Object \
   lib/Option \
+  lib/ProfileData \
   lib/Support \
   lib/TableGen \
   lib/Target \

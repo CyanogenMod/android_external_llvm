@@ -7,7 +7,8 @@ arm64_disassembler_TBLGEN_TABLES := \
   AArch64GenRegisterInfo.inc
 
 arm64_disassembler_SRC_FILES := \
-  AArch64Disassembler.cpp
+  AArch64Disassembler.cpp \
+  AArch64ExternalSymbolizer.cpp
 
 # For the device
 # =====================================================

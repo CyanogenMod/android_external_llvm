@@ -1,5 +1,10 @@
 LOCAL_PATH := $(call my-dir)
 
+arm64_utils_TBLGEN_TABLES := \
+  AArch64GenRegisterInfo.inc \
+  AArch64GenInstrInfo.inc \
+  AArch64GenSubtargetInfo.inc
+
 arm64_utils_SRC_FILES := \
   AArch64BaseInfo.cpp
 
@@ -16,7 +21,12 @@ LOCAL_MODULE:= libLLVMARM64Utils
 
 LOCAL_MODULE_TAGS := optional
 
+TBLGEN_TD_DIR := $(LOCAL_PATH)/..
+TBLGEN_TABLES := $(arm64_utils_TBLGEN_TABLES)
+
 include $(LLVM_DEVICE_BUILD_MK)
+include $(LLVM_TBLGEN_RULES_MK)
+include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
 endif
 
@@ -32,5 +42,10 @@ LOCAL_MODULE:= libLLVMARM64Utils
 
 LOCAL_MODULE_TAGS := optional
 
+TBLGEN_TD_DIR := $(LOCAL_PATH)/..
+TBLGEN_TABLES := $(arm64_utils_TBLGEN_TABLES)
+
 include $(LLVM_HOST_BUILD_MK)
+include $(LLVM_TBLGEN_RULES_MK)
+include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
