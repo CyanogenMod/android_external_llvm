@@ -122,6 +122,7 @@ LOCAL_WHOLE_STATIC_LIBRARIES_arm += $(llvm_arm_static_libraries)
 LOCAL_WHOLE_STATIC_LIBRARIES_x86 += $(llvm_x86_static_libraries)
 LOCAL_WHOLE_STATIC_LIBRARIES_x86_64 += $(llvm_x86_static_libraries)
 LOCAL_WHOLE_STATIC_LIBRARIES_mips += $(llvm_mips_static_libraries)
+LOCAL_WHOLE_STATIC_LIBRARIES_mips64 += $(llvm_mips_static_libraries)
 LOCAL_WHOLE_STATIC_LIBRARIES_arm64 += $(llvm_arm64_static_libraries)
 LOCAL_WHOLE_STATIC_LIBRARIES_arm64 += $(llvm_arm_static_libraries)
 
