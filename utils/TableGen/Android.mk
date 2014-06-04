@@ -36,7 +36,7 @@ tablegen_SRC_FILES := \
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := tblgen
+LOCAL_MODULE := llvm-tblgen
 LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(tablegen_SRC_FILES)
 

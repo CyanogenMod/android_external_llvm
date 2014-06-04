@@ -11,7 +11,7 @@ endif
 GENFILE := $(addprefix $(call local-generated-sources-dir)/llvm/IR/,Intrinsics.gen)
 LOCAL_GENERATED_SOURCES += $(GENFILE)
 $(GENFILE): TBLGEN_LOCAL_MODULE := $(LOCAL_MODULE)
-$(GENFILE): $(INTRINSICTD) $(INTRINSICTDS) | $(TBLGEN)
+$(GENFILE): $(INTRINSICTD) $(INTRINSICTDS) | $(LLVM_TBLGEN)
 ifeq ($(LOCAL_IS_HOST_MODULE),true)
 	$(call transform-host-td-to-out,intrinsic)
 else
