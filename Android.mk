@@ -49,7 +49,7 @@ subdirs += \
   lib/Target/ARM/MCTargetDesc \
   lib/Target/ARM/TargetInfo
 
-# ARM64 Code Generation Libraries
+# AArch64 Code Generation Libraries
 subdirs += \
   lib/Target/AArch64  \
   lib/Target/AArch64/AsmParser \

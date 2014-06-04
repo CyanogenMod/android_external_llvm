@@ -35,14 +35,14 @@ llvm_mips_static_libraries := \
   libLLVMMipsAsmPrinter \
   libLLVMMipsDisassembler
 
-llvm_arm64_static_libraries := \
-  libLLVMARM64CodeGen \
-  libLLVMARM64Info \
-  libLLVMARM64Desc \
-  libLLVMARM64AsmParser \
-  libLLVMARM64AsmPrinter \
-  libLLVMARM64Utils \
-  libLLVMARM64Disassembler
+llvm_aarch64_static_libraries := \
+  libLLVMAArch64CodeGen \
+  libLLVMAArch64Info \
+  libLLVMAArch64Desc \
+  libLLVMAArch64AsmParser \
+  libLLVMAArch64AsmPrinter \
+  libLLVMAArch64Utils \
+  libLLVMAArch64Disassembler
 
 llvm_post_static_libraries := \
   libLLVMAsmPrinter \
@@ -88,7 +88,7 @@ LOCAL_WHOLE_STATIC_LIBRARIES := \
   $(llvm_arm_static_libraries) \
   $(llvm_x86_static_libraries) \
   $(llvm_mips_static_libraries) \
-  $(llvm_arm64_static_libraries) \
+  $(llvm_aarch64_static_libraries) \
   $(llvm_host_static_libraries) \
   $(llvm_post_static_libraries)
 
@@ -123,8 +123,8 @@ LOCAL_WHOLE_STATIC_LIBRARIES_x86 += $(llvm_x86_static_libraries)
 LOCAL_WHOLE_STATIC_LIBRARIES_x86_64 += $(llvm_x86_static_libraries)
 LOCAL_WHOLE_STATIC_LIBRARIES_mips += $(llvm_mips_static_libraries)
 LOCAL_WHOLE_STATIC_LIBRARIES_mips64 += $(llvm_mips_static_libraries)
-LOCAL_WHOLE_STATIC_LIBRARIES_arm64 += $(llvm_arm64_static_libraries)
-LOCAL_WHOLE_STATIC_LIBRARIES_arm64 += $(llvm_arm_static_libraries)
+LOCAL_WHOLE_STATIC_LIBRARIES_aarch64 += $(llvm_aarch64_static_libraries)
+LOCAL_WHOLE_STATIC_LIBRARIES_aarch64 += $(llvm_arm_static_libraries)
 
 LOCAL_WHOLE_STATIC_LIBRARIES += $(llvm_post_static_libraries)
 
