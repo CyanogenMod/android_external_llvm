@@ -53,6 +53,8 @@ LOCAL_C_INCLUDES :=	\
 
 LOCAL_IS_HOST_MODULE := true
 
+LOCAL_32_BIT_ONLY := true
+
 ###########################################################
 ## Commands for running tblgen to compile a td file
 ###########################################################
