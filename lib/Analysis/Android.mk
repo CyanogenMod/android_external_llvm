@@ -21,11 +21,13 @@ analysis_SRC_FILES := \
   DependenceAnalysis.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
+  CGSCCPassManager.cpp \
   IVUsers.cpp \
   InstCount.cpp \
   InstructionSimplify.cpp \
   Interval.cpp \
   IntervalPartition.cpp \
+  LazyCallGraph.cpp \
   LazyValueInfo.cpp \
   LibCallAliasAnalysis.cpp \
   LibCallSemantics.cpp \

@@ -4,23 +4,21 @@ LLVM_ROOT_PATH := $(LOCAL_PATH)/../..
 
 
 #===---------------------------------------------------------------===
-# opt command line tool
+# llvm-c-test command line tool
 #===---------------------------------------------------------------===
 
-llvm_opt_SRC_FILES := \
-  AnalysisWrappers.cpp \
-  BreakpointPrinter.cpp \
-  GraphPrinters.cpp \
-  NewPMDriver.cpp \
-  Passes.cpp \
-  PassPrinters.cpp \
-  PrintSCC.cpp \
-  opt.cpp \
+llvm_c_test_SRC_FILES := \
+  calc.c                 \
+  disassemble.c          \
+  helpers.c              \
+  include-all.c          \
+  main.c                 \
+  module.c               \
+  object.c               \
+  targets.c              \
 
-llvm_opt_STATIC_LIBRARIES := \
-  libLLVMIRReader \
+llvm_c_test_STATIC_LIBRARIES := \
   libLLVMBitReader \
-  libLLVMBitWriter \
   libLLVMARMCodeGen \
   libLLVMARMInfo \
   libLLVMARMDesc \
@@ -46,16 +44,9 @@ llvm_opt_STATIC_LIBRARIES := \
   libLLVMAsmPrinter \
   libLLVMSelectionDAG \
   libLLVMCodeGen \
-  libLLVMInstrumentation \
-  libLLVMTransformObjCARC \
-  libLLVMVectorize \
   libLLVMScalarOpts \
   libLLVMTransformUtils \
   libLLVMAnalysis \
-  libLLVMipo \
-  libLLVMipa \
-  libLLVMInstCombine \
-  libLLVMTransformUtils \
   libLLVMTarget \
   libLLVMMC \
   libLLVMObject \
@@ -67,13 +58,15 @@ llvm_opt_STATIC_LIBRARIES := \
 
 include $(CLEAR_VARS)
 
-LOCAL_MODULE := opt
+LOCAL_MODULE := llvm-c-test
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := EXECUTABLES
 LOCAL_IS_HOST_MODULE := true
 
-LOCAL_SRC_FILES := $(llvm_opt_SRC_FILES)
-LOCAL_STATIC_LIBRARIES := $(llvm_opt_STATIC_LIBRARIES)
+LOCAL_SRC_FILES := $(llvm_c_test_SRC_FILES)
+
+LOCAL_STATIC_LIBRARIES := $(llvm_c_test_STATIC_LIBRARIES)
+
 LOCAL_LDLIBS += -lpthread -lm -ldl
 
 include $(LLVM_ROOT_PATH)/llvm.mk

@@ -4,6 +4,7 @@ object_SRC_FILES := \
   Archive.cpp \
   Binary.cpp \
   COFFObjectFile.cpp \
+  COFFYAML.cpp \
   ELF.cpp \
   ELFObjectFile.cpp \
   Error.cpp \
@@ -13,7 +14,9 @@ object_SRC_FILES := \
   Object.cpp \
   ObjectFile.cpp \
   StringTableBuilder.cpp \
-  SymbolicFile.cpp
+  SymbolicFile.cpp \
+  YAML.cpp \
+  ELFYAML.cpp \
 
 
 # For the host

@@ -11,9 +11,6 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(llvm_dis_SRC_FILES)
 LOCAL_LDLIBS += -lpthread -lm -ldl
 
-REQUIRES_EH := 1
-REQUIRES_RTTI := 1
-
 LOCAL_STATIC_LIBRARIES := \
   libLLVMAnalysis \
   libLLVMBitReader \
