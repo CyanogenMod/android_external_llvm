@@ -17,6 +17,7 @@ vmcore_SRC_FILES := \
   DIBuilder.cpp \
   Dominators.cpp \
   Function.cpp \
+  GCOV.cpp \
   GVMaterializer.cpp \
   Globals.cpp \
   IRBuilder.cpp \

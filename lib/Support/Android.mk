@@ -62,6 +62,7 @@ support_SRC_FILES := \
   StringMap.cpp \
   StringPool.cpp \
   StringRef.cpp \
+  StringRefMemoryObject.cpp \
   SystemUtils.cpp \
   TargetRegistry.cpp \
   Threading.cpp \

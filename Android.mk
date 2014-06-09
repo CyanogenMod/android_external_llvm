@@ -15,12 +15,15 @@ subdirs := \
   lib/ExecutionEngine/RuntimeDyld \
   lib/ExecutionEngine/JIT \
   lib/ExecutionEngine/MCJIT \
+  lib/ExecutionEngine/Interpreter \
   lib/CodeGen \
   lib/CodeGen/AsmPrinter \
   lib/CodeGen/SelectionDAG \
+  lib/DebugInfo \
   lib/IR \
   lib/IRReader \
   lib/Linker \
+  lib/LTO \
   lib/MC \
   lib/MC/MCDisassembler \
   lib/MC/MCParser \
@@ -37,8 +40,6 @@ subdirs := \
   lib/Transforms/Scalar \
   lib/Transforms/Utils \
   lib/Transforms/Vectorize \
-  utils/FileCheck \
-  utils/TableGen
 
 # ARM Code Generation Libraries
 subdirs += \
@@ -79,11 +80,42 @@ subdirs += \
   lib/Target/X86/Utils
 
 # LLVM Command Line Tools
-subdirs += tools/llc
-subdirs += tools/llvm-as
-subdirs += tools/llvm-dis
-subdirs += tools/llvm-link
-#subdirs += tools/opt
+subdirs += \
+  tools/bugpoint \
+  tools/llc \
+  tools/lli \
+  tools/llvm-ar \
+  tools/llvm-as \
+  tools/llvm-bcanalyzer \
+  tools/llvm-c-test \
+  tools/llvm-config \
+  tools/llvm-cov \
+  tools/llvm-dis \
+  tools/llvm-diff \
+  tools/llvm-dwarfdump \
+  tools/llvm-extract \
+  tools/llvm-link \
+  tools/llvm-lto \
+  tools/llvm-mc \
+  tools/llvm-mcmarkup \
+  tools/llvm-nm \
+  tools/llvm-objdump \
+  tools/llvm-profdata \
+  tools/llvm-readobj \
+  tools/llvm-rtdyld \
+  tools/llvm-size \
+  tools/macho-dump \
+  tools/obj2yaml \
+  tools/opt \
+  tools/yaml2obj \
+
+# LLVM Command Line Utilities
+subdirs += \
+  utils/count \
+  utils/FileCheck \
+  utils/FileUpdate \
+  utils/not \
+  utils/TableGen \
 
 include $(LOCAL_PATH)/llvm.mk
 include $(LOCAL_PATH)/shared_llvm.mk
