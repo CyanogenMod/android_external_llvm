@@ -2,7 +2,6 @@ LOCAL_PATH:= $(call my-dir)
 
 mc_SRC_FILES := \
   ELFObjectWriter.cpp \
-  MachObjectWriter.cpp \
   MCAsmBackend.cpp \
   MCAsmInfo.cpp \
   MCAsmInfoCOFF.cpp \
@@ -10,6 +9,7 @@ mc_SRC_FILES := \
   MCAsmInfoELF.cpp \
   MCAsmStreamer.cpp \
   MCAssembler.cpp \
+  MCAtom.cpp \
   MCCodeEmitter.cpp \
   MCCodeGenInfo.cpp \
   MCContext.cpp \
@@ -18,6 +18,7 @@ mc_SRC_FILES := \
   MCELF.cpp \
   MCELFObjectTargetWriter.cpp \
   MCELFStreamer.cpp \
+  MCFunction.cpp \
   MCExpr.cpp \
   MCExternalSymbolizer.cpp \
   MCInst.cpp \
@@ -25,11 +26,15 @@ mc_SRC_FILES := \
   MCInstrAnalysis.cpp \
   MCLabel.cpp \
   MCLinkerOptimizationHint.cpp \
-  MCMachObjectTargetWriter.cpp \
   MCMachOStreamer.cpp \
+  MCMachObjectTargetWriter.cpp \
+  MCModule.cpp \
+  MCModuleYAML.cpp \
   MCNullStreamer.cpp \
   MCObjectFileInfo.cpp \
+  MCObjectDisassembler.cpp \
   MCObjectStreamer.cpp \
+  MCObjectSymbolizer.cpp \
   MCObjectWriter.cpp \
   MCRegisterInfo.cpp \
   MCRelocationInfo.cpp \
@@ -44,9 +49,10 @@ mc_SRC_FILES := \
   MCTargetOptions.cpp \
   MCValue.cpp \
   MCWin64EH.cpp \
+  MachObjectWriter.cpp \
+  SubtargetFeature.cpp \
   WinCOFFObjectWriter.cpp \
   WinCOFFStreamer.cpp \
-  SubtargetFeature.cpp
 
 # For the host
 # =====================================================
