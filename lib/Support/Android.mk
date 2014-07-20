@@ -19,6 +19,7 @@ support_SRC_FILES := \
   DataExtractor.cpp \
   Debug.cpp \
   DeltaAlgorithm.cpp \
+  Disassembler.cpp \
   Dwarf.cpp \
   DynamicLibrary.cpp \
   Errno.cpp \
