@@ -27,7 +27,6 @@ tablegen_SRC_FILES := \
   OptParserEmitter.cpp \
   PseudoLoweringEmitter.cpp \
   RegisterInfoEmitter.cpp \
-  SetTheory.cpp \
   SubtargetEmitter.cpp \
   TableGen.cpp \
   X86DisassemblerTables.cpp \

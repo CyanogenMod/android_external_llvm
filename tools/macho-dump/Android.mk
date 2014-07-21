@@ -12,6 +12,8 @@ macho_dump_SRC_FILES := \
 
 macho_dump_STATIC_LIBRARIES := \
   libLLVMObject                \
+  libLLVMMC                    \
+  libLLVMMCParser              \
   libLLVMBitReader             \
   libLLVMCore                  \
   libLLVMSupport               \

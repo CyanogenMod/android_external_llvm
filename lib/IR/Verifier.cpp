@@ -107,6 +107,12 @@ struct VerifierSupport {
     OS << ' ' << *T;
   }
 
+  void WriteComdat(const Comdat *C) {
+    if (!C)
+      return;
+    OS << *C;
+  }
+
   // CheckFailed - A check failed, so print out the condition and the message
   // that failed.  This provides a nice place to put a breakpoint if you want
   // to see why something is not correct.
@@ -136,6 +142,12 @@ struct VerifierSupport {
     WriteType(T1);
     WriteType(T2);
     WriteType(T3);
+    Broken = true;
+  }
+
+  void CheckFailed(const Twine &Message, const Comdat *C) {
+    OS << Message.str() << "\n";
+    WriteComdat(C);
     Broken = true;
   }
 };
@@ -230,6 +242,9 @@ public:
          I != E; ++I)
       visitNamedMDNode(*I);
 
+    for (const StringMapEntry<Comdat> &SMEC : M.getComdatSymbolTable())
+      visitComdat(SMEC.getValue());
+
     visitModuleFlags(M);
     visitModuleIdents(M);
 
@@ -241,8 +256,12 @@ private:
   void visitGlobalValue(const GlobalValue &GV);
   void visitGlobalVariable(const GlobalVariable &GV);
   void visitGlobalAlias(const GlobalAlias &GA);
+  void visitAliaseeSubExpr(const GlobalAlias &A, const Constant &C);
+  void visitAliaseeSubExpr(SmallPtrSet<const GlobalAlias *, 4> &Visited,
+                           const GlobalAlias &A, const Constant &C);
   void visitNamedMDNode(const NamedMDNode &NMD);
   void visitMDNode(MDNode &MD, Function *F);
+  void visitComdat(const Comdat &C);
   void visitModuleIdents(const Module &M);
   void visitModuleFlags(const Module &M);
   void visitModuleFlag(const MDNode *Op,
@@ -384,6 +403,7 @@ void Verifier::visitGlobalVariable(const GlobalVariable &GV) {
               "'common' global must have a zero initializer!", &GV);
       Assert1(!GV.isConstant(), "'common' global may not be marked constant!",
               &GV);
+      Assert1(!GV.hasComdat(), "'common' global may not be in a Comdat!", &GV);
     }
   } else {
     Assert1(GV.hasExternalLinkage() || GV.hasExternalWeakLinkage(),
@@ -474,36 +494,57 @@ void Verifier::visitGlobalVariable(const GlobalVariable &GV) {
   visitGlobalValue(GV);
 }
 
+void Verifier::visitAliaseeSubExpr(const GlobalAlias &GA, const Constant &C) {
+  SmallPtrSet<const GlobalAlias*, 4> Visited;
+  Visited.insert(&GA);
+  visitAliaseeSubExpr(Visited, GA, C);
+}
+
+void Verifier::visitAliaseeSubExpr(SmallPtrSet<const GlobalAlias *, 4> &Visited,
+                                   const GlobalAlias &GA, const Constant &C) {
+  if (const auto *GV = dyn_cast<GlobalValue>(&C)) {
+    Assert1(!GV->isDeclaration(), "Alias must point to a definition", &GA);
+
+    if (const auto *GA2 = dyn_cast<GlobalAlias>(GV)) {
+      Assert1(Visited.insert(GA2), "Aliases cannot form a cycle", &GA);
+
+      Assert1(!GA2->mayBeOverridden(), "Alias cannot point to a weak alias",
+              &GA);
+    } else {
+      // Only continue verifying subexpressions of GlobalAliases.
+      // Do not recurse into global initializers.
+      return;
+    }
+  }
+
+  if (const auto *CE = dyn_cast<ConstantExpr>(&C))
+    VerifyConstantExprBitcastType(CE);
+
+  for (const Use &U : C.operands()) {
+    Value *V = &*U;
+    if (const auto *GA2 = dyn_cast<GlobalAlias>(V))
+      visitAliaseeSubExpr(Visited, GA, *GA2->getAliasee());
+    else if (const auto *C2 = dyn_cast<Constant>(V))
+      visitAliaseeSubExpr(Visited, GA, *C2);
+  }
+}
+
 void Verifier::visitGlobalAlias(const GlobalAlias &GA) {
   Assert1(!GA.getName().empty(),
           "Alias name cannot be empty!", &GA);
   Assert1(GlobalAlias::isValidLinkage(GA.getLinkage()),
-          "Alias should have external or external weak linkage!", &GA);
-  Assert1(GA.getAliasee(),
-          "Aliasee cannot be NULL!", &GA);
-  Assert1(!GA.hasUnnamedAddr(), "Alias cannot have unnamed_addr!", &GA);
-
+          "Alias should have private, internal, linkonce, weak, linkonce_odr, "
+          "weak_odr, or external linkage!",
+          &GA);
   const Constant *Aliasee = GA.getAliasee();
-  const GlobalValue *GV = dyn_cast<GlobalValue>(Aliasee);
+  Assert1(Aliasee, "Aliasee cannot be NULL!", &GA);
+  Assert1(GA.getType() == Aliasee->getType(),
+          "Alias and aliasee types should match!", &GA);
 
-  if (!GV) {
-    const ConstantExpr *CE = dyn_cast<ConstantExpr>(Aliasee);
-    if (CE && (CE->getOpcode() == Instruction::BitCast ||
-               CE->getOpcode() == Instruction::AddrSpaceCast ||
-               CE->getOpcode() == Instruction::GetElementPtr))
-      GV = dyn_cast<GlobalValue>(CE->getOperand(0));
+  Assert1(isa<GlobalValue>(Aliasee) || isa<ConstantExpr>(Aliasee),
+          "Aliasee should be either GlobalValue or ConstantExpr", &GA);
 
-    Assert1(GV, "Aliasee should be either GlobalValue, bitcast or "
-                "addrspacecast of GlobalValue",
-            &GA);
-
-    VerifyConstantExprBitcastType(CE);
-  }
-  Assert1(!GV->isDeclaration(), "Alias must point to a definition", &GA);
-  if (const GlobalAlias *GAAliasee = dyn_cast<GlobalAlias>(GV)) {
-    Assert1(!GAAliasee->mayBeOverridden(), "Alias cannot point to a weak alias",
-            &GA);
-  }
+  visitAliaseeSubExpr(GA, *Aliasee);
 
   visitGlobalValue(GA);
 }
@@ -554,6 +595,22 @@ void Verifier::visitMDNode(MDNode &MD, Function *F) {
     Assert2(ActualF == F, "function-local metadata used in wrong function",
             &MD, Op);
   }
+}
+
+void Verifier::visitComdat(const Comdat &C) {
+  // All Comdat::SelectionKind values other than Comdat::Any require a
+  // GlobalValue with the same name as the Comdat.
+  const GlobalValue *GV = M->getNamedValue(C.getName());
+  if (C.getSelectionKind() != Comdat::Any)
+    Assert1(GV,
+            "comdat selection kind requires a global value with the same name",
+            &C);
+  // The Module is invalid if the GlobalValue has local linkage.  Allowing
+  // otherwise opens us up to seeing the underling global value get renamed if
+  // collisions occur.
+  if (GV)
+    Assert1(!GV->hasLocalLinkage(), "comdat global value has local linkage",
+            GV);
 }
 
 void Verifier::visitModuleIdents(const Module &M) {
@@ -716,7 +773,8 @@ void Verifier::VerifyAttributeTypes(AttributeSet Attrs, unsigned Idx,
         I->getKindAsEnum() == Attribute::Builtin ||
         I->getKindAsEnum() == Attribute::NoBuiltin ||
         I->getKindAsEnum() == Attribute::Cold ||
-        I->getKindAsEnum() == Attribute::OptimizeNone) {
+        I->getKindAsEnum() == Attribute::OptimizeNone ||
+        I->getKindAsEnum() == Attribute::JumpTable) {
       if (!isFunction) {
         CheckFailed("Attribute '" + I->getAsString() +
                     "' only applies to functions!", V);
@@ -889,6 +947,14 @@ void Verifier::VerifyFunctionAttrs(FunctionType *FT, AttributeSet Attrs,
     Assert1(!Attrs.hasAttribute(AttributeSet::FunctionIndex,
                                 Attribute::MinSize),
             "Attributes 'minsize and optnone' are incompatible!", V);
+  }
+
+  if (Attrs.hasAttribute(AttributeSet::FunctionIndex,
+                         Attribute::JumpTable)) {
+    const GlobalValue *GV = cast<GlobalValue>(V);
+    Assert1(GV->hasUnnamedAddr(),
+            "Attribute 'jumptable' requires 'unnamed_addr'", V);
+
   }
 }
 
@@ -2058,8 +2124,7 @@ void Verifier::visitLandingPadInst(LandingPadInst &LPI) {
   Assert1(isa<Constant>(PersonalityFn), "Personality function is not constant!",
           &LPI);
   for (unsigned i = 0, e = LPI.getNumClauses(); i < e; ++i) {
-    Value *Clause = LPI.getClause(i);
-    Assert1(isa<Constant>(Clause), "Clause is not constant!", &LPI);
+    Constant *Clause = LPI.getClause(i);
     if (LPI.isCatch(i)) {
       Assert1(isa<PointerType>(Clause->getType()),
               "Catch operand does not have pointer type!", &LPI);
@@ -2203,7 +2268,8 @@ void Verifier::visitInstruction(Instruction &I) {
   }
 
   MDNode *MD = I.getMetadata(LLVMContext::MD_range);
-  Assert1(!MD || isa<LoadInst>(I), "Ranges are only for loads!", &I);
+  Assert1(!MD || isa<LoadInst>(I) || isa<CallInst>(I) || isa<InvokeInst>(I),
+          "Ranges are only for loads, calls and invokes!", &I);
 
   InstsInThisBlock.insert(&I);
 }

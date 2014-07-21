@@ -27,11 +27,11 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/system_error.h"
 #include <algorithm>
 #include <cctype>
 #include <map>
 #include <string>
+#include <system_error>
 #include <vector>
 using namespace llvm;
 
@@ -820,18 +820,18 @@ static StringRef FindFirstMatchingPrefix(StringRef &Buffer,
 /// Returns true in case of an error, false otherwise.
 static bool ReadCheckFile(SourceMgr &SM,
                           std::vector<CheckString> &CheckStrings) {
-  std::unique_ptr<MemoryBuffer> File;
-  if (error_code ec =
-        MemoryBuffer::getFileOrSTDIN(CheckFilename, File)) {
-    errs() << "Could not open check file '" << CheckFilename << "': "
-           << ec.message() << '\n';
+  ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
+      MemoryBuffer::getFileOrSTDIN(CheckFilename);
+  if (std::error_code EC = FileOrErr.getError()) {
+    errs() << "Could not open check file '" << CheckFilename
+           << "': " << EC.message() << '\n';
     return true;
   }
 
   // If we want to canonicalize whitespace, strip excess whitespace from the
   // buffer containing the CHECK lines. Remove DOS style line endings.
-  MemoryBuffer *F =
-    CanonicalizeInputFile(File.release(), NoCanonicalizeWhiteSpace);
+  MemoryBuffer *F = CanonicalizeInputFile(FileOrErr.get().release(),
+                                          NoCanonicalizeWhiteSpace);
 
   SM.AddNewSourceBuffer(F, SMLoc());
 
@@ -1043,7 +1043,7 @@ bool CheckString::CheckNext(const SourceMgr &SM, StringRef Buffer) const {
              SMLoc::getFromPointer(Buffer.data())))->getBufferStart() &&
          "CHECK-NEXT can't be the first check in a file");
 
-  const char *FirstNewLine = 0;
+  const char *FirstNewLine = nullptr;
   unsigned NumNewLines = CountNumNewlinesBetween(Buffer, FirstNewLine);
 
   if (NumNewLines == 0) {
@@ -1224,13 +1224,14 @@ int main(int argc, char **argv) {
     return 2;
 
   // Open the file to check and add it to SourceMgr.
-  std::unique_ptr<MemoryBuffer> File;
-  if (error_code ec =
-        MemoryBuffer::getFileOrSTDIN(InputFilename, File)) {
-    errs() << "Could not open input file '" << InputFilename << "': "
-           << ec.message() << '\n';
+  ErrorOr<std::unique_ptr<MemoryBuffer>> FileOrErr =
+      MemoryBuffer::getFileOrSTDIN(InputFilename);
+  if (std::error_code EC = FileOrErr.getError()) {
+    errs() << "Could not open input file '" << InputFilename
+           << "': " << EC.message() << '\n';
     return 2;
   }
+  std::unique_ptr<MemoryBuffer> File = std::move(FileOrErr.get());
 
   if (File->getBufferSize() == 0) {
     errs() << "FileCheck error: '" << InputFilename << "' is empty.\n";

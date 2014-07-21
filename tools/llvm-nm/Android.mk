@@ -11,8 +11,36 @@ llvm_nm_SRC_FILES := \
   llvm-nm.cpp
 
 llvm_nm_STATIC_LIBRARIES := \
+  libLLVMARMCodeGen \
+  libLLVMARMInfo \
+  libLLVMARMDesc \
+  libLLVMARMAsmPrinter \
+  libLLVMARMAsmParser \
+  libLLVMARMDisassembler \
+  libLLVMAArch64CodeGen \
+  libLLVMAArch64Info \
+  libLLVMAArch64AsmParser \
+  libLLVMAArch64Desc \
+  libLLVMAArch64AsmPrinter \
+  libLLVMAArch64Utils \
+  libLLVMAArch64Disassembler \
+  libLLVMMipsCodeGen \
+  libLLVMMipsInfo \
+  libLLVMMipsAsmParser \
+  libLLVMMipsDesc \
+  libLLVMMipsAsmPrinter \
+  libLLVMMipsDisassembler \
+  libLLVMX86CodeGen \
+  libLLVMX86Info \
+  libLLVMX86Desc \
+  libLLVMX86AsmPrinter \
+  libLLVMX86AsmParser \
+  libLLVMX86Utils \
+  libLLVMX86Disassembler \
   libLLVMObject             \
   libLLVMBitReader          \
+  libLLVMMC                 \
+  libLLVMMCParser           \
   libLLVMCore               \
   libLLVMSupport            \
 

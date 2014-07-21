@@ -19,7 +19,7 @@ llvm_config_LOCAL_INCLUDES := \
   LibraryDependencies.inc
 
 llvm_config_DEPENDENCIES := \
-  BuildVariables.inc
+  $(LOCAL_PATH)/BuildVariables.inc.in
 
 include $(CLEAR_VARS)
 

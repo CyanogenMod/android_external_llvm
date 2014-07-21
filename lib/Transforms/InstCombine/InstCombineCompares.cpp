@@ -612,9 +612,10 @@ Instruction *InstCombiner::FoldGEPICmp(GEPOperator *GEPLHS, Value *RHS,
   if (ICmpInst::isSigned(Cond))
     return nullptr;
 
-  // Look through bitcasts.
-  if (BitCastInst *BCI = dyn_cast<BitCastInst>(RHS))
-    RHS = BCI->getOperand(0);
+  // Look through bitcasts and addrspacecasts. We do not however want to remove
+  // 0 GEPs.
+  if (!isa<GetElementPtrInst>(RHS))
+    RHS = RHS->stripPointerCasts();
 
   Value *PtrBase = GEPLHS->getOperand(0);
   if (DL && PtrBase == RHS && GEPLHS->isInBounds()) {
@@ -655,9 +656,24 @@ Instruction *InstCombiner::FoldGEPICmp(GEPOperator *GEPLHS, Value *RHS,
           (GEPRHS->hasAllConstantIndices() || GEPRHS->hasOneUse()) &&
           PtrBase->stripPointerCasts() ==
             GEPRHS->getOperand(0)->stripPointerCasts()) {
+        Value *LOffset = EmitGEPOffset(GEPLHS);
+        Value *ROffset = EmitGEPOffset(GEPRHS);
+
+        // If we looked through an addrspacecast between different sized address
+        // spaces, the LHS and RHS pointers are different sized
+        // integers. Truncate to the smaller one.
+        Type *LHSIndexTy = LOffset->getType();
+        Type *RHSIndexTy = ROffset->getType();
+        if (LHSIndexTy != RHSIndexTy) {
+          if (LHSIndexTy->getPrimitiveSizeInBits() <
+              RHSIndexTy->getPrimitiveSizeInBits()) {
+            ROffset = Builder->CreateTrunc(ROffset, LHSIndexTy);
+          } else
+            LOffset = Builder->CreateTrunc(LOffset, RHSIndexTy);
+        }
+
         Value *Cmp = Builder->CreateICmp(ICmpInst::getSignedPredicate(Cond),
-                                         EmitGEPOffset(GEPLHS),
-                                         EmitGEPOffset(GEPRHS));
+                                         LOffset, ROffset);
         return ReplaceInstUsesWith(I, Cmp);
       }
 
@@ -667,26 +683,12 @@ Instruction *InstCombiner::FoldGEPICmp(GEPOperator *GEPLHS, Value *RHS,
     }
 
     // If one of the GEPs has all zero indices, recurse.
-    bool AllZeros = true;
-    for (unsigned i = 1, e = GEPLHS->getNumOperands(); i != e; ++i)
-      if (!isa<Constant>(GEPLHS->getOperand(i)) ||
-          !cast<Constant>(GEPLHS->getOperand(i))->isNullValue()) {
-        AllZeros = false;
-        break;
-      }
-    if (AllZeros)
+    if (GEPLHS->hasAllZeroIndices())
       return FoldGEPICmp(GEPRHS, GEPLHS->getOperand(0),
                          ICmpInst::getSwappedPredicate(Cond), I);
 
     // If the other GEP has all zero indices, recurse.
-    AllZeros = true;
-    for (unsigned i = 1, e = GEPRHS->getNumOperands(); i != e; ++i)
-      if (!isa<Constant>(GEPRHS->getOperand(i)) ||
-          !cast<Constant>(GEPRHS->getOperand(i))->isNullValue()) {
-        AllZeros = false;
-        break;
-      }
-    if (AllZeros)
+    if (GEPRHS->hasAllZeroIndices())
       return FoldGEPICmp(GEPLHS, GEPRHS->getOperand(0), Cond, I);
 
     bool GEPsInBounds = GEPLHS->isInBounds() && GEPRHS->isInBounds();
@@ -2026,9 +2028,13 @@ static Instruction *ProcessUAddIdiom(Instruction &I, Value *OrigAddV,
 ///          replacement required.
 static Instruction *ProcessUMulZExtIdiom(ICmpInst &I, Value *MulVal,
                                          Value *OtherVal, InstCombiner &IC) {
+  // Don't bother doing this transformation for pointers, don't do it for
+  // vectors.
+  if (!isa<IntegerType>(MulVal->getType()))
+    return nullptr;
+
   assert(I.getOperand(0) == MulVal || I.getOperand(1) == MulVal);
   assert(I.getOperand(0) == OtherVal || I.getOperand(1) == OtherVal);
-  assert(isa<IntegerType>(MulVal->getType()));
   Instruction *MulInstr = cast<Instruction>(MulVal);
   assert(MulInstr->getOpcode() == Instruction::Mul);
 
@@ -2523,7 +2529,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
       // bit is set.   If the comparison is against zero, then this is a check
       // to see if *that* bit is set.
       APInt Op0KnownZeroInverted = ~Op0KnownZero;
-      if (~Op1KnownZero == 0 && Op0KnownZeroInverted.isPowerOf2()) {
+      if (~Op1KnownZero == 0) {
         // If the LHS is an AND with the same constant, look through it.
         Value *LHS = nullptr;
         ConstantInt *LHSC = nullptr;
@@ -2533,11 +2539,19 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
 
         // If the LHS is 1 << x, and we know the result is a power of 2 like 8,
         // then turn "((1 << x)&8) == 0" into "x != 3".
+        // or turn "((1 << x)&7) == 0" into "x > 2".
         Value *X = nullptr;
         if (match(LHS, m_Shl(m_One(), m_Value(X)))) {
-          unsigned CmpVal = Op0KnownZeroInverted.countTrailingZeros();
-          return new ICmpInst(ICmpInst::ICMP_NE, X,
-                              ConstantInt::get(X->getType(), CmpVal));
+          APInt ValToCheck = Op0KnownZeroInverted;
+          if (ValToCheck.isPowerOf2()) {
+            unsigned CmpVal = ValToCheck.countTrailingZeros();
+            return new ICmpInst(ICmpInst::ICMP_NE, X,
+                                ConstantInt::get(X->getType(), CmpVal));
+          } else if ((++ValToCheck).isPowerOf2()) {
+            unsigned CmpVal = ValToCheck.countTrailingZeros() - 1;
+            return new ICmpInst(ICmpInst::ICMP_UGT, X,
+                                ConstantInt::get(X->getType(), CmpVal));
+          }
         }
 
         // If the LHS is 8 >>u x, and we know the result is a power of 2 like 1,
@@ -2560,7 +2574,7 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
       // bit is set.   If the comparison is against zero, then this is a check
       // to see if *that* bit is set.
       APInt Op0KnownZeroInverted = ~Op0KnownZero;
-      if (~Op1KnownZero == 0 && Op0KnownZeroInverted.isPowerOf2()) {
+      if (~Op1KnownZero == 0) {
         // If the LHS is an AND with the same constant, look through it.
         Value *LHS = nullptr;
         ConstantInt *LHSC = nullptr;
@@ -2570,11 +2584,19 @@ Instruction *InstCombiner::visitICmpInst(ICmpInst &I) {
 
         // If the LHS is 1 << x, and we know the result is a power of 2 like 8,
         // then turn "((1 << x)&8) != 0" into "x == 3".
+        // or turn "((1 << x)&7) != 0" into "x < 3".
         Value *X = nullptr;
         if (match(LHS, m_Shl(m_One(), m_Value(X)))) {
-          unsigned CmpVal = Op0KnownZeroInverted.countTrailingZeros();
-          return new ICmpInst(ICmpInst::ICMP_EQ, X,
-                              ConstantInt::get(X->getType(), CmpVal));
+          APInt ValToCheck = Op0KnownZeroInverted;
+          if (ValToCheck.isPowerOf2()) {
+            unsigned CmpVal = ValToCheck.countTrailingZeros();
+            return new ICmpInst(ICmpInst::ICMP_EQ, X,
+                                ConstantInt::get(X->getType(), CmpVal));
+          } else if ((++ValToCheck).isPowerOf2()) {
+            unsigned CmpVal = ValToCheck.countTrailingZeros();
+            return new ICmpInst(ICmpInst::ICMP_ULT, X,
+                                ConstantInt::get(X->getType(), CmpVal));
+          }
         }
 
         // If the LHS is 8 >>u x, and we know the result is a power of 2 like 1,

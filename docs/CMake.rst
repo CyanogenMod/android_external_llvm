@@ -132,7 +132,7 @@ write the variable and the type on the CMake command line:
 Frequently-used CMake variables
 -------------------------------
 
-Here are listed some of the CMake variables that are used often, along with a
+Here are some of the CMake variables that are used often, along with a
 brief explanation and LLVM-specific notes. For full documentation, check the
 CMake docs or execute ``cmake --help-variable VARIABLE_NAME``.
 
@@ -157,8 +157,8 @@ CMake docs or execute ``cmake --help-variable VARIABLE_NAME``.
   Extra flags to use when compiling C++ source files.
 
 **BUILD_SHARED_LIBS**:BOOL
-  Flag indicating is shared libraries will be built. Its default value is
-  OFF. Shared libraries are not supported on Windows and not recommended in the
+  Flag indicating if shared libraries will be built. Its default value is
+  OFF. Shared libraries are not supported on Windows and not recommended on the
   other OSes.
 
 .. _LLVM-specific variables:
@@ -487,7 +487,7 @@ into LLVM source tree. You can achieve it in two easy steps:
 #. Adding ``add_subdirectory(<pass name>)`` line into
    ``<LLVM root>/lib/Transform/CMakeLists.txt``.
 
-Compiler/Platform specific topics
+Compiler/Platform-specific topics
 =================================
 
 Notes for specific compilers and/or platforms.

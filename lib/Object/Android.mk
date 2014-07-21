@@ -7,17 +7,15 @@ object_SRC_FILES := \
   COFFYAML.cpp \
   ELF.cpp \
   ELFObjectFile.cpp \
+  ELFYAML.cpp \
   Error.cpp \
   IRObjectFile.cpp \
   MachOObjectFile.cpp \
   MachOUniversal.cpp \
   Object.cpp \
   ObjectFile.cpp \
-  StringTableBuilder.cpp \
-  SymbolicFile.cpp \
-  YAML.cpp \
-  ELFYAML.cpp \
-
+  RecordStreamer.cpp \
+  SymbolicFile.cpp
 
 # For the host
 # =====================================================

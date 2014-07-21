@@ -7,6 +7,7 @@ mips_mc_desc_TBLGEN_TABLES := \
   MipsGenSubtargetInfo.inc
 
 mips_mc_desc_SRC_FILES := \
+  MipsABIFlagsSection.cpp \
   MipsAsmBackend.cpp \
   MipsELFObjectWriter.cpp \
   MipsELFStreamer.cpp \

@@ -14,21 +14,20 @@
 
 
 #include "SIRegisterInfo.h"
-#include "AMDGPUTargetMachine.h"
+#include "AMDGPUSubtarget.h"
 #include "SIInstrInfo.h"
 
 using namespace llvm;
 
-SIRegisterInfo::SIRegisterInfo(AMDGPUTargetMachine &tm)
-: AMDGPURegisterInfo(tm),
-  TM(tm)
+SIRegisterInfo::SIRegisterInfo(const AMDGPUSubtarget &st)
+: AMDGPURegisterInfo(st)
   { }
 
 BitVector SIRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
   BitVector Reserved(getNumRegs());
   Reserved.set(AMDGPU::EXEC);
   Reserved.set(AMDGPU::INDIRECT_BASE_ADDR);
-  const SIInstrInfo *TII = static_cast<const SIInstrInfo*>(TM.getInstrInfo());
+  const SIInstrInfo *TII = static_cast<const SIInstrInfo*>(ST.getInstrInfo());
   TII->reserveIndirectRegisters(Reserved, MF);
   return Reserved;
 }
@@ -36,15 +35,6 @@ BitVector SIRegisterInfo::getReservedRegs(const MachineFunction &MF) const {
 unsigned SIRegisterInfo::getRegPressureLimit(const TargetRegisterClass *RC,
                                              MachineFunction &MF) const {
   return RC->getNumRegs();
-}
-
-const TargetRegisterClass *
-SIRegisterInfo::getISARegClass(const TargetRegisterClass * rc) const {
-  switch (rc->getID()) {
-  case AMDGPU::GPRF32RegClassID:
-    return &AMDGPU::VReg_32RegClass;
-  default: return rc;
-  }
 }
 
 const TargetRegisterClass * SIRegisterInfo::getCFGStructurizerRegClass(
@@ -134,4 +124,20 @@ unsigned SIRegisterInfo::getPhysRegSubReg(unsigned Reg,
                                           unsigned Channel) const {
   unsigned Index = getHWRegIndex(Reg);
   return SubRC->getRegister(Index + Channel);
+}
+
+bool SIRegisterInfo::regClassCanUseImmediate(int RCID) const {
+  switch (RCID) {
+  default: return false;
+  case AMDGPU::SSrc_32RegClassID:
+  case AMDGPU::SSrc_64RegClassID:
+  case AMDGPU::VSrc_32RegClassID:
+  case AMDGPU::VSrc_64RegClassID:
+    return true;
+  }
+}
+
+bool SIRegisterInfo::regClassCanUseImmediate(
+                             const TargetRegisterClass *RC) const {
+  return regClassCanUseImmediate(RC->getID());
 }

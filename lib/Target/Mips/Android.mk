@@ -8,6 +8,7 @@ mips_codegen_TBLGEN_TABLES := \
   MipsGenMCPseudoLowering.inc \
   MipsGenAsmWriter.inc \
   MipsGenDAGISel.inc \
+  MipsGenFastISel.inc \
   MipsGenCallingConv.inc \
   MipsGenSubtargetInfo.inc
 

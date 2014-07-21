@@ -55,6 +55,7 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::PREFETCH:                   return "Prefetch";
   case ISD::ATOMIC_FENCE:               return "AtomicFence";
   case ISD::ATOMIC_CMP_SWAP:            return "AtomicCmpSwap";
+  case ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS: return "AtomicCmpSwapWithSuccess";
   case ISD::ATOMIC_SWAP:                return "AtomicSwap";
   case ISD::ATOMIC_LOAD_ADD:            return "AtomicLoadAdd";
   case ISD::ATOMIC_LOAD_SUB:            return "AtomicLoadSub";
@@ -220,6 +221,9 @@ std::string SDNode::getOperationName(const SelectionDAG *G) const {
   case ISD::ZERO_EXTEND:                return "zero_extend";
   case ISD::ANY_EXTEND:                 return "any_extend";
   case ISD::SIGN_EXTEND_INREG:          return "sign_extend_inreg";
+  case ISD::ANY_EXTEND_VECTOR_INREG:    return "any_extend_vector_inreg";
+  case ISD::SIGN_EXTEND_VECTOR_INREG:   return "sign_extend_vector_inreg";
+  case ISD::ZERO_EXTEND_VECTOR_INREG:   return "zero_extend_vector_inreg";
   case ISD::TRUNCATE:                   return "truncate";
   case ISD::FP_ROUND:                   return "fp_round";
   case ISD::FLT_ROUNDS_:                return "flt_rounds";

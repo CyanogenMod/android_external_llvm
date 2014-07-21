@@ -17,7 +17,6 @@
 
 #include "MCTargetDesc/MipsBaseInfo.h"
 #include "Mips.h"
-#include "MipsSubtarget.h"
 #include "llvm/CodeGen/CallingConvLower.h"
 #include "llvm/CodeGen/SelectionDAG.h"
 #include "llvm/IR/Function.h"
@@ -210,6 +209,7 @@ namespace llvm {
   // TargetLowering Implementation
   //===--------------------------------------------------------------------===//
   class MipsFunctionInfo;
+  class MipsSubtarget;
 
   class MipsTargetLowering : public TargetLowering  {
     bool isMicroMips;
@@ -438,12 +438,6 @@ namespace llvm {
     // Subtarget Info
     const MipsSubtarget *Subtarget;
 
-    bool hasMips64() const { return Subtarget->hasMips64(); }
-    bool isGP64bit() const { return Subtarget->isGP64bit(); }
-    bool isO32() const { return Subtarget->isABI_O32(); }
-    bool isN32() const { return Subtarget->isABI_N32(); }
-    bool isN64() const { return Subtarget->isABI_N64(); }
-
   private:
     // Create a TargetGlobalAddress node.
     SDValue getTargetNode(GlobalAddressSDNode *N, EVT Ty, SelectionDAG &DAG,
@@ -598,6 +592,12 @@ namespace llvm {
 
     unsigned getJumpTableEncoding() const override;
 
+    /// Emit a sign-extension using sll/sra, seb, or seh appropriately.
+    MachineBasicBlock *emitSignExtendToI32InReg(MachineInstr *MI,
+                                                MachineBasicBlock *BB,
+                                                unsigned Size, unsigned DstReg,
+                                                unsigned SrcRec) const;
+
     MachineBasicBlock *emitAtomicBinary(MachineInstr *MI, MachineBasicBlock *BB,
                     unsigned Size, unsigned BinOpcode, bool Nand = false) const;
     MachineBasicBlock *emitAtomicBinaryPartword(MachineInstr *MI,
@@ -607,6 +607,7 @@ namespace llvm {
                                   MachineBasicBlock *BB, unsigned Size) const;
     MachineBasicBlock *emitAtomicCmpSwapPartword(MachineInstr *MI,
                                   MachineBasicBlock *BB, unsigned Size) const;
+    MachineBasicBlock *emitSEL_D(MachineInstr *MI, MachineBasicBlock *BB) const;
   };
 
   /// Create MipsTargetLowering objects.

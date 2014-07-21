@@ -24,11 +24,13 @@ codegen_SRC_FILES := \
   GCMetadata.cpp \
   GCMetadataPrinter.cpp \
   GCStrategy.cpp \
+  GlobalMerge.cpp \
   IfConversion.cpp \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
   IntrinsicLowering.cpp \
   JITCodeEmitter.cpp \
+  JumpInstrTables.cpp \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
   LiveDebugVariables.cpp \

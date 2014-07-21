@@ -53,6 +53,10 @@ static cl::opt<bool>
 RunLoopRerolling("reroll-loops", cl::Hidden,
                  cl::desc("Run the loop rerolling pass"));
 
+static cl::opt<bool> RunLoadCombine("combine-loads", cl::init(false),
+                                    cl::Hidden,
+                                    cl::desc("Run the load combining pass"));
+
 PassManagerBuilder::PassManagerBuilder() {
     OptLevel = 2;
     SizeLevel = 0;
@@ -65,6 +69,7 @@ PassManagerBuilder::PassManagerBuilder() {
     SLPVectorize = RunSLPVectorization;
     LoopVectorize = RunLoopVectorization;
     RerollLoops = RunLoopRerolling;
+    LoadCombine = RunLoadCombine;
 }
 
 PassManagerBuilder::~PassManagerBuilder() {
@@ -151,9 +156,9 @@ void PassManagerBuilder::populateModulePassManager(PassManagerBase &MPM) {
   if (!DisableUnitAtATime) {
     addExtensionsToPM(EP_ModuleOptimizerEarly, MPM);
 
+    MPM.add(createIPSCCPPass());              // IP SCCP
     MPM.add(createGlobalOptimizerPass());     // Optimize out global vars
 
-    MPM.add(createIPSCCPPass());              // IP SCCP
     MPM.add(createDeadArgEliminationPass());  // Dead argument elimination
 
     MPM.add(createInstructionCombiningPass());// Clean up after IPCP & DAE
@@ -235,6 +240,9 @@ void PassManagerBuilder::populateModulePassManager(PassManagerBase &MPM) {
     if (!DisableUnrollLoops)
       MPM.add(createLoopUnrollPass());
   }
+
+  if (LoadCombine)
+    MPM.add(createLoadCombinePass());
 
   MPM.add(createAggressiveDCEPass());         // Delete dead instructions
   MPM.add(createCFGSimplificationPass()); // Merge & remove BBs
@@ -351,6 +359,9 @@ void PassManagerBuilder::populateLTOPassManager(PassManagerBase &PM,
 
   // More scalar chains could be vectorized due to more alias information
   PM.add(createSLPVectorizerPass()); // Vectorize parallel scalar chains.
+
+  if (LoadCombine)
+    PM.add(createLoadCombinePass());
 
   // Cleanup and simplify the code after the scalar optimizations.
   PM.add(createInstructionCombiningPass());
