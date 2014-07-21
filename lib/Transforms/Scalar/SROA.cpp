@@ -1032,11 +1032,6 @@ static Type *findCommonType(AllocaSlices::const_iterator B,
       UserTy = SI->getValueOperand()->getType();
     }
 
-    if (!UserTy || (Ty && Ty != UserTy))
-      TyIsCommon = false; // Give up on anything but an iN type.
-    else
-      Ty = UserTy;
-
     if (IntegerType *UserITy = dyn_cast_or_null<IntegerType>(UserTy)) {
       // If the type is larger than the partition, skip it. We only encounter
       // this for split integer operations where we want to use the type of the
@@ -1051,6 +1046,13 @@ static Type *findCommonType(AllocaSlices::const_iterator B,
       if (!ITy || ITy->getBitWidth() < UserITy->getBitWidth())
         ITy = UserITy;
     }
+
+    // To avoid depending on the order of slices, Ty and TyIsCommon must not
+    // depend on types skipped above.
+    if (!UserTy || (Ty && Ty != UserTy))
+      TyIsCommon = false; // Give up on anything but an iN type.
+    else
+      Ty = UserTy;
   }
 
   return TyIsCommon ? Ty : ITy;
@@ -1128,7 +1130,7 @@ static bool isSafePHIToSpeculate(PHINode &PN,
     // If this pointer is always safe to load, or if we can prove that there
     // is already a load in the block, then we can move the load to the pred
     // block.
-    if (InVal->isDereferenceablePointer() ||
+    if (InVal->isDereferenceablePointer(DL) ||
         isSafeToLoadUnconditionally(InVal, TI, MaxAlign, DL))
       continue;
 
@@ -1196,8 +1198,8 @@ static bool isSafeSelectToSpeculate(SelectInst &SI,
                                     const DataLayout *DL = nullptr) {
   Value *TValue = SI.getTrueValue();
   Value *FValue = SI.getFalseValue();
-  bool TDerefable = TValue->isDereferenceablePointer();
-  bool FDerefable = FValue->isDereferenceablePointer();
+  bool TDerefable = TValue->isDereferenceablePointer(DL);
+  bool FDerefable = FValue->isDereferenceablePointer(DL);
 
   for (User *U : SI.users()) {
     LoadInst *LI = dyn_cast<LoadInst>(U);

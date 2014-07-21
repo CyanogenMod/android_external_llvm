@@ -64,6 +64,8 @@ LOCAL_C_INCLUDES :=	\
 	$(LLVM_ROOT_PATH)/device/include	\
 	$(LOCAL_C_INCLUDES)
 
+include external/libcxx/libcxx.mk
+
 ###########################################################
 ## Commands for running tblgen to compile a td file
 ###########################################################

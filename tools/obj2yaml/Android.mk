@@ -15,6 +15,8 @@ obj2yaml_SRC_FILES := \
 
 obj2yaml_STATIC_LIBRARIES := \
   libLLVMObject             \
+  libLLVMMC                 \
+  libLLVMMCParser           \
   libLLVMBitReader          \
   libLLVMCore               \
   libLLVMSupport            \

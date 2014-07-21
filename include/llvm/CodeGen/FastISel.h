@@ -23,6 +23,7 @@ namespace llvm {
 class AllocaInst;
 class Constant;
 class ConstantFP;
+class CallInst;
 class DataLayout;
 class FunctionLoweringInfo;
 class Instruction;
@@ -48,6 +49,7 @@ class FastISel {
 protected:
   DenseMap<const Value *, unsigned> LocalValueMap;
   FunctionLoweringInfo &FuncInfo;
+  MachineFunction *MF;
   MachineRegisterInfo &MRI;
   MachineFrameInfo &MFI;
   MachineConstantPool &MCP;
@@ -373,6 +375,12 @@ protected:
   /// - \c Add has a constant operand.
   bool canFoldAddIntoGEP(const User *GEP, const Value *Add);
 
+  /// Test whether the given value has exactly one use.
+  bool hasTrivialKill(const Value *V) const;
+
+  /// \brief Create a machine mem operand from the given instruction.
+  MachineMemOperand *createMachineMemOperandFor(const Instruction *I) const;
+
 private:
   bool SelectBinaryOp(const User *I, unsigned ISDOpcode);
 
@@ -380,6 +388,7 @@ private:
 
   bool SelectGetElementPtr(const User *I);
 
+  bool SelectStackmap(const CallInst *I);
   bool SelectCall(const User *I);
 
   bool SelectBitCast(const User *I);
@@ -409,8 +418,8 @@ private:
   /// heavy instructions like calls.
   void flushLocalValueMap();
 
-  /// Test whether the given value has exactly one use.
-  bool hasTrivialKill(const Value *V) const;
+  bool addStackMapLiveVars(SmallVectorImpl<MachineOperand> &Ops,
+                           const CallInst *CI, unsigned StartIdx);
 };
 
 }

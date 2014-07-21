@@ -39,7 +39,7 @@ MipsSETargetLowering::MipsSETargetLowering(MipsTargetMachine &TM)
   // Set up the register classes
   addRegisterClass(MVT::i32, &Mips::GPR32RegClass);
 
-  if (isGP64bit())
+  if (Subtarget->isGP64bit())
     addRegisterClass(MVT::i64, &Mips::GPR64RegClass);
 
   if (Subtarget->hasDSP() || Subtarget->hasMSA()) {
@@ -120,10 +120,10 @@ MipsSETargetLowering::MipsSETargetLowering(MipsTargetMachine &TM)
 
   if (Subtarget->hasCnMips())
     setOperationAction(ISD::MUL,              MVT::i64, Legal);
-  else if (isGP64bit())
+  else if (Subtarget->isGP64bit())
     setOperationAction(ISD::MUL,              MVT::i64, Custom);
 
-  if (isGP64bit()) {
+  if (Subtarget->isGP64bit()) {
     setOperationAction(ISD::MULHS,            MVT::i64, Custom);
     setOperationAction(ISD::MULHU,            MVT::i64, Custom);
   }
@@ -152,12 +152,90 @@ MipsSETargetLowering::MipsSETargetLowering(MipsTargetMachine &TM)
     setOperationAction(ISD::STORE, MVT::f64, Custom);
   }
 
+  if (Subtarget->hasMips32r6()) {
+    // MIPS32r6 replaces the accumulator-based multiplies with a three register
+    // instruction
+    setOperationAction(ISD::SMUL_LOHI, MVT::i32, Expand);
+    setOperationAction(ISD::UMUL_LOHI, MVT::i32, Expand);
+    setOperationAction(ISD::MUL, MVT::i32, Legal);
+    setOperationAction(ISD::MULHS, MVT::i32, Legal);
+    setOperationAction(ISD::MULHU, MVT::i32, Legal);
+
+    // MIPS32r6 replaces the accumulator-based division/remainder with separate
+    // three register division and remainder instructions.
+    setOperationAction(ISD::SDIVREM, MVT::i32, Expand);
+    setOperationAction(ISD::UDIVREM, MVT::i32, Expand);
+    setOperationAction(ISD::SDIV, MVT::i32, Legal);
+    setOperationAction(ISD::UDIV, MVT::i32, Legal);
+    setOperationAction(ISD::SREM, MVT::i32, Legal);
+    setOperationAction(ISD::UREM, MVT::i32, Legal);
+
+    // MIPS32r6 replaces conditional moves with an equivalent that removes the
+    // need for three GPR read ports.
+    setOperationAction(ISD::SETCC, MVT::i32, Legal);
+    setOperationAction(ISD::SELECT, MVT::i32, Legal);
+    setOperationAction(ISD::SELECT_CC, MVT::i32, Expand);
+
+    setOperationAction(ISD::SETCC, MVT::f32, Legal);
+    setOperationAction(ISD::SELECT, MVT::f32, Legal);
+    setOperationAction(ISD::SELECT_CC, MVT::f32, Expand);
+
+    assert(Subtarget->isFP64bit() && "FR=1 is required for MIPS32r6");
+    setOperationAction(ISD::SETCC, MVT::f64, Legal);
+    setOperationAction(ISD::SELECT, MVT::f64, Legal);
+    setOperationAction(ISD::SELECT_CC, MVT::f64, Expand);
+
+    setOperationAction(ISD::BRCOND, MVT::Other, Legal);
+
+    // Floating point > and >= are supported via < and <=
+    setCondCodeAction(ISD::SETOGE, MVT::f32, Expand);
+    setCondCodeAction(ISD::SETOGT, MVT::f32, Expand);
+    setCondCodeAction(ISD::SETUGE, MVT::f32, Expand);
+    setCondCodeAction(ISD::SETUGT, MVT::f32, Expand);
+
+    setCondCodeAction(ISD::SETOGE, MVT::f64, Expand);
+    setCondCodeAction(ISD::SETOGT, MVT::f64, Expand);
+    setCondCodeAction(ISD::SETUGE, MVT::f64, Expand);
+    setCondCodeAction(ISD::SETUGT, MVT::f64, Expand);
+  }
+
+  if (Subtarget->hasMips64r6()) {
+    // MIPS64r6 replaces the accumulator-based multiplies with a three register
+    // instruction
+    setOperationAction(ISD::MUL, MVT::i64, Legal);
+    setOperationAction(ISD::MULHS, MVT::i64, Legal);
+    setOperationAction(ISD::MULHU, MVT::i64, Legal);
+
+    // MIPS32r6 replaces the accumulator-based division/remainder with separate
+    // three register division and remainder instructions.
+    setOperationAction(ISD::SDIVREM, MVT::i64, Expand);
+    setOperationAction(ISD::UDIVREM, MVT::i64, Expand);
+    setOperationAction(ISD::SDIV, MVT::i64, Legal);
+    setOperationAction(ISD::UDIV, MVT::i64, Legal);
+    setOperationAction(ISD::SREM, MVT::i64, Legal);
+    setOperationAction(ISD::UREM, MVT::i64, Legal);
+
+    // MIPS64r6 replaces conditional moves with an equivalent that removes the
+    // need for three GPR read ports.
+    setOperationAction(ISD::SETCC, MVT::i64, Legal);
+    setOperationAction(ISD::SELECT, MVT::i64, Legal);
+    setOperationAction(ISD::SELECT_CC, MVT::i64, Expand);
+  }
+
   computeRegisterProperties();
 }
 
 const MipsTargetLowering *
 llvm::createMipsSETargetLowering(MipsTargetMachine &TM) {
   return new MipsSETargetLowering(TM);
+}
+
+const TargetRegisterClass *
+MipsSETargetLowering::getRepRegClassFor(MVT VT) const {
+  if (VT == MVT::Untyped)
+    return Subtarget->hasDSP() ? &Mips::ACC64DSPRegClass : &Mips::ACC64RegClass;
+
+  return TargetLowering::getRepRegClassFor(VT);
 }
 
 // Enable MSA support for the given integer type and Register class.
@@ -449,8 +527,8 @@ static SDValue performADDECombine(SDNode *N, SelectionDAG &DAG,
   if (DCI.isBeforeLegalize())
     return SDValue();
 
-  if (Subtarget->hasMips32() && N->getValueType(0) == MVT::i32 &&
-      selectMADD(N, &DAG))
+  if (Subtarget->hasMips32() && !Subtarget->hasMips32r6() &&
+      N->getValueType(0) == MVT::i32 && selectMADD(N, &DAG))
     return SDValue(N, 0);
 
   return SDValue();
@@ -1178,6 +1256,9 @@ SDValue MipsSETargetLowering::lowerSTORE(SDValue Op, SelectionDAG &DAG) const {
 SDValue MipsSETargetLowering::lowerMulDiv(SDValue Op, unsigned NewOpc,
                                           bool HasLo, bool HasHi,
                                           SelectionDAG &DAG) const {
+  // MIPS32r6/MIPS64r6 removed accumulator based multiplies.
+  assert(!Subtarget->hasMips32r6());
+
   EVT Ty = Op.getOperand(0).getValueType();
   SDLoc DL(Op);
   SDValue Mult = DAG.getNode(NewOpc, DL, MVT::Untyped,
@@ -1651,7 +1732,7 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::mips_copy_s_w:
     return lowerMSACopyIntr(Op, DAG, MipsISD::VEXTRACT_SEXT_ELT);
   case Intrinsic::mips_copy_s_d:
-    if (hasMips64())
+    if (Subtarget->hasMips64())
       // Lower directly into VEXTRACT_SEXT_ELT since i64 is legal on Mips64.
       return lowerMSACopyIntr(Op, DAG, MipsISD::VEXTRACT_SEXT_ELT);
     else {
@@ -1666,7 +1747,7 @@ SDValue MipsSETargetLowering::lowerINTRINSIC_WO_CHAIN(SDValue Op,
   case Intrinsic::mips_copy_u_w:
     return lowerMSACopyIntr(Op, DAG, MipsISD::VEXTRACT_ZEXT_ELT);
   case Intrinsic::mips_copy_u_d:
-    if (hasMips64())
+    if (Subtarget->hasMips64())
       // Lower directly into VEXTRACT_ZEXT_ELT since i64 is legal on Mips64.
       return lowerMSACopyIntr(Op, DAG, MipsISD::VEXTRACT_ZEXT_ELT);
     else {
@@ -2943,8 +3024,8 @@ MipsSETargetLowering::emitINSERT_DF_VIDX(MachineInstr *MI,
   unsigned SrcValReg = MI->getOperand(3).getReg();
 
   const TargetRegisterClass *VecRC = nullptr;
-  const TargetRegisterClass *GPRRC = isGP64bit() ? &Mips::GPR64RegClass
-                                                 : &Mips::GPR32RegClass;
+  const TargetRegisterClass *GPRRC =
+      Subtarget->isGP64bit() ? &Mips::GPR64RegClass : &Mips::GPR32RegClass;
   unsigned EltLog2Size;
   unsigned InsertOp = 0;
   unsigned InsveOp = 0;

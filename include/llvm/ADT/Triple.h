@@ -76,7 +76,8 @@ public:
     le32,       // le32: generic little-endian 32-bit CPU (PNaCl / Emscripten)
     amdil,      // amdil: amd IL
     spir,       // SPIR: standard portable IR for OpenCL 32-bit version
-    spir64      // SPIR: standard portable IR for OpenCL 64-bit version
+    spir64,     // SPIR: standard portable IR for OpenCL 64-bit version
+    kalimba     // Kalimba: generic kalimba
   };
   enum VendorType {
     UnknownVendor,
@@ -88,7 +89,9 @@ public:
     BGQ,
     Freescale,
     IBM,
-    NVIDIA
+    ImaginationTechnologies,
+    NVIDIA,
+    CSR
   };
   enum OSType {
     UnknownOS,
@@ -348,6 +351,10 @@ public:
 
   bool isKnownWindowsMSVCEnvironment() const {
     return getOS() == Triple::Win32 && getEnvironment() == Triple::MSVC;
+  }
+
+  bool isWindowsItaniumEnvironment() const {
+    return getOS() == Triple::Win32 && getEnvironment() == Triple::Itanium;
   }
 
   bool isWindowsCygwinEnvironment() const {

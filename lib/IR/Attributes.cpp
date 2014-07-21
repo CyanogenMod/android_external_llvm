@@ -173,6 +173,8 @@ std::string Attribute::getAsString(bool InAttrGrp) const {
     return "inlinehint";
   if (hasAttribute(Attribute::InReg))
     return "inreg";
+  if (hasAttribute(Attribute::JumpTable))
+    return "jumptable";
   if (hasAttribute(Attribute::MinSize))
     return "minsize";
   if (hasAttribute(Attribute::Naked))
@@ -291,7 +293,7 @@ bool Attribute::operator<(Attribute A) const {
 // AttributeImpl Definition
 //===----------------------------------------------------------------------===//
 
-// Pin the vtabels to this file.
+// Pin the vtables to this file.
 AttributeImpl::~AttributeImpl() {}
 void EnumAttributeImpl::anchor() {}
 void AlignAttributeImpl::anchor() {}
@@ -395,6 +397,7 @@ uint64_t AttributeImpl::getAttrMask(Attribute::AttrKind Val) {
   case Attribute::OptimizeNone:    return 1ULL << 42;
   case Attribute::InAlloca:        return 1ULL << 43;
   case Attribute::NonNull:         return 1ULL << 44;
+  case Attribute::JumpTable:       return 1ULL << 45;
   }
   llvm_unreachable("Unsupported attribute type");
 }

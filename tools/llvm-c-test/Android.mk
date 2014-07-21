@@ -50,6 +50,7 @@ llvm_c_test_STATIC_LIBRARIES := \
   libLLVMTarget \
   libLLVMMC \
   libLLVMObject \
+  libLLVMMCParser \
   libLLVMCore \
   libLLVMAsmParser \
   libLLVMOption \

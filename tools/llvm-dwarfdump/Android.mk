@@ -14,6 +14,8 @@ llvm_dwarfdump_STATIC_LIBRARIES := \
   libLLVMDebugInfo                 \
   libLLVMObject                    \
   libLLVMBitReader                 \
+  libLLVMMC                        \
+  libLLVMMCParser                  \
   libLLVMCore                      \
   libLLVMSupport                   \
 

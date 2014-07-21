@@ -883,3 +883,33 @@ define i1 @returns_nonnull() {
 ; CHECK: ret i1 false
 }
 
+; If a bit is known to be zero for A and known to be one for B,
+; then A and B cannot be equal.
+define i1 @icmp_eq_const(i32 %a) nounwind {
+  %b = mul nsw i32 %a, -2
+  %c = icmp eq i32 %b, 1
+  ret i1 %c
+
+; CHECK-LABEL: @icmp_eq_const
+; CHECK-NEXT: ret i1 false 
+}
+
+define i1 @icmp_ne_const(i32 %a) nounwind {
+  %b = mul nsw i32 %a, -2
+  %c = icmp ne i32 %b, 1
+  ret i1 %c
+
+; CHECK-LABEL: @icmp_ne_const
+; CHECK-NEXT: ret i1 true
+}
+
+define i1 @icmp_sdiv_int_min(i32 %a) {
+  %div = sdiv i32 -2147483648, %a
+  %cmp = icmp ne i32 %div, -1073741824
+  ret i1 %cmp
+
+; CHECK-LABEL: @icmp_sdiv_int_min
+; CHECK-NEXT: [[DIV:%.*]] = sdiv i32 -2147483648, %a
+; CHECK-NEXT: [[CMP:%.*]] = icmp ne i32 [[DIV]], -1073741824
+; CHECK-NEXT: ret i1 [[CMP]]
+}

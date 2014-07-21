@@ -197,7 +197,7 @@ class AArch64TargetLowering : public TargetLowering {
   bool RequireStrictAlign;
 
 public:
-  explicit AArch64TargetLowering(AArch64TargetMachine &TM);
+  explicit AArch64TargetLowering(TargetMachine &TM);
 
   /// Selects the correct CCAssignFn for a the given CallingConvention
   /// value.
@@ -323,6 +323,9 @@ public:
                               Value *Addr, AtomicOrdering Ord) const override;
 
   bool shouldExpandAtomicInIR(Instruction *Inst) const override;
+
+  TargetLoweringBase::LegalizeTypeAction
+  getPreferredVectorAction(EVT VT) const override;
 
 private:
   /// Subtarget - Keep a pointer to the AArch64Subtarget around so that we can
