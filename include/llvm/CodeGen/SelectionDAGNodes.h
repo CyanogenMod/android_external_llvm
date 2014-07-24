@@ -20,6 +20,7 @@
 #define LLVM_CODEGEN_SELECTIONDAGNODES_H
 
 #include "llvm/ADT/iterator_range.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/GraphTraits.h"
 #include "llvm/ADT/STLExtras.h"
@@ -49,7 +50,26 @@ template <typename T> struct DenseMapInfo;
 template <typename T> struct simplify_type;
 template <typename T> struct ilist_traits;
 
-void checkForCycles(const SDNode *N);
+/// isBinOpWithFlags - Returns true if the opcode is a binary operation
+/// with flags.
+static bool isBinOpWithFlags(unsigned Opcode) {
+  switch (Opcode) {
+  case ISD::SDIV:
+  case ISD::UDIV:
+  case ISD::SRA:
+  case ISD::SRL:
+  case ISD::MUL:
+  case ISD::ADD:
+  case ISD::SUB:
+  case ISD::SHL:
+    return true;
+  default:
+    return false;
+  }
+}
+
+void checkForCycles(const SDNode *N, const SelectionDAG *DAG = nullptr,
+                    bool force = false);
 
 /// SDVTList - This represents a list of ValueType's that has been intern'd by
 /// a SelectionDAG.  Instances of this simple value class are returned by
@@ -122,6 +142,9 @@ public:
   }
   bool operator<(const SDValue &O) const {
     return std::tie(Node, ResNo) < std::tie(O.Node, O.ResNo);
+  }
+  LLVM_EXPLICIT operator bool() const {
+    return Node != nullptr;
   }
 
   SDValue getValue(unsigned R) const {
@@ -574,6 +597,7 @@ public:
   typedef SDUse* op_iterator;
   op_iterator op_begin() const { return OperandList; }
   op_iterator op_end() const { return OperandList+NumOperands; }
+  ArrayRef<SDUse> ops() const { return makeArrayRef(op_begin(), op_end()); }
 
   SDVTList getVTList() const {
     SDVTList X = { ValueList, NumValues };
@@ -938,6 +962,36 @@ public:
   }
 };
 
+/// BinaryWithFlagsSDNode - This class is an extension of BinarySDNode
+/// used from those opcodes that have associated extra flags.
+class BinaryWithFlagsSDNode : public BinarySDNode {
+  enum { NUW = (1 << 0), NSW = (1 << 1), EXACT = (1 << 2) };
+
+public:
+  BinaryWithFlagsSDNode(unsigned Opc, unsigned Order, DebugLoc dl, SDVTList VTs,
+                        SDValue X, SDValue Y)
+      : BinarySDNode(Opc, Order, dl, VTs, X, Y) {}
+  /// getRawSubclassData - Return the SubclassData value, which contains an
+  /// encoding of the flags.
+  /// This function should be used to add subclass data to the NodeID value.
+  unsigned getRawSubclassData() const { return SubclassData; }
+  void setHasNoUnsignedWrap(bool b) {
+    SubclassData = (SubclassData & ~NUW) | (b ? NUW : 0);
+  }
+  void setHasNoSignedWrap(bool b) {
+    SubclassData = (SubclassData & ~NSW) | (b ? NSW : 0);
+  }
+  void setIsExact(bool b) {
+    SubclassData = (SubclassData & ~EXACT) | (b ? EXACT : 0);
+  }
+  bool hasNoUnsignedWrap() const { return SubclassData & NUW; }
+  bool hasNoSignedWrap() const { return SubclassData & NSW; }
+  bool isExact() const { return SubclassData & EXACT; }
+  static bool classof(const SDNode *N) {
+    return isBinOpWithFlags(N->getOpcode());
+  }
+};
+
 /// TernarySDNode - This class is used for three-operand SDNodes. This is solely
 /// to allow co-allocation of node operands with the node itself.
 class TernarySDNode : public SDNode {
@@ -1077,6 +1131,7 @@ public:
            N->getOpcode() == ISD::STORE               ||
            N->getOpcode() == ISD::PREFETCH            ||
            N->getOpcode() == ISD::ATOMIC_CMP_SWAP     ||
+           N->getOpcode() == ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS ||
            N->getOpcode() == ISD::ATOMIC_SWAP         ||
            N->getOpcode() == ISD::ATOMIC_LOAD_ADD     ||
            N->getOpcode() == ISD::ATOMIC_LOAD_SUB     ||
@@ -1185,12 +1240,13 @@ public:
 
   bool isCompareAndSwap() const {
     unsigned Op = getOpcode();
-    return Op == ISD::ATOMIC_CMP_SWAP;
+    return Op == ISD::ATOMIC_CMP_SWAP || Op == ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS;
   }
 
   // Methods to support isa and dyn_cast
   static bool classof(const SDNode *N) {
     return N->getOpcode() == ISD::ATOMIC_CMP_SWAP     ||
+           N->getOpcode() == ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS ||
            N->getOpcode() == ISD::ATOMIC_SWAP         ||
            N->getOpcode() == ISD::ATOMIC_LOAD_ADD     ||
            N->getOpcode() == ISD::ATOMIC_LOAD_SUB     ||
@@ -1528,11 +1584,27 @@ public:
                        unsigned MinSplatBits = 0,
                        bool isBigEndian = false) const;
 
-  /// getConstantSplatValue - Check if this is a constant splat, and if so,
-  /// return the splat value only if it is a ConstantSDNode. Otherwise
-  /// return nullptr. This is a simpler form of isConstantSplat.
-  /// Get the constant splat only if you care about the splat value.
-  ConstantSDNode *getConstantSplatValue() const;
+  /// \brief Returns the splatted value or a null value if this is not a splat.
+  ///
+  /// If passed a non-null UndefElements bitvector, it will resize it to match
+  /// the vector width and set the bits where elements are undef.
+  SDValue getSplatValue(BitVector *UndefElements = nullptr) const;
+
+  /// \brief Returns the splatted constant or null if this is not a constant
+  /// splat.
+  ///
+  /// If passed a non-null UndefElements bitvector, it will resize it to match
+  /// the vector width and set the bits where elements are undef.
+  ConstantSDNode *
+  getConstantSplatNode(BitVector *UndefElements = nullptr) const;
+
+  /// \brief Returns the splatted constant FP or null if this is not a constant
+  /// FP splat.
+  ///
+  /// If passed a non-null UndefElements bitvector, it will resize it to match
+  /// the vector width and set the bits where elements are undef.
+  ConstantFPSDNode *
+  getConstantFPSplatNode(BitVector *UndefElements = nullptr) const;
 
   bool isConstant() const;
 

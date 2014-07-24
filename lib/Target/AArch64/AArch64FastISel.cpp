@@ -240,20 +240,14 @@ unsigned AArch64FastISel::AArch64MaterializeFP(const ConstantFP *CFP, MVT VT) {
 }
 
 unsigned AArch64FastISel::AArch64MaterializeGV(const GlobalValue *GV) {
-  // We can't handle thread-local variables quickly yet. Unfortunately we have
-  // to peer through any aliases to find out if that rule applies.
-  const GlobalValue *TLSGV = GV;
-  if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
-    TLSGV = GA->getAliasee();
+  // We can't handle thread-local variables quickly yet.
+  if (GV->isThreadLocal())
+    return 0;
 
   // MachO still uses GOT for large code-model accesses, but ELF requires
   // movz/movk sequences, which FastISel doesn't handle yet.
   if (TM.getCodeModel() != CodeModel::Small && !Subtarget->isTargetMachO())
     return 0;
-
-  if (const GlobalVariable *GVar = dyn_cast<GlobalVariable>(TLSGV))
-    if (GVar->isThreadLocal())
-      return 0;
 
   unsigned char OpFlags = Subtarget->ClassifyGlobalReference(GV, TM);
 
@@ -469,11 +463,18 @@ bool AArch64FastISel::SimplifyAddress(Address &Addr, MVT VT,
     break;
   }
 
-  // FIXME: If this is a stack pointer and the offset needs to be simplified
-  // then put the alloca address into a register, set the base type back to
-  // register and continue. This should almost never happen.
+  //If this is a stack pointer and the offset needs to be simplified then put
+  // the alloca address into a register, set the base type back to register and
+  // continue. This should almost never happen.
   if (needsLowering && Addr.getKind() == Address::FrameIndexBase) {
-    return false;
+    unsigned ResultReg = createResultReg(&AArch64::GPR64RegClass);
+    BuildMI(*FuncInfo.MBB, FuncInfo.InsertPt, DbgLoc, TII.get(AArch64::ADDXri),
+            ResultReg)
+        .addFrameIndex(Addr.getFI())
+        .addImm(0)
+        .addImm(0);
+    Addr.setKind(Address::RegBase);
+    Addr.setReg(ResultReg);
   }
 
   // Since the offset is too large for the load/store instruction get the
@@ -1224,7 +1225,6 @@ bool AArch64FastISel::ProcessCallArgs(
       Arg = EmitIntExt(SrcVT, Arg, DestVT, /*isZExt*/ false);
       if (Arg == 0)
         return false;
-      ArgVT = DestVT;
       break;
     }
     case CCValAssign::AExt:
@@ -1235,7 +1235,6 @@ bool AArch64FastISel::ProcessCallArgs(
       Arg = EmitIntExt(SrcVT, Arg, DestVT, /*isZExt*/ true);
       if (Arg == 0)
         return false;
-      ArgVT = DestVT;
       break;
     }
     default:
@@ -1254,7 +1253,7 @@ bool AArch64FastISel::ProcessCallArgs(
       assert(VA.isMemLoc() && "Assuming store on stack.");
 
       // Need to store on the stack.
-      unsigned ArgSize = VA.getLocVT().getSizeInBits() / 8;
+      unsigned ArgSize = (ArgVT.getSizeInBits() + 7) / 8;
 
       unsigned BEAlign = 0;
       if (ArgSize < 8 && !Subtarget->isLittleEndian())
@@ -1468,10 +1467,12 @@ bool AArch64FastISel::TryEmitSmallMemCpy(Address Dest, Address Src,
     bool RV;
     unsigned ResultReg;
     RV = EmitLoad(VT, ResultReg, Src);
-    assert(RV == true && "Should be able to handle this load.");
+    if (!RV)
+      return false;
+
     RV = EmitStore(VT, ResultReg, Dest);
-    assert(RV == true && "Should be able to handle this store.");
-    (void)RV;
+    if (!RV)
+      return false;
 
     int64_t Size = VT.getSizeInBits() / 8;
     Len -= Size;
@@ -1749,6 +1750,17 @@ unsigned AArch64FastISel::Emiti1Ext(unsigned SrcReg, MVT DestVT, bool isZExt) {
 unsigned AArch64FastISel::EmitIntExt(MVT SrcVT, unsigned SrcReg, MVT DestVT,
                                      bool isZExt) {
   assert(DestVT != MVT::i1 && "ZeroExt/SignExt an i1?");
+
+  // FastISel does not have plumbing to deal with extensions where the SrcVT or
+  // DestVT are odd things, so test to make sure that they are both types we can
+  // handle (i1/i8/i16/i32 for SrcVT and i8/i16/i32/i64 for DestVT), otherwise
+  // bail out to SelectionDAG.
+  if (((DestVT != MVT::i8) && (DestVT != MVT::i16) &&
+       (DestVT != MVT::i32) && (DestVT != MVT::i64)) ||
+      ((SrcVT !=  MVT::i1) && (SrcVT !=  MVT::i8) &&
+       (SrcVT !=  MVT::i16) && (SrcVT !=  MVT::i32)))
+    return 0;
+
   unsigned Opc;
   unsigned Imm = 0;
 
@@ -1895,6 +1907,7 @@ bool AArch64FastISel::SelectMul(const Instruction *I) {
   case MVT::i32:
     ZReg = AArch64::WZR;
     Opc = AArch64::MADDWrrr;
+    SrcVT = MVT::i32;
     break;
   case MVT::i64:
     ZReg = AArch64::XZR;

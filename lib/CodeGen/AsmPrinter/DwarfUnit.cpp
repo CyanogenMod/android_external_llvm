@@ -1071,6 +1071,8 @@ std::string DwarfUnit::getParentContextString(DIScope Context) const {
        I != E; ++I) {
     DIScope Ctx = *I;
     StringRef Name = Ctx.getName();
+    if (Name.empty() && Ctx.isNameSpace())
+      Name = "(anonymous namespace)";
     if (!Name.empty()) {
       CS += Name;
       CS += "::";
@@ -1359,12 +1361,13 @@ DIE *DwarfUnit::getOrCreateNameSpace(DINameSpace NS) {
     return NDie;
   DIE &NDie = createAndAddDIE(dwarf::DW_TAG_namespace, *ContextDIE, NS);
 
-  if (!NS.getName().empty()) {
+  StringRef Name = NS.getName();
+  if (!Name.empty())
     addString(NDie, dwarf::DW_AT_name, NS.getName());
-    DD->addAccelNamespace(NS.getName(), NDie);
-    addGlobalName(NS.getName(), NDie, NS.getContext());
-  } else
-    DD->addAccelNamespace("(anonymous namespace)", NDie);
+  else
+    Name = "(anonymous namespace)";
+  DD->addAccelNamespace(Name, NDie);
+  addGlobalName(Name, NDie, NS.getContext());
   addSourceLine(NDie, NS);
   return &NDie;
 }
@@ -1382,14 +1385,14 @@ DIE *DwarfUnit::getOrCreateSubprogramDIE(DISubprogram SP) {
   if (DISubprogram SPDecl = SP.getFunctionDeclaration()) {
     // Add subprogram definitions to the CU die directly.
     ContextDIE = &getUnitDie();
-    // Build the decl now to ensure it preceeds the definition.
+    // Build the decl now to ensure it precedes the definition.
     getOrCreateSubprogramDIE(SPDecl);
   }
 
   // DW_TAG_inlined_subroutine may refer to this DIE.
   DIE &SPDie = createAndAddDIE(dwarf::DW_TAG_subprogram, *ContextDIE, SP);
 
-  // Abort here and fill this in later, depending on whether or not this
+  // Stop here and fill this in later, depending on whether or not this
   // subprogram turns out to have inlined instances or not.
   if (SP.isDefinition())
     return &SPDie;
@@ -1398,12 +1401,21 @@ DIE *DwarfUnit::getOrCreateSubprogramDIE(DISubprogram SP) {
   return &SPDie;
 }
 
+void DwarfUnit::applySubprogramAttributesToDefinition(DISubprogram SP, DIE &SPDie) {
+  DISubprogram SPDecl = SP.getFunctionDeclaration();
+  DIScope Context = resolve(SPDecl ? SPDecl.getContext() : SP.getContext());
+  applySubprogramAttributes(SP, SPDie);
+  addGlobalName(SP.getName(), SPDie, Context);
+}
+
 void DwarfUnit::applySubprogramAttributes(DISubprogram SP, DIE &SPDie) {
   DIE *DeclDie = nullptr;
   StringRef DeclLinkageName;
   if (DISubprogram SPDecl = SP.getFunctionDeclaration()) {
     DeclDie = getDIE(SPDecl);
-    assert(DeclDie);
+    assert(DeclDie && "This DIE should've already been constructed when the "
+                      "definition DIE was created in "
+                      "getOrCreateSubprogramDIE");
     DeclLinkageName = SPDecl.getLinkageName();
   }
 
@@ -1500,6 +1512,17 @@ void DwarfUnit::applySubprogramAttributes(DISubprogram SP, DIE &SPDie) {
 
   if (SP.isExplicit())
     addFlag(SPDie, dwarf::DW_AT_explicit);
+}
+
+void DwarfUnit::applyVariableAttributes(const DbgVariable &Var,
+                                        DIE &VariableDie) {
+  StringRef Name = Var.getName();
+  if (!Name.empty())
+    addString(VariableDie, dwarf::DW_AT_name, Name);
+  addSourceLine(VariableDie, Var.getVariable());
+  addType(VariableDie, Var.getType());
+  if (Var.isArtificial())
+    addFlag(VariableDie, dwarf::DW_AT_artificial);
 }
 
 // Return const expression if value is a GEP to access merged global
@@ -1665,10 +1688,8 @@ void DwarfCompileUnit::createGlobalVariableDIE(DIGlobalVariable GV) {
       DD->addAccelName(GV.getLinkageName(), AddrDIE);
   }
 
-  if (!GV.isLocalToUnit())
-    addGlobalName(GV.getName(),
-                  VariableSpecDIE ? *VariableSpecDIE : *VariableDIE,
-                  GV.getContext());
+  addGlobalName(GV.getName(), VariableSpecDIE ? *VariableSpecDIE : *VariableDIE,
+                GV.getContext());
 }
 
 /// constructSubrangeDIE - Construct subrange DIE from DISubrange.
@@ -1777,24 +1798,13 @@ std::unique_ptr<DIE> DwarfUnit::constructVariableDIE(DbgVariable &DV,
 
 std::unique_ptr<DIE> DwarfUnit::constructVariableDIEImpl(const DbgVariable &DV,
                                                          bool Abstract) {
-  StringRef Name = DV.getName();
-
   // Define variable debug information entry.
   auto VariableDie = make_unique<DIE>(DV.getTag());
-  DbgVariable *AbsVar = DV.getAbstractVariable();
-  if (AbsVar && AbsVar->getDIE())
-    addDIEEntry(*VariableDie, dwarf::DW_AT_abstract_origin, *AbsVar->getDIE());
-  else {
-    if (!Name.empty())
-      addString(*VariableDie, dwarf::DW_AT_name, Name);
-    addSourceLine(*VariableDie, DV.getVariable());
-    addType(*VariableDie, DV.getType());
-    if (DV.isArtificial())
-      addFlag(*VariableDie, dwarf::DW_AT_artificial);
-  }
 
-  if (Abstract)
+  if (Abstract) {
+    applyVariableAttributes(DV, *VariableDie);
     return VariableDie;
+  }
 
   // Add variable address.
 

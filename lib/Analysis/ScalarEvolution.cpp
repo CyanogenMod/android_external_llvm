@@ -7216,6 +7216,15 @@ public:
         cast<SCEVConstant>(Zero)->getValue();
     Remainder = SCEVParameterRewriter::rewrite(Numerator, SE, RewriteMap, true);
 
+    if (Remainder->isZero()) {
+      // The Quotient is obtained by replacing Denominator by 1 in Numerator.
+      RewriteMap[cast<SCEVUnknown>(Denominator)->getValue()] =
+          cast<SCEVConstant>(One)->getValue();
+      Quotient =
+          SCEVParameterRewriter::rewrite(Numerator, SE, RewriteMap, true);
+      return;
+    }
+
     // Quotient is (Numerator - Remainder) divided by Denominator.
     const SCEV *Q, *R;
     const SCEV *Diff = SE.getMinusSCEV(Numerator, Remainder);
@@ -7356,7 +7365,7 @@ const SCEV *ScalarEvolution::getElementSize(Instruction *Inst) {
   if (StoreInst *Store = dyn_cast<StoreInst>(Inst))
     Ty = Store->getValueOperand()->getType();
   else if (LoadInst *Load = dyn_cast<LoadInst>(Inst))
-    Ty = Load->getPointerOperand()->getType();
+    Ty = Load->getType();
   else
     return nullptr;
 
@@ -7370,7 +7379,7 @@ void ScalarEvolution::findArrayDimensions(SmallVectorImpl<const SCEV *> &Terms,
                                           SmallVectorImpl<const SCEV *> &Sizes,
                                           const SCEV *ElementSize) const {
 
-  if (Terms.size() < 1)
+  if (Terms.size() < 1 || !ElementSize)
     return;
 
   // Early return when Terms do not contain parameters: we do not delinearize

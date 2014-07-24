@@ -1,9 +1,9 @@
 ; RUN: opt < %s -globalopt -S | FileCheck %s
 
-@foo1 = alias void ()* @bar2
+@foo1 = alias void ()* @foo2
 ; CHECK: @foo1 = alias void ()* @bar2
 
-@foo2 = alias void()* @bar2
+@foo2 = alias void()* @bar1
 ; CHECK: @foo2 = alias void ()* @bar2
 
 @bar1  = alias void ()* @bar2
@@ -11,6 +11,10 @@
 
 @weak1 = alias weak void ()* @bar2
 ; CHECK: @weak1 = alias weak void ()* @bar2
+
+@bar4 = private unnamed_addr constant [2 x i8*] zeroinitializer
+@foo4 = unnamed_addr alias linkonce_odr getelementptr inbounds ([2 x i8*]* @bar4, i32 0, i32 1)
+; CHECK: @foo4 = unnamed_addr alias linkonce_odr getelementptr inbounds ([2 x i8*]* @bar4, i32 0, i32 1)
 
 define void @bar2() {
   ret void

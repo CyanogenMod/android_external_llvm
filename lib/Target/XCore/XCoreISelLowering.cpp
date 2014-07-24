@@ -68,10 +68,9 @@ getTargetNodeName(unsigned Opcode) const
   }
 }
 
-XCoreTargetLowering::XCoreTargetLowering(XCoreTargetMachine &XTM)
-  : TargetLowering(XTM, new XCoreTargetObjectFile()),
-    TM(XTM),
-    Subtarget(*XTM.getSubtargetImpl()) {
+XCoreTargetLowering::XCoreTargetLowering(const TargetMachine &TM)
+    : TargetLowering(TM, new XCoreTargetObjectFile()), TM(TM),
+      Subtarget(TM.getSubtarget<XCoreSubtarget>()) {
 
   // Set up the register classes.
   addRegisterClass(MVT::i32, &XCore::GRRegsRegClass);
@@ -92,14 +91,11 @@ XCoreTargetLowering::XCoreTargetLowering(XCoreTargetMachine &XTM)
 
   // XCore does not have the NodeTypes below.
   setOperationAction(ISD::BR_CC,     MVT::i32,   Expand);
-  setOperationAction(ISD::SELECT_CC, MVT::i32,   Custom);
+  setOperationAction(ISD::SELECT_CC, MVT::i32,   Expand);
   setOperationAction(ISD::ADDC, MVT::i32, Expand);
   setOperationAction(ISD::ADDE, MVT::i32, Expand);
   setOperationAction(ISD::SUBC, MVT::i32, Expand);
   setOperationAction(ISD::SUBE, MVT::i32, Expand);
-
-  // Stop the combiner recombining select and set_cc
-  setOperationAction(ISD::SELECT_CC, MVT::Other, Expand);
 
   // 64bit
   setOperationAction(ISD::ADD, MVT::i64, Custom);
@@ -217,7 +213,6 @@ LowerOperation(SDValue Op, SelectionDAG &DAG) const {
   case ISD::BR_JT:              return LowerBR_JT(Op, DAG);
   case ISD::LOAD:               return LowerLOAD(Op, DAG);
   case ISD::STORE:              return LowerSTORE(Op, DAG);
-  case ISD::SELECT_CC:          return LowerSELECT_CC(Op, DAG);
   case ISD::VAARG:              return LowerVAARG(Op, DAG);
   case ISD::VASTART:            return LowerVASTART(Op, DAG);
   case ISD::SMUL_LOHI:          return LowerSMUL_LOHI(Op, DAG);
@@ -258,33 +253,21 @@ void XCoreTargetLowering::ReplaceNodeResults(SDNode *N,
 //  Misc Lower Operation implementation
 //===----------------------------------------------------------------------===//
 
-SDValue XCoreTargetLowering::
-LowerSELECT_CC(SDValue Op, SelectionDAG &DAG) const
-{
-  SDLoc dl(Op);
-  SDValue Cond = DAG.getNode(ISD::SETCC, dl, MVT::i32, Op.getOperand(2),
-                             Op.getOperand(3), Op.getOperand(4));
-  return DAG.getNode(ISD::SELECT, dl, MVT::i32, Cond, Op.getOperand(0),
-                     Op.getOperand(1));
-}
-
 SDValue XCoreTargetLowering::getGlobalAddressWrapper(SDValue GA,
                                                      const GlobalValue *GV,
                                                      SelectionDAG &DAG) const {
   // FIXME there is no actual debug info here
   SDLoc dl(GA);
-  const GlobalValue *UnderlyingGV = GV;
-  // If GV is an alias then use the aliasee to determine the wrapper type
-  if (const GlobalAlias *GA = dyn_cast<GlobalAlias>(GV))
-    UnderlyingGV = GA->getAliasee();
-  if (const GlobalVariable *GVar = dyn_cast<GlobalVariable>(UnderlyingGV)) {
-    if ((GVar->isConstant() && GV->hasLocalLinkage()) ||
-        (GVar->hasSection() &&
-         StringRef(GVar->getSection()).startswith(".cp.")))
-      return DAG.getNode(XCoreISD::CPRelativeWrapper, dl, MVT::i32, GA);
-    return DAG.getNode(XCoreISD::DPRelativeWrapper, dl, MVT::i32, GA);
-  }
-  return DAG.getNode(XCoreISD::PCRelativeWrapper, dl, MVT::i32, GA);
+
+  if (GV->getType()->getElementType()->isFunctionTy())
+    return DAG.getNode(XCoreISD::PCRelativeWrapper, dl, MVT::i32, GA);
+
+  const auto *GVar = dyn_cast<GlobalVariable>(GV);
+  if ((GV->hasSection() && StringRef(GV->getSection()).startswith(".cp.")) ||
+      (GVar && GVar->isConstant() && GV->hasLocalLinkage()))
+    return DAG.getNode(XCoreISD::CPRelativeWrapper, dl, MVT::i32, GA);
+
+  return DAG.getNode(XCoreISD::DPRelativeWrapper, dl, MVT::i32, GA);
 }
 
 static bool IsSmallObject(const GlobalValue *GV, const XCoreTargetLowering &XTL) {
@@ -508,7 +491,7 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG) const {
   CLI.setDebugLoc(DL).setChain(Chain)
     .setCallee(CallingConv::C, IntPtrTy,
                DAG.getExternalSymbol("__misaligned_load", getPointerTy()),
-               &Args, 0);
+               std::move(Args), 0);
 
   std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
   SDValue Ops[] = { CallResult.first, CallResult.second };
@@ -568,7 +551,7 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG) const
   CLI.setDebugLoc(dl).setChain(Chain)
     .setCallee(CallingConv::C, Type::getVoidTy(*DAG.getContext()),
                DAG.getExternalSymbol("__misaligned_store", getPointerTy()),
-               &Args, 0);
+               std::move(Args), 0);
 
   std::pair<SDValue, SDValue> CallResult = LowerCallTo(CLI);
   return CallResult.second;

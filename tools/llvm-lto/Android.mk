@@ -19,9 +19,9 @@ llvm_lto_STATIC_LIBRARIES := \
   libLLVMARMDisassembler \
   libLLVMAArch64CodeGen \
   libLLVMAArch64Info \
-  libLLVMAArch64Desc \
-  libLLVMAArch64AsmPrinter \
   libLLVMAArch64AsmParser \
+  libLLVMAArch64AsmPrinter \
+  libLLVMAArch64Desc \
   libLLVMAArch64Utils \
   libLLVMAArch64Disassembler \
   libLLVMMipsCodeGen \

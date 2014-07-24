@@ -39,15 +39,15 @@ llvm_objdump_STATIC_LIBRARIES := \
   libLLVMX86Disassembler \
   libLLVMAsmPrinter \
   libLLVMTarget \
+  libLLVMObject \
   libLLVMMCParser \
+  libLLVMMCAnalysis \
   libLLVMMC \
   libLLVMMCDisassembler \
-  libLLVMObject \
   libLLVMBitReader \
   libLLVMCore \
   libLLVMAsmParser \
   libLLVMSupport \
-  libLLVMMCDisassembler \
 
 include $(CLEAR_VARS)
 
