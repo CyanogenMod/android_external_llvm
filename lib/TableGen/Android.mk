@@ -4,6 +4,7 @@ libtablegen_SRC_FILES := \
   Error.cpp \
   Main.cpp \
   Record.cpp \
+  SetTheory.cpp \
   StringMatcher.cpp \
   TableGenBackend.cpp \
   TGLexer.cpp \

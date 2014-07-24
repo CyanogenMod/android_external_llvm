@@ -58,6 +58,7 @@ llvm_opt_STATIC_LIBRARIES := \
   libLLVMTransformUtils \
   libLLVMTarget \
   libLLVMMC \
+  libLLVMMCParser \
   libLLVMObject \
   libLLVMCore \
   libLLVMAsmParser \

@@ -729,6 +729,27 @@
 // CHECK-ERROR-NEXT:                  ^
 
 //------------------------------------------------------------------------------
+// Logical (immediates)
+//------------------------------------------------------------------------------
+
+        and w2, w3, #4294967296
+        eor w2, w3, #4294967296
+        orr w2, w3, #4294967296
+        ands w2, w3, #4294967296
+// CHECK-ERROR: error: expected compatible register or logical immediate
+// CHECK-ERROR-NEXT:         and w2, w3, #4294967296
+// CHECK-ERROR-NEXT:                     ^
+// CHECK-ERROR-NEXT: error: expected compatible register or logical immediate
+// CHECK-ERROR-NEXT:         eor w2, w3, #4294967296
+// CHECK-ERROR-NEXT:                     ^
+// CHECK-ERROR-NEXT: error: expected compatible register or logical immediate
+// CHECK-ERROR-NEXT:         orr w2, w3, #4294967296
+// CHECK-ERROR-NEXT:                     ^
+// CHECK-ERROR-NEXT: error: expected compatible register or logical immediate
+// CHECK-ERROR-NEXT:         ands w2, w3, #4294967296
+// CHECK-ERROR-NEXT:                      ^
+
+//------------------------------------------------------------------------------
 // Bitfield
 //------------------------------------------------------------------------------
 
@@ -1345,39 +1366,59 @@
 
         cset wsp, lt
         csetm sp, ge
+        cset w1, al
+        csetm x6, nv
 // CHECK-ERROR: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:        cset wsp, lt
 // CHECK-ERROR-NEXT:             ^
 // CHECK-ERROR-NEXT: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:        csetm sp, ge
 // CHECK-ERROR-NEXT:              ^
+// CHECK-ERROR-NEXT: error: condition codes AL and NV are invalid for this instruction
+// CHECK-ERROR-NEXT:        cset w1, al
+// CHECK-ERROR-NEXT:                   ^
+// CHECK-ERROR-NEXT: error: condition codes AL and NV are invalid for this instruction
+// CHECK-ERROR-NEXT:        csetm x6, nv
+// CHECK-ERROR-NEXT:                    ^
 
         cinc w3, wsp, ne
         cinc sp, x9, eq
+        cinc x2, x0, nv
 // CHECK-ERROR: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:        cinc w3, wsp, ne
 // CHECK-ERROR-NEXT:                 ^
 // CHECK-ERROR-NEXT: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:        cinc sp, x9, eq
 // CHECK-ERROR-NEXT:             ^
+// CHECK-ERROR-NEXT: error: condition codes AL and NV are invalid for this instruction
+// CHECK-ERROR-NEXT:        cinc x2, x0, nv
+// CHECK-ERROR-NEXT:                       ^
 
         cinv w3, wsp, ne
         cinv sp, x9, eq
+        cinv w8, x7, nv
 // CHECK-ERROR: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:        cinv w3, wsp, ne
 // CHECK-ERROR-NEXT:                 ^
 // CHECK-ERROR-NEXT: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:        cinv sp, x9, eq
 // CHECK-ERROR-NEXT:             ^
+// CHECK-ERROR-NEXT: error: condition codes AL and NV are invalid for this instruction
+// CHECK-ERROR-NEXT:        cinv w8, x7, nv
+// CHECK-ERROR-NEXT:                       ^
 
         cneg w3, wsp, ne
         cneg sp, x9, eq
+        cneg x4, x5, al
 // CHECK-ERROR: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:        cneg w3, wsp, ne
 // CHECK-ERROR-NEXT:                 ^
 // CHECK-ERROR-NEXT: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:        cneg sp, x9, eq
 // CHECK-ERROR-NEXT:             ^
+// CHECK-ERROR-NEXT: error: condition codes AL and NV are invalid for this instruction
+// CHECK-ERROR-NEXT:        cneg x4, x5, al
+// CHECK-ERROR-NEXT:                       ^
 
 //------------------------------------------------------------------------------
 // Data Processing (1 source)
@@ -2944,13 +2985,17 @@
         orn wsp, w3, w5
         bics x20, sp, x9, lsr #0
         orn x2, x6, sp, lsl #3
-// CHECK-ERROR: error: invalid operand for instruction
+// FIXME: the diagnostic we get for 'orn wsp, w3, w5' is from the orn alias,
+// which is a better match than the genuine ORNWri, whereas it would be better
+// to get the ORNWri diagnostic when the alias did not match, i.e. the
+// alias' diagnostics should have a lower priority.
+// CHECK-ERROR: error: expected compatible register or logical immediate
 // CHECK-ERROR-NEXT:         orn wsp, w3, w5
-// CHECK-ERROR-NEXT:             ^
+// CHECK-ERROR-NEXT:                      ^
 // CHECK-ERROR-NEXT: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:         bics x20, sp, x9, lsr #0
 // CHECK-ERROR-NEXT:                   ^
-// CHECK-ERROR-NEXT: error: invalid operand for instruction
+// CHECK-ERROR-NEXT: error: expected compatible register or logical immediate
 // CHECK-ERROR-NEXT:         orn x2, x6, sp, lsl #3
 // CHECK-ERROR-NEXT:                     ^
 

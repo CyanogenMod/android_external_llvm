@@ -8,11 +8,11 @@ transforms_scalar_SRC_FILES := \
   DCE.cpp \
   DeadStoreElimination.cpp \
   EarlyCSE.cpp \
-  GlobalMerge.cpp \
   GVN.cpp \
   IndVarSimplify.cpp \
   JumpThreading.cpp \
   LICM.cpp \
+  LoadCombine.cpp \
   LoopDeletion.cpp \
   LoopIdiomRecognize.cpp \
   LoopInstSimplify.cpp \

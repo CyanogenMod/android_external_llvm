@@ -11,11 +11,38 @@ llvm_rtdyld_SRC_FILES := \
   llvm-rtdyld.cpp
 
 llvm_rtdyld_STATIC_LIBRARIES := \
+  libLLVMARMCodeGen \
+  libLLVMARMInfo \
+  libLLVMARMDesc \
+  libLLVMARMAsmPrinter \
+  libLLVMARMAsmParser \
+  libLLVMARMDisassembler \
+  libLLVMAArch64CodeGen \
+  libLLVMAArch64Info \
+  libLLVMAArch64AsmParser \
+  libLLVMAArch64Desc \
+  libLLVMAArch64AsmPrinter \
+  libLLVMAArch64Utils \
+  libLLVMAArch64Disassembler \
+  libLLVMMipsCodeGen \
+  libLLVMMipsInfo \
+  libLLVMMipsDesc \
+  libLLVMMipsAsmPrinter \
+  libLLVMMipsAsmParser \
+  libLLVMMipsDisassembler \
+  libLLVMX86CodeGen \
+  libLLVMX86Info \
+  libLLVMX86Desc \
+  libLLVMX86AsmPrinter \
+  libLLVMX86AsmParser \
+  libLLVMX86Utils \
+  libLLVMX86Disassembler \
   libLLVMDebugInfo          \
   libLLVMExecutionEngine    \
-  libLLVMMC                 \
-  libLLVMRuntimeDyld        \
   libLLVMObject             \
+  libLLVMMC                 \
+  libLLVMMCParser           \
+  libLLVMRuntimeDyld        \
   libLLVMBitReader          \
   libLLVMCore               \
   libLLVMSupport            \

@@ -327,6 +327,11 @@ public:
     return Type::getIntNTy(Context, N);
   }
 
+  /// \brief Fetch the type representing a 16-bit floating point value.
+  Type *getHalfTy() {
+    return Type::getHalfTy(Context);
+  }
+
   /// \brief Fetch the type representing a 32-bit floating point value.
   Type *getFloatTy() {
     return Type::getFloatTy(Context);
@@ -1463,6 +1468,30 @@ public:
     // Shuffle the value across the desired number of elements.
     Value *Zeros = ConstantAggregateZero::get(VectorType::get(I32Ty, NumElts));
     return CreateShuffleVector(V, Undef, Zeros, Name + ".splat");
+  }
+
+  /// \brief Return a value that has been extracted from a larger integer type.
+  Value *CreateExtractInteger(const DataLayout &DL, Value *From,
+                              IntegerType *ExtractedTy, uint64_t Offset,
+                              const Twine &Name) {
+    IntegerType *IntTy = cast<IntegerType>(From->getType());
+    assert(DL.getTypeStoreSize(ExtractedTy) + Offset <=
+               DL.getTypeStoreSize(IntTy) &&
+           "Element extends past full value");
+    uint64_t ShAmt = 8 * Offset;
+    Value *V = From;
+    if (DL.isBigEndian())
+      ShAmt = 8 * (DL.getTypeStoreSize(IntTy) -
+                   DL.getTypeStoreSize(ExtractedTy) - Offset);
+    if (ShAmt) {
+      V = CreateLShr(V, ShAmt, Name + ".shift");
+    }
+    assert(ExtractedTy->getBitWidth() <= IntTy->getBitWidth() &&
+           "Cannot extract to a larger integer!");
+    if (ExtractedTy != IntTy) {
+      V = CreateTrunc(V, ExtractedTy, Name + ".trunc");
+    }
+    return V;
   }
 };
 

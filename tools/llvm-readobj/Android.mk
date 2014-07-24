@@ -9,6 +9,7 @@ LLVM_ROOT_PATH := $(LOCAL_PATH)/../..
 
 llvm_readobj_SRC_FILES := \
   ARMAttributeParser.cpp \
+  ARMWinEHPrinter.cpp \
   COFFDumper.cpp \
   ELFDumper.cpp \
   Error.cpp \
@@ -25,6 +26,8 @@ llvm_readobj_STATIC_LIBRARIES := \
   libLLVMX86Info \
   libLLVMObject \
   libLLVMBitReader \
+  libLLVMMC \
+  libLLVMMCParser \
   libLLVMCore \
   libLLVMSupport \
 

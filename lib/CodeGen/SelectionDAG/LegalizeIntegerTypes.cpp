@@ -138,7 +138,9 @@ void DAGTypeLegalizer::PromoteIntegerResult(SDNode *N, unsigned ResNo) {
     Res = PromoteIntRes_Atomic1(cast<AtomicSDNode>(N)); break;
 
   case ISD::ATOMIC_CMP_SWAP:
-    Res = PromoteIntRes_Atomic2(cast<AtomicSDNode>(N)); break;
+  case ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS:
+    Res = PromoteIntRes_AtomicCmpSwap(cast<AtomicSDNode>(N), ResNo);
+    break;
   }
 
   // If the result is null then the sub-method took care of registering it.
@@ -192,16 +194,41 @@ SDValue DAGTypeLegalizer::PromoteIntRes_Atomic1(AtomicSDNode *N) {
   return Res;
 }
 
-SDValue DAGTypeLegalizer::PromoteIntRes_Atomic2(AtomicSDNode *N) {
+SDValue DAGTypeLegalizer::PromoteIntRes_AtomicCmpSwap(AtomicSDNode *N,
+                                                      unsigned ResNo) {
+  if (ResNo == 1) {
+    assert(N->getOpcode() == ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS);
+    EVT SVT = getSetCCResultType(N->getOperand(2).getValueType());
+    EVT NVT = TLI.getTypeToTransformTo(*DAG.getContext(), N->getValueType(1));
+
+    // Only use the result of getSetCCResultType if it is legal,
+    // otherwise just use the promoted result type (NVT).
+    if (!TLI.isTypeLegal(SVT))
+      SVT = NVT;
+
+    SDVTList VTs = DAG.getVTList(N->getValueType(0), SVT, MVT::Other);
+    SDValue Res = DAG.getAtomicCmpSwap(
+        ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS, SDLoc(N), N->getMemoryVT(), VTs,
+        N->getChain(), N->getBasePtr(), N->getOperand(2), N->getOperand(3),
+        N->getMemOperand(), N->getSuccessOrdering(), N->getFailureOrdering(),
+        N->getSynchScope());
+    ReplaceValueWith(SDValue(N, 0), Res.getValue(0));
+    ReplaceValueWith(SDValue(N, 2), Res.getValue(2));
+    return Res.getValue(1);
+  }
+
   SDValue Op2 = GetPromotedInteger(N->getOperand(2));
   SDValue Op3 = GetPromotedInteger(N->getOperand(3));
-  SDValue Res = DAG.getAtomic(N->getOpcode(), SDLoc(N), N->getMemoryVT(),
-                              N->getChain(), N->getBasePtr(), Op2, Op3,
-                              N->getMemOperand(), N->getSuccessOrdering(),
-                              N->getFailureOrdering(), N->getSynchScope());
+  SDVTList VTs =
+      DAG.getVTList(Op2.getValueType(), N->getValueType(1), MVT::Other);
+  SDValue Res = DAG.getAtomicCmpSwap(
+      N->getOpcode(), SDLoc(N), N->getMemoryVT(), VTs, N->getChain(),
+      N->getBasePtr(), Op2, Op3, N->getMemOperand(), N->getSuccessOrdering(),
+      N->getFailureOrdering(), N->getSynchScope());
   // Legalized the chain result - switch anything that used the old chain to
   // use the new one.
-  ReplaceValueWith(SDValue(N, 1), Res.getValue(1));
+  unsigned ChainOp = N->getNumValues() - 1;
+  ReplaceValueWith(SDValue(N, ChainOp), Res.getValue(ChainOp));
   return Res;
 }
 
@@ -492,7 +519,7 @@ SDValue DAGTypeLegalizer::PromoteIntRes_VSELECT(SDNode *N) {
   EVT OpTy = N->getOperand(1).getValueType();
 
   // Promote all the way up to the canonical SetCC type.
-  Mask = PromoteTargetBoolean(Mask, getSetCCResultType(OpTy));
+  Mask = PromoteTargetBoolean(Mask, OpTy);
   SDValue LHS = GetPromotedInteger(N->getOperand(1));
   SDValue RHS = GetPromotedInteger(N->getOperand(2));
   return DAG.getNode(ISD::VSELECT, SDLoc(N),
@@ -892,8 +919,7 @@ SDValue DAGTypeLegalizer::PromoteIntOp_BRCOND(SDNode *N, unsigned OpNo) {
   assert(OpNo == 1 && "only know how to promote condition");
 
   // Promote all the way up to the canonical SetCC type.
-  EVT SVT = getSetCCResultType(MVT::Other);
-  SDValue Cond = PromoteTargetBoolean(N->getOperand(1), SVT);
+  SDValue Cond = PromoteTargetBoolean(N->getOperand(1), MVT::Other);
 
   // The chain (Op#0) and basic block destination (Op#2) are always legal types.
   return SDValue(DAG.UpdateNodeOperands(N, N->getOperand(0), Cond,
@@ -986,9 +1012,8 @@ SDValue DAGTypeLegalizer::PromoteIntOp_SELECT(SDNode *N, unsigned OpNo) {
   EVT OpTy = N->getOperand(1).getValueType();
 
   // Promote all the way up to the canonical SetCC type.
-  EVT SVT = getSetCCResultType(N->getOpcode() == ISD::SELECT ?
-                                   OpTy.getScalarType() : OpTy);
-  Cond = PromoteTargetBoolean(Cond, SVT);
+  EVT OpVT = N->getOpcode() == ISD::SELECT ? OpTy.getScalarType() : OpTy;
+  Cond = PromoteTargetBoolean(Cond, OpVT);
 
   return SDValue(DAG.UpdateNodeOperands(N, Cond, N->getOperand(1),
                                         N->getOperand(2)), 0);
@@ -1141,6 +1166,26 @@ void DAGTypeLegalizer::ExpandIntegerResult(SDNode *N, unsigned ResNo) {
     std::pair<SDValue, SDValue> Tmp = ExpandAtomic(N);
     SplitInteger(Tmp.first, Lo, Hi);
     ReplaceValueWith(SDValue(N, 1), Tmp.second);
+    break;
+  }
+  case ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS: {
+    AtomicSDNode *AN = cast<AtomicSDNode>(N);
+    SDVTList VTs = DAG.getVTList(N->getValueType(0), MVT::Other);
+    SDValue Tmp = DAG.getAtomicCmpSwap(
+        ISD::ATOMIC_CMP_SWAP, SDLoc(N), AN->getMemoryVT(), VTs,
+        N->getOperand(0), N->getOperand(1), N->getOperand(2), N->getOperand(3),
+        AN->getMemOperand(), AN->getSuccessOrdering(), AN->getFailureOrdering(),
+        AN->getSynchScope());
+
+    // Expanding to the strong ATOMIC_CMP_SWAP node means we can determine
+    // success simply by comparing the loaded value against the ingoing
+    // comparison.
+    SDValue Success = DAG.getSetCC(SDLoc(N), N->getValueType(1), Tmp,
+                                   N->getOperand(2), ISD::SETEQ);
+
+    SplitInteger(Tmp, Lo, Hi);
+    ReplaceValueWith(SDValue(N, 1), Success);
+    ReplaceValueWith(SDValue(N, 2), Tmp.getValue(1));
     break;
   }
 
@@ -2301,7 +2346,7 @@ void DAGTypeLegalizer::ExpandIntRes_XMULO(SDNode *N,
 
   TargetLowering::CallLoweringInfo CLI(DAG);
   CLI.setDebugLoc(dl).setChain(Chain)
-    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Func, &Args, 0)
+    .setCallee(TLI.getLibcallCallingConv(LC), RetTy, Func, std::move(Args), 0)
     .setSExtResult();
 
   std::pair<SDValue, SDValue> CallInfo = TLI.LowerCallTo(CLI);
@@ -2388,16 +2433,18 @@ void DAGTypeLegalizer::ExpandIntRes_ATOMIC_LOAD(SDNode *N,
                                                 SDValue &Lo, SDValue &Hi) {
   SDLoc dl(N);
   EVT VT = cast<AtomicSDNode>(N)->getMemoryVT();
+  SDVTList VTs = DAG.getVTList(VT, MVT::i1, MVT::Other);
   SDValue Zero = DAG.getConstant(0, VT);
-  SDValue Swap = DAG.getAtomic(ISD::ATOMIC_CMP_SWAP, dl, VT,
-                               N->getOperand(0),
-                               N->getOperand(1), Zero, Zero,
-                               cast<AtomicSDNode>(N)->getMemOperand(),
-                               cast<AtomicSDNode>(N)->getOrdering(),
-                               cast<AtomicSDNode>(N)->getOrdering(),
-                               cast<AtomicSDNode>(N)->getSynchScope());
+  SDValue Swap = DAG.getAtomicCmpSwap(
+      ISD::ATOMIC_CMP_SWAP_WITH_SUCCESS, dl,
+      cast<AtomicSDNode>(N)->getMemoryVT(), VTs, N->getOperand(0),
+      N->getOperand(1), Zero, Zero, cast<AtomicSDNode>(N)->getMemOperand(),
+      cast<AtomicSDNode>(N)->getOrdering(),
+      cast<AtomicSDNode>(N)->getOrdering(),
+      cast<AtomicSDNode>(N)->getSynchScope());
+
   ReplaceValueWith(SDValue(N, 0), Swap.getValue(0));
-  ReplaceValueWith(SDValue(N, 1), Swap.getValue(1));
+  ReplaceValueWith(SDValue(N, 1), Swap.getValue(2));
 }
 
 //===----------------------------------------------------------------------===//

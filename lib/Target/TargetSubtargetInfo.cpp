@@ -39,7 +39,20 @@ bool TargetSubtargetInfo::useMachineScheduler() const {
   return enableMachineScheduler();
 }
 
+bool TargetSubtargetInfo::enableAtomicExpandLoadLinked() const {
+  return true;
+}
+
 bool TargetSubtargetInfo::enableMachineScheduler() const {
+  return false;
+}
+
+bool TargetSubtargetInfo::enableRALocalReassignment(
+    CodeGenOpt::Level OptLevel) const {
+  return true;
+}
+
+bool TargetSubtargetInfo::enablePostMachineScheduler() const {
   return false;
 }
 

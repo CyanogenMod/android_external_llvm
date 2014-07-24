@@ -272,7 +272,7 @@ bool MipsSEInstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI) const {
   default:
     return false;
   case Mips::RetRA:
-    expandRetRA(MBB, MI, Mips::RET);
+    expandRetRA(MBB, MI);
     break;
   case Mips::PseudoMFHI:
     Opc = isMicroMips ? Mips::MFHI16_MM : Mips::MFHI;
@@ -428,9 +428,14 @@ unsigned MipsSEInstrInfo::getAnalyzableBrOpc(unsigned Opc) const {
 }
 
 void MipsSEInstrInfo::expandRetRA(MachineBasicBlock &MBB,
-                                MachineBasicBlock::iterator I,
-                                unsigned Opc) const {
-  BuildMI(MBB, I, I->getDebugLoc(), get(Opc)).addReg(Mips::RA);
+                                  MachineBasicBlock::iterator I) const {
+  const auto &Subtarget = TM.getSubtarget<MipsSubtarget>();
+
+  if (Subtarget.isGP64bit())
+    BuildMI(MBB, I, I->getDebugLoc(), get(Mips::PseudoReturn64))
+        .addReg(Mips::RA_64);
+  else
+    BuildMI(MBB, I, I->getDebugLoc(), get(Mips::PseudoReturn)).addReg(Mips::RA);
 }
 
 std::pair<bool, bool>
@@ -542,20 +547,31 @@ void MipsSEInstrInfo::expandBuildPairF64(MachineBasicBlock &MBB,
   const MCInstrDesc& Mtc1Tdd = get(Mips::MTC1);
   DebugLoc dl = I->getDebugLoc();
   const TargetRegisterInfo &TRI = getRegisterInfo();
+  bool HasMTHC1 = TM.getSubtarget<MipsSubtarget>().hasMips32r2() ||
+                  TM.getSubtarget<MipsSubtarget>().hasMips32r6();
 
-  // For FP32 mode:
-  //   mtc1 Lo, $fp
-  //   mtc1 Hi, $fp + 1
-  // For FP64 mode:
+  // When mthc1 is available, use:
   //   mtc1 Lo, $fp
   //   mthc1 Hi, $fp
+  //
+  // Otherwise, for FP64:
+  //   spill + reload via ldc1
+  // This has not been implemented since FP64 on MIPS32 and earlier is not
+  // supported.
+  //
+  // Otherwise, for FP32:
+  //   mtc1 Lo, $fp
+  //   mtc1 Hi, $fp + 1
 
   BuildMI(MBB, I, dl, Mtc1Tdd, TRI.getSubReg(DstReg, Mips::sub_lo))
     .addReg(LoReg);
 
-  if (FP64) {
-    // FIXME: The .addReg(DstReg, RegState::Implicit) is a white lie used to
-    //        temporarily work around a widespread bug in the -mfp64 support.
+  if (HasMTHC1 || FP64) {
+    assert(TM.getSubtarget<MipsSubtarget>().hasMips32r2() &&
+           "MTHC1 requires MIPS32r2");
+
+    // FIXME: The .addReg(DstReg) is a white lie used to temporarily work
+    //        around a widespread bug in the -mfp64 support.
     //        The problem is that none of the 32-bit fpu ops mention the fact
     //        that they clobber the upper 32-bits of the 64-bit FPR. Fixing that
     //        requires a major overhaul of the FPU implementation which can't
@@ -565,9 +581,9 @@ void MipsSEInstrInfo::expandBuildPairF64(MachineBasicBlock &MBB,
     //        We therefore pretend that it reads the bottom 32-bits to
     //        artificially create a dependency and prevent the scheduler
     //        changing the behaviour of the code.
-    BuildMI(MBB, I, dl, get(Mips::MTHC1), TRI.getSubReg(DstReg, Mips::sub_hi))
-        .addReg(HiReg)
-        .addReg(DstReg, RegState::Implicit);
+    BuildMI(MBB, I, dl, get(FP64 ? Mips::MTHC1_D64 : Mips::MTHC1_D32), DstReg)
+        .addReg(DstReg)
+        .addReg(HiReg);
   } else
     BuildMI(MBB, I, dl, Mtc1Tdd, TRI.getSubReg(DstReg, Mips::sub_hi))
       .addReg(HiReg);
@@ -580,17 +596,16 @@ void MipsSEInstrInfo::expandEhReturn(MachineBasicBlock &MBB,
   // indirect jump to TargetReg
   const MipsSubtarget &STI = TM.getSubtarget<MipsSubtarget>();
   unsigned ADDU = STI.isABI_N64() ? Mips::DADDu : Mips::ADDu;
-  unsigned JR = STI.isABI_N64() ? Mips::JR64 : Mips::JR;
-  unsigned SP = STI.isABI_N64() ? Mips::SP_64 : Mips::SP;
-  unsigned RA = STI.isABI_N64() ? Mips::RA_64 : Mips::RA;
-  unsigned T9 = STI.isABI_N64() ? Mips::T9_64 : Mips::T9;
-  unsigned ZERO = STI.isABI_N64() ? Mips::ZERO_64 : Mips::ZERO;
+  unsigned SP = STI.isGP64bit() ? Mips::SP_64 : Mips::SP;
+  unsigned RA = STI.isGP64bit() ? Mips::RA_64 : Mips::RA;
+  unsigned T9 = STI.isGP64bit() ? Mips::T9_64 : Mips::T9;
+  unsigned ZERO = STI.isGP64bit() ? Mips::ZERO_64 : Mips::ZERO;
   unsigned OffsetReg = I->getOperand(0).getReg();
   unsigned TargetReg = I->getOperand(1).getReg();
 
   // addu $ra, $v0, $zero
   // addu $sp, $sp, $v1
-  // jr   $ra
+  // jr   $ra (via RetRA)
   if (TM.getRelocationModel() == Reloc::PIC_)
     BuildMI(MBB, I, I->getDebugLoc(), TM.getInstrInfo()->get(ADDU), T9)
         .addReg(TargetReg).addReg(ZERO);
@@ -598,7 +613,7 @@ void MipsSEInstrInfo::expandEhReturn(MachineBasicBlock &MBB,
       .addReg(TargetReg).addReg(ZERO);
   BuildMI(MBB, I, I->getDebugLoc(), TM.getInstrInfo()->get(ADDU), SP)
       .addReg(SP).addReg(OffsetReg);
-  BuildMI(MBB, I, I->getDebugLoc(), TM.getInstrInfo()->get(JR)).addReg(RA);
+  expandRetRA(MBB, I);
 }
 
 const MipsInstrInfo *llvm::createMipsSEInstrInfo(MipsTargetMachine &TM) {

@@ -12,6 +12,7 @@ x86_codegen_TBLGEN_TABLES := \
 
 x86_codegen_SRC_FILES := \
   X86AsmPrinter.cpp \
+  X86AtomicExpandPass.cpp \
   X86CodeEmitter.cpp \
   X86FastISel.cpp \
   X86FixupLEAs.cpp \

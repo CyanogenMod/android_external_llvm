@@ -1113,9 +1113,14 @@ void Emitter<CodeEmitter>::emitInstruction(MachineInstr &MI,
     case TargetOpcode::INLINEASM:
       // We allow inline assembler nodes with empty bodies - they can
       // implicitly define registers, which is ok for JIT.
-      if (MI.getOperand(0).getSymbolName()[0])
+      if (MI.getOperand(0).getSymbolName()[0]) {
+        DebugLoc DL = MI.getDebugLoc();
+        DL.print(MI.getParent()->getParent()->getFunction()->getContext(),
+                 llvm::errs());
         report_fatal_error("JIT does not support inline asm!");
+      }
       break;
+    case TargetOpcode::DBG_VALUE:
     case TargetOpcode::CFI_INSTRUCTION:
       break;
     case TargetOpcode::GC_LABEL:
@@ -1126,6 +1131,16 @@ void Emitter<CodeEmitter>::emitInstruction(MachineInstr &MI,
     case TargetOpcode::IMPLICIT_DEF:
     case TargetOpcode::KILL:
       break;
+
+    case X86::SEH_PushReg:
+    case X86::SEH_SaveReg:
+    case X86::SEH_SaveXMM:
+    case X86::SEH_StackAlloc:
+    case X86::SEH_SetFrame:
+    case X86::SEH_PushFrame:
+    case X86::SEH_EndPrologue:
+      break;
+
     case X86::MOVPC32r: {
       // This emits the "call" portion of this pseudo instruction.
       MCE.emitByte(BaseOpcode);

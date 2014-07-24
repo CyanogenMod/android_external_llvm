@@ -6,6 +6,7 @@ support_SRC_FILES := \
   APInt.cpp \
   APSInt.cpp \
   ARMBuildAttrs.cpp \
+  ARMWinEH.cpp \
   Atomic.cpp \
   BlockFrequency.cpp \
   BranchProbability.cpp \
@@ -49,13 +50,16 @@ support_SRC_FILES := \
   PrettyStackTrace.cpp \
   Process.cpp \
   Program.cpp \
+  RandomNumberGenerator.cpp \
   Regex.cpp \
   RWMutex.cpp \
+  ScaledNumber.cpp \
   SearchForAddressOfSpecialSymbol.cpp \
   Signals.cpp \
   SmallPtrSet.cpp \
   SmallVector.cpp \
   SourceMgr.cpp \
+  SpecialCaseList.cpp \
   Statistic.cpp \
   StreamableMemoryObject.cpp \
   StringExtras.cpp \
@@ -84,8 +88,7 @@ support_SRC_FILES := \
   regerror.c \
   regexec.c \
   regfree.c \
-  regstrlcpy.c \
-  system_error.cpp
+  regstrlcpy.c
 
 
 # For the host

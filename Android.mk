@@ -25,6 +25,7 @@ subdirs := \
   lib/Linker \
   lib/LTO \
   lib/MC \
+  lib/MC/MCAnalysis \
   lib/MC/MCDisassembler \
   lib/MC/MCParser \
   lib/Object \
@@ -113,7 +114,6 @@ subdirs += \
 subdirs += \
   utils/count \
   utils/FileCheck \
-  utils/FileUpdate \
   utils/not \
   utils/TableGen \
 
