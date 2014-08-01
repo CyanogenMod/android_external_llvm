@@ -1,6 +1,3 @@
-# Don't build the library in unbundled branches.
-ifeq (,$(TARGET_BUILD_APPS))
-
 LOCAL_PATH:= $(call my-dir)
 
 llvm_pre_static_libraries := \
@@ -135,5 +132,3 @@ include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_SHARED_LIBRARY)
 
 endif
-
-endif # don't build in unbundled branches
