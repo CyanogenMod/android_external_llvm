@@ -55,6 +55,9 @@ LOCAL_IS_HOST_MODULE := true
 
 LOCAL_32_BIT_ONLY := true
 
+# remove when we can use PIE binaries in all places again
+LOCAL_NO_FPIE := true
+
 ###########################################################
 ## Commands for running tblgen to compile a td file
 ###########################################################
