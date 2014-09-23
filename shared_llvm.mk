@@ -61,14 +61,14 @@ llvm_post_static_libraries := \
   libLLVMOption \
   libLLVMSupport \
   libLLVMVectorize \
+  libLLVMProfileData
 
 llvm_host_static_libraries := \
   libLLVMExecutionEngine \
   libLLVMMCDisassembler \
   libLLVMRuntimeDyld \
   libLLVMJIT \
-  libLLVMMCJIT \
-  libLLVMProfileData
+  libLLVMMCJIT
 
 ifeq (true,$(FORCE_BUILD_LLVM_COMPONENTS))
 # HOST LLVM shared library build
