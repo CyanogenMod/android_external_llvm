@@ -141,7 +141,7 @@
 #define HAVE_LIBIMAGEHLP 1
 
 /* Type of 1st arg on ELM Callback */
-#define WIN32_ELMCB_PCSTR PSTR
+#define WIN32_ELMCB_PCSTR PCSTR
 
 
 #else /* Linux, Mac OS X, ... Unixish platform */

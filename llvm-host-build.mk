@@ -1,9 +1,8 @@
 # Windows can't use Clang to build yet
 ifneq ($(HOST_OS),windows)
 LOCAL_CLANG := true
-endif
-
 include external/libcxx/libcxx.mk
+endif
 
 LOCAL_CFLAGS +=	\
 	-D_GNU_SOURCE	\
@@ -48,7 +47,6 @@ LOCAL_C_INCLUDES :=	\
 	$(LLVM_ROOT_PATH)	\
 	$(LLVM_ROOT_PATH)/include	\
 	$(LLVM_ROOT_PATH)/host/include	\
-        external/libcxx/include \
 	$(LOCAL_C_INCLUDES)
 
 LOCAL_IS_HOST_MODULE := true
