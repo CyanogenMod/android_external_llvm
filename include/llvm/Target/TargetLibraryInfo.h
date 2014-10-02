@@ -13,6 +13,17 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/Pass.h"
 
+// BEGIN ANDROID-SPECIFIC
+#ifdef WIN32
+#ifdef fseeko
+#undef fseeko
+#endif
+#ifdef ftello
+#undef ftello
+#endif
+#endif  // WIN32
+// END ANDROID-SPECIFIC
+
 namespace llvm {
   class Triple;
 
