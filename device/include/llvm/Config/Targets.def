@@ -29,6 +29,11 @@
   LLVM_TARGET(Mips)
 #elif defined(__i386__) || defined(__x86_64__)
   LLVM_TARGET(X86)
+
+#if defined(FORCE_BUILD_ARM)
+  LLVM_TARGET(ARM)
+#endif
+
 #elif defined(__aarch64__)
   LLVM_TARGET(ARM)
   LLVM_TARGET(AArch64)
