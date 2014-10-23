@@ -46,8 +46,6 @@ public:
 
   unsigned GetInstSizeInBytes(const MachineInstr *MI) const;
 
-  bool isAsCheapAsAMove(const MachineInstr *MI) const override;
-
   bool isCoalescableExtInstr(const MachineInstr &MI, unsigned &SrcReg,
                              unsigned &DstReg, unsigned &SubIdx) const override;
 
