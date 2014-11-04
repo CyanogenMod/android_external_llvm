@@ -49,6 +49,11 @@ LOCAL_C_INCLUDES :=	\
 	$(LLVM_ROOT_PATH)/host/include	\
 	$(LOCAL_C_INCLUDES)
 
+# Add on ncurses to have support for terminfo
+ifneq ($(HOST_OS),windows)
+LOCAL_LDLIBS += -lncurses
+endif
+
 LOCAL_IS_HOST_MODULE := true
 
 LOCAL_32_BIT_ONLY := true
