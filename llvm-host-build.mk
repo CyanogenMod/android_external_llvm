@@ -51,8 +51,10 @@ LOCAL_C_INCLUDES :=	\
 
 # Add on ncurses to have support for terminfo
 ifneq ($(HOST_OS),windows)
-LOCAL_LDLIBS += -lncurses \
-                -lgcc_s
+LOCAL_LDLIBS += -lncurses
+ifneq ($(HOST_OS),darwin)
+LOCAL_LDLIBS += -lgcc_s
+endif
 endif
 
 LOCAL_IS_HOST_MODULE := true
