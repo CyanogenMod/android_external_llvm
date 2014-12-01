@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef LIBS_ASMPARSER_LLTOKEN_H
-#define LIBS_ASMPARSER_LLTOKEN_H
+#ifndef LLVM_LIB_ASMPARSER_LLTOKEN_H
+#define LLVM_LIB_ASMPARSER_LLTOKEN_H
 
 namespace llvm {
 namespace lltok {
@@ -39,8 +39,6 @@ namespace lltok {
 
     kw_private,
     kw_internal,
-    kw_linker_private,          // NOTE: deprecated, for parser compatibility
-    kw_linker_private_weak,     // NOTE: deprecated, for parser compatibility
     kw_linkonce, kw_linkonce_odr,
     kw_weak, // Used as a linkage, and a modifier for "cmpxchg".
     kw_weak_odr, kw_appending,
@@ -89,7 +87,7 @@ namespace lltok {
 
     kw_cc, kw_ccc, kw_fastcc, kw_coldcc,
     kw_intel_ocl_bicc,
-    kw_x86_stdcallcc, kw_x86_fastcallcc, kw_x86_thiscallcc,
+    kw_x86_stdcallcc, kw_x86_fastcallcc, kw_x86_thiscallcc, kw_x86_vectorcallcc,
     kw_arm_apcscc, kw_arm_aapcscc, kw_arm_aapcs_vfpcc,
     kw_msp430_intrcc,
     kw_ptx_kernel, kw_ptx_device,
@@ -106,6 +104,7 @@ namespace lltok {
     kw_byval,
     kw_inalloca,
     kw_cold,
+    kw_dereferenceable,
     kw_inlinehint,
     kw_inreg,
     kw_jumptable,
@@ -180,6 +179,9 @@ namespace lltok {
 
     kw_extractelement, kw_insertelement, kw_shufflevector,
     kw_extractvalue, kw_insertvalue, kw_blockaddress,
+
+    // Use-list order directives.
+    kw_uselistorder, kw_uselistorder_bb,
 
     // Unsigned Valued tokens (UIntVal).
     GlobalID,          // @42

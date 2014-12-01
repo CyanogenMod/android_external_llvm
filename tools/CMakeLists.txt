@@ -8,6 +8,12 @@ else(WITH_POLLY)
   list(APPEND LLVM_IMPLICIT_PROJECT_IGNORE "${LLVM_MAIN_SRC_DIR}/tools/polly")
 endif(WITH_POLLY)
 
+if( LLVM_BUILD_LLVM_DYLIB )
+  add_llvm_tool_subdirectory(llvm-shlib)
+else()
+  ignore_llvm_tool_subdirectory(llvm-shlib)
+endif()
+
 add_llvm_tool_subdirectory(opt)
 add_llvm_tool_subdirectory(llvm-as)
 add_llvm_tool_subdirectory(llvm-dis)
@@ -30,6 +36,7 @@ add_llvm_tool_subdirectory(llvm-objdump)
 add_llvm_tool_subdirectory(llvm-readobj)
 add_llvm_tool_subdirectory(llvm-rtdyld)
 add_llvm_tool_subdirectory(llvm-dwarfdump)
+add_llvm_tool_subdirectory(llvm-vtabledump)
 if( LLVM_USE_INTEL_JITEVENTS )
   add_llvm_tool_subdirectory(llvm-jitlistener)
 else()
@@ -42,12 +49,16 @@ add_llvm_tool_subdirectory(llvm-bcanalyzer)
 add_llvm_tool_subdirectory(llvm-stress)
 add_llvm_tool_subdirectory(llvm-mcmarkup)
 
+add_llvm_tool_subdirectory(verify-uselistorder)
+
 add_llvm_tool_subdirectory(llvm-symbolizer)
 
 add_llvm_tool_subdirectory(llvm-c-test)
 
 add_llvm_tool_subdirectory(obj2yaml)
 add_llvm_tool_subdirectory(yaml2obj)
+
+add_llvm_tool_subdirectory(llvm-go)
 
 if(NOT CYGWIN AND LLVM_ENABLE_PIC)
   add_llvm_tool_subdirectory(lto)

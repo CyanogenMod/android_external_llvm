@@ -11,6 +11,7 @@ codegen_asmprinter_SRC_FILES := \
   DIEHash.cpp \
   DwarfAccelTable.cpp \
   DwarfCFIException.cpp \
+  DwarfCompileUnit.cpp \
   DwarfDebug.cpp \
   DwarfFile.cpp \
   DwarfStringPool.cpp \

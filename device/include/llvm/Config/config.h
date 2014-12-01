@@ -646,13 +646,13 @@
 #define PACKAGE_NAME "LLVM"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "LLVM 3.4"
+#define PACKAGE_STRING "LLVM 3.6svn"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "llvm"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "3.4"
+#define PACKAGE_VERSION "3.6"
 
 /* Define as the return type of signal handlers (`int' or `void'). */
 #define RETSIGTYPE void

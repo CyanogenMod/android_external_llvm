@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "PPC.h"
+#include "PPCSubtarget.h"
 #include "MCTargetDesc/PPCMCExpr.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/Twine.h"
@@ -37,14 +38,16 @@ static MachineModuleInfoMachO &getMachOMMI(AsmPrinter &AP) {
 static MCSymbol *GetSymbolFromOperand(const MachineOperand &MO, AsmPrinter &AP){
   const TargetMachine &TM = AP.TM;
   Mangler *Mang = AP.Mang;
-  const DataLayout *DL = TM.getDataLayout();
+  const DataLayout *DL = TM.getSubtargetImpl()->getDataLayout();
   MCContext &Ctx = AP.OutContext;
+  bool isDarwin = Triple(TM.getTargetTriple()).isOSDarwin();
 
   SmallString<128> Name;
   StringRef Suffix;
-  if (MO.getTargetFlags() == PPCII::MO_DARWIN_STUB)
-    Suffix = "$stub";
-  else if (MO.getTargetFlags() & PPCII::MO_NLP_FLAG)
+  if (MO.getTargetFlags() == PPCII::MO_PLT_OR_STUB) {
+    if (isDarwin)
+      Suffix = "$stub";
+  } else if (MO.getTargetFlags() & PPCII::MO_NLP_FLAG)
     Suffix = "$non_lazy_ptr";
 
   if (!Suffix.empty())
@@ -68,7 +71,7 @@ static MCSymbol *GetSymbolFromOperand(const MachineOperand &MO, AsmPrinter &AP){
 
   // If the target flags on the operand changes the name of the symbol, do that
   // before we return the symbol.
-  if (MO.getTargetFlags() == PPCII::MO_DARWIN_STUB) {
+  if (MO.getTargetFlags() == PPCII::MO_PLT_OR_STUB && isDarwin) {
     MachineModuleInfoImpl::StubValueTy &StubSym =
       getMachOMMI(AP).getFnStubEntry(Sym);
     if (StubSym.getPointer())
@@ -134,7 +137,16 @@ static MCOperand GetSymbolRef(const MachineOperand &MO, const MCSymbol *Symbol,
     case PPCII::MO_TLS:
       RefKind = MCSymbolRefExpr::VK_PPC_TLS;
       break;
+    case PPCII::MO_TLSGD:
+      RefKind = MCSymbolRefExpr::VK_PPC_TLSGD;
+      break;
+    case PPCII::MO_TLSLD:
+      RefKind = MCSymbolRefExpr::VK_PPC_TLSLD;
+      break;
   }
+
+  if (MO.getTargetFlags() == PPCII::MO_PLT_OR_STUB && !isDarwin)
+    RefKind = MCSymbolRefExpr::VK_PLT;
 
   const MCExpr *Expr = MCSymbolRefExpr::Create(Symbol, RefKind, Ctx);
 

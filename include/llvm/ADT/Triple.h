@@ -48,8 +48,6 @@ public:
 
     arm,        // ARM (little endian): arm, armv.*, xscale
     armeb,      // ARM (big endian): armeb
-    arm64,      // ARM64 (little endian): arm64
-    arm64_be,   // ARM64 (big endian): arm64_be
     aarch64,    // AArch64 (little endian): aarch64
     aarch64_be, // AArch64 (big endian): aarch64_be
     hexagon,    // Hexagon: hexagon
@@ -74,10 +72,33 @@ public:
     nvptx,      // NVPTX: 32-bit
     nvptx64,    // NVPTX: 64-bit
     le32,       // le32: generic little-endian 32-bit CPU (PNaCl / Emscripten)
-    amdil,      // amdil: amd IL
+    le64,       // le64: generic little-endian 64-bit CPU (PNaCl / Emscripten)
+    amdil,      // AMDIL
+    amdil64,    // AMDIL with 64-bit pointers
+    hsail,      // AMD HSAIL
+    hsail64,    // AMD HSAIL with 64-bit pointers
     spir,       // SPIR: standard portable IR for OpenCL 32-bit version
     spir64,     // SPIR: standard portable IR for OpenCL 64-bit version
     kalimba     // Kalimba: generic kalimba
+  };
+  enum SubArchType {
+    NoSubArch,
+
+    ARMSubArch_v8,
+    ARMSubArch_v7,
+    ARMSubArch_v7em,
+    ARMSubArch_v7m,
+    ARMSubArch_v7s,
+    ARMSubArch_v6,
+    ARMSubArch_v6m,
+    ARMSubArch_v6t2,
+    ARMSubArch_v5,
+    ARMSubArch_v5te,
+    ARMSubArch_v4t,
+
+    KalimbaSubArch_v3,
+    KalimbaSubArch_v4,
+    KalimbaSubArch_v5
   };
   enum VendorType {
     UnknownVendor,
@@ -90,14 +111,13 @@ public:
     Freescale,
     IBM,
     ImaginationTechnologies,
+    MipsTechnologies,
     NVIDIA,
     CSR
   };
   enum OSType {
     UnknownOS,
 
-    AuroraUX,
-    Cygwin,
     Darwin,
     DragonFly,
     FreeBSD,
@@ -106,7 +126,6 @@ public:
     Linux,
     Lv2,        // PS3
     MacOSX,
-    MinGW32,    // i*86-pc-mingw32, *-w64-mingw32
     NetBSD,
     OpenBSD,
     Solaris,
@@ -151,6 +170,9 @@ private:
   /// The parsed arch type.
   ArchType Arch;
 
+  /// The parsed subarchitecture type.
+  SubArchType SubArch;
+
   /// The parsed vendor type.
   VendorType Vendor;
 
@@ -192,6 +214,9 @@ public:
 
   /// getArch - Get the parsed architecture type of this triple.
   ArchType getArch() const { return Arch; }
+
+  /// getSubArch - get the parsed subarchitecture type for this triple.
+  SubArchType getSubArch() const { return SubArch; }
 
   /// getVendor - Get the parsed vendor type of this triple.
   VendorType getVendor() const { return Vendor; }
@@ -358,13 +383,11 @@ public:
   }
 
   bool isWindowsCygwinEnvironment() const {
-    return getOS() == Triple::Cygwin ||
-           (getOS() == Triple::Win32 && getEnvironment() == Triple::Cygnus);
+    return getOS() == Triple::Win32 && getEnvironment() == Triple::Cygnus;
   }
 
   bool isWindowsGNUEnvironment() const {
-    return getOS() == Triple::MinGW32 ||
-           (getOS() == Triple::Win32 && getEnvironment() == Triple::GNU);
+    return getOS() == Triple::Win32 && getEnvironment() == Triple::GNU;
   }
 
   /// \brief Tests for either Cygwin or MinGW OS
@@ -374,7 +397,8 @@ public:
 
   /// \brief Is this a "Windows" OS targeting a "MSVCRT.dll" environment.
   bool isOSMSVCRT() const {
-    return isWindowsMSVCEnvironment() || isWindowsGNUEnvironment();
+    return isWindowsMSVCEnvironment() || isWindowsGNUEnvironment() ||
+           isWindowsItaniumEnvironment();
   }
 
   /// \brief Tests whether the OS is Windows.
@@ -453,10 +477,6 @@ public:
   /// environment components with a single string.
   void setOSAndEnvironmentName(StringRef Str);
 
-  /// getArchNameForAssembler - Get an architecture name that is understood by
-  /// the target assembler.
-  const char *getArchNameForAssembler();
-
   /// @}
   /// @name Helpers to build variants of a particular triple.
   /// @{
@@ -476,6 +496,12 @@ public:
   /// \returns A new triple with a 64-bit architecture or an unknown
   ///          architecture if no such variant can be found.
   llvm::Triple get64BitArchVariant() const;
+
+  /// Get the (LLVM) name of the minimum ARM CPU for the arch we are targeting.
+  ///
+  /// \param Arch the architecture name (e.g., "armv7s"). If it is an empty
+  /// string then the triple's arch name is used.
+  const char* getARMCPUForArch(StringRef Arch = StringRef()) const;
 
   /// @}
   /// @name Static helpers for IDs.

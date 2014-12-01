@@ -39,6 +39,7 @@ llvm_rtdyld_STATIC_LIBRARIES := \
   libLLVMX86Disassembler \
   libLLVMDebugInfo          \
   libLLVMExecutionEngine    \
+  libLLVMCodeGen \
   libLLVMObject             \
   libLLVMMC                 \
   libLLVMMCParser           \
@@ -46,6 +47,7 @@ llvm_rtdyld_STATIC_LIBRARIES := \
   libLLVMBitReader          \
   libLLVMCore               \
   libLLVMSupport            \
+  libLLVMMCDisassembler \
 
 include $(CLEAR_VARS)
 

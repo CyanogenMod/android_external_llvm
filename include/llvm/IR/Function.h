@@ -143,6 +143,9 @@ public:
   /// arguments.
   bool isVarArg() const;
 
+  bool isMaterializable() const;
+  void setIsMaterializable(bool V);
+
   /// getIntrinsicID - This method returns the ID number of the specified
   /// function, or Intrinsic::not_intrinsic if the function is not an
   /// intrinsic, or if the pointer is null.  This value is always defined to be
@@ -231,6 +234,12 @@ public:
   /// @brief Extract the alignment for a call or parameter (0=unknown).
   unsigned getParamAlignment(unsigned i) const {
     return AttributeSets.getParamAlignment(i);
+  }
+
+  /// @brief Extract the number of dereferenceable bytes for a call or
+  /// parameter (0=unknown).
+  uint64_t getDereferenceableBytes(unsigned i) const {
+    return AttributeSets.getDereferenceableBytes(i);
   }
 
   /// @brief Determine if the function does not access memory.

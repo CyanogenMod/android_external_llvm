@@ -14,6 +14,7 @@
 
 #include "PPC.h"
 #include "MCTargetDesc/PPCPredicates.h"
+#include "PPCMachineFunctionInfo.h"
 #include "PPCTargetMachine.h"
 #include "llvm/CodeGen/MachineFunction.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
@@ -26,6 +27,7 @@
 #include "llvm/IR/GlobalValue.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/Intrinsics.h"
+#include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -56,16 +58,16 @@ namespace {
     unsigned GlobalBaseReg;
   public:
     explicit PPCDAGToDAGISel(PPCTargetMachine &tm)
-      : SelectionDAGISel(tm), TM(tm),
-        PPCLowering(TM.getTargetLowering()),
-        PPCSubTarget(TM.getSubtargetImpl()) {
+        : SelectionDAGISel(tm), TM(tm),
+          PPCLowering(TM.getSubtargetImpl()->getTargetLowering()),
+          PPCSubTarget(TM.getSubtargetImpl()) {
       initializePPCDAGToDAGISelPass(*PassRegistry::getPassRegistry());
     }
 
     bool runOnMachineFunction(MachineFunction &MF) override {
       // Make sure we re-emit a set of the global base reg if necessary
       GlobalBaseReg = 0;
-      PPCLowering = TM.getTargetLowering();
+      PPCLowering = TM.getSubtargetImpl()->getTargetLowering();
       PPCSubTarget = TM.getSubtargetImpl();
       SelectionDAGISel::runOnMachineFunction(MF);
 
@@ -232,7 +234,7 @@ void PPCDAGToDAGISel::InsertVRSaveCode(MachineFunction &Fn) {
   unsigned InVRSAVE = RegInfo->createVirtualRegister(&PPC::GPRCRegClass);
   unsigned UpdatedVRSAVE = RegInfo->createVirtualRegister(&PPC::GPRCRegClass);
 
-  const TargetInstrInfo &TII = *TM.getInstrInfo();
+  const TargetInstrInfo &TII = *TM.getSubtargetImpl()->getInstrInfo();
   MachineBasicBlock &EntryBB = *Fn.begin();
   DebugLoc dl;
   // Emit the following code into the entry block:
@@ -268,16 +270,34 @@ void PPCDAGToDAGISel::InsertVRSaveCode(MachineFunction &Fn) {
 ///
 SDNode *PPCDAGToDAGISel::getGlobalBaseReg() {
   if (!GlobalBaseReg) {
-    const TargetInstrInfo &TII = *TM.getInstrInfo();
+    const TargetInstrInfo &TII = *TM.getSubtargetImpl()->getInstrInfo();
     // Insert the set of GlobalBaseReg into the first MBB of the function
     MachineBasicBlock &FirstMBB = MF->front();
     MachineBasicBlock::iterator MBBI = FirstMBB.begin();
+    const Module *M = MF->getFunction()->getParent();
     DebugLoc dl;
 
     if (PPCLowering->getPointerTy() == MVT::i32) {
-      GlobalBaseReg = RegInfo->createVirtualRegister(&PPC::GPRC_NOR0RegClass);
-      BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MovePCtoLR));
-      BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MFLR), GlobalBaseReg);
+      if (PPCSubTarget->isTargetELF()) {
+        GlobalBaseReg = PPC::R30;
+        if (M->getPICLevel() == PICLevel::Small) {
+          BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MoveGOTtoLR));
+          BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MFLR), GlobalBaseReg);
+        } else {
+          BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MovePCtoLR));
+          BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MFLR), GlobalBaseReg);
+          unsigned TempReg = RegInfo->createVirtualRegister(&PPC::GPRCRegClass);
+          BuildMI(FirstMBB, MBBI, dl,
+                  TII.get(PPC::UpdateGBR)).addReg(GlobalBaseReg)
+                  .addReg(TempReg, RegState::Define).addReg(GlobalBaseReg);
+          MF->getInfo<PPCFunctionInfo>()->setUsesPICBase(true);
+        }
+      } else {
+        GlobalBaseReg =
+          RegInfo->createVirtualRegister(&PPC::GPRC_NOR0RegClass);
+        BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MovePCtoLR));
+        BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MFLR), GlobalBaseReg);
+      }
     } else {
       GlobalBaseReg = RegInfo->createVirtualRegister(&PPC::G8RC_NOX0RegClass);
       BuildMI(FirstMBB, MBBI, dl, TII.get(PPC::MovePCtoLR8));
@@ -650,94 +670,105 @@ static unsigned getCRIdxForSetCC(ISD::CondCode CC, bool &Invert) {
 // getVCmpInst: return the vector compare instruction for the specified
 // vector type and condition code. Since this is for altivec specific code,
 // only support the altivec types (v16i8, v8i16, v4i32, and v4f32).
-static unsigned int getVCmpInst(MVT::SimpleValueType VecVT, ISD::CondCode CC,
-                                bool HasVSX) {
-  switch (CC) {
-    case ISD::SETEQ:
-    case ISD::SETUEQ:
-    case ISD::SETNE:
-    case ISD::SETUNE:
-      if (VecVT == MVT::v16i8)
-        return PPC::VCMPEQUB;
-      else if (VecVT == MVT::v8i16)
-        return PPC::VCMPEQUH;
-      else if (VecVT == MVT::v4i32)
-        return PPC::VCMPEQUW;
-      // v4f32 != v4f32 could be translate to unordered not equal
-      else if (VecVT == MVT::v4f32)
-        return HasVSX ? PPC::XVCMPEQSP : PPC::VCMPEQFP;
-      else if (VecVT == MVT::v2f64)
-        return PPC::XVCMPEQDP;
-      break;
-    case ISD::SETLT:
-    case ISD::SETGT:
-    case ISD::SETLE:
-    case ISD::SETGE:
-      if (VecVT == MVT::v16i8)
-        return PPC::VCMPGTSB;
-      else if (VecVT == MVT::v8i16)
-        return PPC::VCMPGTSH;
-      else if (VecVT == MVT::v4i32)
-        return PPC::VCMPGTSW;
-      else if (VecVT == MVT::v4f32)
-        return HasVSX ? PPC::XVCMPGTSP : PPC::VCMPGTFP;
-      else if (VecVT == MVT::v2f64)
-        return PPC::XVCMPGTDP;
-      break;
-    case ISD::SETULT:
-    case ISD::SETUGT:
-    case ISD::SETUGE:
-    case ISD::SETULE:
-      if (VecVT == MVT::v16i8)
-        return PPC::VCMPGTUB;
-      else if (VecVT == MVT::v8i16)
-        return PPC::VCMPGTUH;
-      else if (VecVT == MVT::v4i32)
-        return PPC::VCMPGTUW;
-      break;
-    case ISD::SETOEQ:
-      if (VecVT == MVT::v4f32)
-        return HasVSX ? PPC::XVCMPEQSP : PPC::VCMPEQFP;
-      else if (VecVT == MVT::v2f64)
-        return PPC::XVCMPEQDP;
-      break;
-    case ISD::SETOLT:
-    case ISD::SETOGT:
-    case ISD::SETOLE:
-      if (VecVT == MVT::v4f32)
-        return HasVSX ? PPC::XVCMPGTSP : PPC::VCMPGTFP;
-      else if (VecVT == MVT::v2f64)
-        return PPC::XVCMPGTDP;
-      break;
-    case ISD::SETOGE:
-      if (VecVT == MVT::v4f32)
-        return HasVSX ? PPC::XVCMPGESP : PPC::VCMPGEFP;
-      else if (VecVT == MVT::v2f64)
-        return PPC::XVCMPGEDP;
-      break;
-    default:
-      break;
-  }
-  llvm_unreachable("Invalid integer vector compare condition");
-}
+static unsigned int getVCmpInst(MVT VecVT, ISD::CondCode CC,
+                                bool HasVSX, bool &Swap, bool &Negate) {
+  Swap = false;
+  Negate = false;
 
-// getVCmpEQInst: return the equal compare instruction for the specified vector
-// type. Since this is for altivec specific code, only support the altivec
-// types (v16i8, v8i16, v4i32, and v4f32).
-static unsigned int getVCmpEQInst(MVT::SimpleValueType VecVT, bool HasVSX) {
-  switch (VecVT) {
-    case MVT::v16i8:
-      return PPC::VCMPEQUB;
-    case MVT::v8i16:
-      return PPC::VCMPEQUH;
-    case MVT::v4i32:
-      return PPC::VCMPEQUW;
-    case MVT::v4f32:
-      return HasVSX ? PPC::XVCMPEQSP : PPC::VCMPEQFP;
-    case MVT::v2f64:
-      return PPC::XVCMPEQDP;
-    default:
-      llvm_unreachable("Invalid integer vector compare condition");
+  if (VecVT.isFloatingPoint()) {
+    /* Handle some cases by swapping input operands.  */
+    switch (CC) {
+      case ISD::SETLE: CC = ISD::SETGE; Swap = true; break;
+      case ISD::SETLT: CC = ISD::SETGT; Swap = true; break;
+      case ISD::SETOLE: CC = ISD::SETOGE; Swap = true; break;
+      case ISD::SETOLT: CC = ISD::SETOGT; Swap = true; break;
+      case ISD::SETUGE: CC = ISD::SETULE; Swap = true; break;
+      case ISD::SETUGT: CC = ISD::SETULT; Swap = true; break;
+      default: break;
+    }
+    /* Handle some cases by negating the result.  */
+    switch (CC) {
+      case ISD::SETNE: CC = ISD::SETEQ; Negate = true; break;
+      case ISD::SETUNE: CC = ISD::SETOEQ; Negate = true; break;
+      case ISD::SETULE: CC = ISD::SETOGT; Negate = true; break;
+      case ISD::SETULT: CC = ISD::SETOGE; Negate = true; break;
+      default: break;
+    }
+    /* We have instructions implementing the remaining cases.  */
+    switch (CC) {
+      case ISD::SETEQ:
+      case ISD::SETOEQ:
+        if (VecVT == MVT::v4f32)
+          return HasVSX ? PPC::XVCMPEQSP : PPC::VCMPEQFP;
+        else if (VecVT == MVT::v2f64)
+          return PPC::XVCMPEQDP;
+        break;
+      case ISD::SETGT:
+      case ISD::SETOGT:
+        if (VecVT == MVT::v4f32)
+          return HasVSX ? PPC::XVCMPGTSP : PPC::VCMPGTFP;
+        else if (VecVT == MVT::v2f64)
+          return PPC::XVCMPGTDP;
+        break;
+      case ISD::SETGE:
+      case ISD::SETOGE:
+        if (VecVT == MVT::v4f32)
+          return HasVSX ? PPC::XVCMPGESP : PPC::VCMPGEFP;
+        else if (VecVT == MVT::v2f64)
+          return PPC::XVCMPGEDP;
+        break;
+      default:
+        break;
+    }
+    llvm_unreachable("Invalid floating-point vector compare condition");
+  } else {
+    /* Handle some cases by swapping input operands.  */
+    switch (CC) {
+      case ISD::SETGE: CC = ISD::SETLE; Swap = true; break;
+      case ISD::SETLT: CC = ISD::SETGT; Swap = true; break;
+      case ISD::SETUGE: CC = ISD::SETULE; Swap = true; break;
+      case ISD::SETULT: CC = ISD::SETUGT; Swap = true; break;
+      default: break;
+    }
+    /* Handle some cases by negating the result.  */
+    switch (CC) {
+      case ISD::SETNE: CC = ISD::SETEQ; Negate = true; break;
+      case ISD::SETUNE: CC = ISD::SETUEQ; Negate = true; break;
+      case ISD::SETLE: CC = ISD::SETGT; Negate = true; break;
+      case ISD::SETULE: CC = ISD::SETUGT; Negate = true; break;
+      default: break;
+    }
+    /* We have instructions implementing the remaining cases.  */
+    switch (CC) {
+      case ISD::SETEQ:
+      case ISD::SETUEQ:
+        if (VecVT == MVT::v16i8)
+          return PPC::VCMPEQUB;
+        else if (VecVT == MVT::v8i16)
+          return PPC::VCMPEQUH;
+        else if (VecVT == MVT::v4i32)
+          return PPC::VCMPEQUW;
+        break;
+      case ISD::SETGT:
+        if (VecVT == MVT::v16i8)
+          return PPC::VCMPGTSB;
+        else if (VecVT == MVT::v8i16)
+          return PPC::VCMPGTSH;
+        else if (VecVT == MVT::v4i32)
+          return PPC::VCMPGTSW;
+        break;
+      case ISD::SETUGT:
+        if (VecVT == MVT::v16i8)
+          return PPC::VCMPGTUB;
+        else if (VecVT == MVT::v8i16)
+          return PPC::VCMPGTUH;
+        else if (VecVT == MVT::v4i32)
+          return PPC::VCMPGTUW;
+        break;
+      default:
+        break;
+    }
+    llvm_unreachable("Invalid integer vector compare condition");
   }
 }
 
@@ -829,60 +860,20 @@ SDNode *PPCDAGToDAGISel::SelectSETCC(SDNode *N) {
   // vector compare operations return the same type as the operands.
   if (LHS.getValueType().isVector()) {
     EVT VecVT = LHS.getValueType();
-    MVT::SimpleValueType VT = VecVT.getSimpleVT().SimpleTy;
-    unsigned int VCmpInst = getVCmpInst(VT, CC, PPCSubTarget->hasVSX());
+    bool Swap, Negate;
+    unsigned int VCmpInst = getVCmpInst(VecVT.getSimpleVT(), CC,
+                                        PPCSubTarget->hasVSX(), Swap, Negate);
+    if (Swap)
+      std::swap(LHS, RHS);
 
-    switch (CC) {
-      case ISD::SETEQ:
-      case ISD::SETOEQ:
-      case ISD::SETUEQ:
-        return CurDAG->SelectNodeTo(N, VCmpInst, VecVT, LHS, RHS);
-      case ISD::SETNE:
-      case ISD::SETONE:
-      case ISD::SETUNE: {
-        SDValue VCmp(CurDAG->getMachineNode(VCmpInst, dl, VecVT, LHS, RHS), 0);
-        return CurDAG->SelectNodeTo(N, PPCSubTarget->hasVSX() ? PPC::XXLNOR :
-                                                               PPC::VNOR,
-                                    VecVT, VCmp, VCmp);
-      } 
-      case ISD::SETLT:
-      case ISD::SETOLT:
-      case ISD::SETULT:
-        return CurDAG->SelectNodeTo(N, VCmpInst, VecVT, RHS, LHS);
-      case ISD::SETGT:
-      case ISD::SETOGT:
-      case ISD::SETUGT:
-        return CurDAG->SelectNodeTo(N, VCmpInst, VecVT, LHS, RHS);
-      case ISD::SETGE:
-      case ISD::SETOGE:
-      case ISD::SETUGE: {
-        // Small optimization: Altivec provides a 'Vector Compare Greater Than
-        // or Equal To' instruction (vcmpgefp), so in this case there is no
-        // need for extra logic for the equal compare.
-        if (VecVT.getSimpleVT().isFloatingPoint()) {
-          return CurDAG->SelectNodeTo(N, VCmpInst, VecVT, LHS, RHS);
-        } else {
-          SDValue VCmpGT(CurDAG->getMachineNode(VCmpInst, dl, VecVT, LHS, RHS), 0);
-          unsigned int VCmpEQInst = getVCmpEQInst(VT, PPCSubTarget->hasVSX());
-          SDValue VCmpEQ(CurDAG->getMachineNode(VCmpEQInst, dl, VecVT, LHS, RHS), 0);
-          return CurDAG->SelectNodeTo(N, PPCSubTarget->hasVSX() ? PPC::XXLOR :
-                                                                 PPC::VOR,
-                                      VecVT, VCmpGT, VCmpEQ);
-        }
-      }
-      case ISD::SETLE:
-      case ISD::SETOLE:
-      case ISD::SETULE: {
-        SDValue VCmpLE(CurDAG->getMachineNode(VCmpInst, dl, VecVT, RHS, LHS), 0);
-        unsigned int VCmpEQInst = getVCmpEQInst(VT, PPCSubTarget->hasVSX());
-        SDValue VCmpEQ(CurDAG->getMachineNode(VCmpEQInst, dl, VecVT, LHS, RHS), 0);
-        return CurDAG->SelectNodeTo(N, PPCSubTarget->hasVSX() ? PPC::XXLOR :
-                                                               PPC::VOR,
-                                    VecVT, VCmpLE, VCmpEQ);
-      }
-      default:
-        llvm_unreachable("Invalid vector compare type: should be expanded by legalize");
+    if (Negate) {
+      SDValue VCmp(CurDAG->getMachineNode(VCmpInst, dl, VecVT, LHS, RHS), 0);
+      return CurDAG->SelectNodeTo(N, PPCSubTarget->hasVSX() ? PPC::XXLNOR :
+                                                              PPC::VNOR,
+                                  VecVT, VCmp, VCmp);
     }
+
+    return CurDAG->SelectNodeTo(N, VCmpInst, VecVT, LHS, RHS);
   }
 
   if (PPCSubTarget->useCRBits())
@@ -923,6 +914,13 @@ SDNode *PPCDAGToDAGISel::Select(SDNode *N) {
     N->setNodeId(-1);
     return nullptr;   // Already selected.
   }
+
+  // In case any misguided DAG-level optimizations form an ADD with a
+  // TargetConstant operand, crash here instead of miscompiling (by selecting
+  // an r+r add instead of some kind of r+i add).
+  if (N->getOpcode() == ISD::ADD &&
+      N->getOperand(1).getOpcode() == ISD::TargetConstant)
+    llvm_unreachable("Invalid ADD with TargetConstant operand");
 
   switch (N->getOpcode()) {
   default: break;
@@ -1331,7 +1329,13 @@ SDNode *PPCDAGToDAGISel::Select(SDNode *N) {
     else if (N->getValueType(0) == MVT::f32)
       SelectCCOp = PPC::SELECT_CC_F4;
     else if (N->getValueType(0) == MVT::f64)
-      SelectCCOp = PPC::SELECT_CC_F8;
+      if (PPCSubTarget->hasVSX())
+        SelectCCOp = PPC::SELECT_CC_VSFRC;
+      else
+        SelectCCOp = PPC::SELECT_CC_F8;
+    else if (N->getValueType(0) == MVT::v2f64 ||
+             N->getValueType(0) == MVT::v2i64)
+      SelectCCOp = PPC::SELECT_CC_VSRC;
     else
       SelectCCOp = PPC::SELECT_CC_VRRC;
 
@@ -1445,11 +1449,17 @@ SDNode *PPCDAGToDAGISel::Select(SDNode *N) {
     return CurDAG->SelectNodeTo(N, Reg, MVT::Other, Chain);
   }
   case PPCISD::TOC_ENTRY: {
-    assert (PPCSubTarget->isPPC64() && "Only supported for 64-bit ABI");
+    assert ((PPCSubTarget->isPPC64() || PPCSubTarget->isSVR4ABI()) &&
+            "Only supported for 64-bit ABI and 32-bit SVR4");
+    if (PPCSubTarget->isSVR4ABI() && !PPCSubTarget->isPPC64()) {
+      SDValue GA = N->getOperand(0);
+      return CurDAG->getMachineNode(PPC::LWZtoc, dl, MVT::i32, GA,
+                                    N->getOperand(1));
+    }
 
     // For medium and large code model, we generate two instructions as
     // described below.  Otherwise we allow SelectCodeCommon to handle this,
-    // selecting one of LDtoc, LDtocJTI, and LDtocCPT.
+    // selecting one of LDtoc, LDtocJTI, LDtocCPT, and LDtocBA.
     CodeModel::Model CModel = TM.getCodeModel();
     if (CModel != CodeModel::Medium && CModel != CodeModel::Large)
       break;
@@ -1466,7 +1476,8 @@ SDNode *PPCDAGToDAGISel::Select(SDNode *N) {
     SDNode *Tmp = CurDAG->getMachineNode(PPC::ADDIStocHA, dl, MVT::i64,
                                         TOCbase, GA);
 
-    if (isa<JumpTableSDNode>(GA) || CModel == CodeModel::Large)
+    if (isa<JumpTableSDNode>(GA) || isa<BlockAddressSDNode>(GA) ||
+        CModel == CodeModel::Large)
       return CurDAG->getMachineNode(PPC::LDtocL, dl, MVT::i64, GA,
                                     SDValue(Tmp, 0));
 
@@ -1482,6 +1493,12 @@ SDNode *PPCDAGToDAGISel::Select(SDNode *N) {
 
     return CurDAG->getMachineNode(PPC::ADDItocL, dl, MVT::i64,
                                   SDValue(Tmp, 0), GA);
+  }
+  case PPCISD::PPC32_PICGOT: {
+    // Generate a PIC-safe GOT reference.
+    assert(!PPCSubTarget->isPPC64() && PPCSubTarget->isSVR4ABI() &&
+      "PPCISD::PPC32_PICGOT is only supported for 32-bit SVR4");
+    return CurDAG->SelectNodeTo(N, PPC::PPC32PICGOT, PPCLowering->getPointerTy(),  MVT::i32);
   }
   case PPCISD::VADD_SPLAT: {
     // This expands into one of three sequences, depending on whether
@@ -1683,7 +1700,9 @@ void PPCDAGToDAGISel::PeepholeCROps() {
       case PPC::SELECT_I8:
       case PPC::SELECT_F4:
       case PPC::SELECT_F8:
-      case PPC::SELECT_VRRC: {
+      case PPC::SELECT_VRRC:
+      case PPC::SELECT_VSFRC:
+      case PPC::SELECT_VSRC: {
         SDValue Op = MachineNode->getOperand(0);
         if (Op.isMachineOpcode()) {
           if (Op.getMachineOpcode() == PPC::CRSET)
@@ -1989,6 +2008,8 @@ void PPCDAGToDAGISel::PeepholeCROps() {
       case PPC::SELECT_F4:
       case PPC::SELECT_F8:
       case PPC::SELECT_VRRC:
+      case PPC::SELECT_VSFRC:
+      case PPC::SELECT_VSRC:
         if (Op1Set)
           ResNode = MachineNode->getOperand(1).getNode();
         else if (Op1Unset)

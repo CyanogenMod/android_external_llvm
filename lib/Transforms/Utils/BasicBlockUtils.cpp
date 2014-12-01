@@ -265,6 +265,18 @@ BasicBlock *llvm::SplitEdge(BasicBlock *BB, BasicBlock *Succ, Pass *P) {
   return SplitBlock(BB, BB->getTerminator(), P);
 }
 
+unsigned llvm::SplitAllCriticalEdges(Function &F, Pass *P) {
+  unsigned NumBroken = 0;
+  for (Function::iterator I = F.begin(), E = F.end(); I != E; ++I) {
+    TerminatorInst *TI = I->getTerminator();
+    if (TI->getNumSuccessors() > 1 && !isa<IndirectBrInst>(TI))
+      for (unsigned i = 0, e = TI->getNumSuccessors(); i != e; ++i)
+        if (SplitCriticalEdge(TI, i, P))
+          ++NumBroken;
+  }
+  return NumBroken;
+}
+
 /// SplitBlock - Split the specified block at the specified instruction - every
 /// thing before SplitPt stays in Old and everything starting with SplitPt moves
 /// to a new block.  The two blocks are joined by an unconditional branch and
@@ -673,7 +685,8 @@ ReturnInst *llvm::FoldReturnIntoUncondBranch(ReturnInst *RI, BasicBlock *BB,
 TerminatorInst *llvm::SplitBlockAndInsertIfThen(Value *Cond,
                                                 Instruction *SplitBefore,
                                                 bool Unreachable,
-                                                MDNode *BranchWeights) {
+                                                MDNode *BranchWeights,
+                                                DominatorTree *DT) {
   BasicBlock *Head = SplitBefore->getParent();
   BasicBlock *Tail = Head->splitBasicBlock(SplitBefore);
   TerminatorInst *HeadOldTerm = Head->getTerminator();
@@ -690,6 +703,20 @@ TerminatorInst *llvm::SplitBlockAndInsertIfThen(Value *Cond,
   HeadNewTerm->setDebugLoc(SplitBefore->getDebugLoc());
   HeadNewTerm->setMetadata(LLVMContext::MD_prof, BranchWeights);
   ReplaceInstWithInst(HeadOldTerm, HeadNewTerm);
+
+  if (DT) {
+    if (DomTreeNode *OldNode = DT->getNode(Head)) {
+      std::vector<DomTreeNode *> Children(OldNode->begin(), OldNode->end());
+
+      DomTreeNode *NewNode = DT->addNewBlock(Tail, Head);
+      for (auto Child : Children)
+        DT->changeImmediateDominator(Child, NewNode);
+
+      // Head dominates ThenBlock.
+      DT->addNewBlock(ThenBlock, Head);
+    }
+  }
+
   return CheckTerm;
 }
 

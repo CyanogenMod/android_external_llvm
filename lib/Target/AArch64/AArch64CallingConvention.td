@@ -16,7 +16,7 @@ class CCIfAlign<string Align, CCAction A> :
   CCIf<!strconcat("ArgFlags.getOrigAlign() == ", Align), A>;
 /// CCIfBigEndian - Match only if we're in big endian mode.
 class CCIfBigEndian<CCAction A> :
-  CCIf<"State.getTarget().getDataLayout()->isBigEndian()", A>;
+  CCIf<"State.getMachineFunction().getSubtarget().getDataLayout()->isBigEndian()", A>;
 
 //===----------------------------------------------------------------------===//
 // ARM AAPCS64 Calling Convention
@@ -54,22 +54,24 @@ def CC_AArch64_AAPCS : CallingConv<[
 
   CCIfType<[i64], CCAssignToRegWithShadow<[X0, X1, X2, X3, X4, X5, X6, X7],
                                           [W0, W1, W2, W3, W4, W5, W6, W7]>>,
+  CCIfType<[f16], CCAssignToRegWithShadow<[H0, H1, H2, H3, H4, H5, H6, H7],
+                                          [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
   CCIfType<[f32], CCAssignToRegWithShadow<[S0, S1, S2, S3, S4, S5, S6, S7],
                                           [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
   CCIfType<[f64], CCAssignToRegWithShadow<[D0, D1, D2, D3, D4, D5, D6, D7],
                                           [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
-  CCIfType<[v1i64, v2i32, v4i16, v8i8, v1f64, v2f32],
+  CCIfType<[v1i64, v2i32, v4i16, v8i8, v1f64, v2f32, v4f16],
            CCAssignToRegWithShadow<[D0, D1, D2, D3, D4, D5, D6, D7],
                                    [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
-  CCIfType<[f128, v2i64, v4i32, v8i16, v16i8, v4f32, v2f64],
+  CCIfType<[f128, v2i64, v4i32, v8i16, v16i8, v4f32, v2f64, v8f16],
            CCAssignToReg<[Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
 
   // If more than will fit in registers, pass them on the stack instead.
-  CCIfType<[i1, i8, i16], CCAssignToStack<8, 8>>,
+  CCIfType<[i1, i8, i16, f16], CCAssignToStack<8, 8>>,
   CCIfType<[i32, f32], CCAssignToStack<8, 8>>,
-  CCIfType<[i64, f64, v1f64, v2f32, v1i64, v2i32, v4i16, v8i8],
+  CCIfType<[i64, f64, v1f64, v2f32, v1i64, v2i32, v4i16, v8i8, v4f16],
            CCAssignToStack<8, 8>>,
-  CCIfType<[f128, v2i64, v4i32, v8i16, v16i8, v4f32, v2f64],
+  CCIfType<[f128, v2i64, v4i32, v8i16, v16i8, v4f32, v2f64, v8f16],
            CCAssignToStack<16, 16>>
 ]>;
 
@@ -88,14 +90,16 @@ def RetCC_AArch64_AAPCS : CallingConv<[
                                           [X0, X1, X2, X3, X4, X5, X6, X7]>>,
   CCIfType<[i64], CCAssignToRegWithShadow<[X0, X1, X2, X3, X4, X5, X6, X7],
                                           [W0, W1, W2, W3, W4, W5, W6, W7]>>,
+  CCIfType<[f16], CCAssignToRegWithShadow<[H0, H1, H2, H3, H4, H5, H6, H7],
+                                          [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
   CCIfType<[f32], CCAssignToRegWithShadow<[S0, S1, S2, S3, S4, S5, S6, S7],
                                           [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
   CCIfType<[f64], CCAssignToRegWithShadow<[D0, D1, D2, D3, D4, D5, D6, D7],
                                           [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
-  CCIfType<[v1i64, v2i32, v4i16, v8i8, v1f64, v2f32],
+  CCIfType<[v1i64, v2i32, v4i16, v8i8, v1f64, v2f32, v4f16],
       CCAssignToRegWithShadow<[D0, D1, D2, D3, D4, D5, D6, D7],
                               [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
-  CCIfType<[f128, v2i64, v4i32, v8i16, v16i8, v4f32, v2f64],
+  CCIfType<[f128, v2i64, v4i32, v8i16, v16i8, v4f32, v2f64, v8f16],
       CCAssignToReg<[Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>
 ]>;
 
@@ -129,23 +133,26 @@ def CC_AArch64_DarwinPCS : CallingConv<[
 
   CCIfType<[i64], CCAssignToRegWithShadow<[X0, X1, X2, X3, X4, X5, X6, X7],
                                           [W0, W1, W2, W3, W4, W5, W6, W7]>>,
+  CCIfType<[f16], CCAssignToRegWithShadow<[H0, H1, H2, H3, H4, H5, H6, H7],
+                                          [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
   CCIfType<[f32], CCAssignToRegWithShadow<[S0, S1, S2, S3, S4, S5, S6, S7],
                                           [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
   CCIfType<[f64], CCAssignToRegWithShadow<[D0, D1, D2, D3, D4, D5, D6, D7],
                                           [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
-  CCIfType<[v1i64, v2i32, v4i16, v8i8, v1f64, v2f32],
+  CCIfType<[v1i64, v2i32, v4i16, v8i8, v1f64, v2f32, v4f16],
            CCAssignToRegWithShadow<[D0, D1, D2, D3, D4, D5, D6, D7],
                                    [Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
-  CCIfType<[v2i64, v4i32, v8i16, v16i8, v4f32, v2f64],
+  CCIfType<[v2i64, v4i32, v8i16, v16i8, v4f32, v2f64, v8f16],
            CCAssignToReg<[Q0, Q1, Q2, Q3, Q4, Q5, Q6, Q7]>>,
 
   // If more than will fit in registers, pass them on the stack instead.
   CCIf<"ValVT == MVT::i1 || ValVT == MVT::i8", CCAssignToStack<1, 1>>,
-  CCIf<"ValVT == MVT::i16", CCAssignToStack<2, 2>>,
+  CCIf<"ValVT == MVT::i16 || ValVT == MVT::f16", CCAssignToStack<2, 2>>,
   CCIfType<[i32, f32], CCAssignToStack<4, 4>>,
-  CCIfType<[i64, f64, v1f64, v2f32, v1i64, v2i32, v4i16, v8i8],
+  CCIfType<[i64, f64, v1f64, v2f32, v1i64, v2i32, v4i16, v8i8, v4f16],
            CCAssignToStack<8, 8>>,
-  CCIfType<[v2i64, v4i32, v8i16, v16i8, v4f32, v2f64], CCAssignToStack<16, 16>>
+  CCIfType<[v2i64, v4i32, v8i16, v16i8, v4f32, v2f64, v8f16],
+           CCAssignToStack<16, 16>>
 ]>;
 
 def CC_AArch64_DarwinPCS_VarArg : CallingConv<[
@@ -154,13 +161,15 @@ def CC_AArch64_DarwinPCS_VarArg : CallingConv<[
 
   // Handle all scalar types as either i64 or f64.
   CCIfType<[i8, i16, i32], CCPromoteToType<i64>>,
-  CCIfType<[f32],          CCPromoteToType<f64>>,
+  CCIfType<[f16, f32],     CCPromoteToType<f64>>,
 
   // Everything is on the stack.
   // i128 is split to two i64s, and its stack alignment is 16 bytes.
   CCIfType<[i64], CCIfSplit<CCAssignToStack<8, 16>>>,
-  CCIfType<[i64, f64, v1i64, v2i32, v4i16, v8i8, v1f64, v2f32], CCAssignToStack<8, 8>>,
-  CCIfType<[v2i64, v4i32, v8i16, v16i8, v4f32, v2f64],   CCAssignToStack<16, 16>>
+  CCIfType<[i64, f64, v1i64, v2i32, v4i16, v8i8, v1f64, v2f32, v4f16],
+           CCAssignToStack<8, 8>>,
+  CCIfType<[v2i64, v4i32, v8i16, v16i8, v4f32, v2f64, v8f16],
+           CCAssignToStack<16, 16>>
 ]>;
 
 // The WebKit_JS calling convention only passes the first argument (the callee)

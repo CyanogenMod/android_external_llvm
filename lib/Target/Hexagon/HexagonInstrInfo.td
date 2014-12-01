@@ -92,6 +92,92 @@ def HexagonWrapperCombineII :
 def HexagonWrapperCombineRR :
   SDNode<"HexagonISD::WrapperCombineRR", SDTHexagonI64I32I32>;
 
+let hasSideEffects = 0, hasNewValue = 1, InputType = "reg" in
+class T_ALU32_3op<string mnemonic, bits<3> MajOp, bits<3> MinOp, bit OpsRev,
+                  bit IsComm>
+  : ALU32_rr<(outs IntRegs:$Rd), (ins IntRegs:$Rs, IntRegs:$Rt),
+             "$Rd = "#mnemonic#"($Rs, $Rt)",
+             [], "", ALU32_3op_tc_1_SLOT0123>, ImmRegRel, PredRel {
+  let isCommutable = IsComm;
+  let BaseOpcode = mnemonic#_rr;
+  let CextOpcode = mnemonic;
+
+  bits<5> Rs;
+  bits<5> Rt;
+  bits<5> Rd;
+
+  let IClass = 0b1111;
+  let Inst{27} = 0b0;
+  let Inst{26-24} = MajOp;
+  let Inst{23-21} = MinOp;
+  let Inst{20-16} = !if(OpsRev,Rt,Rs);
+  let Inst{12-8} = !if(OpsRev,Rs,Rt);
+  let Inst{4-0} = Rd;
+}
+
+let hasSideEffects = 0, hasNewValue = 1 in
+class T_ALU32_3op_pred<string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                       bit OpsRev, bit PredNot, bit PredNew>
+  : ALU32_rr<(outs IntRegs:$Rd), (ins PredRegs:$Pu, IntRegs:$Rs, IntRegs:$Rt),
+             "if ("#!if(PredNot,"!","")#"$Pu"#!if(PredNew,".new","")#") "#
+             "$Rd = "#mnemonic#"($Rs, $Rt)",
+             [], "", ALU32_3op_tc_1_SLOT0123>, ImmRegRel, PredNewRel {
+  let isPredicated = 1;
+  let isPredicatedFalse = PredNot;
+  let isPredicatedNew = PredNew;
+  let BaseOpcode = mnemonic#_rr;
+  let CextOpcode = mnemonic;
+
+  bits<2> Pu;
+  bits<5> Rs;
+  bits<5> Rt;
+  bits<5> Rd;
+
+  let IClass = 0b1111;
+  let Inst{27} = 0b1;
+  let Inst{26-24} = MajOp;
+  let Inst{23-21} = MinOp;
+  let Inst{20-16} = !if(OpsRev,Rt,Rs);
+  let Inst{13} = PredNew;
+  let Inst{12-8} = !if(OpsRev,Rs,Rt);
+  let Inst{7} = PredNot;
+  let Inst{6-5} = Pu;
+  let Inst{4-0} = Rd;
+}
+
+multiclass T_ALU32_3op_p<string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                         bit OpsRev> {
+  def t    : T_ALU32_3op_pred<mnemonic, MajOp, MinOp, OpsRev, 0, 0>;
+  def f    : T_ALU32_3op_pred<mnemonic, MajOp, MinOp, OpsRev, 1, 0>;
+  def tnew : T_ALU32_3op_pred<mnemonic, MajOp, MinOp, OpsRev, 0, 1>;
+  def fnew : T_ALU32_3op_pred<mnemonic, MajOp, MinOp, OpsRev, 1, 1>;
+}
+
+multiclass T_ALU32_3op_A2<string mnemonic, bits<3> MajOp, bits<3> MinOp,
+                          bit OpsRev, bit IsComm> {
+  let isPredicable = 1 in
+  def  A2_#NAME  : T_ALU32_3op  <mnemonic, MajOp, MinOp, OpsRev, IsComm>;
+  defm A2_p#NAME : T_ALU32_3op_p<mnemonic, MajOp, MinOp, OpsRev>;
+}
+
+let isCodeGenOnly = 0 in
+defm add : T_ALU32_3op_A2<"add", 0b011, 0b000, 0, 1>;
+defm and : T_ALU32_3op_A2<"and", 0b001, 0b000, 0, 1>;
+defm or  : T_ALU32_3op_A2<"or",  0b001, 0b001, 0, 1>;
+defm sub : T_ALU32_3op_A2<"sub", 0b011, 0b001, 1, 0>;
+defm xor : T_ALU32_3op_A2<"xor", 0b001, 0b011, 0, 1>;
+
+// Pats for instruction selection.
+class BinOp32_pat<SDNode Op, InstHexagon MI, ValueType ResT>
+  : Pat<(ResT (Op (i32 IntRegs:$Rs), (i32 IntRegs:$Rt))),
+        (ResT (MI IntRegs:$Rs, IntRegs:$Rt))>;
+
+def: BinOp32_pat<add, A2_add, i32>;
+def: BinOp32_pat<and, A2_and, i32>;
+def: BinOp32_pat<or,  A2_or,  i32>;
+def: BinOp32_pat<sub, A2_sub, i32>;
+def: BinOp32_pat<xor, A2_xor, i32>;
+
 multiclass ALU32_Pbase<string mnemonic, RegisterClass RC, bit isNot,
                        bit isPredNew> {
   let isPredicatedNew = isPredNew in
@@ -125,13 +211,6 @@ multiclass ALU32_base<string mnemonic, string CextOp, SDNode OpNode> {
       defm NotPt : ALU32_Pred<mnemonic, IntRegs, 1>;
     }
   }
-}
-
-let isCommutable = 1 in {
-  defm ADD_rr : ALU32_base<"add", "ADD", add>, ImmRegRel, PredNewRel;
-  defm AND_rr : ALU32_base<"and", "AND", and>, ImmRegRel, PredNewRel;
-  defm XOR_rr : ALU32_base<"xor", "XOR", xor>, ImmRegRel, PredNewRel;
-  defm OR_rr  : ALU32_base<"or", "OR", or>, ImmRegRel, PredNewRel;
 }
 
 defm SUB_rr : ALU32_base<"sub", "SUB", sub>, ImmRegRel, PredNewRel;
@@ -225,7 +304,7 @@ def AND_ri : ALU32_ri<(outs IntRegs:$dst),
                                            s10ExtPred:$src2))]>, ImmRegRel;
 
 // Nop.
-let neverHasSideEffects = 1 in
+let neverHasSideEffects = 1, isCodeGenOnly = 0 in
 def NOP : ALU32_rr<(outs), (ins),
           "nop",
           []>;
@@ -753,7 +832,7 @@ def HexagonBR_JT: SDNode<"HexagonISD::BR_JT", SDHexagonBR_JT, [SDNPHasChain]>;
 
 let InputType = "imm", isBarrier = 1, isPredicable = 1,
 Defs = [PC], isExtendable = 1, opExtendable = 0, isExtentSigned = 1,
-opExtentBits = 24 in
+opExtentBits = 24, isCodeGenOnly = 0 in
 class T_JMP <dag InsDag, list<dag> JumpList = []>
             : JInst<(outs), InsDag,
             "jump $dst" , JumpList> {
@@ -2212,7 +2291,7 @@ def : Pat <(i64 (zextloadi1 (HexagonCONST32 tglobaladdr:$global))),
 // Map from i1 loads to 32 bits. This assumes that the i1* is byte aligned.
 let AddedComplexity = 10 in
 def : Pat <(i32 (zextloadi1 ADDRriS11_0:$addr)),
-      (i32 (AND_rr (i32 (LDrib ADDRriS11_0:$addr)), (TFRI 0x1)))>;
+      (i32 (A2_and (i32 (LDrib ADDRriS11_0:$addr)), (TFRI 0x1)))>;
 
 // Map from Rdd = sign_extend_inreg(Rss, i32) -> Rdd = SXTW(Rss.lo).
 def : Pat <(i64 (sext_inreg (i64 DoubleRegs:$src1), i32)),

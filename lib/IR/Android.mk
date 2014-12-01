@@ -41,6 +41,7 @@ vmcore_SRC_FILES := \
   Type.cpp \
   TypeFinder.cpp \
   Use.cpp \
+  UseListOrder.cpp \
   User.cpp \
   Value.cpp \
   ValueSymbolTable.cpp \

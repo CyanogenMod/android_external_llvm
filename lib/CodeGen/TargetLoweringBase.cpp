@@ -34,6 +34,7 @@
 #include "llvm/Target/TargetLoweringObjectFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetRegisterInfo.h"
+#include "llvm/Target/TargetSubtargetInfo.h"
 #include <cctype>
 using namespace llvm;
 
@@ -205,6 +206,16 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::FLOOR_F80] = "floorl";
   Names[RTLIB::FLOOR_F128] = "floorl";
   Names[RTLIB::FLOOR_PPCF128] = "floorl";
+  Names[RTLIB::FMIN_F32] = "fminf";
+  Names[RTLIB::FMIN_F64] = "fmin";
+  Names[RTLIB::FMIN_F80] = "fminl";
+  Names[RTLIB::FMIN_F128] = "fminl";
+  Names[RTLIB::FMIN_PPCF128] = "fminl";
+  Names[RTLIB::FMAX_F32] = "fmaxf";
+  Names[RTLIB::FMAX_F64] = "fmax";
+  Names[RTLIB::FMAX_F80] = "fmaxl";
+  Names[RTLIB::FMAX_F128] = "fmaxl";
+  Names[RTLIB::FMAX_PPCF128] = "fmaxl";
   Names[RTLIB::ROUND_F32] = "roundf";
   Names[RTLIB::ROUND_F64] = "round";
   Names[RTLIB::ROUND_F80] = "roundl";
@@ -220,6 +231,10 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
   Names[RTLIB::FPEXT_F32_F64] = "__extendsfdf2";
   Names[RTLIB::FPEXT_F16_F32] = "__gnu_h2f_ieee";
   Names[RTLIB::FPROUND_F32_F16] = "__gnu_f2h_ieee";
+  Names[RTLIB::FPROUND_F64_F16] = "__truncdfhf2";
+  Names[RTLIB::FPROUND_F80_F16] = "__truncxfhf2";
+  Names[RTLIB::FPROUND_F128_F16] = "__trunctfhf2";
+  Names[RTLIB::FPROUND_PPCF128_F16] = "__trunctfhf2";
   Names[RTLIB::FPROUND_F64_F32] = "__truncdfsf2";
   Names[RTLIB::FPROUND_F80_F32] = "__truncxfsf2";
   Names[RTLIB::FPROUND_F128_F32] = "__trunctfsf2";
@@ -418,7 +433,10 @@ static void InitLibcallCallingConvs(CallingConv::ID *CCs) {
 /// getFPEXT - Return the FPEXT_*_* value for the given types, or
 /// UNKNOWN_LIBCALL if there is none.
 RTLIB::Libcall RTLIB::getFPEXT(EVT OpVT, EVT RetVT) {
-  if (OpVT == MVT::f32) {
+  if (OpVT == MVT::f16) {
+    if (RetVT == MVT::f32)
+      return FPEXT_F16_F32;
+  } else if (OpVT == MVT::f32) {
     if (RetVT == MVT::f64)
       return FPEXT_F32_F64;
     if (RetVT == MVT::f128)
@@ -434,7 +452,18 @@ RTLIB::Libcall RTLIB::getFPEXT(EVT OpVT, EVT RetVT) {
 /// getFPROUND - Return the FPROUND_*_* value for the given types, or
 /// UNKNOWN_LIBCALL if there is none.
 RTLIB::Libcall RTLIB::getFPROUND(EVT OpVT, EVT RetVT) {
-  if (RetVT == MVT::f32) {
+  if (RetVT == MVT::f16) {
+    if (OpVT == MVT::f32)
+      return FPROUND_F32_F16;
+    if (OpVT == MVT::f64)
+      return FPROUND_F64_F16;
+    if (OpVT == MVT::f80)
+      return FPROUND_F80_F16;
+    if (OpVT == MVT::f128)
+      return FPROUND_F128_F16;
+    if (OpVT == MVT::ppcf128)
+      return FPROUND_PPCF128_F16;
+  } else if (RetVT == MVT::f32) {
     if (OpVT == MVT::f64)
       return FPROUND_F64_F32;
     if (OpVT == MVT::f80)
@@ -665,10 +694,9 @@ static void InitCmpLibcallCCs(ISD::CondCode *CCs) {
   CCs[RTLIB::O_F128] = ISD::SETEQ;
 }
 
-/// NOTE: The constructor takes ownership of TLOF.
-TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm,
-                                       const TargetLoweringObjectFile *tlof)
-  : TM(tm), DL(TM.getDataLayout()), TLOF(*tlof) {
+/// NOTE: The TargetMachine owns TLOF.
+TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm)
+    : TM(tm), DL(TM.getSubtargetImpl()->getDataLayout()) {
   initActions();
 
   // Perform these initializations only once.
@@ -682,10 +710,11 @@ TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm,
   HasMultipleConditionRegisters = false;
   HasExtractBitsInsn = false;
   IntDivIsCheap = false;
-  Pow2DivIsCheap = false;
+  Pow2SDivIsCheap = false;
   JumpIsExpensive = false;
   PredictableSelectIsExpensive = false;
   MaskAndBranchFoldingIsLegal = false;
+  HasFloatingPointExceptions = true;
   StackPointerRegisterToSaveRestore = 0;
   ExceptionPointerRegister = 0;
   ExceptionSelectorRegister = 0;
@@ -700,16 +729,11 @@ TargetLoweringBase::TargetLoweringBase(const TargetMachine &tm,
   PrefLoopAlignment = 0;
   MinStackArgumentAlignment = 1;
   InsertFencesForAtomic = false;
-  SupportJumpTables = true;
   MinimumJumpTableEntries = 4;
 
   InitLibcallNames(LibcallRoutineNames, Triple(TM.getTargetTriple()));
   InitCmpLibcallCCs(CmpLibcallCCs);
   InitLibcallCallingConvs(LibcallCallingConvs);
-}
-
-TargetLoweringBase::~TargetLoweringBase() {
-  delete &TLOF;
 }
 
 void TargetLoweringBase::initActions() {
@@ -738,6 +762,8 @@ void TargetLoweringBase::initActions() {
     // These operations default to expand.
     setOperationAction(ISD::FGETSIGN, (MVT::SimpleValueType)VT, Expand);
     setOperationAction(ISD::CONCAT_VECTORS, (MVT::SimpleValueType)VT, Expand);
+    setOperationAction(ISD::FMINNUM, (MVT::SimpleValueType)VT, Expand);
+    setOperationAction(ISD::FMAXNUM, (MVT::SimpleValueType)VT, Expand);
 
     // These library functions default to expand.
     setOperationAction(ISD::FROUND, (MVT::SimpleValueType)VT, Expand);
@@ -774,6 +800,8 @@ void TargetLoweringBase::initActions() {
   setOperationAction(ISD::FEXP ,  MVT::f16, Expand);
   setOperationAction(ISD::FEXP2,  MVT::f16, Expand);
   setOperationAction(ISD::FFLOOR, MVT::f16, Expand);
+  setOperationAction(ISD::FMINNUM, MVT::f16, Expand);
+  setOperationAction(ISD::FMAXNUM, MVT::f16, Expand);
   setOperationAction(ISD::FNEARBYINT, MVT::f16, Expand);
   setOperationAction(ISD::FCEIL,  MVT::f16, Expand);
   setOperationAction(ISD::FRINT,  MVT::f16, Expand);
@@ -785,6 +813,8 @@ void TargetLoweringBase::initActions() {
   setOperationAction(ISD::FEXP ,  MVT::f32, Expand);
   setOperationAction(ISD::FEXP2,  MVT::f32, Expand);
   setOperationAction(ISD::FFLOOR, MVT::f32, Expand);
+  setOperationAction(ISD::FMINNUM, MVT::f32, Expand);
+  setOperationAction(ISD::FMAXNUM, MVT::f32, Expand);
   setOperationAction(ISD::FNEARBYINT, MVT::f32, Expand);
   setOperationAction(ISD::FCEIL,  MVT::f32, Expand);
   setOperationAction(ISD::FRINT,  MVT::f32, Expand);
@@ -796,6 +826,8 @@ void TargetLoweringBase::initActions() {
   setOperationAction(ISD::FEXP ,  MVT::f64, Expand);
   setOperationAction(ISD::FEXP2,  MVT::f64, Expand);
   setOperationAction(ISD::FFLOOR, MVT::f64, Expand);
+  setOperationAction(ISD::FMINNUM, MVT::f64, Expand);
+  setOperationAction(ISD::FMAXNUM, MVT::f64, Expand);
   setOperationAction(ISD::FNEARBYINT, MVT::f64, Expand);
   setOperationAction(ISD::FCEIL,  MVT::f64, Expand);
   setOperationAction(ISD::FRINT,  MVT::f64, Expand);
@@ -807,6 +839,8 @@ void TargetLoweringBase::initActions() {
   setOperationAction(ISD::FEXP ,  MVT::f128, Expand);
   setOperationAction(ISD::FEXP2,  MVT::f128, Expand);
   setOperationAction(ISD::FFLOOR, MVT::f128, Expand);
+  setOperationAction(ISD::FMINNUM, MVT::f128, Expand);
+  setOperationAction(ISD::FMAXNUM, MVT::f128, Expand);
   setOperationAction(ISD::FNEARBYINT, MVT::f128, Expand);
   setOperationAction(ISD::FCEIL,  MVT::f128, Expand);
   setOperationAction(ISD::FRINT,  MVT::f128, Expand);
@@ -958,11 +992,10 @@ TargetLoweringBase::emitPatchPoint(MachineInstr *MI,
     // Add a new memory operand for this FI.
     const MachineFrameInfo &MFI = *MF.getFrameInfo();
     assert(MFI.getObjectOffset(FI) != -1);
-    MachineMemOperand *MMO =
-      MF.getMachineMemOperand(MachinePointerInfo::getFixedStack(FI),
-                              MachineMemOperand::MOLoad,
-                              TM.getDataLayout()->getPointerSize(),
-                              MFI.getObjectAlignment(FI));
+    MachineMemOperand *MMO = MF.getMachineMemOperand(
+        MachinePointerInfo::getFixedStack(FI), MachineMemOperand::MOLoad,
+        TM.getSubtargetImpl()->getDataLayout()->getPointerSize(),
+        MFI.getObjectAlignment(FI));
     MIB->addMemOperand(MF, MMO);
 
     // Replace the instruction and update the operand index.
@@ -978,7 +1011,8 @@ TargetLoweringBase::emitPatchPoint(MachineInstr *MI,
 /// of the register class for the specified type and its associated "cost".
 std::pair<const TargetRegisterClass*, uint8_t>
 TargetLoweringBase::findRepresentativeClass(MVT VT) const {
-  const TargetRegisterInfo *TRI = getTargetMachine().getRegisterInfo();
+  const TargetRegisterInfo *TRI =
+      getTargetMachine().getSubtargetImpl()->getRegisterInfo();
   const TargetRegisterClass *RC = RegClassForVT[VT.SimpleTy];
   if (!RC)
     return std::make_pair(RC, 0);
@@ -1005,8 +1039,8 @@ TargetLoweringBase::findRepresentativeClass(MVT VT) const {
 /// computeRegisterProperties - Once all of the register classes are added,
 /// this allows us to compute derived properties we expose.
 void TargetLoweringBase::computeRegisterProperties() {
-  assert(MVT::LAST_VALUETYPE <= MVT::MAX_ALLOWED_VALUETYPE &&
-         "Too many value types for ValueTypeActions to hold!");
+  static_assert(MVT::LAST_VALUETYPE <= MVT::MAX_ALLOWED_VALUETYPE,
+                "Too many value types for ValueTypeActions to hold!");
 
   // Everything defaults to needing one register.
   for (unsigned i = 0; i != MVT::LAST_VALUETYPE; ++i) {
@@ -1089,6 +1123,13 @@ void TargetLoweringBase::computeRegisterProperties() {
     }
   }
 
+  if (!isTypeLegal(MVT::f16)) {
+    NumRegistersForVT[MVT::f16] = NumRegistersForVT[MVT::i16];
+    RegisterTypeForVT[MVT::f16] = RegisterTypeForVT[MVT::i16];
+    TransformToType[MVT::f16] = MVT::i16;
+    ValueTypeActions.setTypeAction(MVT::f16, TypeSoftenFloat);
+  }
+
   // Loop over all of the vector value types to see which need transformations.
   for (unsigned i = MVT::FIRST_VECTOR_VALUETYPE;
        i <= (unsigned)MVT::LAST_VECTOR_VALUETYPE; ++i) {
@@ -1154,8 +1195,12 @@ void TargetLoweringBase::computeRegisterProperties() {
         TransformToType[i] = MVT::Other;
         if (PreferredAction == TypeScalarizeVector)
           ValueTypeActions.setTypeAction(VT, TypeScalarizeVector);
-        else
+        else if (PreferredAction == TypeSplitVector)
           ValueTypeActions.setTypeAction(VT, TypeSplitVector);
+        else
+          // Set type action according to the number of elements.
+          ValueTypeActions.setTypeAction(VT, NElts == 1 ? TypeScalarizeVector
+                                                        : TypeSplitVector);
       } else {
         TransformToType[i] = NVT;
         ValueTypeActions.setTypeAction(VT, TypeWidenVector);
