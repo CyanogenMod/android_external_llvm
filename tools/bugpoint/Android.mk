@@ -35,6 +35,7 @@ bugpoint_STATIC_LIBRARIES := \
   libLLVMTarget \
   libLLVMCore \
   libLLVMMC \
+  libLLVMProfileData \
   libLLVMTransformUtils \
   libLLVMVectorize \
   libLLVMSupport \

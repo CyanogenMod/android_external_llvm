@@ -7,8 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MIPSABIFLAGSSECTION_H
-#define MIPSABIFLAGSSECTION_H
+#ifndef LLVM_LIB_TARGET_MIPS_MCTARGETDESC_MIPSABIFLAGSSECTION_H
+#define LLVM_LIB_TARGET_MIPS_MCTARGETDESC_MIPSABIFLAGSSECTION_H
 
 #include "llvm/MC/MCStreamer.h"
 
@@ -115,7 +115,7 @@ public:
   uint8_t getISALevelValue() { return (uint8_t)ISALevel; }
   uint8_t getISARevisionValue() { return (uint8_t)ISARevision; }
   uint8_t getGPRSizeValue() { return (uint8_t)GPRSize; }
-  uint8_t getCPR1SizeValue() { return (uint8_t)CPR1Size; }
+  uint8_t getCPR1SizeValue();
   uint8_t getCPR2SizeValue() { return (uint8_t)CPR2Size; }
   uint8_t getFpABIValue();
   uint32_t getISAExtensionSetValue() { return (uint32_t)ISAExtensionSet; }
@@ -181,7 +181,7 @@ public:
 
   template <class PredicateLibrary>
   void setCPR1SizeFromPredicates(const PredicateLibrary &P) {
-    if (P.mipsSEUsesSoftFloat())
+    if (P.abiUsesSoftFloat())
       CPR1Size = AFL_REG_NONE;
     else if (P.hasMSA())
       CPR1Size = AFL_REG_128;
@@ -212,10 +212,10 @@ public:
     if (P.isABI_N32() || P.isABI_N64())
       FpABI = FpABIKind::S64;
     else if (P.isABI_O32()) {
-      if (P.isFP64bit())
-        FpABI = FpABIKind::S64;
-      else if (P.isABI_FPXX())
+      if (P.isABI_FPXX())
         FpABI = FpABIKind::XX;
+      else if (P.isFP64bit())
+        FpABI = FpABIKind::S64;
       else
         FpABI = FpABIKind::S32;
     }
@@ -228,6 +228,7 @@ public:
     setCPR1SizeFromPredicates(P);
     setASESetFromPredicates(P);
     setFpAbiFromPredicates(P);
+    OddSPReg = P.useOddSPReg();
   }
 };
 

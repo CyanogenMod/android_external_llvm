@@ -3,7 +3,6 @@ LOCAL_PATH:= $(call my-dir)
 target_SRC_FILES := \
   Target.cpp \
   TargetIntrinsicInfo.cpp \
-  TargetJITInfo.cpp \
   TargetLibraryInfo.cpp \
   TargetLoweringObjectFile.cpp \
   TargetMachineC.cpp \

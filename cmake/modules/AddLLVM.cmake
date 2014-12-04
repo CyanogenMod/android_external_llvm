@@ -8,8 +8,13 @@ function(llvm_update_compile_flags name)
     set(update_src_props ON)
   endif()
 
-  if(LLVM_REQUIRES_EH)
-    set(LLVM_REQUIRES_RTTI ON)
+  # LLVM_REQUIRES_EH is an internal flag that individual
+  # targets can use to force EH
+  if(LLVM_REQUIRES_EH OR LLVM_ENABLE_EH)
+    if(NOT (LLVM_REQUIRES_RTTI OR LLVM_ENABLE_RTTI))
+      message(AUTHOR_WARNING "Exception handling requires RTTI. Enabling RTTI for ${name}")
+      set(LLVM_REQUIRES_RTTI ON)
+    endif()
   else()
     if(LLVM_COMPILER_IS_GCC_COMPATIBLE)
       list(APPEND LLVM_COMPILE_FLAGS "-fno-exceptions")
@@ -19,7 +24,9 @@ function(llvm_update_compile_flags name)
     endif()
   endif()
 
-  if(NOT LLVM_REQUIRES_RTTI)
+  # LLVM_REQUIRES_RTTI is an internal flag that individual
+  # targets can use to force RTTI
+  if(NOT (LLVM_REQUIRES_RTTI OR LLVM_ENABLE_RTTI))
     list(APPEND LLVM_COMPILE_DEFINITIONS GTEST_HAS_RTTI=0)
     if (LLVM_COMPILER_IS_GCC_COMPATIBLE)
       list(APPEND LLVM_COMPILE_FLAGS "-fno-rtti")
@@ -78,27 +85,29 @@ function(add_llvm_symbol_exports target_name export_file)
   else()
     set(native_export_file "${target_name}.def")
 
-    set(CAT "type")
-    if(CYGWIN)
-      set(CAT "cat")
+    set(CAT "cat")
+    set(export_file_nativeslashes ${export_file})
+    if(WIN32 AND NOT CYGWIN)
+      set(CAT "type")
+      # Convert ${export_file} to native format (backslashes) for "type"
+      # Does not use file(TO_NATIVE_PATH) as it doesn't create a native
+      # path but a build-system specific format (see CMake bug
+      # http://public.kitware.com/Bug/print_bug_page.php?bug_id=5939 )
+      string(REPLACE / \\ export_file_nativeslashes ${export_file})
     endif()
-
-    # Using ${export_file} in add_custom_command directly confuses cmd.exe.
-    file(TO_NATIVE_PATH ${export_file} export_file_backslashes)
 
     add_custom_command(OUTPUT ${native_export_file}
       COMMAND ${CMAKE_COMMAND} -E echo "EXPORTS" > ${native_export_file}
-      COMMAND ${CAT} ${export_file_backslashes} >> ${native_export_file}
+      COMMAND ${CAT} ${export_file_nativeslashes} >> ${native_export_file}
       DEPENDS ${export_file}
       VERBATIM
       COMMENT "Creating export file for ${target_name}")
-    if(CYGWIN OR MINGW)
-      set_property(TARGET ${target_name} APPEND_STRING PROPERTY
-                   LINK_FLAGS " ${CMAKE_CURRENT_BINARY_DIR}/${native_export_file}")
-    else()
-      set_property(TARGET ${target_name} APPEND_STRING PROPERTY
-                   LINK_FLAGS " /DEF:${CMAKE_CURRENT_BINARY_DIR}/${native_export_file}")
+    set(export_file_linker_flag "${CMAKE_CURRENT_BINARY_DIR}/${native_export_file}")
+    if(MSVC)
+      set(export_file_linker_flag "/DEF:${export_file_linker_flag}")
     endif()
+    set_property(TARGET ${target_name} APPEND_STRING PROPERTY
+                 LINK_FLAGS " ${export_file_linker_flag}")
   endif()
 
   add_custom_target(${target_name}_exports DEPENDS ${native_export_file})
@@ -133,18 +142,29 @@ function(add_llvm_symbol_exports target_name export_file)
   set(LLVM_COMMON_DEPENDS ${LLVM_COMMON_DEPENDS} PARENT_SCOPE)
 endfunction(add_llvm_symbol_exports)
 
-function(add_dead_strip target_name)
+function(add_link_opts target_name)
+  # Pass -O3 to the linker. This enabled different optimizations on different
+  # linkers.
+  if(NOT (${CMAKE_SYSTEM_NAME} MATCHES "Darwin" OR WIN32))
+    set_property(TARGET ${target_name} APPEND_STRING PROPERTY
+                 LINK_FLAGS " -Wl,-O3")
+  endif()
+
   if(NOT LLVM_NO_DEAD_STRIP)
     if(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+      # ld64's implementation of -dead_strip breaks tools that use plugins.
       set_property(TARGET ${target_name} APPEND_STRING PROPERTY
                    LINK_FLAGS " -Wl,-dead_strip")
     elseif(NOT WIN32)
       # Object files are compiled with -ffunction-data-sections.
+      # Versions of bfd ld < 2.23.1 have a bug in --gc-sections that breaks
+      # tools that use plugins. Always pass --gc-sections once we require
+      # a newer linker.
       set_property(TARGET ${target_name} APPEND_STRING PROPERTY
                    LINK_FLAGS " -Wl,--gc-sections")
     endif()
   endif()
-endfunction(add_dead_strip)
+endfunction(add_link_opts)
 
 # Set each output directory according to ${CMAKE_CONFIGURATION_TYPES}.
 # Note: Don't set variables CMAKE_*_OUTPUT_DIRECTORY any more,
@@ -155,19 +175,28 @@ function(set_output_directory target bindir libdir)
     return()
   endif()
 
+  # moddir -- corresponding to LIBRARY_OUTPUT_DIRECTORY.
+  # It affects output of add_library(MODULE).
+  if(WIN32 OR CYGWIN)
+    # DLL platform
+    set(moddir ${bindir})
+  else()
+    set(moddir ${libdir})
+  endif()
   if(NOT "${CMAKE_CFG_INTDIR}" STREQUAL ".")
     foreach(build_mode ${CMAKE_CONFIGURATION_TYPES})
       string(TOUPPER "${build_mode}" CONFIG_SUFFIX)
       string(REPLACE ${CMAKE_CFG_INTDIR} ${build_mode} bi ${bindir})
       string(REPLACE ${CMAKE_CFG_INTDIR} ${build_mode} li ${libdir})
+      string(REPLACE ${CMAKE_CFG_INTDIR} ${build_mode} mi ${moddir})
       set_target_properties(${target} PROPERTIES "RUNTIME_OUTPUT_DIRECTORY_${CONFIG_SUFFIX}" ${bi})
       set_target_properties(${target} PROPERTIES "ARCHIVE_OUTPUT_DIRECTORY_${CONFIG_SUFFIX}" ${li})
-      set_target_properties(${target} PROPERTIES "LIBRARY_OUTPUT_DIRECTORY_${CONFIG_SUFFIX}" ${li})
+      set_target_properties(${target} PROPERTIES "LIBRARY_OUTPUT_DIRECTORY_${CONFIG_SUFFIX}" ${mi})
     endforeach()
   else()
     set_target_properties(${target} PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${bindir})
     set_target_properties(${target} PROPERTIES ARCHIVE_OUTPUT_DIRECTORY ${libdir})
-    set_target_properties(${target} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${libdir})
+    set_target_properties(${target} PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${moddir})
   endif()
 endfunction()
 
@@ -265,7 +294,7 @@ function(llvm_add_library name)
   endif()
   set_output_directory(${name} ${LLVM_RUNTIME_OUTPUT_INTDIR} ${LLVM_LIBRARY_OUTPUT_INTDIR})
   llvm_update_compile_flags(${name})
-  add_dead_strip( ${name} )
+  add_link_opts( ${name} )
   if(ARG_OUTPUT_NAME)
     set_target_properties(${name}
       PROPERTIES
@@ -294,6 +323,12 @@ function(llvm_add_library name)
   endif()
 
   if(ARG_MODULE OR ARG_SHARED)
+    # Do not add -Dname_EXPORTS to the command-line when building files in this
+    # target. Doing so is actively harmful for the modules build because it
+    # creates extra module variants, and not useful because we don't use these
+    # macros.
+    set_target_properties( ${name} PROPERTIES DEFINE_SYMBOL "" )
+
     if (LLVM_EXPORTED_SYMBOL_FILE)
       add_llvm_symbol_exports( ${name} ${LLVM_EXPORTED_SYMBOL_FILE} )
     endif()
@@ -324,15 +359,8 @@ function(llvm_add_library name)
       ${lib_deps}
       ${llvm_libs}
       )
-  elseif(ARG_SHARED AND BUILD_SHARED_LIBS)
-    # FIXME: It may be PRIVATE since SO knows its dependent libs.
-    target_link_libraries(${name} PUBLIC
-      ${ARG_LINK_LIBS}
-      ${lib_deps}
-      ${llvm_libs}
-      )
   else()
-    # MODULE|SHARED
+    # We can use PRIVATE since SO knows its dependent libs.
     target_link_libraries(${name} PRIVATE
       ${ARG_LINK_LIBS}
       ${lib_deps}
@@ -364,6 +392,7 @@ macro(add_llvm_library name)
     if (NOT LLVM_INSTALL_TOOLCHAIN_ONLY OR ${name} STREQUAL "LTO")
       install(TARGETS ${name}
         EXPORT LLVMExports
+        RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib${LLVM_LIBDIR_SUFFIX}
         ARCHIVE DESTINATION lib${LLVM_LIBDIR_SUFFIX})
     endif()
@@ -382,9 +411,15 @@ macro(add_llvm_loadable_module name)
       set_target_properties( ${name} PROPERTIES EXCLUDE_FROM_ALL ON)
     else()
       if (NOT LLVM_INSTALL_TOOLCHAIN_ONLY)
+        if(WIN32 OR CYGWIN)
+          # DLL platform
+          set(dlldir "bin")
+        else()
+          set(dlldir "lib${LLVM_LIBDIR_SUFFIX}")
+        endif()
         install(TARGETS ${name}
           EXPORT LLVMExports
-          LIBRARY DESTINATION lib${LLVM_LIBDIR_SUFFIX}
+          LIBRARY DESTINATION ${dlldir}
           ARCHIVE DESTINATION lib${LLVM_LIBDIR_SUFFIX})
       endif()
       set_property(GLOBAL APPEND PROPERTY LLVM_EXPORTS ${name})
@@ -403,7 +438,13 @@ macro(add_llvm_executable name)
     add_executable(${name} ${ALL_FILES})
   endif()
   llvm_update_compile_flags(${name})
-  add_dead_strip( ${name} )
+  add_link_opts( ${name} )
+
+  # Do not add -Dname_EXPORTS to the command-line when building files in this
+  # target. Doing so is actively harmful for the modules build because it
+  # creates extra module variants, and not useful because we don't use these
+  # macros.
+  set_target_properties( ${name} PROPERTIES DEFINE_SYMBOL "" )
 
   if (LLVM_EXPORTED_SYMBOL_FILE)
     add_llvm_symbol_exports( ${name} ${LLVM_EXPORTED_SYMBOL_FILE} )
@@ -609,21 +650,9 @@ function(configure_lit_site_cfg input output)
   set(HOST_OS ${CMAKE_SYSTEM_NAME})
   set(HOST_ARCH ${CMAKE_SYSTEM_PROCESSOR})
 
-  if (CLANG_ENABLE_ARCMT)
-    set(ENABLE_CLANG_ARCMT "1")
-  else()
-    set(ENABLE_CLANG_ARCMT "0")
-  endif()
-  if (CLANG_ENABLE_REWRITER)
-    set(ENABLE_CLANG_REWRITER "1")
-  else()
-    set(ENABLE_CLANG_REWRITER "0")
-  endif()
-  if (CLANG_ENABLE_STATIC_ANALYZER)
-    set(ENABLE_CLANG_STATIC_ANALYZER "1")
-  else()
-    set(ENABLE_CLANG_STATIC_ANALYZER "0")
-  endif()
+  set(HOST_CC "${CMAKE_C_COMPILER} ${CMAKE_C_COMPILER_ARG1}")
+  set(HOST_CXX "${CMAKE_CXX_COMPILER} ${CMAKE_CXX_COMPILER_ARG1}")
+  set(HOST_LDFLAGS "${CMAKE_EXE_LINKER_FLAGS}")
 
   configure_file(${input} ${output} @ONLY)
 endfunction()
@@ -650,6 +679,7 @@ function(add_lit_target target comment)
     add_custom_target(${target}
       COMMAND ${LIT_COMMAND} ${ARG_DEFAULT_ARGS}
       COMMENT "${comment}"
+      ${cmake_3_2_USES_TERMINAL}
       )
     add_dependencies(${target} ${ARG_DEPENDS})
   else()

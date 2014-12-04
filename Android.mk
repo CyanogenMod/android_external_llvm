@@ -13,7 +13,6 @@ subdirs := \
   lib/Bitcode/Writer \
   lib/ExecutionEngine \
   lib/ExecutionEngine/RuntimeDyld \
-  lib/ExecutionEngine/JIT \
   lib/ExecutionEngine/MCJIT \
   lib/ExecutionEngine/Interpreter \
   lib/CodeGen \
@@ -25,7 +24,6 @@ subdirs := \
   lib/Linker \
   lib/LTO \
   lib/MC \
-  lib/MC/MCAnalysis \
   lib/MC/MCDisassembler \
   lib/MC/MCParser \
   lib/Object \

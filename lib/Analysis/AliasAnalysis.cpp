@@ -196,17 +196,21 @@ AliasAnalysis::getModRefInfo(ImmutableCallSite CS1, ImmutableCallSite CS2) {
         if (!Arg->getType()->isPointerTy())
           continue;
         ModRefResult ArgMask;
-        Location CS1Loc =
-          getArgLocation(CS1, (unsigned) std::distance(CS1.arg_begin(), I),
-                         ArgMask);
-        if ((getModRefInfo(CS2, CS1Loc) & ArgMask) != NoModRef) {
-          R = Mask;
+        Location CS1Loc = getArgLocation(
+            CS1, (unsigned)std::distance(CS1.arg_begin(), I), ArgMask);
+        // ArgMask indicates what CS1 might do to CS1Loc; if CS1 might Mod
+        // CS1Loc, then we care about either a Mod or a Ref by CS2. If CS1
+        // might Ref, then we care only about a Mod by CS2.
+        ModRefResult ArgR = getModRefInfo(CS2, CS1Loc);
+        if (((ArgMask & Mod) != NoModRef && (ArgR & ModRef) != NoModRef) ||
+            ((ArgMask & Ref) != NoModRef && (ArgR & Mod)    != NoModRef))
+          R = ModRefResult((R | ArgMask) & Mask);
+
+        if (R == Mask)
           break;
-        }
       }
     }
-    if (R == NoModRef)
-      return R;
+    return R;
   }
 
   // If this is the end of the chain, don't forward.
@@ -247,61 +251,73 @@ AliasAnalysis::getModRefBehavior(const Function *F) {
 //===----------------------------------------------------------------------===//
 
 AliasAnalysis::Location AliasAnalysis::getLocation(const LoadInst *LI) {
+  AAMDNodes AATags;
+  LI->getAAMetadata(AATags);
+
   return Location(LI->getPointerOperand(),
-                  getTypeStoreSize(LI->getType()),
-                  LI->getMetadata(LLVMContext::MD_tbaa));
+                  getTypeStoreSize(LI->getType()), AATags);
 }
 
 AliasAnalysis::Location AliasAnalysis::getLocation(const StoreInst *SI) {
+  AAMDNodes AATags;
+  SI->getAAMetadata(AATags);
+
   return Location(SI->getPointerOperand(),
-                  getTypeStoreSize(SI->getValueOperand()->getType()),
-                  SI->getMetadata(LLVMContext::MD_tbaa));
+                  getTypeStoreSize(SI->getValueOperand()->getType()), AATags);
 }
 
 AliasAnalysis::Location AliasAnalysis::getLocation(const VAArgInst *VI) {
-  return Location(VI->getPointerOperand(),
-                  UnknownSize,
-                  VI->getMetadata(LLVMContext::MD_tbaa));
+  AAMDNodes AATags;
+  VI->getAAMetadata(AATags);
+
+  return Location(VI->getPointerOperand(), UnknownSize, AATags);
 }
 
 AliasAnalysis::Location
 AliasAnalysis::getLocation(const AtomicCmpXchgInst *CXI) {
+  AAMDNodes AATags;
+  CXI->getAAMetadata(AATags);
+
   return Location(CXI->getPointerOperand(),
                   getTypeStoreSize(CXI->getCompareOperand()->getType()),
-                  CXI->getMetadata(LLVMContext::MD_tbaa));
+                  AATags);
 }
 
 AliasAnalysis::Location
 AliasAnalysis::getLocation(const AtomicRMWInst *RMWI) {
+  AAMDNodes AATags;
+  RMWI->getAAMetadata(AATags);
+
   return Location(RMWI->getPointerOperand(),
-                  getTypeStoreSize(RMWI->getValOperand()->getType()),
-                  RMWI->getMetadata(LLVMContext::MD_tbaa));
+                  getTypeStoreSize(RMWI->getValOperand()->getType()), AATags);
 }
 
-AliasAnalysis::Location 
+AliasAnalysis::Location
 AliasAnalysis::getLocationForSource(const MemTransferInst *MTI) {
   uint64_t Size = UnknownSize;
   if (ConstantInt *C = dyn_cast<ConstantInt>(MTI->getLength()))
     Size = C->getValue().getZExtValue();
 
-  // memcpy/memmove can have TBAA tags. For memcpy, they apply
+  // memcpy/memmove can have AA tags. For memcpy, they apply
   // to both the source and the destination.
-  MDNode *TBAATag = MTI->getMetadata(LLVMContext::MD_tbaa);
+  AAMDNodes AATags;
+  MTI->getAAMetadata(AATags);
 
-  return Location(MTI->getRawSource(), Size, TBAATag);
+  return Location(MTI->getRawSource(), Size, AATags);
 }
 
-AliasAnalysis::Location 
+AliasAnalysis::Location
 AliasAnalysis::getLocationForDest(const MemIntrinsic *MTI) {
   uint64_t Size = UnknownSize;
   if (ConstantInt *C = dyn_cast<ConstantInt>(MTI->getLength()))
     Size = C->getValue().getZExtValue();
 
-  // memcpy/memmove can have TBAA tags. For memcpy, they apply
+  // memcpy/memmove can have AA tags. For memcpy, they apply
   // to both the source and the destination.
-  MDNode *TBAATag = MTI->getMetadata(LLVMContext::MD_tbaa);
-  
-  return Location(MTI->getRawDest(), Size, TBAATag);
+  AAMDNodes AATags;
+  MTI->getAAMetadata(AATags);
+
+  return Location(MTI->getRawDest(), Size, AATags);
 }
 
 
@@ -383,53 +399,6 @@ AliasAnalysis::getModRefInfo(const AtomicRMWInst *RMW, const Location &Loc) {
   return ModRef;
 }
 
-namespace {
-  /// Only find pointer captures which happen before the given instruction. Uses
-  /// the dominator tree to determine whether one instruction is before another.
-  /// Only support the case where the Value is defined in the same basic block
-  /// as the given instruction and the use.
-  struct CapturesBefore : public CaptureTracker {
-    CapturesBefore(const Instruction *I, DominatorTree *DT)
-      : BeforeHere(I), DT(DT), Captured(false) {}
-
-    void tooManyUses() override { Captured = true; }
-
-    bool shouldExplore(const Use *U) override {
-      Instruction *I = cast<Instruction>(U->getUser());
-      BasicBlock *BB = I->getParent();
-      // We explore this usage only if the usage can reach "BeforeHere".
-      // If use is not reachable from entry, there is no need to explore.
-      if (BeforeHere != I && !DT->isReachableFromEntry(BB))
-        return false;
-      // If the value is defined in the same basic block as use and BeforeHere,
-      // there is no need to explore the use if BeforeHere dominates use.
-      // Check whether there is a path from I to BeforeHere.
-      if (BeforeHere != I && DT->dominates(BeforeHere, I) &&
-          !isPotentiallyReachable(I, BeforeHere, DT))
-        return false;
-      return true;
-    }
-
-    bool captured(const Use *U) override {
-      Instruction *I = cast<Instruction>(U->getUser());
-      BasicBlock *BB = I->getParent();
-      // Same logic as in shouldExplore.
-      if (BeforeHere != I && !DT->isReachableFromEntry(BB))
-        return false;
-      if (BeforeHere != I && DT->dominates(BeforeHere, I) &&
-          !isPotentiallyReachable(I, BeforeHere, DT))
-        return false;
-      Captured = true;
-      return true;
-    }
-
-    const Instruction *BeforeHere;
-    DominatorTree *DT;
-
-    bool Captured;
-  };
-}
-
 // FIXME: this is really just shoring-up a deficiency in alias analysis.
 // BasicAA isn't willing to spend linear time determining whether an alloca
 // was captured before or after this particular call, while we are. However,
@@ -449,9 +418,9 @@ AliasAnalysis::callCapturesBefore(const Instruction *I,
   if (!CS.getInstruction() || CS.getInstruction() == Object)
     return AliasAnalysis::ModRef;
 
-  CapturesBefore CB(I, DT);
-  llvm::PointerMayBeCaptured(Object, &CB);
-  if (CB.Captured)
+  if (llvm::PointerMayBeCapturedBefore(Object, /* ReturnCaptures */ true,
+                                       /* StoreCaptures */ true, I, DT,
+                                       /* include Object */ true))
     return AliasAnalysis::ModRef;
 
   unsigned ArgNo = 0;
@@ -470,7 +439,7 @@ AliasAnalysis::callCapturesBefore(const Instruction *I,
     // assume that the call could touch the pointer, even though it doesn't
     // escape.
     if (isNoAlias(AliasAnalysis::Location(*CI),
-		  AliasAnalysis::Location(Object)))
+                  AliasAnalysis::Location(Object)))
       continue;
     if (CS.doesNotAccessMemory(ArgNo))
       continue;
@@ -576,4 +545,14 @@ bool llvm::isIdentifiedObject(const Value *V) {
   if (const Argument *A = dyn_cast<Argument>(V))
     return A->hasNoAliasAttr() || A->hasByValAttr();
   return false;
+}
+
+/// isIdentifiedFunctionLocal - Return true if V is umabigously identified
+/// at the function-level. Different IdentifiedFunctionLocals can't alias.
+/// Further, an IdentifiedFunctionLocal can not alias with any function
+/// arguments other than itself, which is not necessarily true for
+/// IdentifiedObjects.
+bool llvm::isIdentifiedFunctionLocal(const Value *V)
+{
+  return isa<AllocaInst>(V) || isNoAliasCall(V) || isNoAliasArgument(V);
 }

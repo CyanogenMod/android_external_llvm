@@ -60,6 +60,7 @@ llvm_opt_STATIC_LIBRARIES := \
   libLLVMMC \
   libLLVMMCParser \
   libLLVMObject \
+  libLLVMProfileData \
   libLLVMCore \
   libLLVMAsmParser \
   libLLVMOption \

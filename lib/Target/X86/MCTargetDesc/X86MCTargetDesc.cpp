@@ -272,7 +272,8 @@ static MCAsmInfo *createX86MCAsmInfo(const MCRegisterInfo &MRI, StringRef TT) {
     MAI = new X86ELFMCAsmInfo(TheTriple);
   } else if (TheTriple.isWindowsMSVCEnvironment()) {
     MAI = new X86MCAsmInfoMicrosoft(TheTriple);
-  } else if (TheTriple.isOSCygMing()) {
+  } else if (TheTriple.isOSCygMing() ||
+             TheTriple.isWindowsItaniumEnvironment()) {
     MAI = new X86MCAsmInfoGNUCOFF(TheTriple);
   } else {
     // The default is ELF.
@@ -350,11 +351,8 @@ static MCCodeGenInfo *createX86MCCodeGenInfo(StringRef TT, Reloc::Model RM,
 
 static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
                                     MCContext &Ctx, MCAsmBackend &MAB,
-                                    raw_ostream &_OS,
-                                    MCCodeEmitter *_Emitter,
-                                    const MCSubtargetInfo &STI,
-                                    bool RelaxAll,
-                                    bool NoExecStack) {
+                                    raw_ostream &_OS, MCCodeEmitter *_Emitter,
+                                    const MCSubtargetInfo &STI, bool RelaxAll) {
   Triple TheTriple(TT);
 
   switch (TheTriple.getObjectFormat()) {
@@ -365,7 +363,7 @@ static MCStreamer *createMCStreamer(const Target &T, StringRef TT,
     assert(TheTriple.isOSWindows() && "only Windows COFF is supported");
     return createX86WinCOFFStreamer(Ctx, MAB, _Emitter, _OS, RelaxAll);
   case Triple::ELF:
-    return createELFStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll, NoExecStack);
+    return createELFStreamer(Ctx, MAB, _OS, _Emitter, RelaxAll);
   }
 }
 
@@ -376,7 +374,7 @@ static MCInstPrinter *createX86MCInstPrinter(const Target &T,
                                              const MCRegisterInfo &MRI,
                                              const MCSubtargetInfo &STI) {
   if (SyntaxVariant == 0)
-    return new X86ATTInstPrinter(MAI, MII, MRI);
+    return new X86ATTInstPrinter(MAI, MII, MRI, STI);
   if (SyntaxVariant == 1)
     return new X86IntelInstPrinter(MAI, MII, MRI);
   return nullptr;

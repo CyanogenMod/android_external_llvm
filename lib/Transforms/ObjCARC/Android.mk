@@ -9,7 +9,8 @@ transforms_objcarc_SRC_FILES := \
   ObjCARCExpand.cpp \
   ObjCARCOpts.cpp \
   ObjCARCUtil.cpp \
-  ProvenanceAnalysis.cpp
+  ProvenanceAnalysis.cpp \
+  ProvenanceAnalysisEvaluator.cpp
 
 # For the host
 # =====================================================

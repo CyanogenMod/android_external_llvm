@@ -1,4 +1,4 @@
-; RUN: opt < %s -loop-vectorize -force-vector-unroll=1 -force-vector-width=4 -dce -instcombine -S -simplifycfg | FileCheck %s
+; RUN: opt < %s -loop-vectorize -force-vector-interleave=1 -force-vector-width=4 -dce -instcombine -S -simplifycfg | FileCheck %s
 
 target datalayout = "e-p:64:64:64-i1:8:8-i8:8:8-i16:16:16-i32:32:32-i64:64:64-f32:32:32-f64:64:64-v64:64:64-v128:128:128-a0:0:64-s0:64:64-f80:128:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx10.8.0"
@@ -70,7 +70,7 @@ attributes #0 = { nounwind readonly ssp uwtable "fp-contract-model"="standard" "
 
 ; CHECK: !0 = metadata !{metadata !0, metadata !1, metadata !2}
 ; CHECK: !1 = metadata !{metadata !"llvm.loop.vectorize.width", i32 1}
-; CHECK: !2 = metadata !{metadata !"llvm.loop.vectorize.unroll", i32 1}
+; CHECK: !2 = metadata !{metadata !"llvm.loop.interleave.count", i32 1}
 ; CHECK: !3 = metadata !{metadata !3, metadata !1, metadata !2}
 
 !0 = metadata !{metadata !0, metadata !1}

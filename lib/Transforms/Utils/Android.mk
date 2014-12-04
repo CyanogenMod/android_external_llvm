@@ -13,6 +13,7 @@ transforms_utils_SRC_FILES := \
   CodeExtractor.cpp \
   CtorUtils.cpp \
   DemoteRegToStack.cpp \
+  FlattenCFG.cpp \
   GlobalStatus.cpp \
   InlineFunction.cpp \
   InstructionNamer.cpp \
@@ -33,6 +34,7 @@ transforms_utils_SRC_FILES := \
   SimplifyIndVar.cpp \
   SimplifyInstructions.cpp \
   SimplifyLibCalls.cpp \
+  SymbolRewriter.cpp \
   UnifyFunctionExitNodes.cpp \
   Utils.cpp \
   ValueMapper.cpp

@@ -48,6 +48,7 @@ llvm_llc_STATIC_LIBRARIES := \
   libLLVMipo \
   libLLVMipa \
   libLLVMLinker \
+  libLLVMMCDisassembler \
   libLLVMMC \
   libLLVMMCParser \
   libLLVMScalarOpts \

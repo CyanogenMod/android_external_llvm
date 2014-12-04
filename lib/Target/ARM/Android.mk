@@ -19,7 +19,6 @@ arm_codegen_SRC_FILES := \
   ARMAsmPrinter.cpp \
   ARMBaseInstrInfo.cpp \
   ARMBaseRegisterInfo.cpp \
-  ARMCodeEmitter.cpp \
   ARMConstantIslandPass.cpp \
   ARMConstantPoolValue.cpp \
   ARMExpandPseudoInsts.cpp \
@@ -29,7 +28,6 @@ arm_codegen_SRC_FILES := \
   ARMISelDAGToDAG.cpp \
   ARMISelLowering.cpp \
   ARMInstrInfo.cpp \
-  ARMJITInfo.cpp \
   ARMLoadStoreOptimizer.cpp \
   ARMMCInstLower.cpp \
   ARMMachineFunctionInfo.cpp \

@@ -73,7 +73,10 @@ namespace llvm {
       MH_SETUID_SAFE             = 0x00080000u,
       MH_NO_REEXPORTED_DYLIBS    = 0x00100000u,
       MH_PIE                     = 0x00200000u,
-      MH_DEAD_STRIPPABLE_DYLIB   = 0x00400000u
+      MH_DEAD_STRIPPABLE_DYLIB   = 0x00400000u,
+      MH_HAS_TLV_DESCRIPTORS     = 0x00800000u,
+      MH_NO_HEAP_EXECUTION       = 0x01000000u,
+      MH_APP_EXTENSION_SAFE      = 0x02000000u
     };
 
     enum : uint32_t {
@@ -327,7 +330,8 @@ namespace llvm {
 
     enum ExportSymbolKind {
       EXPORT_SYMBOL_FLAGS_KIND_REGULAR        = 0x00u,
-      EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL   = 0x01u
+      EXPORT_SYMBOL_FLAGS_KIND_THREAD_LOCAL   = 0x01u,
+      EXPORT_SYMBOL_FLAGS_KIND_ABSOLUTE       = 0x02u
     };
 
 
@@ -386,13 +390,15 @@ namespace llvm {
 
     enum StabType {
       // Constant values for the "n_type" field in llvm::MachO::nlist and
-      // llvm::MachO::nlist_64 when "(n_type & NlistMaskStab) != 0"
+      // llvm::MachO::nlist_64 when "(n_type & N_STAB) != 0"
       N_GSYM    = 0x20u,
       N_FNAME   = 0x22u,
       N_FUN     = 0x24u,
       N_STSYM   = 0x26u,
       N_LCSYM   = 0x28u,
       N_BNSYM   = 0x2Eu,
+      N_PC      = 0x30u,
+      N_AST     = 0x32u,
       N_OPT     = 0x3Cu,
       N_RSYM    = 0x40u,
       N_SLINE   = 0x44u,
@@ -841,7 +847,7 @@ namespace llvm {
                           // LC_VERSION_MIN_IPHONEOS
       uint32_t cmdsize;   // sizeof(struct version_min_command)
       uint32_t version;   // X.Y.Z is encoded in nibbles xxxx.yy.zz
-      uint32_t reserved;
+      uint32_t sdk;       // X.Y.Z is encoded in nibbles xxxx.yy.zz
     };
 
     struct dyld_info_command {
@@ -957,6 +963,13 @@ namespace llvm {
     };
 
     // Structs from <mach-o/nlist.h>
+    struct nlist_base {
+      uint32_t n_strx;
+      uint8_t n_type;
+      uint8_t n_sect;
+      uint16_t n_desc;
+    };
+
     struct nlist {
       uint32_t n_strx;
       uint8_t n_type;
@@ -972,6 +985,217 @@ namespace llvm {
       uint16_t n_desc;
       uint64_t n_value;
     };
+
+
+    // Byte order swapping functions for MachO structs
+
+    inline void swapStruct(mach_header &mh) {
+      sys::swapByteOrder(mh.magic);
+      sys::swapByteOrder(mh.cputype);
+      sys::swapByteOrder(mh.cpusubtype);
+      sys::swapByteOrder(mh.filetype);
+      sys::swapByteOrder(mh.ncmds);
+      sys::swapByteOrder(mh.sizeofcmds);
+      sys::swapByteOrder(mh.flags);
+    }
+
+    inline void swapStruct(mach_header_64 &H) {
+      sys::swapByteOrder(H.magic);
+      sys::swapByteOrder(H.cputype);
+      sys::swapByteOrder(H.cpusubtype);
+      sys::swapByteOrder(H.filetype);
+      sys::swapByteOrder(H.ncmds);
+      sys::swapByteOrder(H.sizeofcmds);
+      sys::swapByteOrder(H.flags);
+      sys::swapByteOrder(H.reserved);
+    }
+
+    inline void swapStruct(load_command &lc) {
+      sys::swapByteOrder(lc.cmd);
+      sys::swapByteOrder(lc.cmdsize);
+    }
+
+    inline void swapStruct(symtab_command &lc) {
+      sys::swapByteOrder(lc.cmd);
+      sys::swapByteOrder(lc.cmdsize);
+      sys::swapByteOrder(lc.symoff);
+      sys::swapByteOrder(lc.nsyms);
+      sys::swapByteOrder(lc.stroff);
+      sys::swapByteOrder(lc.strsize);
+    }
+
+    inline void swapStruct(segment_command_64 &seg) {
+      sys::swapByteOrder(seg.cmd);
+      sys::swapByteOrder(seg.cmdsize);
+      sys::swapByteOrder(seg.vmaddr);
+      sys::swapByteOrder(seg.vmsize);
+      sys::swapByteOrder(seg.fileoff);
+      sys::swapByteOrder(seg.filesize);
+      sys::swapByteOrder(seg.maxprot);
+      sys::swapByteOrder(seg.initprot);
+      sys::swapByteOrder(seg.nsects);
+      sys::swapByteOrder(seg.flags);
+    }
+
+    inline void swapStruct(segment_command &seg) {
+      sys::swapByteOrder(seg.cmd);
+      sys::swapByteOrder(seg.cmdsize);
+      sys::swapByteOrder(seg.vmaddr);
+      sys::swapByteOrder(seg.vmsize);
+      sys::swapByteOrder(seg.fileoff);
+      sys::swapByteOrder(seg.filesize);
+      sys::swapByteOrder(seg.maxprot);
+      sys::swapByteOrder(seg.initprot);
+      sys::swapByteOrder(seg.nsects);
+      sys::swapByteOrder(seg.flags);
+    }
+
+    inline void swapStruct(section_64 &sect) {
+      sys::swapByteOrder(sect.addr);
+      sys::swapByteOrder(sect.size);
+      sys::swapByteOrder(sect.offset);
+      sys::swapByteOrder(sect.align);
+      sys::swapByteOrder(sect.reloff);
+      sys::swapByteOrder(sect.nreloc);
+      sys::swapByteOrder(sect.flags);
+      sys::swapByteOrder(sect.reserved1);
+      sys::swapByteOrder(sect.reserved2);
+    }
+
+    inline void swapStruct(section &sect) {
+      sys::swapByteOrder(sect.addr);
+      sys::swapByteOrder(sect.size);
+      sys::swapByteOrder(sect.offset);
+      sys::swapByteOrder(sect.align);
+      sys::swapByteOrder(sect.reloff);
+      sys::swapByteOrder(sect.nreloc);
+      sys::swapByteOrder(sect.flags);
+      sys::swapByteOrder(sect.reserved1);
+      sys::swapByteOrder(sect.reserved2);
+    }
+
+    inline void swapStruct(dyld_info_command &info) {
+      sys::swapByteOrder(info.cmd);
+      sys::swapByteOrder(info.cmdsize);
+      sys::swapByteOrder(info.rebase_off);
+      sys::swapByteOrder(info.rebase_size);
+      sys::swapByteOrder(info.bind_off);
+      sys::swapByteOrder(info.bind_size);
+      sys::swapByteOrder(info.weak_bind_off);
+      sys::swapByteOrder(info.weak_bind_size);
+      sys::swapByteOrder(info.lazy_bind_off);
+      sys::swapByteOrder(info.lazy_bind_size);
+      sys::swapByteOrder(info.export_off);
+      sys::swapByteOrder(info.export_size);
+    }
+
+    inline void swapStruct(dylib_command &d) {
+      sys::swapByteOrder(d.cmd);
+      sys::swapByteOrder(d.cmdsize);
+      sys::swapByteOrder(d.dylib.name);
+      sys::swapByteOrder(d.dylib.timestamp);
+      sys::swapByteOrder(d.dylib.current_version);
+      sys::swapByteOrder(d.dylib.compatibility_version);
+    }
+
+    inline void swapStruct(dylinker_command &d) {
+      sys::swapByteOrder(d.cmd);
+      sys::swapByteOrder(d.cmdsize);
+      sys::swapByteOrder(d.name);
+    }
+
+    inline void swapStruct(uuid_command &u) {
+      sys::swapByteOrder(u.cmd);
+      sys::swapByteOrder(u.cmdsize);
+    }
+
+    inline void swapStruct(source_version_command &s) {
+      sys::swapByteOrder(s.cmd);
+      sys::swapByteOrder(s.cmdsize);
+      sys::swapByteOrder(s.version);
+    }
+
+    inline void swapStruct(entry_point_command &e) {
+      sys::swapByteOrder(e.cmd);
+      sys::swapByteOrder(e.cmdsize);
+      sys::swapByteOrder(e.entryoff);
+      sys::swapByteOrder(e.stacksize);
+    }
+
+    inline void swapStruct(dysymtab_command &dst) {
+      sys::swapByteOrder(dst.cmd);
+      sys::swapByteOrder(dst.cmdsize);
+      sys::swapByteOrder(dst.ilocalsym);
+      sys::swapByteOrder(dst.nlocalsym);
+      sys::swapByteOrder(dst.iextdefsym);
+      sys::swapByteOrder(dst.nextdefsym);
+      sys::swapByteOrder(dst.iundefsym);
+      sys::swapByteOrder(dst.nundefsym);
+      sys::swapByteOrder(dst.tocoff);
+      sys::swapByteOrder(dst.ntoc);
+      sys::swapByteOrder(dst.modtaboff);
+      sys::swapByteOrder(dst.nmodtab);
+      sys::swapByteOrder(dst.extrefsymoff);
+      sys::swapByteOrder(dst.nextrefsyms);
+      sys::swapByteOrder(dst.indirectsymoff);
+      sys::swapByteOrder(dst.nindirectsyms);
+      sys::swapByteOrder(dst.extreloff);
+      sys::swapByteOrder(dst.nextrel);
+      sys::swapByteOrder(dst.locreloff);
+      sys::swapByteOrder(dst.nlocrel);
+    }
+
+    inline void swapStruct(any_relocation_info &reloc) {
+      sys::swapByteOrder(reloc.r_word0);
+      sys::swapByteOrder(reloc.r_word1);
+    }
+
+    inline void swapStruct(nlist_base &S) {
+      sys::swapByteOrder(S.n_strx);
+      sys::swapByteOrder(S.n_desc);
+    }
+
+    inline void swapStruct(nlist &sym) {
+      sys::swapByteOrder(sym.n_strx);
+      sys::swapByteOrder(sym.n_desc);
+      sys::swapByteOrder(sym.n_value);
+    }
+
+    inline void swapStruct(nlist_64 &sym) {
+      sys::swapByteOrder(sym.n_strx);
+      sys::swapByteOrder(sym.n_desc);
+      sys::swapByteOrder(sym.n_value);
+    }
+
+    inline void swapStruct(linkedit_data_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      sys::swapByteOrder(C.dataoff);
+      sys::swapByteOrder(C.datasize);
+    }
+
+    inline void swapStruct(linker_options_command &C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      sys::swapByteOrder(C.count);
+    }
+
+    inline void swapStruct(version_min_command&C) {
+      sys::swapByteOrder(C.cmd);
+      sys::swapByteOrder(C.cmdsize);
+      sys::swapByteOrder(C.version);
+      sys::swapByteOrder(C.sdk);
+    }
+
+    inline void swapStruct(data_in_code_entry &C) {
+      sys::swapByteOrder(C.offset);
+      sys::swapByteOrder(C.length);
+      sys::swapByteOrder(C.kind);
+    }
+
+    inline void swapStruct(uint32_t &C) {
+      sys::swapByteOrder(C);
+    }
 
     // Get/Set functions from <mach-o/nlist.h>
 

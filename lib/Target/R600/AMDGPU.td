@@ -25,6 +25,11 @@ def FeatureIRStructurizer : SubtargetFeature <"disable-irstructurizer",
         "false",
         "Disable IR Structurizer">;
 
+def FeaturePromoteAlloca : SubtargetFeature <"promote-alloca",
+        "EnablePromoteAlloca",
+        "true",
+        "Enable promote alloca pass">;
+
 // Target features
 
 def FeatureIfCvt : SubtargetFeature <"disable-ifcvt",
@@ -36,6 +41,20 @@ def FeatureFP64 : SubtargetFeature<"fp64",
         "FP64",
         "true",
         "Enable double precision operations">;
+
+def FeatureFP64Denormals : SubtargetFeature<"fp64-denormals",
+        "FP64Denormals",
+        "true",
+        "Enable double precision denormal handling",
+        [FeatureFP64]>;
+
+// Some instructions do not support denormals despite this flag. Using
+// fp32 denormals also causes instructions to run at the double
+// precision rate for the device.
+def FeatureFP32Denormals : SubtargetFeature<"fp32-denormals",
+        "FP32Denormals",
+        "true",
+        "Enable single precision denormal handling">;
 
 def Feature64BitPtr : SubtargetFeature<"64BitPtr",
         "Is64bit",
@@ -61,6 +80,17 @@ def FeatureCFALUBug : SubtargetFeature<"cfalubug",
         "CFALUBug",
         "true",
         "GPU has CF_ALU bug">;
+
+// XXX - This should probably be removed once enabled by default
+def FeatureEnableLoadStoreOpt : SubtargetFeature <"load-store-opt",
+        "EnableLoadStoreOpt",
+        "true",
+        "Enable SI load/store optimizer pass">;
+
+def FeatureFlatAddressSpace : SubtargetFeature<"flat-address-space",
+        "FlatAddressSpace",
+        "true",
+        "Support flat address space">;
 
 class SubtargetFeatureFetchLimit <string Value> :
                           SubtargetFeature <"fetch"#Value,
@@ -111,19 +141,28 @@ def FeatureNorthernIslands : SubtargetFeatureGeneration<"NORTHERN_ISLANDS",
 >;
 
 def FeatureSouthernIslands : SubtargetFeatureGeneration<"SOUTHERN_ISLANDS",
-        [Feature64BitPtr, FeatureFP64, FeatureLocalMemorySize32768]>;
+        [Feature64BitPtr, FeatureFP64, FeatureLocalMemorySize32768,
+         FeatureWavefrontSize64]>;
 
 def FeatureSeaIslands : SubtargetFeatureGeneration<"SEA_ISLANDS",
-        [Feature64BitPtr, FeatureFP64, FeatureLocalMemorySize65536]>;
+        [Feature64BitPtr, FeatureFP64, FeatureLocalMemorySize65536,
+         FeatureWavefrontSize64, FeatureFlatAddressSpace]>;
 //===----------------------------------------------------------------------===//
 
 def AMDGPUInstrInfo : InstrInfo {
   let guessInstructionProperties = 1;
 }
 
+def AMDGPUAsmParser : AsmParser {
+  // Some of the R600 registers have the same name, so this crashes.
+  // For example T0_XYZW and T0_XY both have the asm name T0.
+  let ShouldEmitMatchRegisterName = 0;
+}
+
 def AMDGPU : Target {
   // Pull in Instruction Info:
   let InstructionSet = AMDGPUInstrInfo;
+  let AssemblyParsers = [AMDGPUAsmParser];
 }
 
 // Dummy Instruction itineraries for pseudo instructions
