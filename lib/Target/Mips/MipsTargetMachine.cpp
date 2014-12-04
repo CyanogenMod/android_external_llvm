@@ -26,6 +26,7 @@
 #include "MipsSEISelDAGToDAG.h"
 #include "MipsSEISelLowering.h"
 #include "MipsSEInstrInfo.h"
+#include "MipsTargetObjectFile.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/PassManager.h"
@@ -56,9 +57,19 @@ MipsTargetMachine::MipsTargetMachine(const Target &T, StringRef TT,
                                      Reloc::Model RM, CodeModel::Model CM,
                                      CodeGenOpt::Level OL, bool isLittle)
     : LLVMTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL),
-      Subtarget(TT, CPU, FS, isLittle, RM, this) {
+      isLittle(isLittle),
+      TLOF(make_unique<MipsTargetObjectFile>()),
+      Subtarget(nullptr),
+      DefaultSubtarget(TT, CPU, FS, isLittle, this),
+      NoMips16Subtarget(TT, CPU, FS.empty() ? "-mips16" : FS.str() + ",-mips16",
+                        isLittle, this),
+      Mips16Subtarget(TT, CPU, FS.empty() ? "+mips16" : FS.str() + ",+mips16",
+                      isLittle, this) {
+  Subtarget = &DefaultSubtarget;
   initAsmInfo();
 }
+
+MipsTargetMachine::~MipsTargetMachine() {}
 
 void MipsebTargetMachine::anchor() { }
 
@@ -77,6 +88,63 @@ MipselTargetMachine(const Target &T, StringRef TT,
                     Reloc::Model RM, CodeModel::Model CM,
                     CodeGenOpt::Level OL)
   : MipsTargetMachine(T, TT, CPU, FS, Options, RM, CM, OL, true) {}
+
+const MipsSubtarget *
+MipsTargetMachine::getSubtargetImpl(const Function &F) const {
+  AttributeSet FnAttrs = F.getAttributes();
+  Attribute CPUAttr =
+      FnAttrs.getAttribute(AttributeSet::FunctionIndex, "target-cpu");
+  Attribute FSAttr =
+      FnAttrs.getAttribute(AttributeSet::FunctionIndex, "target-features");
+
+  std::string CPU = !CPUAttr.hasAttribute(Attribute::None)
+                        ? CPUAttr.getValueAsString().str()
+                        : TargetCPU;
+  std::string FS = !FSAttr.hasAttribute(Attribute::None)
+                       ? FSAttr.getValueAsString().str()
+                       : TargetFS;
+  bool hasMips16Attr =
+      !FnAttrs.getAttribute(AttributeSet::FunctionIndex, "mips16")
+           .hasAttribute(Attribute::None);
+  bool hasNoMips16Attr =
+      !FnAttrs.getAttribute(AttributeSet::FunctionIndex, "nomips16")
+           .hasAttribute(Attribute::None);
+
+  // FIXME: This is related to the code below to reset the target options,
+  // we need to know whether or not the soft float flag is set on the
+  // function before we can generate a subtarget. We also need to use
+  // it as a key for the subtarget since that can be the only difference
+  // between two functions.
+  Attribute SFAttr =
+      FnAttrs.getAttribute(AttributeSet::FunctionIndex, "use-soft-float");
+  bool softFloat = !SFAttr.hasAttribute(Attribute::None)
+                       ? SFAttr.getValueAsString() == "true"
+                       : Options.UseSoftFloat;
+
+  if (hasMips16Attr)
+    FS += FS.empty() ? "+mips16" : ",+mips16";
+  else if (hasNoMips16Attr)
+    FS += FS.empty() ? "-mips16" : ",-mips16";
+
+  auto &I = SubtargetMap[CPU + FS + (softFloat ? "use-soft-float=true"
+                                               : "use-soft-float=false")];
+  if (!I) {
+    // This needs to be done before we create a new subtarget since any
+    // creation will depend on the TM and the code generation flags on the
+    // function that reside in TargetOptions.
+    resetTargetOptions(F);
+    I = llvm::make_unique<MipsSubtarget>(TargetTriple, CPU, FS, isLittle, this);
+  }
+  return I.get();
+}
+
+void MipsTargetMachine::resetSubtarget(MachineFunction *MF) {
+  DEBUG(dbgs() << "resetSubtarget\n");
+
+  Subtarget = const_cast<MipsSubtarget *>(getSubtargetImpl(*MF->getFunction()));
+  MF->setSubtarget(Subtarget);
+  return;
+}
 
 namespace {
 /// Mips Code Generator Pass Configuration Options.
@@ -115,22 +183,18 @@ TargetPassConfig *MipsTargetMachine::createPassConfig(PassManagerBase &PM) {
 
 void MipsPassConfig::addIRPasses() {
   TargetPassConfig::addIRPasses();
+  addPass(createAtomicExpandPass(&getMipsTargetMachine()));
   if (getMipsSubtarget().os16())
     addPass(createMipsOs16(getMipsTargetMachine()));
   if (getMipsSubtarget().inMips16HardFloat())
     addPass(createMips16HardFloat(getMipsTargetMachine()));
-  addPass(createPartiallyInlineLibCallsPass());
 }
 // Install an instruction selector pass using
 // the ISelDag to gen Mips code.
 bool MipsPassConfig::addInstSelector() {
-  if (getMipsSubtarget().allowMixed16_32()) {
-    addPass(createMipsModuleISelDag(getMipsTargetMachine()));
-    addPass(createMips16ISelDag(getMipsTargetMachine()));
-    addPass(createMipsSEISelDag(getMipsTargetMachine()));
-  } else {
-    addPass(createMipsISelDag(getMipsTargetMachine()));
-  }
+  addPass(createMipsModuleISelDag(getMipsTargetMachine()));
+  addPass(createMips16ISelDag(getMipsTargetMachine()));
+  addPass(createMipsSEISelDag(getMipsTargetMachine()));
   return false;
 }
 
@@ -149,7 +213,7 @@ bool MipsPassConfig::addPreRegAlloc() {
 }
 
 void MipsTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
-  if (Subtarget.allowMixed16_32()) {
+  if (Subtarget->allowMixed16_32()) {
     DEBUG(errs() << "No ");
     //FIXME: The Basic Target Transform Info
     // pass needs to become a function pass instead of
@@ -166,21 +230,8 @@ void MipsTargetMachine::addAnalysisPasses(PassManagerBase &PM) {
 // print out the code after the passes.
 bool MipsPassConfig::addPreEmitPass() {
   MipsTargetMachine &TM = getMipsTargetMachine();
-  const MipsSubtarget &Subtarget = TM.getSubtarget<MipsSubtarget>();
   addPass(createMipsDelaySlotFillerPass(TM));
-
-  if (Subtarget.enableLongBranchPass())
-    addPass(createMipsLongBranchPass(TM));
-  if (Subtarget.inMips16Mode() ||
-      Subtarget.allowMixed16_32())
-    addPass(createMipsConstantIslandPass(TM));
-
+  addPass(createMipsLongBranchPass(TM));
+  addPass(createMipsConstantIslandPass(TM));
   return true;
-}
-
-bool MipsTargetMachine::addCodeEmitter(PassManagerBase &PM,
-                                       JITCodeEmitter &JCE) {
-  // Machine code emitter pass for Mips.
-  PM.add(createMipsJITCodeEmitterPass(*this, JCE));
-  return false;
 }

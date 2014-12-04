@@ -44,7 +44,6 @@ lli_STATIC_LIBRARIES := \
   libLLVMX86Disassembler \
   libLLVMAsmPrinter \
   libLLVMSelectionDAG \
-  libLLVMJIT \
   libLLVMCodeGen \
   libLLVMInstrumentation \
   libLLVMExecutionEngine \

@@ -15,6 +15,7 @@ mips_mc_desc_SRC_FILES := \
   MipsMCCodeEmitter.cpp \
   MipsMCExpr.cpp \
   MipsMCTargetDesc.cpp \
+  MipsOptionRecord.cpp \
   MipsNaClELFStreamer.cpp \
   MipsTargetStreamer.cpp
 

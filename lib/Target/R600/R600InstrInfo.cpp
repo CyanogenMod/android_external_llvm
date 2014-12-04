@@ -92,10 +92,6 @@ bool R600InstrInfo::isLegalToSplitMBBAt(MachineBasicBlock &MBB,
   return true;
 }
 
-unsigned R600InstrInfo::getIEQOpcode() const {
-  return AMDGPU::SETE_INT;
-}
-
 bool R600InstrInfo::isMov(unsigned Opcode) const {
 
 
@@ -209,8 +205,10 @@ bool R600InstrInfo::usesVertexCache(unsigned Opcode) const {
 }
 
 bool R600InstrInfo::usesVertexCache(const MachineInstr *MI) const {
-  const R600MachineFunctionInfo *MFI = MI->getParent()->getParent()->getInfo<R600MachineFunctionInfo>();
-  return MFI->ShaderType != ShaderType::COMPUTE && usesVertexCache(MI->getOpcode());
+  const MachineFunction *MF = MI->getParent()->getParent();
+  const R600MachineFunctionInfo *MFI = MF->getInfo<R600MachineFunctionInfo>();
+  return MFI->getShaderType() != ShaderType::COMPUTE &&
+    usesVertexCache(MI->getOpcode());
 }
 
 bool R600InstrInfo::usesTextureCache(unsigned Opcode) const {
@@ -218,9 +216,11 @@ bool R600InstrInfo::usesTextureCache(unsigned Opcode) const {
 }
 
 bool R600InstrInfo::usesTextureCache(const MachineInstr *MI) const {
-  const R600MachineFunctionInfo *MFI = MI->getParent()->getParent()->getInfo<R600MachineFunctionInfo>();
-  return (MFI->ShaderType == ShaderType::COMPUTE && usesVertexCache(MI->getOpcode())) ||
-         usesTextureCache(MI->getOpcode());
+  const MachineFunction *MF = MI->getParent()->getParent();
+  const R600MachineFunctionInfo *MFI = MF->getInfo<R600MachineFunctionInfo>();
+  return (MFI->getShaderType() == ShaderType::COMPUTE &&
+          usesVertexCache(MI->getOpcode())) ||
+    usesTextureCache(MI->getOpcode());
 }
 
 bool R600InstrInfo::mustBeLastInClause(unsigned Opcode) const {
@@ -319,7 +319,7 @@ R600InstrInfo::getSrcs(MachineInstr *MI) const {
         Result.push_back(std::pair<MachineOperand *, int64_t>(&MO, Sel));
         continue;
       }
-      
+
     }
     return Result;
   }
@@ -571,7 +571,7 @@ R600InstrInfo::fitsReadPortLimitations(const std::vector<MachineInstr *> &IG,
   if (!isLastAluTrans)
     return FindSwizzleForVectorSlot(IGSrcs, ValidSwizzle, TransOps, TransBS);
 
-  TransOps = IGSrcs.back();
+  TransOps = std::move(IGSrcs.back());
   IGSrcs.pop_back();
   ValidSwizzle.pop_back();
 
@@ -654,10 +654,10 @@ R600InstrInfo::fitsConstReadLimitations(const std::vector<MachineInstr *> &MIs)
   return fitsConstReadLimitations(Consts);
 }
 
-DFAPacketizer *R600InstrInfo::CreateTargetScheduleState(const TargetMachine *TM,
-    const ScheduleDAG *DAG) const {
-  const InstrItineraryData *II = TM->getInstrItineraryData();
-  return TM->getSubtarget<AMDGPUSubtarget>().createDFAPacketizer(II);
+DFAPacketizer *
+R600InstrInfo::CreateTargetScheduleState(const TargetSubtargetInfo &STI) const {
+  const InstrItineraryData *II = STI.getInstrItineraryData();
+  return static_cast<const AMDGPUSubtarget &>(STI).createDFAPacketizer(II);
 }
 
 static bool
@@ -1082,9 +1082,8 @@ bool R600InstrInfo::expandPostRAPseudo(MachineBasicBlock::iterator MI) const {
 
 void  R600InstrInfo::reserveIndirectRegisters(BitVector &Reserved,
                                              const MachineFunction &MF) const {
-  const AMDGPUFrameLowering *TFL =
-    static_cast<const AMDGPUFrameLowering*>(
-    MF.getTarget().getFrameLowering());
+  const AMDGPUFrameLowering *TFL = static_cast<const AMDGPUFrameLowering *>(
+      MF.getSubtarget().getFrameLowering());
 
   unsigned StackWidth = TFL->getStackWidth(MF);
   int End = getIndirectIndexEnd(MF);

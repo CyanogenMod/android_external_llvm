@@ -24,7 +24,7 @@ FixGlobalBaseReg("mips-fix-global-base-reg", cl::Hidden, cl::init(true),
                  cl::desc("Always use $gp as the global base register."));
 
 // class MipsCallEntry.
-MipsCallEntry::MipsCallEntry(const StringRef &N) {
+MipsCallEntry::MipsCallEntry(StringRef N) {
 #ifndef NDEBUG
   Name = N;
   Val = nullptr;
@@ -119,7 +119,7 @@ bool MipsFunctionInfo::isEhDataRegFI(int FI) const {
                         || FI == EhDataRegFI[2] || FI == EhDataRegFI[3]);
 }
 
-MachinePointerInfo MipsFunctionInfo::callPtrInfo(const StringRef &Name) {
+MachinePointerInfo MipsFunctionInfo::callPtrInfo(StringRef Name) {
   const MipsCallEntry *&E = ExternalCallEntries[Name];
 
   if (!E)
@@ -135,6 +135,14 @@ MachinePointerInfo MipsFunctionInfo::callPtrInfo(const GlobalValue *Val) {
     E = new MipsCallEntry(Val);
 
   return MachinePointerInfo(E);
+}
+
+int MipsFunctionInfo::getMoveF64ViaSpillFI(const TargetRegisterClass *RC) {
+  if (MoveF64ViaSpillFI == -1) {
+    MoveF64ViaSpillFI = MF.getFrameInfo()->CreateStackObject(
+        RC->getSize(), RC->getAlignment(), false);
+  }
+  return MoveF64ViaSpillFI;
 }
 
 void MipsFunctionInfo::anchor() { }

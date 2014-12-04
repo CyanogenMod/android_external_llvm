@@ -4,7 +4,7 @@ codegen_SRC_FILES := \
   AggressiveAntiDepBreaker.cpp \
   AllocationOrder.cpp \
   Analysis.cpp \
-  AtomicExpandLoadLinkedPass.cpp \
+  AtomicExpandPass.cpp \
   BasicTargetTransformInfo.cpp \
   BranchFolding.cpp \
   CalcSpillWeights.cpp \
@@ -21,6 +21,7 @@ codegen_SRC_FILES := \
   ExecutionDepsFix.cpp \
   ExpandISelPseudos.cpp \
   ExpandPostRAPseudos.cpp \
+  ForwardControlFlowIntegrity.cpp \
   GCMetadata.cpp \
   GCMetadataPrinter.cpp \
   GCStrategy.cpp \
@@ -29,7 +30,6 @@ codegen_SRC_FILES := \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
   IntrinsicLowering.cpp \
-  JITCodeEmitter.cpp \
   JumpInstrTables.cpp \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
@@ -49,7 +49,7 @@ codegen_SRC_FILES := \
   MachineBlockFrequencyInfo.cpp \
   MachineBlockPlacement.cpp \
   MachineBranchProbabilityInfo.cpp \
-  MachineCodeEmitter.cpp \
+  MachineCombiner.cpp \
   MachineCopyPropagation.cpp \
   MachineCSE.cpp \
   MachineDominators.cpp \
@@ -97,7 +97,6 @@ codegen_SRC_FILES := \
   ShadowStackGC.cpp \
   SjLjEHPrepare.cpp \
   SlotIndexes.cpp \
-  Spiller.cpp \
   SpillPlacement.cpp \
   SplitKit.cpp \
   StackColoring.cpp \

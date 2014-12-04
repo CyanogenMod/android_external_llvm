@@ -379,9 +379,9 @@ RegisterInfoEmitter::EmitRegMappingTables(raw_ostream &OS,
       OS << "extern const unsigned " << Namespace
          << (j == 0 ? "DwarfFlavour" : "EHFlavour") << i << "Dwarf2LSize";
       if (!isCtor)
-        OS << " = sizeof(" << Namespace
+        OS << " = array_lengthof(" << Namespace
            << (j == 0 ? "DwarfFlavour" : "EHFlavour") << i
-           << "Dwarf2L)/sizeof(MCRegisterInfo::DwarfLLVMRegPair);\n\n";
+           << "Dwarf2L);\n\n";
       else
         OS << ";\n\n";
     }
@@ -427,9 +427,8 @@ RegisterInfoEmitter::EmitRegMappingTables(raw_ostream &OS,
       OS << "extern const unsigned " << Namespace
          << (j == 0 ? "DwarfFlavour" : "EHFlavour") << i << "L2DwarfSize";
       if (!isCtor)
-        OS << " = sizeof(" << Namespace
-           << (j == 0 ? "DwarfFlavour" : "EHFlavour") << i
-           << "L2Dwarf)/sizeof(MCRegisterInfo::DwarfLLVMRegPair);\n\n";
+        OS << " = array_lengthof(" << Namespace
+           << (j == 0 ? "DwarfFlavour" : "EHFlavour") << i << "L2Dwarf);\n\n";
       else
         OS << ";\n\n";
     }
@@ -848,6 +847,8 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
   // Loop over all of the register classes... emitting each one.
   OS << "namespace {     // Register classes...\n";
 
+  SequenceToOffsetTable<std::string> RegClassStrings;
+
   // Emit the register enum value arrays for each RegisterClass
   for (unsigned rc = 0, e = RegisterClasses.size(); rc != e; ++rc) {
     const CodeGenRegisterClass &RC = *RegisterClasses[rc];
@@ -855,6 +856,8 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
 
     // Give the register class a legal C name if it's anonymous.
     std::string Name = RC.getName();
+
+    RegClassStrings.add(Name);
 
     // Emit the register list now.
     OS << "  // " << Name << " Register Class...\n"
@@ -880,6 +883,11 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
   }
   OS << "}\n\n";
 
+  RegClassStrings.layout();
+  OS << "extern const char " << TargetName << "RegClassStrings[] = {\n";
+  RegClassStrings.emit(OS, printChar);
+  OS << "};\n\n";
+
   OS << "extern const MCRegisterClass " << TargetName
      << "MCRegisterClasses[] = {\n";
 
@@ -892,8 +900,8 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
     assert((RC.SpillAlignment/8) <= 0xffff && "SpillAlignment too large.");
     assert(RC.CopyCost >= -128 && RC.CopyCost <= 127 && "Copy cost too large.");
 
-    OS << "  { " << '\"' << RC.getName() << "\", "
-       << RC.getName() << ", " << RC.getName() << "Bits, "
+    OS << "  { " << RC.getName() << ", " << RC.getName() << "Bits, "
+       << RegClassStrings.get(RC.getName()) << ", "
        << RC.getOrder().size() << ", sizeof(" << RC.getName() << "Bits), "
        << RC.getQualifiedName() + "RegClassID" << ", "
        << RC.SpillSize/8 << ", "
@@ -934,10 +942,11 @@ RegisterInfoEmitter::runMCDesc(raw_ostream &OS, CodeGenTarget &Target,
      << RegBank.getNumNativeRegUnits() << ", "
      << TargetName << "RegDiffLists, "
      << TargetName << "RegStrings, "
+     << TargetName << "RegClassStrings, "
      << TargetName << "SubRegIdxLists, "
      << (SubRegIndices.size() + 1) << ",\n"
      << TargetName << "SubRegIdxRanges, "
-     << "  " << TargetName << "RegEncodingTable);\n\n";
+     << TargetName << "RegEncodingTable);\n\n";
 
   EmitRegMapping(OS, Regs, false);
 
@@ -1267,6 +1276,7 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
   OS << "extern const MCRegisterDesc " << TargetName << "RegDesc[];\n";
   OS << "extern const MCPhysReg " << TargetName << "RegDiffLists[];\n";
   OS << "extern const char " << TargetName << "RegStrings[];\n";
+  OS << "extern const char " << TargetName << "RegClassStrings[];\n";
   OS << "extern const MCPhysReg " << TargetName << "RegUnitRoots[][2];\n";
   OS << "extern const uint16_t " << TargetName << "SubRegIdxLists[];\n";
   OS << "extern const MCRegisterInfo::SubRegCoveredBits "
@@ -1289,6 +1299,7 @@ RegisterInfoEmitter::runTargetDesc(raw_ostream &OS, CodeGenTarget &Target,
      << "                     " << RegBank.getNumNativeRegUnits() << ",\n"
      << "                     " << TargetName << "RegDiffLists,\n"
      << "                     " << TargetName << "RegStrings,\n"
+     << "                     " << TargetName << "RegClassStrings,\n"
      << "                     " << TargetName << "SubRegIdxLists,\n"
      << "                     " << SubRegIndices.size() + 1 << ",\n"
      << "                     " << TargetName << "SubRegIdxRanges,\n"

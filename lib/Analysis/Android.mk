@@ -7,12 +7,15 @@ analysis_SRC_FILES := \
   AliasDebugger.cpp \
   AliasSetTracker.cpp \
   Analysis.cpp \
+  AssumptionTracker.cpp \
   BasicAliasAnalysis.cpp \
   BlockFrequencyInfo.cpp \
   BlockFrequencyInfoImpl.cpp \
   BranchProbabilityInfo.cpp \
   CFG.cpp \
   CFGPrinter.cpp \
+  CFLAliasAnalysis.cpp \
+  CGSCCPassManager.cpp \
   CaptureTracking.cpp \
   CodeMetrics.cpp \
   ConstantFolding.cpp \
@@ -21,7 +24,7 @@ analysis_SRC_FILES := \
   DependenceAnalysis.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
-  CGSCCPassManager.cpp \
+  FunctionTargetTransformInfo.cpp \
   IVUsers.cpp \
   InstCount.cpp \
   InstructionSimplify.cpp \
@@ -51,6 +54,7 @@ analysis_SRC_FILES := \
   ScalarEvolutionAliasAnalysis.cpp \
   ScalarEvolutionExpander.cpp \
   ScalarEvolutionNormalization.cpp \
+  ScopedNoAliasAA.cpp \
   SparsePropagation.cpp \
   TargetTransformInfo.cpp \
   Trace.cpp \

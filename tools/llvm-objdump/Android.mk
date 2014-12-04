@@ -34,14 +34,16 @@ llvm_objdump_STATIC_LIBRARIES := \
   libLLVMX86Info \
   libLLVMX86Desc \
   libLLVMX86AsmParser \
+  libLLVMX86CodeGen \
   libLLVMX86AsmPrinter \
   libLLVMX86Utils \
   libLLVMX86Disassembler \
   libLLVMAsmPrinter \
+  libLLVMCodeGen \
+  libLLVMAnalysis \
   libLLVMTarget \
   libLLVMObject \
   libLLVMMCParser \
-  libLLVMMCAnalysis \
   libLLVMMC \
   libLLVMMCDisassembler \
   libLLVMBitReader \

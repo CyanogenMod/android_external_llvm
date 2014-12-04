@@ -8,8 +8,8 @@
 /// \file
 //===----------------------------------------------------------------------===//
 
-#ifndef AMDGPU_H
-#define AMDGPU_H
+#ifndef LLVM_LIB_TARGET_R600_AMDGPU_H
+#define LLVM_LIB_TARGET_R600_AMDGPU_H
 
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Target/TargetMachine.h"
@@ -39,6 +39,8 @@ FunctionPass *createAMDGPUCFGStructurizerPass();
 FunctionPass *createSITypeRewriter();
 FunctionPass *createSIAnnotateControlFlowPass();
 FunctionPass *createSILowerI1CopiesPass();
+FunctionPass *createSIShrinkInstructionsPass();
+FunctionPass *createSILoadStoreOptimizerPass(TargetMachine &tm);
 FunctionPass *createSILowerControlFlowPass(TargetMachine &tm);
 FunctionPass *createSIFixSGPRCopiesPass(TargetMachine &tm);
 FunctionPass *createSIFixSGPRLiveRangesPass();
@@ -48,10 +50,14 @@ FunctionPass *createSIInsertWaits(TargetMachine &tm);
 void initializeSILowerI1CopiesPass(PassRegistry &);
 extern char &SILowerI1CopiesID;
 
+void initializeSILoadStoreOptimizerPass(PassRegistry &);
+extern char &SILoadStoreOptimizerID;
+
 // Passes common to R600 and SI
 FunctionPass *createAMDGPUPromoteAlloca(const AMDGPUSubtarget &ST);
 Pass *createAMDGPUStructurizeCFGPass();
 FunctionPass *createAMDGPUISelDag(TargetMachine &tm);
+ModulePass *createAMDGPUAlwaysInlinePass();
 
 /// \brief Creates an AMDGPU-specific Target Transformation Info pass.
 ImmutablePass *
@@ -62,6 +68,14 @@ extern char &SIFixSGPRLiveRangesID;
 
 
 extern Target TheAMDGPUTarget;
+
+namespace AMDGPU {
+enum TargetIndex {
+  TI_CONSTDATA_START
+};
+}
+
+#define END_OF_TEXT_LABEL_NAME "EndOfTextLabel"
 
 } // End namespace llvm
 
@@ -118,4 +132,4 @@ enum AddressSpaces {
 
 } // namespace AMDGPUAS
 
-#endif // AMDGPU_H
+#endif

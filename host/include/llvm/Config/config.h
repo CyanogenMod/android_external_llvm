@@ -223,7 +223,11 @@
 #define HAVE_LINK_EXPORT_DYNAMIC 1
 
 /* Define to 1 if you have the <link.h> header file. */
+#if defined(__APPLE__)
+/* #undef HAVE_LINK_H */
+#else
 #define HAVE_LINK_H 1
+#endif
 
 /* Define if you can use -Wl,-R. to pass -R. to the linker, in order to add
    the current directory to the dynamic linker search path. */
@@ -650,7 +654,7 @@
 #define LLVM_VERSION_MAJOR 3
 
 /* Minor version of the LLVM API */
-#define LLVM_VERSION_MINOR 5
+#define LLVM_VERSION_MINOR 6
 
 /* Define if the OS needs help to load dependent libraries for dlopen(). */
 /* #undef LTDL_DLOPEN_DEPLIBS */
@@ -683,13 +687,13 @@
 #define PACKAGE_NAME "LLVM"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "LLVM 3.5.svn"
+#define PACKAGE_STRING "LLVM 3.6.svn"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "llvm"
 
 /* Define to the version of this package. */
-#define PACKAGE_VERSION "3.5"
+#define PACKAGE_VERSION "3.6"
 
 /* Define as the return type of signal handlers (`int' or `void'). */
 #define RETSIGTYPE void

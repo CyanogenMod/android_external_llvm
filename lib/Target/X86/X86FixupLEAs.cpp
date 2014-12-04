@@ -7,9 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 //
-// This file defines the pass which will find  instructions  which
-// can be re-written as LEA instructions in order to reduce pipeline
-// delays for some models of the Intel Atom family.
+// This file defines the pass that finds instructions that can be
+// re-written as LEA instructions in order to reduce pipeline delays.
 //
 //===----------------------------------------------------------------------===//
 
@@ -40,7 +39,7 @@ class FixupLEAPass : public MachineFunctionPass {
   /// where appropriate.
   bool processBasicBlock(MachineFunction &MF, MachineFunction::iterator MFI);
 
-  const char *getPassName() const override { return "X86 Atom LEA Fixup"; }
+  const char *getPassName() const override { return "X86 LEA Fixup"; }
 
   /// \brief Given a machine register, look for the instruction
   /// which writes it in the current basic block. If found,
@@ -156,7 +155,8 @@ bool FixupLEAPass::runOnMachineFunction(MachineFunction &Func) {
   if (!ST.LEAusesAG() && !ST.slowLEA())
     return false;
 
-  TII = static_cast<const X86InstrInfo *>(TM->getInstrInfo());
+  TII =
+      static_cast<const X86InstrInfo *>(TM->getSubtargetImpl()->getInstrInfo());
 
   DEBUG(dbgs() << "Start X86FixupLEAs\n";);
   // Process all basic blocks.
@@ -218,7 +218,8 @@ FixupLEAPass::searchBackwards(MachineOperand &p, MachineBasicBlock::iterator &I,
     if (usesRegister(p, CurInst) == RU_Write) {
       return CurInst;
     }
-    InstrDistance += TII->getInstrLatency(TM->getInstrItineraryData(), CurInst);
+    InstrDistance += TII->getInstrLatency(
+        TM->getSubtargetImpl()->getInstrItineraryData(), CurInst);
     Found = getPreviousInstr(CurInst, MFI);
   }
   return nullptr;

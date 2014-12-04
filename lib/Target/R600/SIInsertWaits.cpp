@@ -17,6 +17,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "AMDGPU.h"
+#include "AMDGPUSubtarget.h"
+#include "SIDefines.h"
 #include "SIInstrInfo.h"
 #include "SIMachineFunctionInfo.h"
 #include "llvm/CodeGen/MachineFunction.h"
@@ -273,17 +275,17 @@ bool SIInsertWaits::insertWait(MachineBasicBlock &MBB,
       continue;
 
     NeedWait = true;
-    
+
     if (Ordered[i]) {
       unsigned Value = LastIssued.Array[i] - Required.Array[i];
 
-      // adjust the value to the real hardware posibilities
+      // Adjust the value to the real hardware possibilities.
       Counts.Array[i] = std::min(Value, WaitCounts.Array[i]);
 
     } else
       Counts.Array[i] = 0;
 
-    // Remember on what we have waited on
+    // Remember on what we have waited on.
     WaitedOn.Array[i] = LastIssued.Array[i] - Counts.Array[i];
   }
 
@@ -346,8 +348,9 @@ Counters SIInsertWaits::handleOperands(MachineInstr &MI) {
 bool SIInsertWaits::runOnMachineFunction(MachineFunction &MF) {
   bool Changes = false;
 
-  TII = static_cast<const SIInstrInfo*>(MF.getTarget().getInstrInfo());
-  TRI = static_cast<const SIRegisterInfo*>(MF.getTarget().getRegisterInfo());
+  TII = static_cast<const SIInstrInfo *>(MF.getSubtarget().getInstrInfo());
+  TRI =
+      static_cast<const SIRegisterInfo *>(MF.getSubtarget().getRegisterInfo());
 
   MRI = &MF.getRegInfo();
 
