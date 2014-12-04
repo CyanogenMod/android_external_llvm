@@ -25,7 +25,7 @@
 #cmakedefine ENABLE_TIMESTAMPS ${ENABLE_TIMESTAMPS}
 
 /* Define to 1 if you have the `arc4random' function. */
-#cmakedefine HAVE_ARC4RANDOM
+#cmakedefine HAVE_DECL_ARC4RANDOM ${HAVE_DECL_ARC4RANDOM}
 
 /* Define to 1 if you have the `backtrace' function. */
 #cmakedefine HAVE_BACKTRACE ${HAVE_BACKTRACE}
@@ -179,9 +179,6 @@
 /* Define to 1 if you have the `shell32' library (-lshell32). */
 #cmakedefine HAVE_LIBSHELL32 ${HAVE_LIBSHELL32}
 
-/* Define to 1 if you have the `udis86' library (-ludis86). */
-#undef HAVE_LIBUDIS86
-
 /* Define to 1 if you have the 'z' library (-lz). */
 #cmakedefine HAVE_LIBZ ${HAVE_LIBZ}
 
@@ -190,6 +187,9 @@
 
 /* Define to 1 if you have the <limits.h> header file. */
 #cmakedefine HAVE_LIMITS_H ${HAVE_LIMITS_H}
+
+/* Define to 1 if you have the <link.h> header file. */
+#cmakedefine HAVE_LINK_H ${HAVE_LINK_H}
 
 /* Define if you can use -rdynamic. */
 #define HAVE_LINK_EXPORT_DYNAMIC 1
@@ -459,9 +459,6 @@
 /* Have host's ___chkstk */
 #cmakedefine HAVE____CHKSTK ${HAVE____CHKSTK}
 
-/* Linker version detected at compile time. */
-#undef HOST_LINK_VERSION
-
 /* Define if we link Polly to the tools */
 #cmakedefine LINK_POLLY_INTO_TOOLS
 
@@ -517,9 +514,6 @@
 
 /* Define to 1 if your <sys/time.h> declares `struct tm'. */
 #undef TM_IN_SYS_TIME
-
-/* Define if use udis86 library */
-#undef USE_UDIS86
 
 /* Type of 1st arg on ELM Callback */
 #cmakedefine WIN32_ELMCB_PCSTR ${WIN32_ELMCB_PCSTR}

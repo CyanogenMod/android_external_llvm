@@ -8,6 +8,7 @@ instrumentation_SRC_FILES := \
   GCOVProfiling.cpp \
   Instrumentation.cpp \
   MemorySanitizer.cpp \
+  SanitizerCoverage.cpp \
   ThreadSanitizer.cpp
 
 # For the host

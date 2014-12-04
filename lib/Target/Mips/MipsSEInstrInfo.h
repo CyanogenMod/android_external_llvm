@@ -11,8 +11,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#ifndef MIPSSEINSTRUCTIONINFO_H
-#define MIPSSEINSTRUCTIONINFO_H
+#ifndef LLVM_LIB_TARGET_MIPS_MIPSSEINSTRINFO_H
+#define LLVM_LIB_TARGET_MIPS_MIPSSEINSTRINFO_H
 
 #include "MipsInstrInfo.h"
 #include "MipsSERegisterInfo.h"
@@ -24,7 +24,7 @@ class MipsSEInstrInfo : public MipsInstrInfo {
   bool IsN64;
 
 public:
-  explicit MipsSEInstrInfo(MipsTargetMachine &TM);
+  explicit MipsSEInstrInfo(const MipsSubtarget &STI);
 
   const MipsRegisterInfo &getRegisterInfo() const override;
 

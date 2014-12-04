@@ -40,6 +40,7 @@
 #include "llvm/Support/DataTypes.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Endian.h"
+#include "llvm/Transforms/Scalar.h"
 #include "llvm/Transforms/Utils/ASanStackFrameLayout.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
@@ -59,7 +60,8 @@ static const uint64_t kIOSShadowOffset32 = 1ULL << 30;
 static const uint64_t kDefaultShadowOffset64 = 1ULL << 44;
 static const uint64_t kSmallX86_64ShadowOffset = 0x7FFF8000;  // < 2G.
 static const uint64_t kPPC64_ShadowOffset64 = 1ULL << 41;
-static const uint64_t kMIPS32_ShadowOffset32 = 0x0aaa8000;
+static const uint64_t kMIPS32_ShadowOffset32 = 0x0aaa0000;
+static const uint64_t kMIPS64_ShadowOffset64 = 1ULL << 36;
 static const uint64_t kFreeBSD_ShadowOffset32 = 1ULL << 30;
 static const uint64_t kFreeBSD_ShadowOffset64 = 1ULL << 46;
 
@@ -70,7 +72,7 @@ static const uintptr_t kRetiredStackFrameMagic = 0x45E0360E;
 
 static const char *const kAsanModuleCtorName = "asan.module_ctor";
 static const char *const kAsanModuleDtorName = "asan.module_dtor";
-static const int         kAsanCtorAndDtorPriority = 1;
+static const uint64_t    kAsanCtorAndDtorPriority = 1;
 static const char *const kAsanReportErrorTemplate = "__asan_report_";
 static const char *const kAsanReportLoadN = "__asan_report_load_n";
 static const char *const kAsanReportStoreN = "__asan_report_store_n";
@@ -80,8 +82,6 @@ static const char *const kAsanUnregisterGlobalsName =
 static const char *const kAsanPoisonGlobalsName = "__asan_before_dynamic_init";
 static const char *const kAsanUnpoisonGlobalsName = "__asan_after_dynamic_init";
 static const char *const kAsanInitName = "__asan_init_v4";
-static const char *const kAsanCovModuleInitName = "__sanitizer_cov_module_init";
-static const char *const kAsanCovName = "__sanitizer_cov";
 static const char *const kAsanPtrCmp = "__sanitizer_ptr_cmp";
 static const char *const kAsanPtrSub = "__sanitizer_ptr_sub";
 static const char *const kAsanHandleNoReturnName = "__asan_handle_no_return";
@@ -89,6 +89,7 @@ static const int         kMaxAsanStackMallocSizeClass = 10;
 static const char *const kAsanStackMallocNameTemplate = "__asan_stack_malloc_";
 static const char *const kAsanStackFreeNameTemplate = "__asan_stack_free_";
 static const char *const kAsanGenPrefix = "__asan_gen_";
+static const char *const kSanCovGenPrefix = "__sancov_gen_";
 static const char *const kAsanPoisonStackMemoryName =
     "__asan_poison_stack_memory";
 static const char *const kAsanUnpoisonStackMemoryName =
@@ -133,13 +134,6 @@ static cl::opt<bool> ClUseAfterReturn("asan-use-after-return",
 // This flag may need to be replaced with -f[no]asan-globals.
 static cl::opt<bool> ClGlobals("asan-globals",
        cl::desc("Handle global objects"), cl::Hidden, cl::init(true));
-static cl::opt<int> ClCoverage("asan-coverage",
-       cl::desc("ASan coverage. 0: none, 1: entry block, 2: all blocks"),
-       cl::Hidden, cl::init(false));
-static cl::opt<int> ClCoverageBlockThreshold("asan-coverage-block-threshold",
-       cl::desc("Add coverage instrumentation only to the entry block if there "
-                "are more than this number of blocks."),
-       cl::Hidden, cl::init(1500));
 static cl::opt<bool> ClInitializers("asan-initialization-order",
        cl::desc("Handle C++ initializer order"), cl::Hidden, cl::init(true));
 static cl::opt<bool> ClInvalidPointerPairs("asan-detect-invalid-pointer-pair",
@@ -212,10 +206,40 @@ STATISTIC(NumOptimizedAccessesToGlobalVar,
           "Number of optimized accesses to global vars");
 
 namespace {
+/// Frontend-provided metadata for source location.
+struct LocationMetadata {
+  StringRef Filename;
+  int LineNo;
+  int ColumnNo;
+
+  LocationMetadata() : Filename(), LineNo(0), ColumnNo(0) {}
+
+  bool empty() const { return Filename.empty(); }
+
+  void parse(MDNode *MDN) {
+    assert(MDN->getNumOperands() == 3);
+    MDString *MDFilename = cast<MDString>(MDN->getOperand(0));
+    Filename = MDFilename->getString();
+    LineNo = cast<ConstantInt>(MDN->getOperand(1))->getLimitedValue();
+    ColumnNo = cast<ConstantInt>(MDN->getOperand(2))->getLimitedValue();
+  }
+};
+
 /// Frontend-provided metadata for global variables.
 class GlobalsMetadata {
  public:
+  struct Entry {
+    Entry()
+        : SourceLoc(), Name(), IsDynInit(false),
+          IsBlacklisted(false) {}
+    LocationMetadata SourceLoc;
+    StringRef Name;
+    bool IsDynInit;
+    bool IsBlacklisted;
+  };
+
   GlobalsMetadata() : inited_(false) {}
+
   void init(Module& M) {
     assert(!inited_);
     inited_ = true;
@@ -223,76 +247,38 @@ class GlobalsMetadata {
     if (!Globals)
       return;
     for (auto MDN : Globals->operands()) {
-      // Format of the metadata node for the global:
-      // {
-      //   global,
-      //   source_location,
-      //   i1 is_dynamically_initialized,
-      //   i1 is_blacklisted
-      // }
-      assert(MDN->getNumOperands() == 4);
+      // Metadata node contains the global and the fields of "Entry".
+      assert(MDN->getNumOperands() == 5);
       Value *V = MDN->getOperand(0);
       // The optimizer may optimize away a global entirely.
       if (!V)
         continue;
       GlobalVariable *GV = cast<GlobalVariable>(V);
-      if (Value *Loc = MDN->getOperand(1)) {
-        GlobalVariable *GVLoc = cast<GlobalVariable>(Loc);
-        // We may already know the source location for GV, if it was merged
-        // with another global.
-        if (SourceLocation.insert(std::make_pair(GV, GVLoc)).second)
-          addSourceLocationGlobal(GVLoc);
+      // We can already have an entry for GV if it was merged with another
+      // global.
+      Entry &E = Entries[GV];
+      if (Value *Loc = MDN->getOperand(1))
+        E.SourceLoc.parse(cast<MDNode>(Loc));
+      if (Value *Name = MDN->getOperand(2)) {
+        MDString *MDName = cast<MDString>(Name);
+        E.Name = MDName->getString();
       }
-      ConstantInt *IsDynInit = cast<ConstantInt>(MDN->getOperand(2));
-      if (IsDynInit->isOne())
-        DynInitGlobals.insert(GV);
-      ConstantInt *IsBlacklisted = cast<ConstantInt>(MDN->getOperand(3));
-      if (IsBlacklisted->isOne())
-        BlacklistedGlobals.insert(GV);
+      ConstantInt *IsDynInit = cast<ConstantInt>(MDN->getOperand(3));
+      E.IsDynInit |= IsDynInit->isOne();
+      ConstantInt *IsBlacklisted = cast<ConstantInt>(MDN->getOperand(4));
+      E.IsBlacklisted |= IsBlacklisted->isOne();
     }
   }
 
-  GlobalVariable *getSourceLocation(GlobalVariable *G) const {
-    auto Pos = SourceLocation.find(G);
-    return (Pos != SourceLocation.end()) ? Pos->second : nullptr;
-  }
-
-  /// Check if the global is dynamically initialized.
-  bool isDynInit(GlobalVariable *G) const {
-    return DynInitGlobals.count(G);
-  }
-
-  /// Check if the global was blacklisted.
-  bool isBlacklisted(GlobalVariable *G) const {
-    return BlacklistedGlobals.count(G);
-  }
-
-  /// Check if the global was generated to describe source location of another
-  /// global (we don't want to instrument them).
-  bool isSourceLocationGlobal(GlobalVariable *G) const {
-    return LocationGlobals.count(G);
+  /// Returns metadata entry for a given global.
+  Entry get(GlobalVariable *G) const {
+    auto Pos = Entries.find(G);
+    return (Pos != Entries.end()) ? Pos->second : Entry();
   }
 
  private:
   bool inited_;
-  DenseMap<GlobalVariable*, GlobalVariable*> SourceLocation;
-  DenseSet<GlobalVariable*> DynInitGlobals;
-  DenseSet<GlobalVariable*> BlacklistedGlobals;
-  DenseSet<GlobalVariable*> LocationGlobals;
-
-  void addSourceLocationGlobal(GlobalVariable *SourceLocGV) {
-    // Source location global is a struct with layout:
-    // {
-    //    filename,
-    //    i32 line_number,
-    //    i32 column_number,
-    // }
-    LocationGlobals.insert(SourceLocGV);
-    ConstantStruct *Contents =
-        cast<ConstantStruct>(SourceLocGV->getInitializer());
-    GlobalVariable *FilenameGV = cast<GlobalVariable>(Contents->getOperand(0));
-    LocationGlobals.insert(FilenameGV);
-  }
+  DenseMap<GlobalVariable*, Entry> Entries;
 };
 
 /// This struct defines the shadow mapping using the rule:
@@ -306,7 +292,7 @@ struct ShadowMapping {
 static ShadowMapping getShadowMapping(const Module &M, int LongSize) {
   llvm::Triple TargetTriple(M.getTargetTriple());
   bool IsAndroid = TargetTriple.getEnvironment() == llvm::Triple::Android;
-  bool IsIOS = TargetTriple.getOS() == llvm::Triple::IOS;
+  bool IsIOS = TargetTriple.isiOS();
   bool IsFreeBSD = TargetTriple.getOS() == llvm::Triple::FreeBSD;
   bool IsLinux = TargetTriple.getOS() == llvm::Triple::Linux;
   bool IsPPC64 = TargetTriple.getArch() == llvm::Triple::ppc64 ||
@@ -314,6 +300,8 @@ static ShadowMapping getShadowMapping(const Module &M, int LongSize) {
   bool IsX86_64 = TargetTriple.getArch() == llvm::Triple::x86_64;
   bool IsMIPS32 = TargetTriple.getArch() == llvm::Triple::mips ||
                   TargetTriple.getArch() == llvm::Triple::mipsel;
+  bool IsMIPS64 = TargetTriple.getArch() == llvm::Triple::mips64 ||
+                  TargetTriple.getArch() == llvm::Triple::mips64el;
 
   ShadowMapping Mapping;
 
@@ -335,6 +323,8 @@ static ShadowMapping getShadowMapping(const Module &M, int LongSize) {
       Mapping.Offset = kFreeBSD_ShadowOffset64;
     else if (IsLinux && IsX86_64)
       Mapping.Offset = kSmallX86_64ShadowOffset;
+    else if (IsMIPS64)
+      Mapping.Offset = kMIPS64_ShadowOffset64;
     else
       Mapping.Offset = kDefaultShadowOffset64;
   }
@@ -386,8 +376,6 @@ struct AddressSanitizer : public FunctionPass {
 
   bool LooksLikeCodeInBug11395(Instruction *I);
   bool GlobalIsLinkerInitialized(GlobalVariable *G);
-  bool InjectCoverage(Function &F, const ArrayRef<BasicBlock*> AllBlocks);
-  void InjectCoverageAtBlock(Function &F, BasicBlock &BB);
 
   LLVMContext *C;
   const DataLayout *DL;
@@ -397,7 +385,6 @@ struct AddressSanitizer : public FunctionPass {
   Function *AsanCtorFunction;
   Function *AsanInitFunction;
   Function *AsanHandleNoReturnFunc;
-  Function *AsanCovFunction;
   Function *AsanPtrCmpFunction, *AsanPtrSubFunction;
   // This array is indexed by AccessIsWrite and log2(AccessSize).
   Function *AsanErrorCallback[2][kNumberOfAccessSizes];
@@ -441,7 +428,6 @@ class AddressSanitizerModule : public ModulePass {
   Function *AsanUnpoisonGlobals;
   Function *AsanRegisterGlobals;
   Function *AsanUnregisterGlobals;
-  Function *AsanCovModuleInit;
 };
 
 // Stack poisoning does not play well with exception handling.
@@ -570,7 +556,7 @@ struct FunctionStackPoisoner : public InstVisitor<FunctionStackPoisoner> {
   }
   /// Finds alloca where the value comes from.
   AllocaInst *findAllocaForValue(Value *V);
-  void poisonRedZones(const ArrayRef<uint8_t> ShadowBytes, IRBuilder<> &IRB,
+  void poisonRedZones(ArrayRef<uint8_t> ShadowBytes, IRBuilder<> &IRB,
                       Value *ShadowBase, bool DoPoison);
   void poisonAlloca(Value *V, uint64_t Size, IRBuilder<> &IRB, bool DoPoison);
 
@@ -617,8 +603,25 @@ static GlobalVariable *createPrivateGlobalForString(
   return GV;
 }
 
+/// \brief Create a global describing a source location.
+static GlobalVariable *createPrivateGlobalForSourceLoc(Module &M,
+                                                       LocationMetadata MD) {
+  Constant *LocData[] = {
+      createPrivateGlobalForString(M, MD.Filename, true),
+      ConstantInt::get(Type::getInt32Ty(M.getContext()), MD.LineNo),
+      ConstantInt::get(Type::getInt32Ty(M.getContext()), MD.ColumnNo),
+  };
+  auto LocStruct = ConstantStruct::getAnon(LocData);
+  auto GV = new GlobalVariable(M, LocStruct->getType(), true,
+                               GlobalValue::PrivateLinkage, LocStruct,
+                               kAsanGenPrefix);
+  GV->setUnnamedAddr(true);
+  return GV;
+}
+
 static bool GlobalWasGeneratedByAsan(GlobalVariable *G) {
-  return G->getName().find(kAsanGenPrefix) == 0;
+  return G->getName().find(kAsanGenPrefix) == 0 ||
+         G->getName().find(kSanCovGenPrefix) == 0;
 }
 
 Value *AddressSanitizer::memToShadow(Value *Shadow, IRBuilder<> &IRB) {
@@ -653,9 +656,12 @@ void AddressSanitizer::instrumentMemIntrinsic(MemIntrinsic *MI) {
 }
 
 // If I is an interesting memory access, return the PointerOperand
-// and set IsWrite/Alignment. Otherwise return NULL.
+// and set IsWrite/Alignment. Otherwise return nullptr.
 static Value *isInterestingMemoryAccess(Instruction *I, bool *IsWrite,
                                         unsigned *Alignment) {
+  // Skip memory accesses inserted by another instrumentation.
+  if (I->getMetadata("nosanitize"))
+    return nullptr;
   if (LoadInst *LI = dyn_cast<LoadInst>(I)) {
     if (!ClInstrumentReads) return nullptr;
     *IsWrite = false;
@@ -710,7 +716,7 @@ bool AddressSanitizer::GlobalIsLinkerInitialized(GlobalVariable *G) {
   // If a global variable does not have dynamic initialization we don't
   // have to instrument it.  However, if a global does not have initializer
   // at all, we assume it has dynamic initializer (in other TU).
-  return G->hasInitializer() && !GlobalsMD.isDynInit(G);
+  return G->hasInitializer() && !GlobalsMD.get(G).IsDynInit;
 }
 
 void
@@ -859,8 +865,11 @@ void AddressSanitizer::instrumentAddress(Instruction *OrigIns,
   TerminatorInst *CrashTerm = nullptr;
 
   if (ClAlwaysSlowPath || (TypeSize < 8 * Granularity)) {
+    // We use branch weights for the slow path check, to indicate that the slow
+    // path is rarely taken. This seems to be the case for SPEC benchmarks.
     TerminatorInst *CheckTerm =
-        SplitBlockAndInsertIfThen(Cmp, InsertBefore, false);
+        SplitBlockAndInsertIfThen(Cmp, InsertBefore, false,
+            MDBuilder(*C).createBranchWeights(1, 100000));
     assert(dyn_cast<BranchInst>(CheckTerm)->isUnconditional());
     BasicBlock *NextBB = CheckTerm->getSuccessor(0);
     IRB.SetInsertPoint(CheckTerm);
@@ -905,10 +914,12 @@ void AddressSanitizerModule::createInitializerPoisonCalls(
     ConstantStruct *CS = cast<ConstantStruct>(OP);
 
     // Must have a function or null ptr.
-    // (CS->getOperand(0) is the init priority.)
     if (Function* F = dyn_cast<Function>(CS->getOperand(1))) {
-      if (F->getName() != kAsanModuleCtorName)
-        poisonOneInitializer(*F, ModuleName);
+      if (F->getName() == kAsanModuleCtorName) continue;
+      ConstantInt *Priority = dyn_cast<ConstantInt>(CS->getOperand(0));
+      // Don't instrument CTORs that will run before asan.module_ctor.
+      if (Priority->getLimitedValue() <= kAsanCtorAndDtorPriority) continue;
+      poisonOneInitializer(*F, ModuleName);
     }
   }
 }
@@ -917,8 +928,7 @@ bool AddressSanitizerModule::ShouldInstrumentGlobal(GlobalVariable *G) {
   Type *Ty = cast<PointerType>(G->getType())->getElementType();
   DEBUG(dbgs() << "GLOBAL: " << *G << "\n");
 
-  if (GlobalsMD.isBlacklisted(G)) return false;
-  if (GlobalsMD.isSourceLocationGlobal(G)) return false;
+  if (GlobalsMD.get(G).IsBlacklisted) return false;
   if (!Ty->isSized()) return false;
   if (!G->hasInitializer()) return false;
   if (GlobalWasGeneratedByAsan(G)) return false;  // Our own global.
@@ -938,16 +948,6 @@ bool AddressSanitizerModule::ShouldInstrumentGlobal(GlobalVariable *G) {
     return false;
   // For now, just ignore this Global if the alignment is large.
   if (G->getAlignment() > MinRedzoneSizeForGlobal()) return false;
-
-  // Ignore all the globals with the names starting with "\01L_OBJC_".
-  // Many of those are put into the .cstring section. The linker compresses
-  // that section by removing the spare \0s after the string terminator, so
-  // our redzones get broken.
-  if ((G->getName().find("\01L_OBJC_") == 0) ||
-      (G->getName().find("\01l_OBJC_") == 0)) {
-    DEBUG(dbgs() << "Ignoring \\01L_OBJC_* global: " << *G << "\n");
-    return false;
-  }
 
   if (G->hasSection()) {
     StringRef Section(G->getSection());
@@ -977,6 +977,11 @@ bool AddressSanitizerModule::ShouldInstrumentGlobal(GlobalVariable *G) {
       DEBUG(dbgs() << "Ignoring a cstring literal: " << *G << "\n");
       return false;
     }
+    if (Section.startswith("__TEXT,__objc_methname,cstring_literals")) {
+      DEBUG(dbgs() << "Ignoring objc_methname cstring global: " << *G << "\n");
+      return false;
+    }
+
 
     // Callbacks put into the CRT initializer/terminator sections
     // should not be instrumented.
@@ -998,24 +1003,20 @@ void AddressSanitizerModule::initializeCallbacks(Module &M) {
   IRBuilder<> IRB(*C);
   // Declare our poisoning and unpoisoning functions.
   AsanPoisonGlobals = checkInterfaceFunction(M.getOrInsertFunction(
-      kAsanPoisonGlobalsName, IRB.getVoidTy(), IntptrTy, NULL));
+      kAsanPoisonGlobalsName, IRB.getVoidTy(), IntptrTy, nullptr));
   AsanPoisonGlobals->setLinkage(Function::ExternalLinkage);
   AsanUnpoisonGlobals = checkInterfaceFunction(M.getOrInsertFunction(
-      kAsanUnpoisonGlobalsName, IRB.getVoidTy(), NULL));
+      kAsanUnpoisonGlobalsName, IRB.getVoidTy(), nullptr));
   AsanUnpoisonGlobals->setLinkage(Function::ExternalLinkage);
   // Declare functions that register/unregister globals.
   AsanRegisterGlobals = checkInterfaceFunction(M.getOrInsertFunction(
       kAsanRegisterGlobalsName, IRB.getVoidTy(),
-      IntptrTy, IntptrTy, NULL));
+      IntptrTy, IntptrTy, nullptr));
   AsanRegisterGlobals->setLinkage(Function::ExternalLinkage);
   AsanUnregisterGlobals = checkInterfaceFunction(M.getOrInsertFunction(
       kAsanUnregisterGlobalsName,
-      IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+      IRB.getVoidTy(), IntptrTy, IntptrTy, nullptr));
   AsanUnregisterGlobals->setLinkage(Function::ExternalLinkage);
-  AsanCovModuleInit = checkInterfaceFunction(M.getOrInsertFunction(
-      kAsanCovModuleInitName,
-      IRB.getVoidTy(), IntptrTy, NULL));
-  AsanCovModuleInit->setLinkage(Function::ExternalLinkage);
 }
 
 // This function replaces all global variables with new variables that have
@@ -1045,7 +1046,7 @@ bool AddressSanitizerModule::InstrumentGlobals(IRBuilder<> &IRB, Module &M) {
   // We initialize an array of such structures and pass it to a run-time call.
   StructType *GlobalStructTy =
       StructType::get(IntptrTy, IntptrTy, IntptrTy, IntptrTy, IntptrTy,
-                      IntptrTy, IntptrTy, NULL);
+                      IntptrTy, IntptrTy, nullptr);
   SmallVector<Constant *, 16> Initializers(n);
 
   bool HasDynamicallyInitializedGlobals = false;
@@ -1058,6 +1059,14 @@ bool AddressSanitizerModule::InstrumentGlobals(IRBuilder<> &IRB, Module &M) {
   for (size_t i = 0; i < n; i++) {
     static const uint64_t kMaxGlobalRedzone = 1 << 18;
     GlobalVariable *G = GlobalsToChange[i];
+
+    auto MD = GlobalsMD.get(G);
+    // Create string holding the global name (use global name from metadata
+    // if it's available, otherwise just write the name of global variable).
+    GlobalVariable *Name = createPrivateGlobalForString(
+        M, MD.Name.empty() ? G->getName() : MD.Name,
+        /*AllowMerging*/ true);
+
     PointerType *PtrTy = cast<PointerType>(G->getType());
     Type *Ty = PtrTy->getElementType();
     uint64_t SizeInBytes = DL->getTypeAllocSize(Ty);
@@ -1074,13 +1083,10 @@ bool AddressSanitizerModule::InstrumentGlobals(IRBuilder<> &IRB, Module &M) {
     assert(((RightRedzoneSize + SizeInBytes) % MinRZ) == 0);
     Type *RightRedZoneTy = ArrayType::get(IRB.getInt8Ty(), RightRedzoneSize);
 
-    StructType *NewTy = StructType::get(Ty, RightRedZoneTy, NULL);
+    StructType *NewTy = StructType::get(Ty, RightRedZoneTy, nullptr);
     Constant *NewInitializer = ConstantStruct::get(
         NewTy, G->getInitializer(),
-        Constant::getNullValue(RightRedZoneTy), NULL);
-
-    GlobalVariable *Name =
-        createPrivateGlobalForString(M, G->getName(), /*AllowMerging*/true);
+        Constant::getNullValue(RightRedZoneTy), nullptr);
 
     // Create a new global variable with enough space for a redzone.
     GlobalValue::LinkageTypes Linkage = G->getLinkage();
@@ -1101,8 +1107,13 @@ bool AddressSanitizerModule::InstrumentGlobals(IRBuilder<> &IRB, Module &M) {
     NewGlobal->takeName(G);
     G->eraseFromParent();
 
-    bool GlobalHasDynamicInitializer = GlobalsMD.isDynInit(G);
-    GlobalVariable *SourceLoc = GlobalsMD.getSourceLocation(G);
+    Constant *SourceLoc;
+    if (!MD.SourceLoc.empty()) {
+      auto SourceLocGlobal = createPrivateGlobalForSourceLoc(M, MD.SourceLoc);
+      SourceLoc = ConstantExpr::getPointerCast(SourceLocGlobal, IntptrTy);
+    } else {
+      SourceLoc = ConstantInt::get(IntptrTy, 0);
+    }
 
     Initializers[i] = ConstantStruct::get(
         GlobalStructTy, ConstantExpr::getPointerCast(NewGlobal, IntptrTy),
@@ -1110,12 +1121,9 @@ bool AddressSanitizerModule::InstrumentGlobals(IRBuilder<> &IRB, Module &M) {
         ConstantInt::get(IntptrTy, SizeInBytes + RightRedzoneSize),
         ConstantExpr::getPointerCast(Name, IntptrTy),
         ConstantExpr::getPointerCast(ModuleName, IntptrTy),
-        ConstantInt::get(IntptrTy, GlobalHasDynamicInitializer),
-        SourceLoc ? ConstantExpr::getPointerCast(SourceLoc, IntptrTy)
-                  : ConstantInt::get(IntptrTy, 0),
-        NULL);
+        ConstantInt::get(IntptrTy, MD.IsDynInit), SourceLoc, nullptr);
 
-    if (ClInitializers && GlobalHasDynamicInitializer)
+    if (ClInitializers && MD.IsDynInit)
       HasDynamicallyInitializedGlobals = true;
 
     DEBUG(dbgs() << "NEW GLOBAL: " << *NewGlobal << "\n");
@@ -1166,13 +1174,6 @@ bool AddressSanitizerModule::runOnModule(Module &M) {
   assert(CtorFunc);
   IRBuilder<> IRB(CtorFunc->getEntryBlock().getTerminator());
 
-  if (ClCoverage > 0) {
-    Function *CovFunc = M.getFunction(kAsanCovName);
-    int nCov = CovFunc ? CovFunc->getNumUses() : 0;
-    IRB.CreateCall(AsanCovModuleInit, ConstantInt::get(IntptrTy, nCov));
-    Changed = true;
-  }
-
   if (ClGlobals)
     Changed |= InstrumentGlobals(IRB, M);
 
@@ -1191,43 +1192,42 @@ void AddressSanitizer::initializeCallbacks(Module &M) {
       AsanErrorCallback[AccessIsWrite][AccessSizeIndex] =
           checkInterfaceFunction(
               M.getOrInsertFunction(kAsanReportErrorTemplate + Suffix,
-                                    IRB.getVoidTy(), IntptrTy, NULL));
+                                    IRB.getVoidTy(), IntptrTy, nullptr));
       AsanMemoryAccessCallback[AccessIsWrite][AccessSizeIndex] =
           checkInterfaceFunction(
               M.getOrInsertFunction(ClMemoryAccessCallbackPrefix + Suffix,
-                                    IRB.getVoidTy(), IntptrTy, NULL));
+                                    IRB.getVoidTy(), IntptrTy, nullptr));
     }
   }
   AsanErrorCallbackSized[0] = checkInterfaceFunction(M.getOrInsertFunction(
-              kAsanReportLoadN, IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+              kAsanReportLoadN, IRB.getVoidTy(), IntptrTy, IntptrTy, nullptr));
   AsanErrorCallbackSized[1] = checkInterfaceFunction(M.getOrInsertFunction(
-              kAsanReportStoreN, IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+              kAsanReportStoreN, IRB.getVoidTy(), IntptrTy, IntptrTy, nullptr));
 
   AsanMemoryAccessCallbackSized[0] = checkInterfaceFunction(
       M.getOrInsertFunction(ClMemoryAccessCallbackPrefix + "loadN",
-                            IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+                            IRB.getVoidTy(), IntptrTy, IntptrTy, nullptr));
   AsanMemoryAccessCallbackSized[1] = checkInterfaceFunction(
       M.getOrInsertFunction(ClMemoryAccessCallbackPrefix + "storeN",
-                            IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+                            IRB.getVoidTy(), IntptrTy, IntptrTy, nullptr));
 
   AsanMemmove = checkInterfaceFunction(M.getOrInsertFunction(
       ClMemoryAccessCallbackPrefix + "memmove", IRB.getInt8PtrTy(),
-      IRB.getInt8PtrTy(), IRB.getInt8PtrTy(), IntptrTy, NULL));
+      IRB.getInt8PtrTy(), IRB.getInt8PtrTy(), IntptrTy, nullptr));
   AsanMemcpy = checkInterfaceFunction(M.getOrInsertFunction(
       ClMemoryAccessCallbackPrefix + "memcpy", IRB.getInt8PtrTy(),
-      IRB.getInt8PtrTy(), IRB.getInt8PtrTy(), IntptrTy, NULL));
+      IRB.getInt8PtrTy(), IRB.getInt8PtrTy(), IntptrTy, nullptr));
   AsanMemset = checkInterfaceFunction(M.getOrInsertFunction(
       ClMemoryAccessCallbackPrefix + "memset", IRB.getInt8PtrTy(),
-      IRB.getInt8PtrTy(), IRB.getInt32Ty(), IntptrTy, NULL));
+      IRB.getInt8PtrTy(), IRB.getInt32Ty(), IntptrTy, nullptr));
 
   AsanHandleNoReturnFunc = checkInterfaceFunction(
-      M.getOrInsertFunction(kAsanHandleNoReturnName, IRB.getVoidTy(), NULL));
-  AsanCovFunction = checkInterfaceFunction(M.getOrInsertFunction(
-      kAsanCovName, IRB.getVoidTy(), NULL));
+      M.getOrInsertFunction(kAsanHandleNoReturnName, IRB.getVoidTy(), nullptr));
+
   AsanPtrCmpFunction = checkInterfaceFunction(M.getOrInsertFunction(
-      kAsanPtrCmp, IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+      kAsanPtrCmp, IRB.getVoidTy(), IntptrTy, IntptrTy, nullptr));
   AsanPtrSubFunction = checkInterfaceFunction(M.getOrInsertFunction(
-      kAsanPtrSub, IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+      kAsanPtrSub, IRB.getVoidTy(), IntptrTy, IntptrTy, nullptr));
   // We insert an empty inline asm after __asan_report* to avoid callback merge.
   EmptyAsm = InlineAsm::get(FunctionType::get(IRB.getVoidTy(), false),
                             StringRef(""), StringRef(""),
@@ -1255,7 +1255,7 @@ bool AddressSanitizer::doInitialization(Module &M) {
   // call __asan_init in the module ctor.
   IRBuilder<> IRB(ReturnInst::Create(*C, AsanCtorBB));
   AsanInitFunction = checkInterfaceFunction(
-      M.getOrInsertFunction(kAsanInitName, IRB.getVoidTy(), NULL));
+      M.getOrInsertFunction(kAsanInitName, IRB.getVoidTy(), nullptr));
   AsanInitFunction->setLinkage(Function::ExternalLinkage);
   IRB.CreateCall(AsanInitFunction);
 
@@ -1279,74 +1279,6 @@ bool AddressSanitizer::maybeInsertAsanInitAtFunctionEntry(Function &F) {
     return true;
   }
   return false;
-}
-
-void AddressSanitizer::InjectCoverageAtBlock(Function &F, BasicBlock &BB) {
-  BasicBlock::iterator IP = BB.getFirstInsertionPt(), BE = BB.end();
-  // Skip static allocas at the top of the entry block so they don't become
-  // dynamic when we split the block.  If we used our optimized stack layout,
-  // then there will only be one alloca and it will come first.
-  for (; IP != BE; ++IP) {
-    AllocaInst *AI = dyn_cast<AllocaInst>(IP);
-    if (!AI || !AI->isStaticAlloca())
-      break;
-  }
-
-  DebugLoc EntryLoc = IP->getDebugLoc().getFnDebugLoc(*C);
-  IRBuilder<> IRB(IP);
-  IRB.SetCurrentDebugLocation(EntryLoc);
-  Type *Int8Ty = IRB.getInt8Ty();
-  GlobalVariable *Guard = new GlobalVariable(
-      *F.getParent(), Int8Ty, false, GlobalValue::PrivateLinkage,
-      Constant::getNullValue(Int8Ty), "__asan_gen_cov_" + F.getName());
-  LoadInst *Load = IRB.CreateLoad(Guard);
-  Load->setAtomic(Monotonic);
-  Load->setAlignment(1);
-  Value *Cmp = IRB.CreateICmpEQ(Constant::getNullValue(Int8Ty), Load);
-  Instruction *Ins = SplitBlockAndInsertIfThen(
-      Cmp, IP, false, MDBuilder(*C).createBranchWeights(1, 100000));
-  IRB.SetInsertPoint(Ins);
-  IRB.SetCurrentDebugLocation(EntryLoc);
-  // We pass &F to __sanitizer_cov. We could avoid this and rely on
-  // GET_CALLER_PC, but having the PC of the first instruction is just nice.
-  IRB.CreateCall(AsanCovFunction);
-  StoreInst *Store = IRB.CreateStore(ConstantInt::get(Int8Ty, 1), Guard);
-  Store->setAtomic(Monotonic);
-  Store->setAlignment(1);
-}
-
-// Poor man's coverage that works with ASan.
-// We create a Guard boolean variable with the same linkage
-// as the function and inject this code into the entry block (-asan-coverage=1)
-// or all blocks (-asan-coverage=2):
-// if (*Guard) {
-//    __sanitizer_cov(&F);
-//    *Guard = 1;
-// }
-// The accesses to Guard are atomic. The rest of the logic is
-// in __sanitizer_cov (it's fine to call it more than once).
-//
-// This coverage implementation provides very limited data:
-// it only tells if a given function (block) was ever executed.
-// No counters, no per-edge data.
-// But for many use cases this is what we need and the added slowdown
-// is negligible. This simple implementation will probably be obsoleted
-// by the upcoming Clang-based coverage implementation.
-// By having it here and now we hope to
-//  a) get the functionality to users earlier and
-//  b) collect usage statistics to help improve Clang coverage design.
-bool AddressSanitizer::InjectCoverage(Function &F,
-                                      const ArrayRef<BasicBlock *> AllBlocks) {
-  if (!ClCoverage) return false;
-
-  if (ClCoverage == 1 ||
-      (unsigned)ClCoverageBlockThreshold < AllBlocks.size()) {
-    InjectCoverageAtBlock(F, F.getEntryBlock());
-  } else {
-    for (auto BB : AllBlocks)
-      InjectCoverageAtBlock(F, *BB);
-  }
-  return true;
 }
 
 bool AddressSanitizer::runOnFunction(Function &F) {
@@ -1385,7 +1317,7 @@ bool AddressSanitizer::runOnFunction(Function &F) {
       if (Value *Addr =
               isInterestingMemoryAccess(&Inst, &IsWrite, &Alignment)) {
         if (ClOpt && ClOptSameTemp) {
-          if (!TempsToInstrument.insert(Addr))
+          if (!TempsToInstrument.insert(Addr).second)
             continue;  // We've seen this temp in the current BB.
         }
       } else if (ClInvalidPointerPairs &&
@@ -1459,9 +1391,6 @@ bool AddressSanitizer::runOnFunction(Function &F) {
 
   bool res = NumInstrumented > 0 || ChangedStack || !NoReturnCalls.empty();
 
-  if (InjectCoverage(F, AllBlocks))
-    res = true;
-
   DEBUG(dbgs() << "ASAN done instrumenting: " << res << " " << F << "\n");
 
   if (ClKeepUninstrumented) {
@@ -1499,19 +1428,21 @@ void FunctionStackPoisoner::initializeCallbacks(Module &M) {
     std::string Suffix = itostr(i);
     AsanStackMallocFunc[i] = checkInterfaceFunction(
         M.getOrInsertFunction(kAsanStackMallocNameTemplate + Suffix, IntptrTy,
-                              IntptrTy, IntptrTy, NULL));
+                              IntptrTy, IntptrTy, nullptr));
     AsanStackFreeFunc[i] = checkInterfaceFunction(M.getOrInsertFunction(
         kAsanStackFreeNameTemplate + Suffix, IRB.getVoidTy(), IntptrTy,
-        IntptrTy, IntptrTy, NULL));
+        IntptrTy, IntptrTy, nullptr));
   }
-  AsanPoisonStackMemoryFunc = checkInterfaceFunction(M.getOrInsertFunction(
-      kAsanPoisonStackMemoryName, IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
-  AsanUnpoisonStackMemoryFunc = checkInterfaceFunction(M.getOrInsertFunction(
-      kAsanUnpoisonStackMemoryName, IRB.getVoidTy(), IntptrTy, IntptrTy, NULL));
+  AsanPoisonStackMemoryFunc = checkInterfaceFunction(
+      M.getOrInsertFunction(kAsanPoisonStackMemoryName, IRB.getVoidTy(),
+                            IntptrTy, IntptrTy, nullptr));
+  AsanUnpoisonStackMemoryFunc = checkInterfaceFunction(
+      M.getOrInsertFunction(kAsanUnpoisonStackMemoryName, IRB.getVoidTy(),
+                            IntptrTy, IntptrTy, nullptr));
 }
 
 void
-FunctionStackPoisoner::poisonRedZones(const ArrayRef<uint8_t> ShadowBytes,
+FunctionStackPoisoner::poisonRedZones(ArrayRef<uint8_t> ShadowBytes,
                                       IRBuilder<> &IRB, Value *ShadowBase,
                                       bool DoPoison) {
   size_t n = ShadowBytes.size();

@@ -458,6 +458,9 @@ enum {
   R_PPC_GOT16_LO              = 15,
   R_PPC_GOT16_HI              = 16,
   R_PPC_GOT16_HA              = 17,
+  R_PPC_PLTREL24              = 18,
+  R_PPC_JMP_SLOT              = 21,
+  R_PPC_LOCAL24PC             = 23,
   R_PPC_REL32                 = 26,
   R_PPC_TLS                   = 67,
   R_PPC_DTPMOD32              = 68,
@@ -495,6 +498,37 @@ enum {
   R_PPC_REL16_HA              = 252
 };
 
+// Specific e_flags for PPC64
+enum {
+  // e_flags bits specifying ABI:
+  // 1 for original ABI using function descriptors,
+  // 2 for revised ABI without function descriptors,
+  // 0 for unspecified or not using any features affected by the differences.
+  EF_PPC64_ABI = 3
+};
+
+// Special values for the st_other field in the symbol table entry for PPC64.
+enum {
+  STO_PPC64_LOCAL_BIT = 5,
+  STO_PPC64_LOCAL_MASK = (7 << STO_PPC64_LOCAL_BIT)
+};
+static inline int64_t
+decodePPC64LocalEntryOffset(unsigned Other) {
+  unsigned Val = (Other & STO_PPC64_LOCAL_MASK) >> STO_PPC64_LOCAL_BIT;
+  return ((1 << Val) >> 2) << 2;
+}
+static inline unsigned
+encodePPC64LocalEntryOffset(int64_t Offset) {
+  unsigned Val = (Offset >= 4 * 4
+                  ? (Offset >= 8 * 4
+                     ? (Offset >= 16 * 4 ? 6 : 5)
+                     : 4)
+                  : (Offset >= 2 * 4
+                     ? 3
+                     : (Offset >= 1 * 4 ? 2 : 0)));
+  return Val << STO_PPC64_LOCAL_BIT;
+}
+
 // ELF Relocation types for PPC64
 enum {
   R_PPC64_NONE                = 0,
@@ -515,6 +549,7 @@ enum {
   R_PPC64_GOT16_LO            = 15,
   R_PPC64_GOT16_HI            = 16,
   R_PPC64_GOT16_HA            = 17,
+  R_PPC64_JMP_SLOT            = 21,
   R_PPC64_REL32               = 26,
   R_PPC64_ADDR64              = 38,
   R_PPC64_ADDR16_HIGHER       = 39,
@@ -621,6 +656,9 @@ enum {
 
   R_AARCH64_LDST128_ABS_LO12_NC         = 0x12b,
 
+  R_AARCH64_GOTREL64                    = 0x133,
+  R_AARCH64_GOTREL32                    = 0x134,
+
   R_AARCH64_ADR_GOT_PAGE                = 0x137,
   R_AARCH64_LD64_GOT_LO12_NC            = 0x138,
 
@@ -668,7 +706,17 @@ enum {
   R_AARCH64_TLSDESC_LD64_LO12_NC        = 0x233,
   R_AARCH64_TLSDESC_ADD_LO12_NC         = 0x234,
 
-  R_AARCH64_TLSDESC_CALL                = 0x239
+  R_AARCH64_TLSDESC_CALL                = 0x239,
+
+  R_AARCH64_COPY                        = 0x400,
+  R_AARCH64_GLOB_DAT                    = 0x401,
+  R_AARCH64_JUMP_SLOT                   = 0x402,
+  R_AARCH64_RELATIVE                    = 0x403,
+  R_AARCH64_TLS_DTPREL64                = 0x404,
+  R_AARCH64_TLS_DTPMOD64                = 0x405,
+  R_AARCH64_TLS_TPREL64                 = 0x406,
+  R_AARCH64_TLSDESC                     = 0x407,
+  R_AARCH64_IRELATIVE                   = 0x408
 };
 
 // ARM Specific e_flags
@@ -829,7 +877,13 @@ enum : unsigned {
   EF_MIPS_ABI2      = 0x00000020,
   EF_MIPS_32BITMODE = 0x00000100,
   EF_MIPS_NAN2008   = 0x00000400, // Uses IEE 754-2008 NaN encoding
+
+  // ABI flags
   EF_MIPS_ABI_O32   = 0x00001000, // This file follows the first MIPS 32 bit ABI
+  EF_MIPS_ABI_O64    = 0x00002000, // O32 ABI extended for 64-bit architecture.
+  EF_MIPS_ABI_EABI32 = 0x00003000, // EABI in 32 bit mode.
+  EF_MIPS_ABI_EABI64 = 0x00004000, // EABI in 64 bit mode.
+  EF_MIPS_ABI        = 0x0000f000, // Mask for selecting EF_MIPS_ABI_ variant.
 
   //ARCH_ASE
   EF_MIPS_MICROMIPS = 0x02000000, // microMIPS

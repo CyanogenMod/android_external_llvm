@@ -5,6 +5,7 @@
 ;
 ; RUN: llvm-as < %s | llvm-dis | FileCheck %s
 ; RUN: opt -S < %s | FileCheck %s
+; RUN: verify-uselistorder %s
 
 define void @_Z28loop_with_vectorize_metadatav() {
 entry:
@@ -30,7 +31,7 @@ for.end:                                          ; preds = %for.cond
   ret void
 }
 
-; CHECK: !{metadata !"llvm.loop.vectorize.unroll", i32 4}
+; CHECK: !{metadata !"llvm.loop.interleave.count", i32 4}
 ; CHECK: !{metadata !"llvm.loop.vectorize.width", i32 8}
 ; CHECK: !{metadata !"llvm.loop.vectorize.enable", i1 true}
 

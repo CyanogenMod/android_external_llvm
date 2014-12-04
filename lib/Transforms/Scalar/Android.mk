@@ -2,12 +2,14 @@ LOCAL_PATH:= $(call my-dir)
 
 transforms_scalar_SRC_FILES := \
   ADCE.cpp \
+  AlignmentFromAssumptions.cpp \
   ConstantProp.cpp \
   ConstantHoisting.cpp \
   CorrelatedValuePropagation.cpp \
   DCE.cpp \
   DeadStoreElimination.cpp \
   EarlyCSE.cpp \
+  FlattenCFGPass.cpp \
   GVN.cpp \
   IndVarSimplify.cpp \
   JumpThreading.cpp \
@@ -23,6 +25,7 @@ transforms_scalar_SRC_FILES := \
   LoopUnswitch.cpp \
   LowerAtomic.cpp \
   MemCpyOptimizer.cpp \
+  MergedLoadStoreMotion.cpp \
   PartiallyInlineLibCalls.cpp \
   Reassociate.cpp \
   Reg2Mem.cpp \

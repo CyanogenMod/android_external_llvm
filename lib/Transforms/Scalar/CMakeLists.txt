@@ -1,5 +1,6 @@
 add_llvm_library(LLVMScalarOpts
   ADCE.cpp
+  AlignmentFromAssumptions.cpp
   ConstantHoisting.cpp
   ConstantProp.cpp
   CorrelatedValuePropagation.cpp
@@ -22,6 +23,7 @@ add_llvm_library(LLVMScalarOpts
   LoopUnswitch.cpp
   LowerAtomic.cpp
   MemCpyOptimizer.cpp
+  MergedLoadStoreMotion.cpp
   PartiallyInlineLibCalls.cpp
   Reassociate.cpp
   Reg2Mem.cpp

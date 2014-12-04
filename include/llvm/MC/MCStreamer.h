@@ -20,7 +20,7 @@
 #include "llvm/MC/MCDirectives.h"
 #include "llvm/MC/MCDwarf.h"
 #include "llvm/MC/MCLinkerOptimizationHint.h"
-#include "llvm/MC/MCWin64EH.h"
+#include "llvm/MC/MCWinEH.h"
 #include "llvm/Support/DataTypes.h"
 #include <string>
 
@@ -91,17 +91,19 @@ public:
   AArch64TargetStreamer(MCStreamer &S);
   ~AArch64TargetStreamer();
 
-
   void finish() override;
 
   /// Callback used to implement the ldr= pseudo.
   /// Add a new entry to the constant pool for the current section and return an
   /// MCExpr that can be used to refer to the constant pool location.
-  const MCExpr *addConstantPoolEntry(const MCExpr *);
+  const MCExpr *addConstantPoolEntry(const MCExpr *, unsigned Size);
 
   /// Callback used to implemnt the .ltorg directive.
   /// Emit contents of constant pool for the current section.
   void emitCurrentConstantPool();
+
+  /// Callback used to implement the .inst directive.
+  virtual void emitInst(uint32_t Inst);
 
 private:
   std::unique_ptr<AssemblerConstantPools> ConstantPools;
@@ -175,15 +177,15 @@ class MCStreamer {
   MCStreamer(const MCStreamer &) LLVM_DELETED_FUNCTION;
   MCStreamer &operator=(const MCStreamer &) LLVM_DELETED_FUNCTION;
 
-  std::vector<MCDwarfFrameInfo> FrameInfos;
-  MCDwarfFrameInfo *getCurrentFrameInfo();
-  MCSymbol *EmitCFICommon();
-  void EnsureValidFrame();
+  std::vector<MCDwarfFrameInfo> DwarfFrameInfos;
+  MCDwarfFrameInfo *getCurrentDwarfFrameInfo();
+  void EnsureValidDwarfFrame();
 
-  std::vector<MCWin64EHUnwindInfo *> W64UnwindInfos;
-  MCWin64EHUnwindInfo *CurrentW64UnwindInfo;
-  void setCurrentW64UnwindInfo(MCWin64EHUnwindInfo *Frame);
-  void EnsureValidW64UnwindInfo();
+  MCSymbol *EmitCFICommon();
+
+  std::vector<WinEH::FrameInfo *> WinFrameInfos;
+  WinEH::FrameInfo *CurrentWinFrameInfo;
+  void EnsureValidWinFrameInfo();
 
   // SymbolOrdering - Tracks an index to represent the order
   // a symbol was emitted in. Zero means we did not emit that symbol.
@@ -196,18 +198,14 @@ class MCStreamer {
 protected:
   MCStreamer(MCContext &Ctx);
 
-  const MCExpr *BuildSymbolDiff(MCContext &Context, const MCSymbol *A,
-                                const MCSymbol *B);
-
-  const MCExpr *ForceExpAbs(const MCExpr *Expr);
-
   virtual void EmitCFIStartProcImpl(MCDwarfFrameInfo &Frame);
   virtual void EmitCFIEndProcImpl(MCDwarfFrameInfo &CurFrame);
 
-  MCWin64EHUnwindInfo *getCurrentW64UnwindInfo() {
-    return CurrentW64UnwindInfo;
+  WinEH::FrameInfo *getCurrentWinFrameInfo() {
+    return CurrentWinFrameInfo;
   }
-  void EmitW64Tables();
+
+  virtual void EmitWindowsUnwindTables();
 
   virtual void EmitRawTextImpl(StringRef String);
 
@@ -231,20 +229,14 @@ public:
     return TargetStreamer.get();
   }
 
-  unsigned getNumFrameInfos() { return FrameInfos.size(); }
-
-  const MCDwarfFrameInfo &getFrameInfo(unsigned i) { return FrameInfos[i]; }
-
-  ArrayRef<MCDwarfFrameInfo> getFrameInfos() const { return FrameInfos; }
-
-  unsigned getNumW64UnwindInfos() { return W64UnwindInfos.size(); }
-
-  MCWin64EHUnwindInfo &getW64UnwindInfo(unsigned i) {
-    return *W64UnwindInfos[i];
+  unsigned getNumFrameInfos() { return DwarfFrameInfos.size(); }
+  ArrayRef<MCDwarfFrameInfo> getDwarfFrameInfos() const {
+    return DwarfFrameInfos;
   }
 
-  ArrayRef<MCWin64EHUnwindInfo *> getW64UnwindInfos() const {
-    return W64UnwindInfos;
+  unsigned getNumWinFrameInfos() { return WinFrameInfos.size(); }
+  ArrayRef<WinEH::FrameInfo *> getWinFrameInfos() const {
+    return WinFrameInfos;
   }
 
   void generateCompactUnwindEncodings(MCAsmBackend *MAB);
@@ -354,8 +346,8 @@ public:
   /// @p Section.  This is required to update CurSection.
   ///
   /// This corresponds to assembler directives like .section, .text, etc.
-  void SwitchSection(const MCSection *Section,
-                     const MCExpr *Subsection = nullptr) {
+  virtual void SwitchSection(const MCSection *Section,
+                             const MCExpr *Subsection = nullptr) {
     assert(Section && "Cannot switch to a null section!");
     MCSectionSubPair curSection = SectionStack.back().first;
     SectionStack.back().second = curSection;
@@ -378,7 +370,7 @@ public:
   }
 
   /// Create the default sections and set the initial one.
-  virtual void InitSections();
+  virtual void InitSections(bool NoExecStack);
 
   /// AssignSection - Sets the symbol's section.
   ///
@@ -557,12 +549,6 @@ public:
   /// to pass in a MCExpr for constant integers.
   virtual void EmitIntValue(uint64_t Value, unsigned Size);
 
-  /// EmitAbsValue - Emit the Value, but try to avoid relocations. On MachO
-  /// this is done by producing
-  /// foo = value
-  /// .long foo
-  void EmitAbsValue(const MCExpr *Value, unsigned Size);
-
   virtual void EmitULEB128Value(const MCExpr *Value);
 
   virtual void EmitSLEB128Value(const MCExpr *Value);
@@ -577,7 +563,8 @@ public:
 
   /// EmitSymbolValue - Special case of EmitValue that avoids the client
   /// having to pass in a MCExpr for MCSymbols.
-  void EmitSymbolValue(const MCSymbol *Sym, unsigned Size);
+  void EmitSymbolValue(const MCSymbol *Sym, unsigned Size,
+                       bool IsSectionRelative = false);
 
   /// EmitGPRel64Value - Emit the expression @p Value into the output as a
   /// gprel64 (64-bit GP relative) value.
@@ -673,11 +660,6 @@ public:
                                      StringRef FileName);
 
   virtual MCSymbol *getDwarfLineTableSymbol(unsigned CUID);
-
-  void EmitDwarfSetLineAddr(int64_t LineDelta, const MCSymbol *Label,
-                            int PointerSize);
-
-  virtual void EmitCompactUnwindEncoding(uint32_t CompactUnwindEncoding);
   virtual void EmitCFISections(bool EH, bool Debug);
   void EmitCFIStartProc(bool IsSimple);
   void EmitCFIEndProc();
@@ -786,8 +768,8 @@ MCStreamer *createMachOStreamer(MCContext &Ctx, MCAsmBackend &TAB,
 /// createELFStreamer - Create a machine code streamer which will generate
 /// ELF format object files.
 MCStreamer *createELFStreamer(MCContext &Ctx, MCAsmBackend &TAB,
-                              raw_ostream &OS, MCCodeEmitter *CE, bool RelaxAll,
-                              bool NoExecStack);
+                              raw_ostream &OS, MCCodeEmitter *CE,
+                              bool RelaxAll);
 
 } // end namespace llvm
 

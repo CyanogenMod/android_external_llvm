@@ -55,6 +55,7 @@ llvm_post_static_libraries := \
   libLLVMipa \
   libLLVMAnalysis \
   libLLVMTarget \
+  libLLVMMCDisassembler \
   libLLVMMC \
   libLLVMMCParser \
   libLLVMCore \
@@ -66,9 +67,7 @@ llvm_post_static_libraries := \
 
 llvm_host_static_libraries := \
   libLLVMExecutionEngine \
-  libLLVMMCDisassembler \
   libLLVMRuntimeDyld \
-  libLLVMJIT \
   libLLVMMCJIT
 
 ifeq (true,$(FORCE_BUILD_LLVM_COMPONENTS))

@@ -22,7 +22,6 @@ support_SRC_FILES := \
   DataExtractor.cpp \
   Debug.cpp \
   DeltaAlgorithm.cpp \
-  Disassembler.cpp \
   Dwarf.cpp \
   DynamicLibrary.cpp \
   Errno.cpp \
@@ -44,10 +43,12 @@ support_SRC_FILES := \
   LockFileManager.cpp \
   MD5.cpp \
   ManagedStatic.cpp \
+  MathExtras.cpp \
   Memory.cpp \
   MemoryBuffer.cpp \
   MemoryObject.cpp \
   Mutex.cpp \
+  Options.cpp \
   Path.cpp \
   PluginLoader.cpp \
   PrettyStackTrace.cpp \
@@ -61,15 +62,14 @@ support_SRC_FILES := \
   Signals.cpp \
   SmallPtrSet.cpp \
   SmallVector.cpp \
+  StreamingMemoryObject.cpp \
   SourceMgr.cpp \
   SpecialCaseList.cpp \
   Statistic.cpp \
-  StreamableMemoryObject.cpp \
   StringExtras.cpp \
   StringMap.cpp \
   StringPool.cpp \
   StringRef.cpp \
-  StringRefMemoryObject.cpp \
   SystemUtils.cpp \
   TargetRegistry.cpp \
   Threading.cpp \

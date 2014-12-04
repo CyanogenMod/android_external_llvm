@@ -1295,16 +1295,24 @@ bool HexagonInstrInfo::isConditionalALU32 (const MachineInstr* MI) const {
   switch (MI->getOpcode())
   {
     default: return false;
+    case Hexagon::A2_paddf:
+    case Hexagon::A2_paddfnew:
+    case Hexagon::A2_paddt:
+    case Hexagon::A2_paddtnew:
+    case Hexagon::A2_pandf:
+    case Hexagon::A2_pandfnew:
+    case Hexagon::A2_pandt:
+    case Hexagon::A2_pandtnew:
+    case Hexagon::A2_porf:
+    case Hexagon::A2_porfnew:
+    case Hexagon::A2_port:
+    case Hexagon::A2_portnew:
+    case Hexagon::A2_pxorf:
+    case Hexagon::A2_pxorfnew:
+    case Hexagon::A2_pxort:
+    case Hexagon::A2_pxortnew:
     case Hexagon::ADD_ri_cPt:
     case Hexagon::ADD_ri_cNotPt:
-    case Hexagon::ADD_rr_cPt:
-    case Hexagon::ADD_rr_cNotPt:
-    case Hexagon::XOR_rr_cPt:
-    case Hexagon::XOR_rr_cNotPt:
-    case Hexagon::AND_rr_cPt:
-    case Hexagon::AND_rr_cNotPt:
-    case Hexagon::OR_rr_cPt:
-    case Hexagon::OR_rr_cNotPt:
     case Hexagon::SUB_rr_cPt:
     case Hexagon::SUB_rr_cNotPt:
     case Hexagon::COMBINE_rr_cPt:
@@ -1636,11 +1644,10 @@ void HexagonInstrInfo::immediateExtend(MachineInstr *MI) const {
   MO.addTargetFlag(HexagonII::HMOTF_ConstExtended);
 }
 
-DFAPacketizer *HexagonInstrInfo::
-CreateTargetScheduleState(const TargetMachine *TM,
-                           const ScheduleDAG *DAG) const {
-  const InstrItineraryData *II = TM->getInstrItineraryData();
-  return TM->getSubtarget<HexagonGenSubtargetInfo>().createDFAPacketizer(II);
+DFAPacketizer *HexagonInstrInfo::CreateTargetScheduleState(
+    const TargetSubtargetInfo &STI) const {
+  const InstrItineraryData *II = STI.getInstrItineraryData();
+  return static_cast<const HexagonSubtarget &>(STI).createDFAPacketizer(II);
 }
 
 bool HexagonInstrInfo::isSchedulingBoundary(const MachineInstr *MI,
@@ -1765,7 +1772,7 @@ int HexagonInstrInfo::getMinValue(const MachineInstr *MI) const {
                     & HexagonII::ExtentBitsMask;
 
   if (isSigned) // if value is signed
-    return -1 << (bits - 1);
+    return -1U << (bits - 1);
   else
     return 0;
 }
@@ -1779,9 +1786,9 @@ int HexagonInstrInfo::getMaxValue(const MachineInstr *MI) const {
                     & HexagonII::ExtentBitsMask;
 
   if (isSigned) // if value is signed
-    return ~(-1 << (bits - 1));
+    return ~(-1U << (bits - 1));
   else
-    return ~(-1 << bits);
+    return ~(-1U << bits);
 }
 
 // Returns true if an instruction can be converted into a non-extended
