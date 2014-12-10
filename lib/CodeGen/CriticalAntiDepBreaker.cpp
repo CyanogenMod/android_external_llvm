@@ -90,7 +90,14 @@ void CriticalAntiDepBreaker::FinishBlock() {
 
 void CriticalAntiDepBreaker::Observe(MachineInstr *MI, unsigned Count,
                                      unsigned InsertPosIndex) {
-  if (MI->isDebugValue())
+  // Kill instructions can define registers but are really nops, and there might
+  // be a real definition earlier that needs to be paired with uses dominated by
+  // this kill.
+
+  // FIXME: It may be possible to remove the isKill() restriction once PR18663
+  // has been properly fixed. There can be value in processing kills as seen in
+  // the AggressiveAntiDepBreaker class.
+  if (MI->isDebugValue() || MI->isKill())
     return;
   assert(Count < InsertPosIndex && "Instruction index out of expected range!");
 
@@ -233,6 +240,7 @@ void CriticalAntiDepBreaker::ScanInstruction(MachineInstr *MI,
   // Update liveness.
   // Proceeding upwards, registers that are defed but not used in this
   // instruction are now dead.
+  assert(!MI->isKill() && "Attempting to scan a kill instruction");
 
   if (!TII->isPredicated(MI)) {
     // Predicated defs are modeled as read + write, i.e. similar to two
@@ -504,7 +512,14 @@ BreakAntiDependencies(const std::vector<SUnit>& SUnits,
   unsigned Count = InsertPosIndex - 1;
   for (MachineBasicBlock::iterator I = End, E = Begin; I != E; --Count) {
     MachineInstr *MI = --I;
-    if (MI->isDebugValue())
+    // Kill instructions can define registers but are really nops, and there
+    // might be a real definition earlier that needs to be paired with uses
+    // dominated by this kill.
+    
+    // FIXME: It may be possible to remove the isKill() restriction once PR18663
+    // has been properly fixed. There can be value in processing kills as seen
+    // in the AggressiveAntiDepBreaker class.
+    if (MI->isDebugValue() || MI->isKill())
       continue;
 
     // Check if this instruction has a dependence on the critical path that
