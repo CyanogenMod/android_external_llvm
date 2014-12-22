@@ -32,6 +32,7 @@ subdirs := \
   lib/Support \
   lib/TableGen \
   lib/Target \
+  lib/Transforms/Hello \
   lib/Transforms/IPO \
   lib/Transforms/InstCombine \
   lib/Transforms/Instrumentation \
@@ -83,6 +84,7 @@ subdirs += \
   tools/bugpoint \
   tools/llc \
   tools/lli \
+  tools/lli/ChildTarget \
   tools/llvm-ar \
   tools/llvm-as \
   tools/llvm-bcanalyzer \
@@ -103,9 +105,12 @@ subdirs += \
   tools/llvm-readobj \
   tools/llvm-rtdyld \
   tools/llvm-size \
+  tools/llvm-symbolizer \
+  tools/llvm-vtabledump \
   tools/macho-dump \
   tools/obj2yaml \
   tools/opt \
+  tools/verify-uselistorder \
   tools/yaml2obj \
 
 # LLVM Command Line Utilities
