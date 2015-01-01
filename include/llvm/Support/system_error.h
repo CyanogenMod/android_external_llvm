@@ -228,10 +228,11 @@ template <> struct hash<std::error_code>;
 #include "llvm/Support/type_traits.h"
 #include <cerrno>
 #include <string>
+#include <asm-generic/errno-base.h>
 
 // This must be here instead of a .inc file because it is used in the definition
 // of the enum values below.
-#ifdef LLVM_ON_WIN32
+//#ifdef LLVM_ON_WIN32
 
   // The following numbers were taken from VS2010.
 # ifndef EAFNOSUPPORT
@@ -468,7 +469,7 @@ template <> struct hash<std::error_code>;
 # ifndef EPROTOTYPE
 #   define EPROTOTYPE 136
 # endif
-#endif
+//#endif
 
 namespace llvm {
 
