@@ -18,7 +18,7 @@ LOCAL_CFLAGS :=	\
 
 # ARM64 builds seem to miscompile libLLVM without fno-inline.
 # Test and eventually remove after a future rebase.
-LOCAL_CFLAGS_arm64 := -fno-inline
+LOCAL_CFLAGS_arm64 += -fno-inline
 
 # The three inline options together reduce libbcc.so almost 1MB.
 # We move them from global build/core/combo/TARGET_linux-arm.mk
