@@ -22,7 +22,6 @@ transforms_utils_SRC_FILES := \
   LoopSimplify.cpp \
   LoopUnroll.cpp \
   LoopUnrollRuntime.cpp \
-  LowerExpectIntrinsic.cpp \
   LowerInvoke.cpp \
   LowerSwitch.cpp \
   Mem2Reg.cpp \

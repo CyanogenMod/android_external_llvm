@@ -84,8 +84,7 @@ StackMaps::parseOperand(MachineInstr::const_mop_iterator MOI,
     switch (MOI->getImm()) {
     default: llvm_unreachable("Unrecognized operand type.");
     case StackMaps::DirectMemRefOp: {
-      unsigned Size =
-          AP.TM.getSubtargetImpl()->getDataLayout()->getPointerSizeInBits();
+      unsigned Size = AP.TM.getDataLayout()->getPointerSizeInBits();
       assert((Size % 8) == 0 && "Need pointer size in bytes.");
       Size /= 8;
       unsigned Reg = (++MOI)->getReg();
@@ -241,7 +240,7 @@ void StackMaps::recordStackMapOpers(const MachineInstr &MI, uint64_t ID,
   // entry.
   const MCExpr *CSOffsetExpr = MCBinaryExpr::CreateSub(
     MCSymbolRefExpr::Create(MILabel, OutContext),
-    MCSymbolRefExpr::Create(AP.CurrentFnSym, OutContext),
+    MCSymbolRefExpr::Create(AP.CurrentFnSymForSize, OutContext),
     OutContext);
 
   CSInfos.emplace_back(CSOffsetExpr, ID, std::move(Locations),
@@ -285,6 +284,18 @@ void StackMaps::recordPatchPoint(const MachineInstr &MI) {
              "anyreg arg must be in reg.");
   }
 #endif
+}
+void StackMaps::recordStatepoint(const MachineInstr &MI) {
+  assert(MI.getOpcode() == TargetOpcode::STATEPOINT &&
+         "expected statepoint");
+
+  StatepointOpers opers(&MI);
+  // Record all the deopt and gc operands (they're contiguous and run from the
+  // initial index to the end of the operand list)
+  const unsigned StartIdx = opers.getVarIdx();
+  recordStackMapOpers(MI, 0xABCDEF00,
+                      MI.operands_begin() + StartIdx, MI.operands_end(),
+                      false);
 }
 
 /// Emit the stackmap header.

@@ -20,7 +20,6 @@ mips_codegen_SRC_FILES := \
   Mips16ISelLowering.cpp \
   Mips16InstrInfo.cpp \
   Mips16RegisterInfo.cpp \
-  MipsABIInfo.cpp \
   MipsAnalyzeImmediate.cpp \
   MipsAsmPrinter.cpp \
   MipsCCState.cpp \

@@ -11,7 +11,6 @@ llvm_cov_SRC_FILES := \
   CodeCoverage.cpp \
   CoverageFilters.cpp \
   CoverageReport.cpp \
-  CoverageSummary.cpp \
   CoverageSummaryInfo.cpp \
   gcov.cpp \
   llvm-cov.cpp \

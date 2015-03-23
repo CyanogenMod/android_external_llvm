@@ -1,6 +1,7 @@
 LOCAL_PATH:= $(call my-dir)
 
 transforms_objcarc_SRC_FILES := \
+  ARCInstKind.cpp \
   DependencyAnalysis.cpp \
   ObjCARCAliasAnalysis.cpp \
   ObjCARCAPElim.cpp \
@@ -8,7 +9,6 @@ transforms_objcarc_SRC_FILES := \
   ObjCARC.cpp \
   ObjCARCExpand.cpp \
   ObjCARCOpts.cpp \
-  ObjCARCUtil.cpp \
   ProvenanceAnalysis.cpp \
   ProvenanceAnalysisEvaluator.cpp
 

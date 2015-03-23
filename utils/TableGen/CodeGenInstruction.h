@@ -247,7 +247,6 @@ namespace llvm {
     bool isNotDuplicable : 1;
     bool hasSideEffects : 1;
     bool hasSideEffects_Unset : 1;
-    bool neverHasSideEffects : 1;
     bool isAsCheapAsAMove : 1;
     bool hasExtraSrcRegAllocReq : 1;
     bool hasExtraDefRegAllocReq : 1;
@@ -256,6 +255,7 @@ namespace llvm {
     bool isRegSequence : 1;
     bool isExtractSubreg : 1;
     bool isInsertSubreg : 1;
+    bool hasTwoExplicitDefs : 1;
 
     std::string DeprecatedReason;
     bool HasComplexDeprecationPredicate;

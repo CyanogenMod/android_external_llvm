@@ -147,6 +147,11 @@ def FeatureAClass : SubtargetFeature<"aclass", "ARMProcClass", "AClass",
 def FeatureNaClTrap : SubtargetFeature<"nacl-trap", "UseNaClTrap", "true",
                                        "NaCl trap">;
 
+// RenderScript-specific support for 64-bit long types on all targets
+def FeatureLong64 : SubtargetFeature<"long64", "UseLong64",
+                                     "true",
+                                     "long type is forced to be 64-bit">;
+
 // ARM ISAs.
 def HasV4TOps   : SubtargetFeature<"v4t", "HasV4TOps", "true",
                                    "Support ARM v4T instructions">;
@@ -270,17 +275,6 @@ def ProcKrait   : SubtargetFeature<"krait", "ARMProcFamily", "Krait",
                                     FeatureHWDivARM]>;
 
 
-def FeatureAPCS  : SubtargetFeature<"apcs", "TargetABI", "ARM_ABI_APCS",
-                                   "Use the APCS ABI">;
-
-def FeatureAAPCS : SubtargetFeature<"aapcs", "TargetABI", "ARM_ABI_AAPCS",
-                                   "Use the AAPCS ABI">;
-
-// RenderScript-specific support for 64-bit long types on all targets
-def FeatureLong64 : SubtargetFeature<"long64", "UseLong64",
-                                     "true",
-                                     "long type is forced to be 64-bit">;
-
 class ProcNoItin<string Name, list<SubtargetFeature> Features>
  : Processor<Name, NoItineraries, Features>;
 
@@ -335,6 +329,12 @@ def : Processor<"mpcore",           ARMV6Itineraries, [HasV6Ops, FeatureVFP2,
 
 // V6M Processors.
 def : Processor<"cortex-m0",        ARMV6Itineraries, [HasV6MOps, FeatureNoARM,
+                                                       FeatureDB, FeatureMClass]>;
+def : Processor<"cortex-m0plus",    ARMV6Itineraries, [HasV6MOps, FeatureNoARM,
+                                                       FeatureDB, FeatureMClass]>;
+def : Processor<"cortex-m1",        ARMV6Itineraries, [HasV6MOps, FeatureNoARM,
+                                                       FeatureDB, FeatureMClass]>;
+def : Processor<"sc000",            ARMV6Itineraries, [HasV6MOps, FeatureNoARM,
                                                        FeatureDB, FeatureMClass]>;
 
 // V6T2 Processors.
@@ -395,8 +395,18 @@ def : ProcessorModel<"cortex-r5",   CortexA8Model,
                                      FeatureHasRAS, FeatureVFPOnlySP,
                                      FeatureD16, FeatureRClass]>;
 
+// FIXME: R7 has currently the same ProcessorModel as A8 and is modelled as R5.
+def : ProcessorModel<"cortex-r7",   CortexA8Model,
+                                    [ProcR5, HasV7Ops, FeatureDB,
+                                     FeatureVFP3, FeatureDSPThumb2,
+                                     FeatureHasRAS, FeatureVFPOnlySP,
+                                     FeatureD16, FeatureMP, FeatureRClass]>;
+
 // V7M Processors.
 def : ProcNoItin<"cortex-m3",       [HasV7Ops,
+                                     FeatureThumb2, FeatureNoARM, FeatureDB,
+                                     FeatureHWDiv, FeatureMClass]>;
+def : ProcNoItin<"sc300",           [HasV7Ops,
                                      FeatureThumb2, FeatureNoARM, FeatureDB,
                                      FeatureHWDiv, FeatureMClass]>;
 
@@ -425,6 +435,10 @@ def : ProcNoItin<"cortex-a53",      [ProcA53, HasV8Ops, FeatureAClass,
                                     FeatureDB, FeatureFPARMv8,
                                     FeatureNEON, FeatureDSPThumb2]>;
 def : ProcNoItin<"cortex-a57",      [ProcA57, HasV8Ops, FeatureAClass,
+                                    FeatureDB, FeatureFPARMv8,
+                                    FeatureNEON, FeatureDSPThumb2]>;
+// FIXME: Cortex-A72 is currently modelled as an Cortex-A57.
+def : ProcNoItin<"cortex-a72",      [ProcA57, HasV8Ops, FeatureAClass,
                                     FeatureDB, FeatureFPARMv8,
                                     FeatureNEON, FeatureDSPThumb2]>;
 

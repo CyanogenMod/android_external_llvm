@@ -481,6 +481,24 @@ def trunc_imm : SDNodeXForm<imm, [{
 def : Pat<(i64 i64imm_32bit:$src),
           (SUBREG_TO_REG (i64 0), (MOVi32imm (trunc_imm imm:$src)), sub_32)>;
 
+// Materialize FP constants via MOVi32imm/MOVi64imm (MachO large code model).
+def bitcast_fpimm_to_i32 : SDNodeXForm<fpimm, [{
+return CurDAG->getTargetConstant(
+  N->getValueAPF().bitcastToAPInt().getZExtValue(), MVT::i32);
+}]>;
+
+def bitcast_fpimm_to_i64 : SDNodeXForm<fpimm, [{
+return CurDAG->getTargetConstant(
+  N->getValueAPF().bitcastToAPInt().getZExtValue(), MVT::i64);
+}]>;
+
+
+def : Pat<(f32 fpimm:$in),
+  (COPY_TO_REGCLASS (MOVi32imm (bitcast_fpimm_to_i32 f32:$in)), FPR32)>;
+def : Pat<(f64 fpimm:$in),
+  (COPY_TO_REGCLASS (MOVi64imm (bitcast_fpimm_to_i64 f64:$in)), FPR64)>;
+
+
 // Deal with the various forms of (ELF) large addressing with MOVZ/MOVK
 // sequences.
 def : Pat<(AArch64WrapperLarge tglobaladdr:$g3, tglobaladdr:$g2,
@@ -639,6 +657,10 @@ def : Pat<(i32 (ineg (mul GPR32:$Rn, GPR32:$Rm))),
           (MSUBWrrr GPR32:$Rn, GPR32:$Rm, WZR)>;
 def : Pat<(i64 (ineg (mul GPR64:$Rn, GPR64:$Rm))),
           (MSUBXrrr GPR64:$Rn, GPR64:$Rm, XZR)>;
+def : Pat<(i32 (mul (ineg GPR32:$Rn), GPR32:$Rm)),
+          (MSUBWrrr GPR32:$Rn, GPR32:$Rm, WZR)>;
+def : Pat<(i64 (mul (ineg GPR64:$Rn), GPR64:$Rm)),
+          (MSUBXrrr GPR64:$Rn, GPR64:$Rm, XZR)>;
 } // AddedComplexity = 7
 
 let AddedComplexity = 5 in {
@@ -789,7 +811,7 @@ def : Pat<(bswap (rotr GPR64:$Rn, (i64 32))), (REV32Xr GPR64:$Rn)>;
 //===----------------------------------------------------------------------===//
 // Bitfield immediate extraction instruction.
 //===----------------------------------------------------------------------===//
-let neverHasSideEffects = 1 in
+let hasSideEffects = 0 in
 defm EXTR : ExtractImm<"extr">;
 def : InstAlias<"ror $dst, $src, $shift",
             (EXTRWrri GPR32:$dst, GPR32:$src, GPR32:$src, imm0_31:$shift)>;
@@ -804,7 +826,7 @@ def : Pat<(rotr GPR64:$Rn, (i64 imm0_63:$imm)),
 //===----------------------------------------------------------------------===//
 // Other bitfield immediate instructions.
 //===----------------------------------------------------------------------===//
-let neverHasSideEffects = 1 in {
+let hasSideEffects = 0 in {
 defm BFM  : BitfieldImmWith2RegArgs<0b01, "bfm">;
 defm SBFM : BitfieldImm<0b00, "sbfm">;
 defm UBFM : BitfieldImm<0b10, "ubfm">;
@@ -977,9 +999,9 @@ def : InstAlias<"cneg $dst, $src, $cc",
 // PC-relative instructions.
 //===----------------------------------------------------------------------===//
 let isReMaterializable = 1 in {
-let neverHasSideEffects = 1, mayStore = 0, mayLoad = 0 in {
+let hasSideEffects = 0, mayStore = 0, mayLoad = 0 in {
 def ADR  : ADRI<0, "adr", adrlabel, []>;
-} // neverHasSideEffects = 1
+} // hasSideEffects = 0
 
 def ADRP : ADRI<1, "adrp", adrplabel,
                 [(set GPR64:$Xd, (AArch64adrp tglobaladdr:$label))]>;
@@ -1866,6 +1888,33 @@ let Predicates = [IsLE] in {
   defm : VecROStorePat<ro128, v8f16, FPR128, STRQroW, STRQroX>;
 }
 } // AddedComplexity = 10
+
+// Match stores from lane 0 to the appropriate subreg's store.
+multiclass VecROStoreLane0Pat<ROAddrMode ro, SDPatternOperator storeop,
+                              ValueType VecTy, ValueType STy,
+                              SubRegIndex SubRegIdx,
+                              Instruction STRW, Instruction STRX> {
+
+  def : Pat<(storeop (STy (vector_extract (VecTy VecListOne128:$Vt), 0)),
+                     (ro.Wpat GPR64sp:$Rn, GPR32:$Rm, ro.Wext:$extend)),
+            (STRW (EXTRACT_SUBREG VecListOne128:$Vt, SubRegIdx),
+                  GPR64sp:$Rn, GPR32:$Rm, ro.Wext:$extend)>;
+
+  def : Pat<(storeop (STy (vector_extract (VecTy VecListOne128:$Vt), 0)),
+                     (ro.Xpat GPR64sp:$Rn, GPR64:$Rm, ro.Xext:$extend)),
+            (STRX (EXTRACT_SUBREG VecListOne128:$Vt, SubRegIdx),
+                  GPR64sp:$Rn, GPR64:$Rm, ro.Xext:$extend)>;
+}
+
+let AddedComplexity = 19 in {
+  defm : VecROStoreLane0Pat<ro16, truncstorei16, v8i16, i32, hsub, STRHroW, STRHroX>;
+  defm : VecROStoreLane0Pat<ro16,      store   , v8i16, i16, hsub, STRHroW, STRHroX>;
+  defm : VecROStoreLane0Pat<ro32, truncstorei32, v4i32, i32, ssub, STRSroW, STRSroX>;
+  defm : VecROStoreLane0Pat<ro32,      store   , v4i32, i32, ssub, STRSroW, STRSroX>;
+  defm : VecROStoreLane0Pat<ro32,      store   , v4f32, f32, ssub, STRSroW, STRSroX>;
+  defm : VecROStoreLane0Pat<ro64,      store   , v2i64, i64, dsub, STRDroW, STRDroX>;
+  defm : VecROStoreLane0Pat<ro64,      store   , v2f64, f64, dsub, STRDroW, STRDroX>;
+}
 
 //---
 // (unsigned immediate)
@@ -3667,29 +3716,21 @@ defm : Neon_INS_elt_pattern<v2i64, v1i64, i64, INSvi32lane>;
 
 
 // Floating point vector extractions are codegen'd as either a sequence of
-// subregister extractions, possibly fed by an INS if the lane number is
-// anything other than zero.
+// subregister extractions, or a MOV (aka CPY here, alias for DUP) if
+// the lane number is anything other than zero.
 def : Pat<(vector_extract (v2f64 V128:$Rn), 0),
           (f64 (EXTRACT_SUBREG V128:$Rn, dsub))>;
 def : Pat<(vector_extract (v4f32 V128:$Rn), 0),
           (f32 (EXTRACT_SUBREG V128:$Rn, ssub))>;
 def : Pat<(vector_extract (v8f16 V128:$Rn), 0),
           (f16 (EXTRACT_SUBREG V128:$Rn, hsub))>;
+
 def : Pat<(vector_extract (v2f64 V128:$Rn), VectorIndexD:$idx),
-          (f64 (EXTRACT_SUBREG
-            (INSvi64lane (v2f64 (IMPLICIT_DEF)), 0,
-                         V128:$Rn, VectorIndexD:$idx),
-            dsub))>;
+          (f64 (CPYi64 V128:$Rn, VectorIndexD:$idx))>;
 def : Pat<(vector_extract (v4f32 V128:$Rn), VectorIndexS:$idx),
-          (f32 (EXTRACT_SUBREG
-            (INSvi32lane (v4f32 (IMPLICIT_DEF)), 0,
-                         V128:$Rn, VectorIndexS:$idx),
-            ssub))>;
+          (f32 (CPYi32 V128:$Rn, VectorIndexS:$idx))>;
 def : Pat<(vector_extract (v8f16 V128:$Rn), VectorIndexH:$idx),
-          (f16 (EXTRACT_SUBREG
-            (INSvi16lane (v8f16 (IMPLICIT_DEF)), 0,
-                         V128:$Rn, VectorIndexH:$idx),
-            hsub))>;
+          (f16 (CPYi16 V128:$Rn, VectorIndexH:$idx))>;
 
 // All concat_vectors operations are canonicalised to act on i64 vectors for
 // AArch64. In the general case we need an instruction, which had just as well be
@@ -4124,7 +4165,7 @@ def MVNIv4s_msl   : SIMDModifiedImmMoveMSL<1, 1, {1,1,0,?}, V128, "mvni", ".4s",
 // AdvSIMD indexed element
 //----------------------------------------------------------------------------
 
-let neverHasSideEffects = 1 in {
+let hasSideEffects = 0 in {
   defm FMLA  : SIMDFPIndexedSDTied<0, 0b0001, "fmla">;
   defm FMLS  : SIMDFPIndexedSDTied<0, 0b0101, "fmls">;
 }
@@ -4678,7 +4719,7 @@ defm LD1R          : SIMDLdR<0, 0b110, 0, "ld1r", "One", 1, 2, 4, 8>;
 defm LD2R          : SIMDLdR<1, 0b110, 0, "ld2r", "Two", 2, 4, 8, 16>;
 defm LD3R          : SIMDLdR<0, 0b111, 0, "ld3r", "Three", 3, 6, 12, 24>;
 defm LD4R          : SIMDLdR<1, 0b111, 0, "ld4r", "Four", 4, 8, 16, 32>;
-let mayLoad = 1, neverHasSideEffects = 1 in {
+let mayLoad = 1, hasSideEffects = 0 in {
 defm LD1 : SIMDLdSingleBTied<0, 0b000,       "ld1", VecListOneb,   GPR64pi1>;
 defm LD1 : SIMDLdSingleHTied<0, 0b010, 0,    "ld1", VecListOneh,   GPR64pi2>;
 defm LD1 : SIMDLdSingleSTied<0, 0b100, 0b00, "ld1", VecListOnes,   GPR64pi4>;
@@ -4768,7 +4809,7 @@ defm ST1 : SIMDStSingleH<0, 0b010, 0,    "st1", VecListOneh, GPR64pi2>;
 defm ST1 : SIMDStSingleS<0, 0b100, 0b00, "st1", VecListOnes, GPR64pi4>;
 defm ST1 : SIMDStSingleD<0, 0b100, 0b01, "st1", VecListOned, GPR64pi8>;
 
-let AddedComplexity = 15 in
+let AddedComplexity = 19 in
 class St1Lane128Pat<SDPatternOperator scalar_store, Operand VecIndex,
                     ValueType VTy, ValueType STy, Instruction ST1>
   : Pat<(scalar_store
@@ -4784,7 +4825,7 @@ def : St1Lane128Pat<store,         VectorIndexD, v2i64, i64, ST1i64>;
 def : St1Lane128Pat<store,         VectorIndexD, v2f64, f64, ST1i64>;
 def : St1Lane128Pat<store,         VectorIndexH, v8f16, f16, ST1i16>;
 
-let AddedComplexity = 15 in
+let AddedComplexity = 19 in
 class St1Lane64Pat<SDPatternOperator scalar_store, Operand VecIndex,
                    ValueType VTy, ValueType STy, Instruction ST1>
   : Pat<(scalar_store
@@ -4848,7 +4889,7 @@ defm : St1LanePost128Pat<post_store, VectorIndexD, v2i64, i64, ST1i64_POST, 8>;
 defm : St1LanePost128Pat<post_store, VectorIndexD, v2f64, f64, ST1i64_POST, 8>;
 defm : St1LanePost128Pat<post_store, VectorIndexH, v8f16, f16, ST1i16_POST, 2>;
 
-let mayStore = 1, neverHasSideEffects = 1 in {
+let mayStore = 1, hasSideEffects = 0 in {
 defm ST2 : SIMDStSingleB<1, 0b000,       "st2", VecListTwob,   GPR64pi2>;
 defm ST2 : SIMDStSingleH<1, 0b010, 0,    "st2", VecListTwoh,   GPR64pi4>;
 defm ST2 : SIMDStSingleS<1, 0b100, 0b00, "st2", VecListTwos,   GPR64pi8>;

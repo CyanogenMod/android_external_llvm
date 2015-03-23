@@ -46,7 +46,6 @@ lli_STATIC_LIBRARIES := \
   libLLVMSelectionDAG \
   libLLVMCodeGen \
   libLLVMInstrumentation \
-  libLLVMExecutionEngine \
   libLLVMLinker \
   libLLVMInterpreter \
   libLLVMScalarOpts \
@@ -55,6 +54,8 @@ lli_STATIC_LIBRARIES := \
   libLLVMTarget \
   libLLVMMC \
   libLLVMMCJIT \
+  libLLVMOrcJIT \
+  libLLVMExecutionEngine \
   libLLVMRuntimeDyld \
   libLLVMMCParser \
   libLLVMObject \

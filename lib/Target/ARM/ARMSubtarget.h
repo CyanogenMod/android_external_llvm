@@ -20,10 +20,10 @@
 #include "ARMInstrInfo.h"
 #include "ARMSelectionDAGInfo.h"
 #include "ARMSubtarget.h"
+#include "MCTargetDesc/ARMMCTargetDesc.h"
 #include "Thumb1FrameLowering.h"
 #include "Thumb1InstrInfo.h"
 #include "Thumb2InstrInfo.h"
-#include "MCTargetDesc/ARMMCTargetDesc.h"
 #include "llvm/ADT/Triple.h"
 #include "llvm/IR/DataLayout.h"
 #include "llvm/MC/MCInstrItineraries.h"
@@ -37,6 +37,7 @@ namespace llvm {
 class GlobalValue;
 class StringRef;
 class TargetOptions;
+class ARMBaseTargetMachine;
 
 class ARMSubtarget : public ARMGenSubtargetInfo {
 protected:
@@ -228,18 +229,14 @@ protected:
   /// Options passed via command line that could influence the target
   const TargetOptions &Options;
 
- public:
-  enum {
-    ARM_ABI_UNKNOWN,
-    ARM_ABI_APCS,
-    ARM_ABI_AAPCS // ARM EABI
-  } TargetABI;
+  const ARMBaseTargetMachine &TM;
 
+public:
   /// This constructor initializes the data members to match that
   /// of the specified triple.
   ///
   ARMSubtarget(const std::string &TT, const std::string &CPU,
-               const std::string &FS, const TargetMachine &TM, bool IsLittle);
+               const std::string &FS, const ARMBaseTargetMachine &TM, bool IsLittle);
 
   /// getMaxInlineSizeThreshold - Returns the maximum memset / memcpy size
   /// that still makes it profitable to inline the call.
@@ -254,7 +251,6 @@ protected:
   /// so that we can use initializer lists for subtarget initialization.
   ARMSubtarget &initializeSubtargetDependencies(StringRef CPU, StringRef FS);
 
-  const DataLayout *getDataLayout() const override { return &DL; }
   const ARMSelectionDAGInfo *getSelectionDAGInfo() const override {
     return &TSInfo;
   }
@@ -272,16 +268,17 @@ protected:
   }
 
 private:
-  const DataLayout DL;
   ARMSelectionDAGInfo TSInfo;
+  // Either Thumb1FrameLowering or ARMFrameLowering.
+  std::unique_ptr<ARMFrameLowering> FrameLowering;
   // Either Thumb1InstrInfo or Thumb2InstrInfo.
   std::unique_ptr<ARMBaseInstrInfo> InstrInfo;
   ARMTargetLowering   TLInfo;
-  // Either Thumb1FrameLowering or ARMFrameLowering.
-  std::unique_ptr<ARMFrameLowering> FrameLowering;
 
   void initializeEnvironment();
   void initSubtargetFeatures(StringRef CPU, StringRef FS);
+  ARMFrameLowering *initializeFrameLowering(StringRef CPU, StringRef FS);
+
 public:
   void computeIssueWidth();
 
@@ -316,7 +313,8 @@ public:
   bool hasCRC() const { return HasCRC; }
   bool hasVirtualization() const { return HasVirtualization; }
   bool useNEONForSinglePrecisionFP() const {
-    return hasNEON() && UseNEONForSinglePrecisionFP; }
+    return hasNEON() && UseNEONForSinglePrecisionFP;
+  }
 
   bool hasDivide() const { return HasHardwareDivide; }
   bool hasDivideInARMMode() const { return HasHardwareDivideInARM; }
@@ -350,7 +348,7 @@ public:
   bool isTargetIOS() const { return TargetTriple.isiOS(); }
   bool isTargetLinux() const { return TargetTriple.isOSLinux(); }
   bool isTargetNaCl() const { return TargetTriple.isOSNaCl(); }
-  bool isTargetNetBSD() const { return TargetTriple.getOS() == Triple::NetBSD; }
+  bool isTargetNetBSD() const { return TargetTriple.isOSNetBSD(); }
   bool isTargetWindows() const { return TargetTriple.isOSWindows(); }
 
   bool isTargetCOFF() const { return TargetTriple.isOSBinFormatCOFF(); }
@@ -391,14 +389,8 @@ public:
     return TargetTriple.getEnvironment() == Triple::Android;
   }
 
-  bool isAPCS_ABI() const {
-    assert(TargetABI != ARM_ABI_UNKNOWN);
-    return TargetABI == ARM_ABI_APCS;
-  }
-  bool isAAPCS_ABI() const {
-    assert(TargetABI != ARM_ABI_UNKNOWN);
-    return TargetABI == ARM_ABI_AAPCS;
-  }
+  bool isAPCS_ABI() const;
+  bool isAAPCS_ABI() const;
 
   bool isThumb() const { return InThumbMode; }
   bool isThumb1Only() const { return InThumbMode && !HasThumb2; }

@@ -346,6 +346,12 @@ void CallInst::removeAttribute(unsigned i, Attribute attr) {
   setAttributes(PAL);
 }
 
+void CallInst::addDereferenceableAttr(unsigned i, uint64_t Bytes) {
+  AttributeSet PAL = getAttributes();
+  PAL = PAL.addDereferenceableAttr(getContext(), i, Bytes);
+  setAttributes(PAL);
+}
+
 bool CallInst::hasFnAttrImpl(Attribute::AttrKind A) const {
   if (AttributeList.hasAttribute(AttributeSet::FunctionIndex, A))
     return true;
@@ -605,6 +611,12 @@ void InvokeInst::removeAttribute(unsigned i, Attribute attr) {
   setAttributes(PAL);
 }
 
+void InvokeInst::addDereferenceableAttr(unsigned i, uint64_t Bytes) {
+  AttributeSet PAL = getAttributes();
+  PAL = PAL.addDereferenceableAttr(getContext(), i, Bytes);
+  setAttributes(PAL);
+}
+
 LandingPadInst *InvokeInst::getLandingPadInst() const {
   return cast<LandingPadInst>(getUnwindDest()->getFirstNonPHI());
 }
@@ -796,11 +808,8 @@ void BranchInst::swapSuccessors() {
     return;
 
   // The first operand is the name. Fetch them backwards and build a new one.
-  Value *Ops[] = {
-    ProfileData->getOperand(0),
-    ProfileData->getOperand(2),
-    ProfileData->getOperand(1)
-  };
+  Metadata *Ops[] = {ProfileData->getOperand(0), ProfileData->getOperand(2),
+                     ProfileData->getOperand(1)};
   setMetadata(LLVMContext::MD_prof,
               MDNode::get(ProfileData->getContext(), Ops));
 }
@@ -2076,7 +2085,7 @@ float FPMathOperator::getFPAccuracy() const {
       cast<Instruction>(this)->getMetadata(LLVMContext::MD_fpmath);
   if (!MD)
     return 0.0;
-  ConstantFP *Accuracy = cast<ConstantFP>(MD->getOperand(0));
+  ConstantFP *Accuracy = mdconst::extract<ConstantFP>(MD->getOperand(0));
   return Accuracy->getValueAPF().convertToFloat();
 }
 
@@ -2559,6 +2568,17 @@ CastInst *CastInst::CreatePointerBitCastOrAddrSpaceCast(
   return Create(Instruction::BitCast, S, Ty, Name, InsertBefore);
 }
 
+CastInst *CastInst::CreateBitOrPointerCast(Value *S, Type *Ty,
+                                           const Twine &Name,
+                                           Instruction *InsertBefore) {
+  if (S->getType()->isPointerTy() && Ty->isIntegerTy())
+    return Create(Instruction::PtrToInt, S, Ty, Name, InsertBefore);
+  if (S->getType()->isIntegerTy() && Ty->isPointerTy())
+    return Create(Instruction::IntToPtr, S, Ty, Name, InsertBefore);
+
+  return Create(Instruction::BitCast, S, Ty, Name, InsertBefore);
+}
+
 CastInst *CastInst::CreateIntegerCast(Value *C, Type *Ty,
                                       bool isSigned, const Twine &Name,
                                       Instruction *InsertBefore) {
@@ -2716,6 +2736,18 @@ bool CastInst::isBitCastable(Type *SrcTy, Type *DestTy) {
   return true;
 }
 
+bool CastInst::isBitOrNoopPointerCastable(Type *SrcTy, Type *DestTy,
+                                          const DataLayout *DL) {
+  if (auto *PtrTy = dyn_cast<PointerType>(SrcTy))
+    if (auto *IntTy = dyn_cast<IntegerType>(DestTy))
+      return DL && IntTy->getBitWidth() == DL->getPointerTypeSizeInBits(PtrTy);
+  if (auto *PtrTy = dyn_cast<PointerType>(DestTy))
+    if (auto *IntTy = dyn_cast<IntegerType>(SrcTy))
+      return DL && IntTy->getBitWidth() == DL->getPointerTypeSizeInBits(PtrTy);
+
+  return isBitCastable(SrcTy, DestTy);
+}
+
 // Provide a way to get a "cast" where the cast opcode is inferred from the
 // types and size of the operand. This, basically, is a parallel of the
 // logic in the castIsValid function below.  This axiom should hold:
@@ -2831,10 +2863,6 @@ CastInst::castIsValid(Instruction::CastOps op, Value *S, Type *DstTy) {
 
   // Check for type sanity on the arguments
   Type *SrcTy = S->getType();
-
-  // If this is a cast to the same type then it's trivially true.
-  if (SrcTy == DstTy)
-    return true;
 
   if (!SrcTy->isFirstClassType() || !DstTy->isFirstClassType() ||
       SrcTy->isAggregateType() || DstTy->isAggregateType())

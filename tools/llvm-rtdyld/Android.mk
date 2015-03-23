@@ -37,7 +37,8 @@ llvm_rtdyld_STATIC_LIBRARIES := \
   libLLVMX86AsmParser \
   libLLVMX86Utils \
   libLLVMX86Disassembler \
-  libLLVMDebugInfo          \
+  libLLVMDebugInfoDWARF \
+  libLLVMDebugInfoPDB \
   libLLVMExecutionEngine    \
   libLLVMCodeGen \
   libLLVMObject             \

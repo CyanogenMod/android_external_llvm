@@ -16,7 +16,8 @@ LOCAL_SRC_FILES := $(llvm_symbolizer_SRC_FILES)
 LOCAL_LDLIBS += -lpthread -lm -ldl
 
 LOCAL_STATIC_LIBRARIES := \
-  libLLVMDebugInfo \
+  libLLVMDebugInfoDWARF \
+  libLLVMDebugInfoPDB \
   libLLVMObject \
   libLLVMBitReader \
   libLLVMMC \
