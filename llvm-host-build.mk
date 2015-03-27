@@ -1,7 +1,6 @@
 # Windows can't use Clang to build yet
 ifneq ($(HOST_OS),windows)
 LOCAL_CLANG := true
-include external/libcxx/libcxx.mk
 endif
 
 LOCAL_CFLAGS +=	\
