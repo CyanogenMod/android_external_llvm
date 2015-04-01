@@ -43,6 +43,7 @@ add_llvm_target(R600CodeGen
   SIAnnotateControlFlow.cpp
   SIFixSGPRCopies.cpp
   SIFixSGPRLiveRanges.cpp
+  SIFoldOperands.cpp
   SIInsertWaits.cpp
   SIInstrInfo.cpp
   SIISelLowering.cpp
@@ -50,6 +51,7 @@ add_llvm_target(R600CodeGen
   SILowerControlFlow.cpp
   SILowerI1Copies.cpp
   SIMachineFunctionInfo.cpp
+  SIPrepareScratchRegs.cpp
   SIRegisterInfo.cpp
   SIShrinkInstructions.cpp
   SITypeRewriter.cpp

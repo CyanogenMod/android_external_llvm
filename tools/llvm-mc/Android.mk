@@ -37,6 +37,7 @@ llvm_mc_STATIC_LIBRARIES := \
   libLLVMX86CodeGen \
   libLLVMAsmPrinter \
   libLLVMCodeGen \
+  libLLVMTransformUtils \
   libLLVMAnalysis \
   libLLVMTarget \
   libLLVMMC \

@@ -32,7 +32,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Target/TargetLibraryInfo.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
@@ -115,7 +115,7 @@ namespace {
     void getAnalysisUsage(AnalysisUsage &AU) const override {
       AU.addRequired<LazyValueInfo>();
       AU.addPreserved<LazyValueInfo>();
-      AU.addRequired<TargetLibraryInfo>();
+      AU.addRequired<TargetLibraryInfoWrapperPass>();
     }
 
     void FindLoopHeaders(Function &F);
@@ -145,7 +145,7 @@ char JumpThreading::ID = 0;
 INITIALIZE_PASS_BEGIN(JumpThreading, "jump-threading",
                 "Jump Threading", false, false)
 INITIALIZE_PASS_DEPENDENCY(LazyValueInfo)
-INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfo)
+INITIALIZE_PASS_DEPENDENCY(TargetLibraryInfoWrapperPass)
 INITIALIZE_PASS_END(JumpThreading, "jump-threading",
                 "Jump Threading", false, false)
 
@@ -161,7 +161,7 @@ bool JumpThreading::runOnFunction(Function &F) {
   DEBUG(dbgs() << "Jump threading on function '" << F.getName() << "'\n");
   DataLayoutPass *DLP = getAnalysisIfAvailable<DataLayoutPass>();
   DL = DLP ? &DLP->getDataLayout() : nullptr;
-  TLI = &getAnalysis<TargetLibraryInfo>();
+  TLI = &getAnalysis<TargetLibraryInfoWrapperPass>().getTLI();
   LVI = &getAnalysis<LazyValueInfo>();
 
   // Remove unreachable blocks from function as they may result in infinite
@@ -188,7 +188,7 @@ bool JumpThreading::runOnFunction(Function &F) {
 
       // If the block is trivially dead, zap it.  This eliminates the successor
       // edges which simplifies the CFG.
-      if (pred_begin(BB) == pred_end(BB) &&
+      if (pred_empty(BB) &&
           BB != &BB->getParent()->getEntryBlock()) {
         DEBUG(dbgs() << "  JT: Deleting dead block '" << BB->getName()
               << "' with terminator: " << *BB->getTerminator() << '\n');
@@ -662,7 +662,7 @@ static bool hasAddressTakenAndUsed(BasicBlock *BB) {
 bool JumpThreading::ProcessBlock(BasicBlock *BB) {
   // If the block is trivially dead, just return and let the caller nuke it.
   // This simplifies other transformations.
-  if (pred_begin(BB) == pred_end(BB) &&
+  if (pred_empty(BB) &&
       BB != &BB->getParent()->getEntryBlock())
     return false;
 
@@ -797,7 +797,7 @@ bool JumpThreading::ProcessBlock(BasicBlock *BB) {
       }
 
     } else if (CondBr && CondConst && CondBr->isConditional()) {
-      // There might be an invairant in the same block with the conditional
+      // There might be an invariant in the same block with the conditional
       // that can determine the predicate.
 
       LazyValueInfo::Tristate Ret =
@@ -902,8 +902,8 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
     // only happen in dead loops.
     if (AvailableVal == LI) AvailableVal = UndefValue::get(LI->getType());
     if (AvailableVal->getType() != LI->getType())
-      AvailableVal = CastInst::Create(CastInst::BitCast, AvailableVal,
-                                      LI->getType(), "", LI);
+      AvailableVal =
+          CastInst::CreateBitOrPointerCast(AvailableVal, LI->getType(), "", LI);
     LI->replaceAllUsesWith(AvailableVal);
     LI->eraseFromParent();
     return true;
@@ -993,7 +993,7 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
 
     // Split them out to their own block.
     UnavailablePred =
-      SplitBlockPredecessors(LoadBB, PredsToSplit, "thread-pre-split", this);
+      SplitBlockPredecessors(LoadBB, PredsToSplit, "thread-pre-split");
   }
 
   // If the value isn't available in all predecessors, then there will be
@@ -1040,8 +1040,8 @@ bool JumpThreading::SimplifyPartiallyRedundantLoad(LoadInst *LI) {
     // predecessor use the same bitcast.
     Value *&PredV = I->second;
     if (PredV->getType() != LI->getType())
-      PredV = CastInst::Create(CastInst::BitCast, PredV, LI->getType(), "",
-                               P->getTerminator());
+      PredV = CastInst::CreateBitOrPointerCast(PredV, LI->getType(), "",
+                                               P->getTerminator());
 
     PN->addIncoming(PredV, I->first);
   }
@@ -1418,7 +1418,7 @@ bool JumpThreading::ThreadEdge(BasicBlock *BB,
   else {
     DEBUG(dbgs() << "  Factoring out " << PredBBs.size()
           << " common predecessors.\n");
-    PredBB = SplitBlockPredecessors(BB, PredBBs, ".thr_comm", this);
+    PredBB = SplitBlockPredecessors(BB, PredBBs, ".thr_comm");
   }
 
   // And finally, do it!
@@ -1561,7 +1561,7 @@ bool JumpThreading::DuplicateCondBranchOnPHIIntoPred(BasicBlock *BB,
   else {
     DEBUG(dbgs() << "  Factoring out " << PredBBs.size()
           << " common predecessors.\n");
-    PredBB = SplitBlockPredecessors(BB, PredBBs, ".thr_comm", this);
+    PredBB = SplitBlockPredecessors(BB, PredBBs, ".thr_comm");
   }
 
   // Okay, we decided to do this!  Clone all the instructions in BB onto the end
@@ -1575,7 +1575,7 @@ bool JumpThreading::DuplicateCondBranchOnPHIIntoPred(BasicBlock *BB,
   BranchInst *OldPredBranch = dyn_cast<BranchInst>(PredBB->getTerminator());
 
   if (!OldPredBranch || !OldPredBranch->isUnconditional()) {
-    PredBB = SplitEdge(PredBB, BB, this);
+    PredBB = SplitEdge(PredBB, BB);
     OldPredBranch = cast<BranchInst>(PredBB->getTerminator());
   }
 

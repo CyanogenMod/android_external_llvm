@@ -13,6 +13,7 @@ codegen_asmprinter_SRC_FILES := \
   DwarfCFIException.cpp \
   DwarfCompileUnit.cpp \
   DwarfDebug.cpp \
+  DwarfExpression.cpp \
   DwarfFile.cpp \
   DwarfStringPool.cpp \
   DwarfUnit.cpp \
