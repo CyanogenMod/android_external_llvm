@@ -14,11 +14,13 @@ subdirs := \
   lib/ExecutionEngine \
   lib/ExecutionEngine/RuntimeDyld \
   lib/ExecutionEngine/MCJIT \
+  lib/ExecutionEngine/Orc \
   lib/ExecutionEngine/Interpreter \
   lib/CodeGen \
   lib/CodeGen/AsmPrinter \
   lib/CodeGen/SelectionDAG \
-  lib/DebugInfo \
+  lib/DebugInfo/DWARF \
+  lib/DebugInfo/PDB \
   lib/IR \
   lib/IRReader \
   lib/Linker \

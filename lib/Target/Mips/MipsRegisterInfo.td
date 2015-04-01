@@ -289,10 +289,28 @@ def GPR32 : GPR32Class<[i32]>;
 def DSPR  : GPR32Class<[v4i8, v2i16]>;
 
 def GPRMM16 : RegisterClass<"Mips", [i32], 32, (add
-  // Return Values and Arguments
-  V0, V1, A0, A1, A2, A3,
   // Callee save
-  S0, S1)>;
+  S0, S1,
+  // Return Values and Arguments
+  V0, V1, A0, A1, A2, A3)>;
+
+def GPRMM16Zero : RegisterClass<"Mips", [i32], 32, (add
+  // Reserved
+  ZERO,
+  // Callee save
+  S1,
+  // Return Values and Arguments
+  V0, V1, A0, A1, A2, A3)>;
+
+def GPRMM16MoveP : RegisterClass<"Mips", [i32], 32, (add
+  // Reserved
+  ZERO,
+  // Callee save
+  S1,
+  // Return Values and Arguments
+  V0, V1,
+  // Callee save
+  S0, S2, S3, S4)>;
 
 def GPR64 : RegisterClass<"Mips", [i64], 64, (add
 // Reserved
@@ -380,6 +398,8 @@ def MSA128W: RegisterClass<"Mips", [v4i32, v4f32], 128,
                            (sequence "W%u", 0, 31)>;
 def MSA128D: RegisterClass<"Mips", [v2i64, v2f64], 128,
                            (sequence "W%u", 0, 31)>;
+def MSA128WEvens: RegisterClass<"Mips", [v4i32, v4f32], 128,
+                                (decimate (sequence "W%u", 0, 31), 2)>;
 
 def MSACtrl: RegisterClass<"Mips", [i32], 32, (add
   MSAIR, MSACSR, MSAAccess, MSASave, MSAModify, MSARequest, MSAMap, MSAUnmap)>;
@@ -446,6 +466,16 @@ def GPRMM16AsmOperand : MipsAsmRegOperand {
   let PredicateMethod = "isMM16AsmReg";
 }
 
+def GPRMM16AsmOperandZero : MipsAsmRegOperand {
+  let Name = "GPRMM16AsmRegZero";
+  let PredicateMethod = "isMM16AsmRegZero";
+}
+
+def GPRMM16AsmOperandMoveP : MipsAsmRegOperand {
+  let Name = "GPRMM16AsmRegMoveP";
+  let PredicateMethod = "isMM16AsmRegMoveP";
+}
+
 def ACC64DSPAsmOperand : MipsAsmRegOperand {
   let Name = "ACC64DSPAsmReg";
   let PredicateMethod = "isACCAsmReg";
@@ -503,6 +533,14 @@ def GPR32Opnd : RegisterOperand<GPR32> {
 
 def GPRMM16Opnd : RegisterOperand<GPRMM16> {
   let ParserMatchClass = GPRMM16AsmOperand;
+}
+
+def GPRMM16OpndZero : RegisterOperand<GPRMM16Zero> {
+  let ParserMatchClass = GPRMM16AsmOperandZero;
+}
+
+def GPRMM16OpndMoveP : RegisterOperand<GPRMM16MoveP> {
+  let ParserMatchClass = GPRMM16AsmOperandMoveP;
 }
 
 def GPR64Opnd : RegisterOperand<GPR64> {

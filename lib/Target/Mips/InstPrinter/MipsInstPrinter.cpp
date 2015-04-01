@@ -134,8 +134,8 @@ static void printExpr(const MCExpr *Expr, raw_ostream &OS) {
   } else if (const MipsMCExpr *ME = dyn_cast<MipsMCExpr>(Expr)) {
     ME->print(OS);
     return;
-  } else if (!(SRE = dyn_cast<MCSymbolRefExpr>(Expr)))
-    assert(false && "Unexpected MCExpr type.");
+  } else
+    SRE = cast<MCSymbolRefExpr>(Expr);
 
   MCSymbolRefExpr::VariantKind Kind = SRE->getKind();
 
@@ -233,6 +233,8 @@ printMemOperand(const MCInst *MI, int opNum, raw_ostream &O) {
     break;
   case Mips::SWM32_MM:
   case Mips::LWM32_MM:
+  case Mips::SWM16_MM:
+  case Mips::LWM16_MM:
     opNum = MI->getNumOperands() - 2;
     break;
   }
@@ -260,6 +262,11 @@ printFCCOperand(const MCInst *MI, int opNum, raw_ostream &O) {
 }
 
 void MipsInstPrinter::
+printRegisterPair(const MCInst *MI, int opNum, raw_ostream &O) {
+  printRegName(O, MI->getOperand(opNum).getReg());
+}
+
+void MipsInstPrinter::
 printSHFMask(const MCInst *MI, int opNum, raw_ostream &O) {
   llvm_unreachable("TODO");
 }
@@ -283,6 +290,7 @@ bool MipsInstPrinter::printAlias(const char *Str, const MCInst &MI,
 bool MipsInstPrinter::printAlias(const MCInst &MI, raw_ostream &OS) {
   switch (MI.getOpcode()) {
   case Mips::BEQ:
+  case Mips::BEQ_MM:
     // beq $zero, $zero, $L2 => b $L2
     // beq $r0, $zero, $L2 => beqz $r0, $L2
     return (isReg<Mips::ZERO>(MI, 0) && isReg<Mips::ZERO>(MI, 1) &&

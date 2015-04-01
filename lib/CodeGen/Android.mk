@@ -24,6 +24,7 @@ codegen_SRC_FILES := \
   ForwardControlFlowIntegrity.cpp \
   GCMetadata.cpp \
   GCMetadataPrinter.cpp \
+  GCRootLowering.cpp \
   GCStrategy.cpp \
   GlobalMerge.cpp \
   IfConversion.cpp \
@@ -95,6 +96,7 @@ codegen_SRC_FILES := \
   ScheduleDAGPrinter.cpp \
   ScoreboardHazardRecognizer.cpp \
   ShadowStackGC.cpp \
+  ShadowStackGCLowering.cpp \
   SjLjEHPrepare.cpp \
   SlotIndexes.cpp \
   SpillPlacement.cpp \
@@ -104,6 +106,7 @@ codegen_SRC_FILES := \
   StackMaps.cpp \
   StackProtector.cpp \
   StackSlotColoring.cpp \
+  StatepointExampleGC.cpp \
   TailDuplication.cpp \
   TargetFrameLoweringImpl.cpp \
   TargetInstrInfo.cpp \
@@ -114,7 +117,8 @@ codegen_SRC_FILES := \
   TargetSchedule.cpp \
   TwoAddressInstructionPass.cpp \
   UnreachableBlockElim.cpp \
-  VirtRegMap.cpp
+  VirtRegMap.cpp \
+  WinEHPrepare.cpp
 
 # For the host
 # =====================================================

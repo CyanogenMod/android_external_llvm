@@ -4,8 +4,8 @@ instrumentation_SRC_FILES := \
   AddressSanitizer.cpp \
   BoundsChecking.cpp \
   DataFlowSanitizer.cpp \
-  DebugIR.cpp \
   GCOVProfiling.cpp \
+  InstrProfiling.cpp \
   Instrumentation.cpp \
   MemorySanitizer.cpp \
   SanitizerCoverage.cpp \

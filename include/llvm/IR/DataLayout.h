@@ -53,6 +53,11 @@ enum AlignTypeEnum {
   AGGREGATE_ALIGN = 'a'
 };
 
+// FIXME: Currently the DataLayout string carries a "preferred alignment"
+// for types. As the DataLayout is module/global, this should likely be
+// sunk down to an FTTI element that is queried rather than a global
+// preference.
+
 /// \brief Layout alignment element.
 ///
 /// Stores the alignment data associated with a given alignment type (integer,
@@ -227,6 +232,8 @@ public:
   bool exceedsNaturalStackAlignment(unsigned Align) const {
     return (StackNaturalAlign != 0) && (Align > StackNaturalAlign);
   }
+
+  unsigned getStackAlignment() const { return StackNaturalAlign; }
 
   bool hasMicrosoftFastStdCallMangling() const {
     return ManglingMode == MM_WINCOFF;

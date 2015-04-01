@@ -7,7 +7,7 @@ analysis_SRC_FILES := \
   AliasDebugger.cpp \
   AliasSetTracker.cpp \
   Analysis.cpp \
-  AssumptionTracker.cpp \
+  AssumptionCache.cpp \
   BasicAliasAnalysis.cpp \
   BlockFrequencyInfo.cpp \
   BlockFrequencyInfoImpl.cpp \
@@ -24,7 +24,6 @@ analysis_SRC_FILES := \
   DependenceAnalysis.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
-  FunctionTargetTransformInfo.cpp \
   IVUsers.cpp \
   InstCount.cpp \
   InstructionSimplify.cpp \
@@ -37,9 +36,11 @@ analysis_SRC_FILES := \
   LibCallSemantics.cpp \
   Lint.cpp \
   Loads.cpp \
+  LoopAccessAnalysis.cpp \
   LoopInfo.cpp \
   LoopPass.cpp \
   MemDepPrinter.cpp \
+  MemDerefPrinter.cpp \
   MemoryBuiltins.cpp \
   MemoryDependenceAnalysis.cpp \
   ModuleDebugInfoPrinter.cpp \
@@ -56,6 +57,7 @@ analysis_SRC_FILES := \
   ScalarEvolutionNormalization.cpp \
   ScopedNoAliasAA.cpp \
   SparsePropagation.cpp \
+  TargetLibraryInfo.cpp \
   TargetTransformInfo.cpp \
   Trace.cpp \
   TypeBasedAliasAnalysis.cpp \
