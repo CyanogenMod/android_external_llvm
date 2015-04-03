@@ -84,6 +84,7 @@ subdirs += \
 # LLVM Command Line Tools
 subdirs += \
   tools/bugpoint \
+  tools/dsymutil \
   tools/llc \
   tools/lli \
   tools/lli/ChildTarget \
@@ -103,6 +104,7 @@ subdirs += \
   tools/llvm-mcmarkup \
   tools/llvm-nm \
   tools/llvm-objdump \
+  tools/llvm-pdbdump \
   tools/llvm-profdata \
   tools/llvm-readobj \
   tools/llvm-rtdyld \
