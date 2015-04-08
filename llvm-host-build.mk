@@ -58,6 +58,8 @@ endif
 
 LOCAL_IS_HOST_MODULE := true
 
+LOCAL_MULTILIB := first
+
 ###########################################################
 ## Commands for running tblgen to compile a td file
 ###########################################################
