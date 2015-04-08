@@ -129,6 +129,7 @@ void ARMSubtarget::initializeEnvironment() {
   HasV5TEOps = false;
   HasV6Ops = false;
   HasV6MOps = false;
+  HasV6KOps = false;
   HasV6T2Ops = false;
   HasV7Ops = false;
   HasV8Ops = false;
@@ -165,6 +166,7 @@ void ARMSubtarget::initializeEnvironment() {
   HasTrustZone = false;
   HasCrypto = false;
   HasCRC = false;
+  HasV8_1a = false;
   HasZeroCycleZeroing = false;
   AllowsUnalignedMem = false;
   Thumb2DSP = false;

@@ -1,8 +1,10 @@
 LOCAL_PATH := $(call my-dir)
 
 x86_codegen_TBLGEN_TABLES := \
+  X86GenAsmMatcher.inc \
   X86GenAsmWriter.inc \
   X86GenAsmWriter1.inc \
+  X86GenDisassemblerTables.inc \
   X86GenRegisterInfo.inc \
   X86GenInstrInfo.inc \
   X86GenDAGISel.inc \

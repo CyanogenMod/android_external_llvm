@@ -9,6 +9,7 @@ LLVM_ROOT_PATH := $(LOCAL_PATH)/../..
 
 lli_SRC_FILES := \
   lli.cpp \
+  OrcLazyJIT.cpp \
   RemoteMemoryManager.cpp \
   RemoteTarget.cpp \
   RemoteTargetExternal.cpp \

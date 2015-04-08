@@ -20,6 +20,7 @@ transforms_scalar_SRC_FILES := \
   LoopDeletion.cpp \
   LoopIdiomRecognize.cpp \
   LoopInstSimplify.cpp \
+  LoopInterchange.cpp \
   LoopRerollPass.cpp \
   LoopRotation.cpp \
   LoopStrengthReduce.cpp \

@@ -9,6 +9,7 @@ transforms_objcarc_SRC_FILES := \
   ObjCARC.cpp \
   ObjCARCExpand.cpp \
   ObjCARCOpts.cpp \
+  PtrState.cpp \
   ProvenanceAnalysis.cpp \
   ProvenanceAnalysisEvaluator.cpp
 

@@ -29,7 +29,6 @@ analysis_SRC_FILES := \
   InstructionSimplify.cpp \
   Interval.cpp \
   IntervalPartition.cpp \
-  JumpInstrTableInfo.cpp \
   LazyCallGraph.cpp \
   LazyValueInfo.cpp \
   LibCallAliasAnalysis.cpp \

@@ -21,7 +21,6 @@ codegen_SRC_FILES := \
   ExecutionDepsFix.cpp \
   ExpandISelPseudos.cpp \
   ExpandPostRAPseudos.cpp \
-  ForwardControlFlowIntegrity.cpp \
   GCMetadata.cpp \
   GCMetadataPrinter.cpp \
   GCRootLowering.cpp \
@@ -31,7 +30,6 @@ codegen_SRC_FILES := \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
   IntrinsicLowering.cpp \
-  JumpInstrTables.cpp \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
   LiveDebugVariables.cpp \
@@ -53,6 +51,7 @@ codegen_SRC_FILES := \
   MachineCombiner.cpp \
   MachineCopyPropagation.cpp \
   MachineCSE.cpp \
+  MachineDominanceFrontier.cpp \
   MachineDominators.cpp \
   MachineFunctionAnalysis.cpp \
   MachineFunction.cpp \
@@ -66,6 +65,7 @@ codegen_SRC_FILES := \
   MachineModuleInfoImpls.cpp \
   MachinePassRegistry.cpp \
   MachinePostDominators.cpp \
+  MachineRegionInfo.cpp \
   MachineRegisterInfo.cpp \
   MachineScheduler.cpp \
   MachineSink.cpp \
