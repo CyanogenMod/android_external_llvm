@@ -58,7 +58,11 @@ endif
 
 LOCAL_IS_HOST_MODULE := true
 
+ifeq ($(HOST_PREFER_32_BIT),true)
+LOCAL_MULTILIB := 32
+else
 LOCAL_MULTILIB := first
+endif
 
 ###########################################################
 ## Commands for running tblgen to compile a td file
