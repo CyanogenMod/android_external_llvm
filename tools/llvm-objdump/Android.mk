@@ -42,8 +42,8 @@ llvm_objdump_STATIC_LIBRARIES := \
   libLLVMAsmPrinter \
   libLLVMCodeGen \
   libLLVMTransformUtils \
-  libLLVMAnalysis \
   libLLVMTarget \
+  libLLVMAnalysis \
   libLLVMObject \
   libLLVMMCParser \
   libLLVMMC \

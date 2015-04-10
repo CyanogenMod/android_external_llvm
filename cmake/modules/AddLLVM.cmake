@@ -338,10 +338,10 @@ function(llvm_add_library name)
         PREFIX ""
         )
     endif()
-    
+
     set_target_properties(${name}
       PROPERTIES
-      SOVERSION ${LLVM_VERSION_MAJOR}
+      SOVERSION ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}
       VERSION ${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}.${LLVM_VERSION_PATCH}${LLVM_VERSION_SUFFIX})
   endif()
 
@@ -489,6 +489,12 @@ macro(add_llvm_executable name)
     add_dependencies( ${name} ${LLVM_COMMON_DEPENDS} )
   endif( LLVM_COMMON_DEPENDS )
 endmacro(add_llvm_executable name)
+
+function(export_executable_symbols target)
+  if (NOT MSVC) # MSVC's linker doesn't support exporting all symbols.
+    set_target_properties(${target} PROPERTIES ENABLE_EXPORTS 1)
+  endif()
+endfunction()
 
 
 set (LLVM_TOOLCHAIN_TOOLS
@@ -779,4 +785,26 @@ function(add_lit_testsuite target comment)
     DEPENDS ${ARG_DEPENDS}
     ARGS ${ARG_ARGS}
     )
+endfunction()
+
+function(add_lit_testsuites project directory)
+  if (NOT CMAKE_CONFIGURATION_TYPES)
+    parse_arguments(ARG "PARAMS;DEPENDS;ARGS" "" ${ARGN})
+    file(GLOB_RECURSE litCfg ${directory}/lit*.cfg)
+    foreach(f ${litCfg})
+      get_filename_component(dir ${f} DIRECTORY)
+      string(REPLACE ${directory} "" name_slash ${dir})
+      if (name_slash)
+        string(REPLACE "/" "-" name_slash ${name_slash})
+        string(REPLACE "\\" "-" name_dashes ${name_slash})
+        string(TOLOWER "${project}${name_dashes}" name_var)
+        add_lit_target("check-${name_var}" "Running lit suite ${dir}"
+          ${dir}
+          PARAMS ${ARG_PARAMS}
+          DEPENDS ${ARG_DEPENDS}
+          ARGS ${ARG_ARGS}
+        )
+      endif()
+    endforeach()
+  endif()
 endfunction()

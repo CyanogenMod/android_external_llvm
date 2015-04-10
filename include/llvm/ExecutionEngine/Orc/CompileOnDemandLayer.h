@@ -142,9 +142,8 @@ public:
   typedef std::function<uint64_t(const std::string &)> LookupFtor;
 
   /// @brief Construct a compile-on-demand layer instance.
-  CompileOnDemandLayer(BaseLayerT &BaseLayer, LLVMContext &Context)
-    : BaseLayer(BaseLayer),
-      CompileCallbackMgr(BaseLayer, Context, 0, 64) {}
+  CompileOnDemandLayer(BaseLayerT &BaseLayer, CompileCallbackMgrT &CallbackMgr)
+      : BaseLayer(BaseLayer), CompileCallbackMgr(CallbackMgr) {}
 
   /// @brief Add a module to the compile-on-demand layer.
   template <typename ModuleSetT>
@@ -194,8 +193,8 @@ public:
   ///        below this one.
   JITSymbol findSymbolIn(ModuleSetHandleT H, const std::string &Name,
                          bool ExportedSymbolsOnly) {
-    BaseLayerModuleSetHandleListT &BaseLayerHandles = H->second;
-    for (auto &BH : BaseLayerHandles) {
+
+    for (auto &BH : H->BaseLayerModuleSetHandles) {
       if (auto Symbol = BaseLayer.findSymbolIn(BH, Name, ExportedSymbolsOnly))
         return Symbol;
     }
@@ -274,7 +273,7 @@ private:
       // Set the compile actions for this module:
       for (auto &KVPair : NewStubInfos) {
         std::string BodyName = Mangle(KVPair->first + BodySuffix,
-                                      *M.getDataLayout());
+                                      M.getDataLayout());
         auto &CCInfo = KVPair->second;
         CCInfo.setCompileAction(
           [=](){
@@ -291,10 +290,10 @@ private:
 
     for (auto &KVPair : StubInfos) {
       std::string AddrName = Mangle(KVPair.first + AddrSuffix,
-                                    *M.getDataLayout());
+                                    M.getDataLayout());
       auto &CCInfo = KVPair.second;
       CCInfo.setUpdateAction(
-        CompileCallbackMgr.getLocalFPUpdater(StubsH, AddrName));
+        getLocalFPUpdater(BaseLayer, StubsH, AddrName));
     }
   }
 
@@ -345,7 +344,7 @@ private:
   }
 
   BaseLayerT &BaseLayer;
-  CompileCallbackMgrT CompileCallbackMgr;
+  CompileCallbackMgrT &CompileCallbackMgr;
   ModuleSetInfoListT ModuleSetInfos;
 };
 

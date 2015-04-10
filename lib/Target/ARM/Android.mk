@@ -4,6 +4,7 @@ arm_codegen_TBLGEN_TABLES := \
   ARMGenRegisterInfo.inc \
   ARMGenInstrInfo.inc \
   ARMGenCodeEmitter.inc \
+  ARMGenCodeEmitter.inc \
   ARMGenMCCodeEmitter.inc \
   ARMGenMCPseudoLowering.inc \
   ARMGenAsmWriter.inc \
@@ -41,10 +42,9 @@ arm_codegen_SRC_FILES := \
   MLxExpansionPass.cpp \
   Thumb1FrameLowering.cpp \
   Thumb1InstrInfo.cpp \
-  Thumb1RegisterInfo.cpp \
+  ThumbRegisterInfo.cpp \
   Thumb2ITBlockPass.cpp \
   Thumb2InstrInfo.cpp \
-  Thumb2RegisterInfo.cpp \
   Thumb2SizeReduction.cpp
 
 # For the host

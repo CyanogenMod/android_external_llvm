@@ -38,8 +38,8 @@ llvm_mc_STATIC_LIBRARIES := \
   libLLVMAsmPrinter \
   libLLVMCodeGen \
   libLLVMTransformUtils \
-  libLLVMAnalysis \
   libLLVMTarget \
+  libLLVMAnalysis \
   libLLVMMC \
   libLLVMObject \
   libLLVMBitReader \

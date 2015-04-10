@@ -201,9 +201,13 @@ SubtargetFeatures::ToggleFeature(uint64_t Bits, StringRef Feature,
       SetImpliedBits(Bits, FeatureEntry, FeatureTable);
     }
   } else {
-    errs() << "'" << Feature
-           << "' is not a recognized feature for this target"
-           << " (ignoring feature)\n";
+    // Bug: 20140355
+    // Silence this warning for now
+    if (false) {
+      errs() << "'" << Feature
+             << "' is not a recognized feature for this target"
+             << " (ignoring feature)\n";
+    }
   }
 
   return Bits;
@@ -281,9 +285,13 @@ SubtargetFeatures::getFeatureBits(StringRef CPU,
         ClearImpliedBits(Bits, FeatureEntry, FeatureTable);
       }
     } else {
-      errs() << "'" << Feature
-             << "' is not a recognized feature for this target"
-             << " (ignoring feature)\n";
+      // Bug: 20140355
+      // Silence this warning for now
+      if (false) {
+        errs() << "'" << Feature
+               << "' is not a recognized feature for this target"
+               << " (ignoring feature)\n";
+      }
     }
   }
 
