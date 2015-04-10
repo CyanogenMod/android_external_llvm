@@ -140,6 +140,13 @@ Pass *createLICMPass();
 
 //===----------------------------------------------------------------------===//
 //
+// LoopInterchange - This pass interchanges loops to provide a more
+// cache-friendly memory access patterns.
+//
+Pass *createLoopInterchangePass();
+
+//===----------------------------------------------------------------------===//
+//
 // LoopStrengthReduce - This pass is strength reduces GEP instructions that use
 // a loop's canonical induction variable as one of their indices.
 //
@@ -421,7 +428,6 @@ createSeparateConstOffsetFromGEPPass(const TargetMachine *TM = nullptr,
 BasicBlockPass *createLoadCombinePass();
 
 FunctionPass *createStraightLineStrengthReducePass();
-
 
 //===----------------------------------------------------------------------===//
 //

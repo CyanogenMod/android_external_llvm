@@ -12,7 +12,6 @@ llvm_opt_SRC_FILES := \
   BreakpointPrinter.cpp \
   GraphPrinters.cpp \
   NewPMDriver.cpp \
-  Passes.cpp \
   PassPrinters.cpp \
   PrintSCC.cpp \
   opt.cpp \
@@ -51,6 +50,7 @@ llvm_opt_STATIC_LIBRARIES := \
   libLLVMVectorize \
   libLLVMScalarOpts \
   libLLVMTransformUtils \
+  libLLVMPasses \
   libLLVMAnalysis \
   libLLVMipo \
   libLLVMipa \

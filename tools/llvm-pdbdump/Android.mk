@@ -4,10 +4,13 @@ LLVM_ROOT_PATH := $(LOCAL_PATH)/../..
 include $(LLVM_ROOT_PATH)/llvm.mk
 
 llvm_pdbdump_SRC_FILES := \
+  llvm-pdbdump.cpp \
+  BuiltinDumper.cpp \
   ClassDefinitionDumper.cpp \
   CompilandDumper.cpp \
+  EnumDumper.cpp \
   FunctionDumper.cpp \
-  llvm-pdbdump.cpp \
+  LinePrinter.cpp \
   TypedefDumper.cpp \
   TypeDumper.cpp \
   VariableDumper.cpp

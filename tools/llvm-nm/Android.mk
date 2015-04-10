@@ -39,8 +39,8 @@ llvm_nm_STATIC_LIBRARIES := \
   libLLVMX86Disassembler \
   libLLVMCodeGen \
   libLLVMTransformUtils \
-  libLLVMAnalysis \
   libLLVMTarget \
+  libLLVMAnalysis \
   libLLVMObject             \
   libLLVMBitReader          \
   libLLVMMC                 \

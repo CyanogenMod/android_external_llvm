@@ -11,13 +11,48 @@ llvm_dsymutil_SRC_FILES := \
   MachODebugMapParser.cpp
 
 llvm_dsymutil_STATIC_LIBRARIES := \
+  libLLVMARMCodeGen \
+  libLLVMARMAsmParser \
+  libLLVMARMInfo \
+  libLLVMARMDesc \
+  libLLVMARMAsmPrinter \
+  libLLVMARMDisassembler \
+  libLLVMAArch64CodeGen \
+  libLLVMAArch64Info \
+  libLLVMAArch64AsmParser \
+  libLLVMAArch64Desc \
+  libLLVMAArch64AsmPrinter \
+  libLLVMAArch64Utils \
+  libLLVMAArch64Disassembler \
+  libLLVMMipsCodeGen \
+  libLLVMMipsInfo \
+  libLLVMMipsAsmParser \
+  libLLVMMipsDesc \
+  libLLVMMipsAsmPrinter \
+  libLLVMMipsDisassembler \
+  libLLVMX86CodeGen \
+  libLLVMX86Info \
+  libLLVMX86Desc \
+  libLLVMX86AsmParser \
+  libLLVMX86AsmPrinter \
+  libLLVMX86Utils \
+  libLLVMX86Disassembler \
+  libLLVMX86CodeGen \
+  libLLVMAsmPrinter \
+  libLLVMSelectionDAG \
+  libLLVMCodeGen \
   libLLVMDebugInfoDWARF \
-  libLLVMObject \
   libLLVMMCParser \
-  libLLVMMC \
+  libLLVMMCDisassembler \
+  libLLVMObject \
   libLLVMBitReader \
+  libLLVMScalarOpts \
+  libLLVMTransformUtils \
+  libLLVMAnalysis \
+  libLLVMTarget \
   libLLVMCore \
-  libLLVMSupport
+  libLLVMMC \
+  libLLVMSupport \
 
 include $(CLEAR_VARS)
 

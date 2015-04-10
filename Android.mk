@@ -30,6 +30,7 @@ subdirs := \
   lib/MC/MCParser \
   lib/Object \
   lib/Option \
+  lib/Passes \
   lib/ProfileData \
   lib/Support \
   lib/TableGen \
@@ -94,6 +95,7 @@ subdirs += \
   tools/llvm-c-test \
   tools/llvm-config \
   tools/llvm-cov \
+  tools/llvm-cxxdump \
   tools/llvm-dis \
   tools/llvm-diff \
   tools/llvm-dwarfdump \
@@ -110,7 +112,6 @@ subdirs += \
   tools/llvm-rtdyld \
   tools/llvm-size \
   tools/llvm-symbolizer \
-  tools/llvm-vtabledump \
   tools/macho-dump \
   tools/obj2yaml \
   tools/opt \
