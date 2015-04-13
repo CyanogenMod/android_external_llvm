@@ -4,7 +4,6 @@ arm_codegen_TBLGEN_TABLES := \
   ARMGenRegisterInfo.inc \
   ARMGenInstrInfo.inc \
   ARMGenCodeEmitter.inc \
-  ARMGenCodeEmitter.inc \
   ARMGenMCCodeEmitter.inc \
   ARMGenMCPseudoLowering.inc \
   ARMGenAsmWriter.inc \
