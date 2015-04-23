@@ -85,6 +85,7 @@ subdirs += \
 # LLVM Command Line Tools
 subdirs += \
   tools/bugpoint \
+  tools/bugpoint-passes \
   tools/dsymutil \
   tools/llc \
   tools/lli \
