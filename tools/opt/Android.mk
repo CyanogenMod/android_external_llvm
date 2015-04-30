@@ -49,7 +49,6 @@ llvm_opt_STATIC_LIBRARIES := \
   libLLVMTransformObjCARC \
   libLLVMVectorize \
   libLLVMScalarOpts \
-  libLLVMTransformUtils \
   libLLVMPasses \
   libLLVMAnalysis \
   libLLVMipo \
@@ -77,6 +76,7 @@ LOCAL_IS_HOST_MODULE := true
 LOCAL_SRC_FILES := $(llvm_opt_SRC_FILES)
 LOCAL_STATIC_LIBRARIES := $(llvm_opt_STATIC_LIBRARIES)
 LOCAL_LDLIBS += -lpthread -lm -ldl
+LOCAL_LDFLAGS += -Wl,--export-dynamic
 
 include $(LLVM_ROOT_PATH)/llvm.mk
 include $(LLVM_HOST_BUILD_MK)

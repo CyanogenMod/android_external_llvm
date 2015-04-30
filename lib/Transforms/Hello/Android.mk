@@ -13,11 +13,6 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := $(transforms_hello_SRC_FILES)
 LOCAL_MODULE:= LLVMHello
 
-#LOCAL_SHARED_LIBRARIES := libLLVM
-LOCAL_STATIC_LIBRARIES := \
-  libLLVMCore \
-  libLLVMSupport
-
 LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_HOST_BUILD_MK)
