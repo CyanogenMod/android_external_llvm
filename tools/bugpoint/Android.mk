@@ -52,6 +52,7 @@ LOCAL_SRC_FILES := $(bugpoint_SRC_FILES)
 LOCAL_STATIC_LIBRARIES := $(bugpoint_STATIC_LIBRARIES)
 
 LOCAL_LDLIBS += -lpthread -lm -ldl
+LOCAL_LDFLAGS += -Wl,--export-dynamic
 
 include $(LLVM_ROOT_PATH)/llvm.mk
 include $(LLVM_HOST_BUILD_MK)
