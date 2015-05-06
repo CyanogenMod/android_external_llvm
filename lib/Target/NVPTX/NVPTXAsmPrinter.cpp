@@ -118,7 +118,7 @@ void NVPTXAsmPrinter::emitLineNumberAsDotLoc(const MachineInstr &MI) {
 
   DebugLoc curLoc = MI.getDebugLoc();
 
-  if (prevDebugLoc.isUnknown() && curLoc.isUnknown())
+  if (!prevDebugLoc && !curLoc)
     return;
 
   if (prevDebugLoc == curLoc)
@@ -126,39 +126,32 @@ void NVPTXAsmPrinter::emitLineNumberAsDotLoc(const MachineInstr &MI) {
 
   prevDebugLoc = curLoc;
 
-  if (curLoc.isUnknown())
+  if (!curLoc)
     return;
 
-  const MachineFunction *MF = MI.getParent()->getParent();
-  //const TargetMachine &TM = MF->getTarget();
-
-  const LLVMContext &ctx = MF->getFunction()->getContext();
-  DIScope Scope(curLoc.getScope(ctx));
-
-  assert((!Scope || Scope.isScope()) &&
-    "Scope of a DebugLoc should be null or a DIScope.");
+  auto *Scope = cast_or_null<MDScope>(curLoc.getScope());
   if (!Scope)
      return;
 
-  StringRef fileName(Scope.getFilename());
-  StringRef dirName(Scope.getDirectory());
+  StringRef fileName(Scope->getFilename());
+  StringRef dirName(Scope->getDirectory());
   SmallString<128> FullPathName = dirName;
   if (!dirName.empty() && !sys::path::is_absolute(fileName)) {
     sys::path::append(FullPathName, fileName);
-    fileName = FullPathName.str();
+    fileName = FullPathName;
   }
 
-  if (filenameMap.find(fileName.str()) == filenameMap.end())
+  if (filenameMap.find(fileName) == filenameMap.end())
     return;
 
   // Emit the line from the source file.
   if (InterleaveSrc)
-    this->emitSrcInText(fileName.str(), curLoc.getLine());
+    this->emitSrcInText(fileName, curLoc.getLine());
 
   std::stringstream temp;
-  temp << "\t.loc " << filenameMap[fileName.str()] << " " << curLoc.getLine()
+  temp << "\t.loc " << filenameMap[fileName] << " " << curLoc.getLine()
        << " " << curLoc.getCol();
-  OutStreamer.EmitRawText(Twine(temp.str().c_str()));
+  OutStreamer.EmitRawText(temp.str());
 }
 
 void NVPTXAsmPrinter::EmitInstruction(const MachineInstr *MI) {
@@ -641,7 +634,7 @@ static bool usedInGlobalVarDef(const Constant *C) {
     return false;
 
   if (const GlobalVariable *GV = dyn_cast<GlobalVariable>(C)) {
-    if (GV->getName().str() == "llvm.used")
+    if (GV->getName() == "llvm.used")
       return false;
     return true;
   }
@@ -656,7 +649,7 @@ static bool usedInGlobalVarDef(const Constant *C) {
 
 static bool usedInOneFunc(const User *U, Function const *&oneFunc) {
   if (const GlobalVariable *othergv = dyn_cast<GlobalVariable>(U)) {
-    if (othergv->getName().str() == "llvm.used")
+    if (othergv->getName() == "llvm.used")
       return true;
   }
 
@@ -780,32 +773,32 @@ void NVPTXAsmPrinter::recordAndEmitFilenames(Module &M) {
   DbgFinder.processModule(M);
 
   unsigned i = 1;
-  for (DICompileUnit DIUnit : DbgFinder.compile_units()) {
-    StringRef Filename(DIUnit.getFilename());
-    StringRef Dirname(DIUnit.getDirectory());
+  for (const MDCompileUnit *DIUnit : DbgFinder.compile_units()) {
+    StringRef Filename = DIUnit->getFilename();
+    StringRef Dirname = DIUnit->getDirectory();
     SmallString<128> FullPathName = Dirname;
     if (!Dirname.empty() && !sys::path::is_absolute(Filename)) {
       sys::path::append(FullPathName, Filename);
-      Filename = FullPathName.str();
+      Filename = FullPathName;
     }
-    if (filenameMap.find(Filename.str()) != filenameMap.end())
+    if (filenameMap.find(Filename) != filenameMap.end())
       continue;
-    filenameMap[Filename.str()] = i;
-    OutStreamer.EmitDwarfFileDirective(i, "", Filename.str());
+    filenameMap[Filename] = i;
+    OutStreamer.EmitDwarfFileDirective(i, "", Filename);
     ++i;
   }
 
-  for (DISubprogram SP : DbgFinder.subprograms()) {
-    StringRef Filename(SP.getFilename());
-    StringRef Dirname(SP.getDirectory());
+  for (MDSubprogram *SP : DbgFinder.subprograms()) {
+    StringRef Filename = SP->getFilename();
+    StringRef Dirname = SP->getDirectory();
     SmallString<128> FullPathName = Dirname;
     if (!Dirname.empty() && !sys::path::is_absolute(Filename)) {
       sys::path::append(FullPathName, Filename);
-      Filename = FullPathName.str();
+      Filename = FullPathName;
     }
-    if (filenameMap.find(Filename.str()) != filenameMap.end())
+    if (filenameMap.find(Filename) != filenameMap.end())
       continue;
-    filenameMap[Filename.str()] = i;
+    filenameMap[Filename] = i;
     ++i;
   }
 }
@@ -1011,7 +1004,7 @@ void NVPTXAsmPrinter::emitLinkageDirective(const GlobalValue *V,
       msg.append("Error: ");
       msg.append("Symbol ");
       if (V->hasName())
-        msg.append(V->getName().str());
+        msg.append(V->getName());
       msg.append("has unsupported appending linkage type");
       llvm_unreachable(msg.c_str());
     } else if (!V->hasInternalLinkage() &&
@@ -1147,7 +1140,7 @@ void NVPTXAsmPrinter::printModuleLevelGV(const GlobalVariable *GVar,
 
   const Function *demotedFunc = nullptr;
   if (!processDemoted && canDemoteGlobalVar(GVar, demotedFunc)) {
-    O << "// " << GVar->getName().str() << " has been demoted\n";
+    O << "// " << GVar->getName() << " has been demoted\n";
     if (localDecls.find(demotedFunc) != localDecls.end())
       localDecls[demotedFunc].push_back(GVar);
     else {
@@ -1195,9 +1188,10 @@ void NVPTXAsmPrinter::printModuleLevelGV(const GlobalVariable *GVar,
         // The frontend adds zero-initializer to variables that don't have an
         // initial value, so skip warning for this case.
         if (!GVar->getInitializer()->isNullValue()) {
-          std::string warnMsg = "initial value of '" + GVar->getName().str() +
-              "' is not allowed in addrspace(" +
-              llvm::utostr_32(PTy->getAddressSpace()) + ")";
+          std::string warnMsg =
+              ("initial value of '" + GVar->getName() +
+               "' is not allowed in addrspace(" +
+               Twine(llvm::utostr_32(PTy->getAddressSpace())) + ")").str();
           report_fatal_error(warnMsg.c_str());
         }
       }
@@ -1771,12 +1765,11 @@ void NVPTXAsmPrinter::bufferLEByte(const Constant *CPV, int Bytes,
   case Type::IntegerTyID: {
     const Type *ETy = CPV->getType();
     if (ETy == Type::getInt8Ty(CPV->getContext())) {
-      unsigned char c =
-          (unsigned char)(dyn_cast<ConstantInt>(CPV))->getZExtValue();
+      unsigned char c = (unsigned char)cast<ConstantInt>(CPV)->getZExtValue();
       ptr = &c;
       aggBuffer->addBytes(ptr, 1, Bytes);
     } else if (ETy == Type::getInt16Ty(CPV->getContext())) {
-      short int16 = (short)(dyn_cast<ConstantInt>(CPV))->getZExtValue();
+      short int16 = (short)cast<ConstantInt>(CPV)->getZExtValue();
       ptr = (unsigned char *)&int16;
       aggBuffer->addBytes(ptr, 2, Bytes);
     } else if (ETy == Type::getInt32Ty(CPV->getContext())) {
@@ -2086,7 +2079,7 @@ void NVPTXAsmPrinter::printMemOperand(const MachineInstr *MI, int opNum,
 
 void NVPTXAsmPrinter::emitSrcInText(StringRef filename, unsigned line) {
   std::stringstream temp;
-  LineReader *reader = this->getReader(filename.str());
+  LineReader *reader = this->getReader(filename);
   temp << "\n//";
   temp << filename.str();
   temp << ":";
@@ -2094,7 +2087,7 @@ void NVPTXAsmPrinter::emitSrcInText(StringRef filename, unsigned line) {
   temp << " ";
   temp << reader->readLine(line);
   temp << "\n";
-  this->OutStreamer.EmitRawText(Twine(temp.str()));
+  this->OutStreamer.EmitRawText(temp.str());
 }
 
 LineReader *NVPTXAsmPrinter::getReader(std::string filename) {
