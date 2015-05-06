@@ -11,6 +11,7 @@ transforms_scalar_SRC_FILES := \
   DeadStoreElimination.cpp \
   EarlyCSE.cpp \
   FlattenCFGPass.cpp \
+  Float2Int.cpp \
   GVN.cpp \
   IndVarSimplify.cpp \
   InductiveRangeCheckElimination.cpp \
@@ -30,6 +31,7 @@ transforms_scalar_SRC_FILES := \
   LowerExpectIntrinsic.cpp \
   MemCpyOptimizer.cpp \
   MergedLoadStoreMotion.cpp \
+  NaryReassociate.cpp \
   PartiallyInlineLibCalls.cpp \
   PlaceSafepoints.cpp \
   Reassociate.cpp \

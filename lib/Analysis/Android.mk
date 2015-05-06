@@ -22,6 +22,7 @@ analysis_SRC_FILES := \
   CostModel.cpp \
   Delinearization.cpp \
   DependenceAnalysis.cpp \
+  DivergenceAnalysis.cpp \
   DomPrinter.cpp \
   DominanceFrontier.cpp \
   IVUsers.cpp \
