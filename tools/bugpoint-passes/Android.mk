@@ -15,6 +15,9 @@ LOCAL_MODULE := BugpointPasses
 
 LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES # needed for tblgen
+ifeq ($(HOST_OS),darwin)
+LOCAL_LDFLAGS := -Wl,-undefined -Wl,dynamic_lookup
+endif
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
