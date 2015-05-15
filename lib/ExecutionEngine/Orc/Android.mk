@@ -6,6 +6,7 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := \
   CloneSubModule.cpp \
+  ExecutionUtils.cpp \
   IndirectionUtils.cpp \
   OrcMCJITReplacement.cpp \
   OrcTargetSupport.cpp

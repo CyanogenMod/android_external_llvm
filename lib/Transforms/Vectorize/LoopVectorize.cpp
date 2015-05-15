@@ -93,6 +93,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Local.h"
 #include "llvm/Transforms/Utils/VectorUtils.h"
+#include "llvm/Transforms/Utils/LoopUtils.h"
 #include <algorithm>
 #include <map>
 #include <tuple>
@@ -503,8 +504,7 @@ static std::string getDebugLocString(const Loop *L) {
   std::string Result;
   if (L) {
     raw_string_ostream OS(Result);
-    const DebugLoc LoopDbgLoc = L->getStartLoc();
-    if (!LoopDbgLoc.isUnknown())
+    if (const DebugLoc LoopDbgLoc = L->getStartLoc())
       LoopDbgLoc.print(OS);
     else
       // Just print the module name.
@@ -686,7 +686,7 @@ public:
           Index = B.CreateNeg(Index);
         else if (!StepValue->isOne())
           Index = B.CreateMul(Index, StepValue);
-        return B.CreateGEP(StartValue, Index);
+        return B.CreateGEP(nullptr, StartValue, Index);
 
       case IK_NoInduction:
         return nullptr;
@@ -1839,7 +1839,8 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr) {
     
     for (unsigned Part = 0; Part < UF; ++Part) {
       // Calculate the pointer for the specific unroll-part.
-      Value *PartPtr = Builder.CreateGEP(Ptr, Builder.getInt32(Part * VF));
+      Value *PartPtr =
+          Builder.CreateGEP(nullptr, Ptr, Builder.getInt32(Part * VF));
 
       if (Reverse) {
         // If we store to reverse consecutive memory locations then we need
@@ -1847,8 +1848,8 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr) {
         StoredVal[Part] = reverseVector(StoredVal[Part]);
         // If the address is consecutive but reversed, then the
         // wide store needs to start at the last vector element.
-        PartPtr = Builder.CreateGEP(Ptr, Builder.getInt32(-Part * VF));
-        PartPtr = Builder.CreateGEP(PartPtr, Builder.getInt32(1 - VF));
+        PartPtr = Builder.CreateGEP(nullptr, Ptr, Builder.getInt32(-Part * VF));
+        PartPtr = Builder.CreateGEP(nullptr, PartPtr, Builder.getInt32(1 - VF));
         Mask[Part] = reverseVector(Mask[Part]);
       }
 
@@ -1871,13 +1872,14 @@ void InnerLoopVectorizer::vectorizeMemoryInstruction(Instruction *Instr) {
   setDebugLocFromInst(Builder, LI);
   for (unsigned Part = 0; Part < UF; ++Part) {
     // Calculate the pointer for the specific unroll-part.
-    Value *PartPtr = Builder.CreateGEP(Ptr, Builder.getInt32(Part * VF));
+    Value *PartPtr =
+        Builder.CreateGEP(nullptr, Ptr, Builder.getInt32(Part * VF));
 
     if (Reverse) {
       // If the address is consecutive but reversed, then the
       // wide load needs to start at the last vector element.
-      PartPtr = Builder.CreateGEP(Ptr, Builder.getInt32(-Part * VF));
-      PartPtr = Builder.CreateGEP(PartPtr, Builder.getInt32(1 - VF));
+      PartPtr = Builder.CreateGEP(nullptr, Ptr, Builder.getInt32(-Part * VF));
+      PartPtr = Builder.CreateGEP(nullptr, PartPtr, Builder.getInt32(1 - VF));
       Mask[Part] = reverseVector(Mask[Part]);
     }
 
@@ -4007,6 +4009,14 @@ bool LoopVectorizationLegality::canVectorizeMemory() {
   if (!LAI->canVectorizeMemory())
     return false;
 
+  if (LAI->hasStoreToLoopInvariantAddress()) {
+    emitAnalysis(
+        VectorizationReport()
+        << "write to a loop invariant address could not be vectorized");
+    DEBUG(dbgs() << "LV: We don't allow storing to uniform addresses\n");
+    return false;
+  }
+
   if (LAI->getNumRuntimePointerChecks() >
       VectorizerParams::RuntimeMemoryCheckThreshold) {
     emitAnalysis(VectorizationReport()
@@ -4307,32 +4317,31 @@ LoopVectorizationLegality::isReductionInstr(Instruction *I,
   }
 }
 
-LoopVectorizationLegality::InductionKind
-LoopVectorizationLegality::isInductionVariable(PHINode *Phi,
-                                               ConstantInt *&StepValue) {
+bool llvm::isInductionPHI(PHINode *Phi, ScalarEvolution *SE,
+                          ConstantInt *&StepValue) {
   Type *PhiTy = Phi->getType();
   // We only handle integer and pointer inductions variables.
   if (!PhiTy->isIntegerTy() && !PhiTy->isPointerTy())
-    return IK_NoInduction;
+    return false;
 
   // Check that the PHI is consecutive.
   const SCEV *PhiScev = SE->getSCEV(Phi);
   const SCEVAddRecExpr *AR = dyn_cast<SCEVAddRecExpr>(PhiScev);
   if (!AR) {
     DEBUG(dbgs() << "LV: PHI is not a poly recurrence.\n");
-    return IK_NoInduction;
+    return false;
   }
 
   const SCEV *Step = AR->getStepRecurrence(*SE);
   // Calculate the pointer stride and check if it is consecutive.
   const SCEVConstant *C = dyn_cast<SCEVConstant>(Step);
   if (!C)
-    return IK_NoInduction;
+    return false;
 
   ConstantInt *CV = C->getValue();
   if (PhiTy->isIntegerTy()) {
     StepValue = CV;
-    return IK_IntInduction;
+    return true;
   }
 
   assert(PhiTy->isPointerTy() && "The PHI must be a pointer");
@@ -4340,14 +4349,28 @@ LoopVectorizationLegality::isInductionVariable(PHINode *Phi,
   // The pointer stride cannot be determined if the pointer element type is not
   // sized.
   if (!PointerElementType->isSized())
-    return IK_NoInduction;
+    return false;
 
   const DataLayout &DL = Phi->getModule()->getDataLayout();
   int64_t Size = static_cast<int64_t>(DL.getTypeAllocSize(PointerElementType));
   int64_t CVSize = CV->getSExtValue();
   if (CVSize % Size)
-    return IK_NoInduction;
+    return false;
   StepValue = ConstantInt::getSigned(CV->getType(), CVSize / Size);
+  return true;
+}
+
+LoopVectorizationLegality::InductionKind
+LoopVectorizationLegality::isInductionVariable(PHINode *Phi,
+                                               ConstantInt *&StepValue) {
+  if (!isInductionPHI(Phi, SE, StepValue))
+    return IK_NoInduction;
+
+  Type *PhiTy = Phi->getType();
+  // Found an Integer induction variable.
+  if (PhiTy->isIntegerTy())
+    return IK_IntInduction;
+  // Found an Pointer induction variable.
   return IK_PtrInduction;
 }
 

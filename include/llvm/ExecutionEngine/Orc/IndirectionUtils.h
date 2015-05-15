@@ -16,6 +16,7 @@
 
 #include "JITSymbol.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ExecutionEngine/RuntimeDyld.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Mangler.h"
 #include "llvm/IR/Module.h"
@@ -37,11 +38,11 @@ public:
   ///        the compile and update actions for the callback.
   class CompileCallbackInfo {
   public:
-    CompileCallbackInfo(Constant *Addr, CompileFtor &Compile,
+    CompileCallbackInfo(TargetAddress Addr, CompileFtor &Compile,
                         UpdateFtor &Update)
       : Addr(Addr), Compile(Compile), Update(Update) {}
 
-    Constant* getAddress() const { return Addr; }
+    TargetAddress getAddress() const { return Addr; }
     void setCompileAction(CompileFtor Compile) {
       this->Compile = std::move(Compile);
     }
@@ -49,7 +50,7 @@ public:
       this->Update = std::move(Update);
     }
   private:
-    Constant *Addr;
+    TargetAddress Addr;
     CompileFtor &Compile;
     UpdateFtor &Update;
   };
@@ -94,7 +95,7 @@ public:
   }
 
   /// @brief Get/create a compile callback with the given signature.
-  virtual CompileCallbackInfo getCompileCallback(FunctionType &FT) = 0;
+  virtual CompileCallbackInfo getCompileCallback(LLVMContext &Context) = 0;
 
 protected:
 
@@ -125,27 +126,23 @@ public:
   ///                               there is no existing callback trampoline.
   ///                               (Trampolines are allocated in blocks for
   ///                               efficiency.)
-  JITCompileCallbackManager(JITLayerT &JIT, LLVMContext &Context,
+  JITCompileCallbackManager(JITLayerT &JIT, RuntimeDyld::MemoryManager &MemMgr,
+                            LLVMContext &Context,
                             TargetAddress ErrorHandlerAddress,
                             unsigned NumTrampolinesPerBlock)
     : JITCompileCallbackManagerBase(ErrorHandlerAddress,
                                     NumTrampolinesPerBlock),
-      JIT(JIT) {
+      JIT(JIT), MemMgr(MemMgr) {
     emitResolverBlock(Context);
   }
 
   /// @brief Get/create a compile callback with the given signature.
-  CompileCallbackInfo getCompileCallback(FunctionType &FT) final {
-    TargetAddress TrampolineAddr = getAvailableTrampolineAddr(FT.getContext());
+  CompileCallbackInfo getCompileCallback(LLVMContext &Context) final {
+    TargetAddress TrampolineAddr = getAvailableTrampolineAddr(Context);
     auto &CallbackHandler =
       this->ActiveTrampolines[TrampolineAddr];
-    Constant *AddrIntVal =
-      ConstantInt::get(Type::getInt64Ty(FT.getContext()), TrampolineAddr);
-    Constant *AddrPtrVal =
-      ConstantExpr::getCast(Instruction::IntToPtr, AddrIntVal,
-                            PointerType::get(&FT, 0));
 
-    return CompileCallbackInfo(AddrPtrVal, CallbackHandler.Compile,
+    return CompileCallbackInfo(TrampolineAddr, CallbackHandler.Compile,
                                CallbackHandler.Update);
   }
 
@@ -162,7 +159,9 @@ private:
     std::unique_ptr<Module> M(new Module("resolver_block_module",
                                          Context));
     TargetT::insertResolverBlock(*M, *this);
-    auto H = JIT.addModuleSet(SingletonSet(std::move(M)), nullptr);
+    auto H = JIT.addModuleSet(SingletonSet(std::move(M)), &MemMgr,
+                              static_cast<RuntimeDyld::SymbolResolver*>(
+                                  nullptr));
     JIT.emitAndFinalize(H);
     auto ResolverBlockSymbol =
       JIT.findSymbolIn(H, TargetT::ResolverBlockName, false);
@@ -187,7 +186,9 @@ private:
       TargetT::insertCompileCallbackTrampolines(*M, ResolverBlockAddr,
                                                 this->NumTrampolinesPerBlock,
                                                 this->ActiveTrampolines.size());
-    auto H = JIT.addModuleSet(SingletonSet(std::move(M)), nullptr);
+    auto H = JIT.addModuleSet(SingletonSet(std::move(M)), &MemMgr,
+                              static_cast<RuntimeDyld::SymbolResolver*>(
+                                  nullptr));
     JIT.emitAndFinalize(H);
     for (unsigned I = 0; I < this->NumTrampolinesPerBlock; ++I) {
       std::string Name = GetLabelName(I);
@@ -198,10 +199,11 @@ private:
   }
 
   JITLayerT &JIT;
+  RuntimeDyld::MemoryManager &MemMgr;
   TargetAddress ResolverBlockAddr;
 };
 
-/// @brief Get an update functor for updating the value of a named function
+/// @brief Get an update functor that updates the value of a named function
 ///        pointer.
 template <typename JITLayerT>
 JITCompileCallbackManagerBase::UpdateFtor
@@ -217,13 +219,26 @@ getLocalFPUpdater(JITLayerT &JIT, typename JITLayerT::ModuleSetHandleT H,
     };
   }
 
-GlobalVariable* createImplPointer(Function &F, const Twine &Name,
-                                  Constant *Initializer);
+/// @brief Build a function pointer of FunctionType with the given constant
+///        address.
+///
+///   Usage example: Turn a trampoline address into a function pointer constant
+/// for use in a stub.
+Constant* createIRTypedAddress(FunctionType &FT, TargetAddress Addr);
 
+/// @brief Create a function pointer with the given type, name, and initializer
+///        in the given Module.
+GlobalVariable* createImplPointer(PointerType &PT, Module &M,
+                                  const Twine &Name, Constant *Initializer);
+
+/// @brief Turn a function declaration into a stub function that makes an
+///        indirect call using the given function pointer.
 void makeStub(Function &F, GlobalVariable &ImplPointer);
 
 typedef std::map<Module*, DenseSet<const GlobalValue*>> ModulePartitionMap;
 
+/// @brief Extract subsections of a Module into the given Module according to
+///        the given ModulePartitionMap.
 void partition(Module &M, const ModulePartitionMap &PMap);
 
 /// @brief Struct for trivial "complete" partitioning of a module.
@@ -239,6 +254,7 @@ public:
         Functions(std::move(S.Functions)) {}
 };
 
+/// @brief Extract every function in M into a separate module.
 FullyPartitionedModule fullyPartition(Module &M);
 
 } // End namespace orc.
