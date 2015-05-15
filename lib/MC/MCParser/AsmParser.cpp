@@ -175,7 +175,7 @@ private:
 public:
   AsmParser(SourceMgr &SM, MCContext &Ctx, MCStreamer &Out,
             const MCAsmInfo &MAI);
-  virtual ~AsmParser();
+  ~AsmParser() override;
 
   bool Run(bool NoInitialTextSection, bool NoFinalize = false) override;
 
@@ -4606,7 +4606,7 @@ bool AsmParser::parseMSInlineAsm(
         ++InputIdx;
         OutputDecls.push_back(OpDecl);
         OutputDeclsAddressOf.push_back(Operand.needAddressOf());
-        OutputConstraints.push_back('=' + Operand.getConstraint().str());
+        OutputConstraints.push_back(("=" + Operand.getConstraint()).str());
         AsmStrRewrites.push_back(AsmRewrite(AOK_Output, Start, SymName.size()));
       } else {
         InputDecls.push_back(OpDecl);
