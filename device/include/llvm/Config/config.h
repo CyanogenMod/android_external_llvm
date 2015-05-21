@@ -613,7 +613,7 @@
 #define LLVM_VERSION_MAJOR 3
 
 /* Minor version of the LLVM API */
-#define LLVM_VERSION_MINOR 5
+#define LLVM_VERSION_MINOR 6
 
 /* Define if the OS needs help to load dependent libraries for dlopen(). */
 /* #undef LTDL_DLOPEN_DEPLIBS */
@@ -646,7 +646,7 @@
 #define PACKAGE_NAME "LLVM"
 
 /* Define to the full name and version of this package. */
-#define PACKAGE_STRING "LLVM 3.6svn"
+#define PACKAGE_STRING "LLVM 3.6.svn"
 
 /* Define to the one symbol short name of this package. */
 #define PACKAGE_TARNAME "llvm"
