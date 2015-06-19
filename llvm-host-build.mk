@@ -3,10 +3,16 @@ ifneq ($(HOST_OS),windows)
 LOCAL_CLANG := true
 endif
 
+ifeq ($(FORCE_BUILD_LLVM_DEBUG),true)
+local_optflags = -O0 -g
+else
+local_optflags = -O2
+endif
+
 LOCAL_CFLAGS +=	\
 	-D_GNU_SOURCE	\
 	-D__STDC_LIMIT_MACROS	\
-	-O2	\
+	$(local_optflags)	\
 	-fomit-frame-pointer	\
 	-Wall	\
 	-W	\
@@ -15,7 +21,7 @@ LOCAL_CFLAGS +=	\
 	-Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
 
-ifeq ($(LLVM_ENABLE_ASSERTION),true)
+ifeq ($(FORCE_BUILD_LLVM_DISABLE_NDEBUG),true)
 LOCAL_CFLAGS :=	\
 	$(LOCAL_CFLAGS) \
 	-D_DEBUG	\
