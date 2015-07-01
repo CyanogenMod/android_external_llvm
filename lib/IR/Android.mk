@@ -36,6 +36,7 @@ vmcore_SRC_FILES := \
   Metadata.cpp \
   MetadataTracking.cpp \
   Module.cpp \
+  Operator.cpp \
   Pass.cpp \
   PassManager.cpp \
   PassRegistry.cpp \

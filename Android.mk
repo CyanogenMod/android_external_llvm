@@ -29,11 +29,13 @@ subdirs := \
   lib/ExecutionEngine/Interpreter \
   lib/CodeGen \
   lib/CodeGen/AsmPrinter \
+  lib/CodeGen/MIRParser \
   lib/CodeGen/SelectionDAG \
   lib/DebugInfo/DWARF \
   lib/DebugInfo/PDB \
   lib/IR \
   lib/IRReader \
+  lib/LibDriver \
   lib/Linker \
   lib/LTO \
   lib/MC \
@@ -136,6 +138,7 @@ subdirs += \
   utils/FileCheck \
   utils/not \
   utils/TableGen \
+  utils/yaml-bench \
 
 include $(LOCAL_PATH)/llvm.mk
 include $(LOCAL_PATH)/shared_llvm.mk

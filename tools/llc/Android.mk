@@ -42,14 +42,15 @@ llvm_llc_STATIC_LIBRARIES := \
   libLLVMBitWriter \
   libLLVMSelectionDAG \
   libLLVMInstCombine \
-  libLLVMInstrumentation \
   libLLVMCodeGen \
+  libLLVMInstrumentation \
   libLLVMObject \
   libLLVMipo \
   libLLVMipa \
   libLLVMLinker \
   libLLVMMCDisassembler \
   libLLVMMC \
+  libLLVMMIRParser \
   libLLVMMCParser \
   libLLVMScalarOpts \
   libLLVMTransformUtils \

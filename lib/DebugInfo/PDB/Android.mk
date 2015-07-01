@@ -4,6 +4,7 @@ LOCAL_PATH:= $(call my-dir)
 debuginfo_pdb_SRC_FILES := \
   IPDBSourceFile.cpp \
   PDB.cpp \
+  PDBContext.cpp \
   PDBExtras.cpp \
   PDBInterfaceAnchors.cpp \
   PDBSymbolAnnotation.cpp \

@@ -4,8 +4,9 @@ target_SRC_FILES := \
   Target.cpp \
   TargetIntrinsicInfo.cpp \
   TargetLoweringObjectFile.cpp \
-  TargetMachineC.cpp \
   TargetMachine.cpp \
+  TargetMachineC.cpp \
+  TargetRecip.cpp \
   TargetSubtargetInfo.cpp
 
 # For the host
