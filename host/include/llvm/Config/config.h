@@ -252,7 +252,11 @@
 #endif
 
 /* Define to 1 if you have the <malloc.h> header file. */
-/* #define HAVE_MALLOC_H 1 */ /* Defined by AndroidConfig.h */
+#if !defined(__APPLE__)
+#define HAVE_MALLOC_H 1
+#else
+/* #undef HAVE_MALLOC_H */
+#endif
 
 /* Define to 1 if you have the <malloc/malloc.h> header file. */
 /* #undef HAVE_MALLOC_MALLOC_H */
