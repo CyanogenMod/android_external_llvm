@@ -35,37 +35,65 @@ llvm_lto_SRC_FILES := \
 LOCAL_SRC_FILES := $(llvm_lto_SRC_FILES)
 
 LOCAL_STATIC_LIBRARIES := \
-  libLLVMARMAsmParser \
+  libLLVMLinker \
+  libLLVMipo \
+  libLLVMDebugInfoDWARF \
+  libLLVMDebugInfoPDB \
+  libLLVMIRReader \
+  libLLVMBitWriter \
+  libLLVMBitReader \
   libLLVMARMCodeGen \
+  libLLVMARMAsmParser \
   libLLVMARMAsmPrinter \
-  libLLVMARMDisassembler \
-  libLLVMARMDesc \
   libLLVMARMInfo \
-  libLLVMMipsAsmParser \
+  libLLVMARMDesc \
+  libLLVMARMDisassembler \
   libLLVMMipsCodeGen \
-  libLLVMMipsDisassembler \
-  libLLVMMipsAsmPrinter \
-  libLLVMMipsDesc \
   libLLVMMipsInfo \
-  libLLVMX86Info \
-  libLLVMX86AsmParser \
+  libLLVMMipsDesc \
+  libLLVMMipsAsmParser \
+  libLLVMMipsAsmPrinter \
+  libLLVMMipsDisassembler \
   libLLVMX86CodeGen \
-  libLLVMX86Disassembler \
+  libLLVMX86Info \
   libLLVMX86Desc \
+  libLLVMX86AsmParser \
   libLLVMX86AsmPrinter \
   libLLVMX86Utils \
-  libLLVMAArch64Info \
-  libLLVMAArch64AsmParser \
+  libLLVMX86Disassembler \
   libLLVMAArch64CodeGen \
-  libLLVMAArch64Disassembler \
+  libLLVMAArch64Info \
   libLLVMAArch64Desc \
+  libLLVMAArch64AsmParser \
   libLLVMAArch64AsmPrinter \
   libLLVMAArch64Utils \
-  libLLVMCore \
-  libLLVMLTO \
-  libLLVMMC \
+  libLLVMAArch64Disassembler \
+  libLLVMExecutionEngine \
+  libLLVMRuntimeDyld \
+  libLLVMMCJIT \
+  libLLVMOrcJIT \
+  libLLVMAsmPrinter \
+  libLLVMSelectionDAG \
+  libLLVMCodeGen \
+  libLLVMObject \
+  libLLVMScalarOpts \
+  libLLVMInstCombine \
+  libLLVMInstrumentation \
+  libLLVMTransformObjCARC \
+  libLLVMTransformUtils \
+  libLLVMipa \
+  libLLVMAnalysis \
+  libLLVMTarget \
   libLLVMMCDisassembler \
-  libLLVMSupport
+  libLLVMMC \
+  libLLVMMCParser \
+  libLLVMCore \
+  libLLVMAsmParser \
+  libLLVMOption \
+  libLLVMLTO \
+  libLLVMSupport \
+  libLLVMVectorize \
+  libLLVMProfileData
 
 ifndef USE_MINGW
 LOCAL_LDLIBS += -lpthread -ldl
