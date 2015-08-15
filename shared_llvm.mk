@@ -64,7 +64,8 @@ llvm_post_static_libraries := \
   libLLVMOption \
   libLLVMSupport \
   libLLVMVectorize \
-  libLLVMProfileData
+  libLLVMProfileData \
+  libLLVMLibDriver
 
 llvm_host_static_libraries := \
   libLLVMExecutionEngine \

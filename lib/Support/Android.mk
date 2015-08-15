@@ -12,6 +12,7 @@ support_SRC_FILES := \
   Atomic.cpp \
   BlockFrequency.cpp \
   BranchProbability.cpp \
+  COM.cpp \
   CommandLine.cpp \
   Compression.cpp \
   ConvertUTF.c \
@@ -67,8 +68,10 @@ support_SRC_FILES := \
   StringExtras.cpp \
   StringMap.cpp \
   StringPool.cpp \
+  StringSaver.cpp \
   StringRef.cpp \
   SystemUtils.cpp \
+  TargetParser.cpp \
   TargetRegistry.cpp \
   Threading.cpp \
   ThreadLocal.cpp \

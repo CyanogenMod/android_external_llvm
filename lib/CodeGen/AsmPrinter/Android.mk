@@ -20,7 +20,7 @@ codegen_asmprinter_SRC_FILES := \
   EHStreamer.cpp \
   ErlangGCPrinter.cpp \
   OcamlGCPrinter.cpp \
-  Win64Exception.cpp \
+  WinException.cpp \
   WinCodeViewLineTables.cpp
 
 

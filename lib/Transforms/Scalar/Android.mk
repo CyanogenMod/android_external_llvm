@@ -19,6 +19,7 @@ transforms_scalar_SRC_FILES := \
   LICM.cpp \
   LoadCombine.cpp \
   LoopDeletion.cpp \
+  LoopDistribute.cpp \
   LoopIdiomRecognize.cpp \
   LoopInstSimplify.cpp \
   LoopInterchange.cpp \
@@ -46,6 +47,7 @@ transforms_scalar_SRC_FILES := \
   SeparateConstOffsetFromGEP.cpp \
   SimplifyCFGPass.cpp \
   Sink.cpp \
+  SpeculativeExecution.cpp \
   StraightLineStrengthReduce.cpp \
   StructurizeCFG.cpp \
   TailRecursionElimination.cpp

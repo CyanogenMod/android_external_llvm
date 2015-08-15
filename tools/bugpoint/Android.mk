@@ -31,12 +31,12 @@ bugpoint_STATIC_LIBRARIES := \
   libLLVMLinker \
   libLLVMTransformObjCARC \
   libLLVMScalarOpts \
+  libLLVMTransformUtils \
   libLLVMAnalysis \
   libLLVMTarget \
   libLLVMCore \
   libLLVMMC \
   libLLVMProfileData \
-  libLLVMTransformUtils \
   libLLVMVectorize \
   libLLVMSupport \
 

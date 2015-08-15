@@ -30,6 +30,7 @@ analysis_SRC_FILES := \
   InstructionSimplify.cpp \
   Interval.cpp \
   IntervalPartition.cpp \
+  IteratedDominanceFrontier.cpp \
   LazyCallGraph.cpp \
   LazyValueInfo.cpp \
   LibCallAliasAnalysis.cpp \
@@ -43,6 +44,7 @@ analysis_SRC_FILES := \
   MemDerefPrinter.cpp \
   MemoryBuiltins.cpp \
   MemoryDependenceAnalysis.cpp \
+  MemoryLocation.cpp \
   ModuleDebugInfoPrinter.cpp \
   NoAliasAnalysis.cpp \
   PHITransAddr.cpp \

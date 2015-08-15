@@ -11,6 +11,7 @@ codegen_SRC_FILES := \
   CallingConvLower.cpp \
   CodeGen.cpp \
   CodeGenPrepare.cpp \
+  CoreCLRGC.cpp \
   CriticalAntiDepBreaker.cpp \
   DeadMachineInstructionElim.cpp \
   DFAPacketizer.cpp \
@@ -21,12 +22,14 @@ codegen_SRC_FILES := \
   ExecutionDepsFix.cpp \
   ExpandISelPseudos.cpp \
   ExpandPostRAPseudos.cpp \
+  FaultMaps.cpp \
   GCMetadata.cpp \
   GCMetadataPrinter.cpp \
   GCRootLowering.cpp \
   GCStrategy.cpp \
   GlobalMerge.cpp \
   IfConversion.cpp \
+  ImplicitNullChecks.cpp \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
   IntrinsicLowering.cpp \
@@ -72,6 +75,7 @@ codegen_SRC_FILES := \
   MachineSSAUpdater.cpp \
   MachineTraceMetrics.cpp \
   MachineVerifier.cpp \
+  MIRPrintingPass.cpp \
   OcamlGC.cpp \
   OptimizePHIs.cpp \
   Passes.cpp \
@@ -95,6 +99,7 @@ codegen_SRC_FILES := \
   ScheduleDAGInstrs.cpp \
   ScheduleDAGPrinter.cpp \
   ScoreboardHazardRecognizer.cpp \
+  ShrinkWrap.cpp \
   ShadowStackGC.cpp \
   ShadowStackGCLowering.cpp \
   SjLjEHPrepare.cpp \

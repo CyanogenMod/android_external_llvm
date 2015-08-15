@@ -420,6 +420,14 @@ static void InitLibcallNames(const char **Names, const Triple &TT) {
     // These are generally not available.
     Names[RTLIB::STACKPROTECTOR_CHECK_FAIL] = nullptr;
   }
+
+  // For f16/f32 conversions, Darwin uses the standard naming scheme, instead
+  // of the gnueabi-style __gnu_*_ieee.
+  // FIXME: What about other targets?
+  if (TT.isOSDarwin()) {
+    Names[RTLIB::FPEXT_F16_F32] = "__extendhfsf2";
+    Names[RTLIB::FPROUND_F32_F16] = "__truncsfhf2";
+  }
 }
 
 /// InitLibcallCallingConvs - Set default libcall CallingConvs.
@@ -803,6 +811,18 @@ void TargetLoweringBase::initActions() {
     setOperationAction(ISD::FMINNUM, VT, Expand);
     setOperationAction(ISD::FMAXNUM, VT, Expand);
     setOperationAction(ISD::FMAD, VT, Expand);
+    setOperationAction(ISD::SMIN, VT, Expand);
+    setOperationAction(ISD::SMAX, VT, Expand);
+    setOperationAction(ISD::UMIN, VT, Expand);
+    setOperationAction(ISD::UMAX, VT, Expand);
+
+    // Overflow operations default to expand
+    setOperationAction(ISD::SADDO, VT, Expand);
+    setOperationAction(ISD::SSUBO, VT, Expand);
+    setOperationAction(ISD::UADDO, VT, Expand);
+    setOperationAction(ISD::USUBO, VT, Expand);
+    setOperationAction(ISD::SMULO, VT, Expand);
+    setOperationAction(ISD::UMULO, VT, Expand);
 
     // These library functions default to expand.
     setOperationAction(ISD::FROUND, VT, Expand);
@@ -1612,7 +1632,8 @@ TargetLoweringBase::getTypeLegalizationCost(Type *Ty) const {
 /// isLegalAddressingMode - Return true if the addressing mode represented
 /// by AM is legal for this target, for a load/store of the specified type.
 bool TargetLoweringBase::isLegalAddressingMode(const AddrMode &AM,
-                                           Type *Ty) const {
+                                               Type *Ty,
+                                               unsigned AS) const {
   // The default implementation of this implements a conservative RISCy, r+r and
   // r+i addr mode.
 
