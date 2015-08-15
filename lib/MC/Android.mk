@@ -14,13 +14,13 @@ mc_SRC_FILES := \
   MCCodeGenInfo.cpp \
   MCContext.cpp \
   MCDwarf.cpp \
-  MCELF.cpp \
   MCELFObjectTargetWriter.cpp \
   MCELFStreamer.cpp \
   MCExpr.cpp \
   MCInst.cpp \
   MCInstPrinter.cpp \
   MCInstrAnalysis.cpp \
+  MCInstrDesc.cpp \
   MCLabel.cpp \
   MCLinkerOptimizationHint.cpp \
   MCMachOStreamer.cpp \
@@ -37,6 +37,7 @@ mc_SRC_FILES := \
   MCStreamer.cpp \
   MCSubtargetInfo.cpp \
   MCSymbol.cpp \
+  MCSymbolELF.cpp \
   MCSymbolizer.cpp \
   MCTargetOptions.cpp \
   MCValue.cpp \

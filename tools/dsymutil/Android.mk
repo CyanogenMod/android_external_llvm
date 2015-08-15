@@ -42,6 +42,7 @@ llvm_dsymutil_STATIC_LIBRARIES := \
   libLLVMSelectionDAG \
   libLLVMCodeGen \
   libLLVMDebugInfoDWARF \
+  libLLVMInstrumentation \
   libLLVMMCParser \
   libLLVMMCDisassembler \
   libLLVMObject \
