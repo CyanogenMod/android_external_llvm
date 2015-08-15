@@ -93,7 +93,7 @@ LOCAL_WHOLE_STATIC_LIBRARIES := \
   $(llvm_post_static_libraries)
 
 ifeq ($(HOST_OS),windows)
-  LOCAL_LDLIBS := -limagehlp -lpsapi
+  LOCAL_LDLIBS := -limagehlp -lpsapi -lole32
 else
   LOCAL_LDLIBS := -ldl -lpthread
 endif
