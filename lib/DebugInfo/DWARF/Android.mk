@@ -1,7 +1,6 @@
 LOCAL_PATH:= $(call my-dir)
 
 debuginfo_dwarf_SRC_FILES := \
-  DIContext.cpp \
   DWARFAbbreviationDeclaration.cpp \
   DWARFAcceleratorTable.cpp \
   DWARFCompileUnit.cpp \

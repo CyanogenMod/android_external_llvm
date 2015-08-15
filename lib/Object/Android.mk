@@ -2,6 +2,7 @@ LOCAL_PATH := $(call my-dir)
 
 object_SRC_FILES := \
   Archive.cpp \
+  ArchiveWriter.cpp \
   Binary.cpp \
   COFFObjectFile.cpp \
   COFFYAML.cpp \

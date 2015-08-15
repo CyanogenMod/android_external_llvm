@@ -8,6 +8,7 @@ instrumentation_SRC_FILES := \
   InstrProfiling.cpp \
   Instrumentation.cpp \
   MemorySanitizer.cpp \
+  SafeStack.cpp \
   SanitizerCoverage.cpp \
   ThreadSanitizer.cpp
 

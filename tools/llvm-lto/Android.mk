@@ -50,6 +50,7 @@ llvm_lto_STATIC_LIBRARIES := \
   libLLVMScalarOpts \
   libLLVMInstCombine \
   libLLVMVectorize \
+  libLLVMInstrumentation \
   libLLVMTransformUtils \
   libLLVMAnalysis \
   libLLVMipa \

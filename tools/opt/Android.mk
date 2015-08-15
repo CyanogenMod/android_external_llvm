@@ -45,16 +45,16 @@ llvm_opt_STATIC_LIBRARIES := \
   libLLVMAsmPrinter \
   libLLVMSelectionDAG \
   libLLVMCodeGen \
-  libLLVMInstrumentation \
   libLLVMTransformObjCARC \
   libLLVMVectorize \
   libLLVMScalarOpts \
   libLLVMPasses \
-  libLLVMAnalysis \
   libLLVMipo \
   libLLVMipa \
   libLLVMInstCombine \
+  libLLVMInstrumentation \
   libLLVMTransformUtils \
+  libLLVMAnalysis \
   libLLVMTarget \
   libLLVMMC \
   libLLVMMCParser \
