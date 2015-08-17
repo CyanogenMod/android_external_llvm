@@ -27,6 +27,7 @@ subdirs := \
   lib/ExecutionEngine/MCJIT \
   lib/ExecutionEngine/Orc \
   lib/ExecutionEngine/Interpreter \
+  lib/Fuzzer \
   lib/CodeGen \
   lib/CodeGen/AsmPrinter \
   lib/CodeGen/MIRParser \
