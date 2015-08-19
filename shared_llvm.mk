@@ -73,7 +73,6 @@ llvm_host_static_libraries := \
   libLLVMMCJIT \
   libLLVMOrcJIT
 
-ifeq (true,$(FORCE_BUILD_LLVM_COMPONENTS))
 # HOST LLVM shared library build
 include $(CLEAR_VARS)
 LOCAL_IS_HOST_MODULE := true
@@ -92,12 +91,21 @@ LOCAL_WHOLE_STATIC_LIBRARIES := \
   $(llvm_host_static_libraries) \
   $(llvm_post_static_libraries)
 
-ifeq ($(HOST_OS),windows)
-  LOCAL_LDLIBS := -limagehlp -lpsapi -lole32
-else
-  LOCAL_LDLIBS := -ldl -lpthread
-endif
+LOCAL_LDLIBS_windows := -limagehlp -lpsapi -lole32
+LOCAL_LDLIBS_darwin := -ldl -lpthread
+LOCAL_LDLIBS_linux := -ldl -lpthread
 
+# Use prebuilts for linux and darwin unless
+# FORCE_BUILD_LLVM_COMPONENTS is true
+ifneq (true,$(FORCE_BUILD_LLVM_COMPONENTS))
+LOCAL_MODULE_HOST_OS := windows
+# This can be moved out once LOCAL_MODULE_HOST_OS is enforced.
+ifeq ($(HOST_OS),windows)
+include $(LLVM_HOST_BUILD_MK)
+include $(BUILD_HOST_SHARED_LIBRARY)
+endif
+else
+LOCAL_MODULE_HOST_OS := darwin linux windows
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)
 endif

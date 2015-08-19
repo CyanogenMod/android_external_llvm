@@ -46,7 +46,7 @@ LOCAL_SRC_FILES := $(x86_codegen_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMX86CodeGen
 
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
@@ -64,8 +64,6 @@ TBLGEN_TABLES := $(x86_codegen_TBLGEN_TABLES)
 LOCAL_SRC_FILES := $(x86_codegen_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMX86CodeGen
-
-LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)

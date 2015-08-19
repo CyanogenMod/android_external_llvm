@@ -13,11 +13,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := $(transforms_hello_SRC_FILES)
 LOCAL_MODULE:= LLVMHello
 
-ifeq ($(HOST_OS),darwin)
-LOCAL_LDFLAGS := -Wl,-undefined -Wl,dynamic_lookup
-endif
-
-LOCAL_MODULE_TAGS := optional
+LOCAL_LDFLAGS_darwin := -Wl,-undefined -Wl,dynamic_lookup
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)

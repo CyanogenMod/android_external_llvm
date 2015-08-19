@@ -14,7 +14,7 @@ LOCAL_SRC_FILES := $(bitcode_writer_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMBitWriter
 
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
@@ -28,8 +28,6 @@ ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 LOCAL_SRC_FILES := $(bitcode_writer_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMBitWriter
-
-LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
