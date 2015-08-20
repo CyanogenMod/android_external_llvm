@@ -19,14 +19,14 @@
 #include "llvm/Pass.h"
 
 // BEGIN ANDROID-SPECIFIC
-#ifdef WIN32
+#ifdef _WIN32
 #ifdef fseeko
 #undef fseeko
 #endif
 #ifdef ftello
 #undef ftello
 #endif
-#endif  // WIN32
+#endif  // _WIN32
 // END ANDROID-SPECIFIC
 
 namespace llvm {
