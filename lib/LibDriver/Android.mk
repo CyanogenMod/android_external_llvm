@@ -16,7 +16,7 @@ LOCAL_SRC_FILES := $(LibDriver_SRC_FILES)
 TBLGEN_TABLES := $(LibDriver_TBLGEN_TABLES)
 
 LOCAL_MODULE:= libLLVMLibDriver
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
@@ -33,7 +33,6 @@ LOCAL_SRC_FILES := $(LibDriver_SRC_FILES)
 TBLGEN_TABLES := $(LibDriver_TBLGEN_TABLES)
 
 LOCAL_MODULE:= libLLVMLibDriver
-LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
