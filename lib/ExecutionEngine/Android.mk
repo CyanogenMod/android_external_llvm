@@ -13,7 +13,7 @@ LOCAL_SRC_FILES := \
 
 LOCAL_MODULE:= libLLVMExecutionEngine
 
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)

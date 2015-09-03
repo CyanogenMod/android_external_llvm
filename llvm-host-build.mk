@@ -1,8 +1,3 @@
-# Windows can't use Clang to build yet
-ifneq ($(HOST_OS),windows)
-LOCAL_CLANG := true
-endif
-
 ifeq ($(FORCE_BUILD_LLVM_DEBUG),true)
 local_optflags = -O0 -g
 else
@@ -55,12 +50,9 @@ LOCAL_C_INCLUDES :=	\
 	$(LOCAL_C_INCLUDES)
 
 # Add on ncurses to have support for terminfo
-ifneq ($(HOST_OS),windows)
-LOCAL_LDLIBS += -lncurses
-ifneq ($(HOST_OS),darwin)
-LOCAL_LDLIBS += -lgcc_s
-endif
-endif
+LOCAL_LDLIBS_darwin += -lncurses
+LOCAL_LDLIBS_linux += -lncurses
+LOCAL_LDLIBS_linux += -lgcc_s
 
 LOCAL_IS_HOST_MODULE := true
 

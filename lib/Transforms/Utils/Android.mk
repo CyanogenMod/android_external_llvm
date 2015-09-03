@@ -46,7 +46,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := $(transforms_utils_SRC_FILES)
 LOCAL_MODULE:= libLLVMTransformUtils
 
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
@@ -59,8 +59,6 @@ include $(CLEAR_VARS)
 
 LOCAL_SRC_FILES := $(transforms_utils_SRC_FILES)
 LOCAL_MODULE:= libLLVMTransformUtils
-
-LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_GEN_INTRINSICS_MK)

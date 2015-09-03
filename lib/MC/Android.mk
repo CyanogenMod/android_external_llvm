@@ -58,7 +58,7 @@ LOCAL_SRC_FILES := $(mc_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMMC
 
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 
 include $(LLVM_HOST_BUILD_MK)
@@ -72,8 +72,6 @@ ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 LOCAL_SRC_FILES := $(mc_SRC_FILES)
 
 LOCAL_MODULE:= libLLVMMC
-
-LOCAL_MODULE_TAGS := optional
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_STATIC_LIBRARY)

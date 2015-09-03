@@ -50,7 +50,7 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 LOCAL_MODULE:= libLLVMAArch64CodeGen
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 LOCAL_SRC_FILES := $(aarch64_codegen_SRC_FILES)
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/MCTargetDesc
@@ -68,7 +68,6 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 LOCAL_MODULE:= libLLVMAArch64CodeGen
-LOCAL_MODULE_TAGS := optional
 
 LOCAL_SRC_FILES := $(aarch64_codegen_SRC_FILES)
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/MCTargetDesc

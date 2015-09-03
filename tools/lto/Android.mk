@@ -95,9 +95,8 @@ LOCAL_STATIC_LIBRARIES := \
   libLLVMVectorize \
   libLLVMProfileData
 
-ifndef USE_MINGW
-LOCAL_LDLIBS += -lpthread -ldl
-endif
+LOCAL_LDLIBS_darwin := -lpthread -ldl
+LOCAL_LDLIBS_linux := -lpthread -ldl
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)
