@@ -53,7 +53,7 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 LOCAL_MODULE:= libLLVMMipsCodeGen
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 LOCAL_SRC_FILES := $(mips_codegen_SRC_FILES)
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/MCTargetDesc
@@ -72,7 +72,6 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 LOCAL_MODULE:= libLLVMMipsCodeGen
-LOCAL_MODULE_TAGS := optional
 
 LOCAL_SRC_FILES := $(mips_codegen_SRC_FILES)
 LOCAL_C_INCLUDES := $(LOCAL_PATH)/MCTargetDesc

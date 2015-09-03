@@ -14,7 +14,7 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 LOCAL_MODULE:= libLLVMMipsInfo
-LOCAL_MODULE_TAGS := optional
+LOCAL_MODULE_HOST_OS := darwin linux windows
 
 TBLGEN_TABLES := $(mips_target_info_TBLGEN_TABLES)
 TBLGEN_TD_DIR := $(LOCAL_PATH)/..
@@ -33,7 +33,6 @@ include $(CLEAR_VARS)
 include $(CLEAR_TBLGEN_VARS)
 
 LOCAL_MODULE:= libLLVMMipsInfo
-LOCAL_MODULE_TAGS := optional
 
 TBLGEN_TABLES := $(mips_target_info_TBLGEN_TABLES)
 TBLGEN_TD_DIR := $(LOCAL_PATH)/..
