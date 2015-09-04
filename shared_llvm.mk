@@ -99,16 +99,12 @@ LOCAL_LDLIBS_linux := -ldl -lpthread
 # FORCE_BUILD_LLVM_COMPONENTS is true
 ifneq (true,$(FORCE_BUILD_LLVM_COMPONENTS))
 LOCAL_MODULE_HOST_OS := windows
-# This can be moved out once LOCAL_MODULE_HOST_OS is enforced.
-ifeq ($(HOST_OS),windows)
-include $(LLVM_HOST_BUILD_MK)
-include $(BUILD_HOST_SHARED_LIBRARY)
-endif
 else
 LOCAL_MODULE_HOST_OS := darwin linux windows
+endif
+
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)
-endif
 
 ifeq (,$(filter $(TARGET_ARCH),$(LLVM_SUPPORTED_ARCH)))
 $(warning TODO $(TARGET_ARCH): Enable llvm build)
