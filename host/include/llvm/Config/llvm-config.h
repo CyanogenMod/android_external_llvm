@@ -27,7 +27,7 @@
 #define LLVM_DATADIR "/opt/llvm-android/share/llvm"
 
 /* Target triple LLVM will generate code for by default */
-#define LLVM_DEFAULT_TARGET_TRIPLE "i386-unknown-linux"
+#define LLVM_DEFAULT_TARGET_TRIPLE "x86_64-unknown-linux"
 
 /* Installation directory for documentation */
 #define LLVM_DOCSDIR "/opt/llvm-android/share/doc/llvm"
