@@ -34,7 +34,7 @@ llvm_lto_SRC_FILES := \
 
 LOCAL_SRC_FILES := $(llvm_lto_SRC_FILES)
 
-LOCAL_STATIC_LIBRARIES := \
+llvm_lto_STATIC_LIBRARIES := \
   libLLVMLinker \
   libLLVMipo \
   libLLVMDebugInfoDWARF \
@@ -82,6 +82,7 @@ LOCAL_STATIC_LIBRARIES := \
   libLLVMTransformObjCARC \
   libLLVMTransformUtils \
   libLLVMipa \
+  libLLVMVectorize \
   libLLVMAnalysis \
   libLLVMTarget \
   libLLVMMCDisassembler \
@@ -92,11 +93,12 @@ LOCAL_STATIC_LIBRARIES := \
   libLLVMOption \
   libLLVMLTO \
   libLLVMSupport \
-  libLLVMVectorize \
   libLLVMProfileData
 
 LOCAL_LDLIBS_darwin := -lpthread -ldl
 LOCAL_LDLIBS_linux := -lpthread -ldl
+
+LOCAL_STATIC_LIBRARIES := $(llvm_lto_STATIC_LIBRARIES) $(llvm_lto_STATIC_LIBRARIES)
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)
