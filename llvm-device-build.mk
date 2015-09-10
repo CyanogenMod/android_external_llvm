@@ -13,9 +13,11 @@ LOCAL_CFLAGS :=	\
 	-W	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
-	-Werror \
         -Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
+
+LOCAL_CFLAGS_linux += -Werror
+LOCAL_CFLAGS_darwin += -Werror
 
 # The three inline options together reduce libbcc.so almost 1MB.
 # We move them from global build/core/combo/TARGET_linux-arm.mk
