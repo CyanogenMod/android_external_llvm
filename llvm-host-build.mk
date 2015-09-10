@@ -13,9 +13,11 @@ LOCAL_CFLAGS +=	\
 	-W	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
-	-Werror \
 	-Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
+
+LOCAL_CFLAGS_linux += -Werror
+LOCAL_CFLAGS_darwin += -Werror
 
 ifeq ($(FORCE_BUILD_LLVM_DISABLE_NDEBUG),true)
 LOCAL_CFLAGS :=	\
