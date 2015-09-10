@@ -12,12 +12,22 @@ LOCAL_CFLAGS +=	\
 	-Wall	\
 	-W	\
 	-Wno-unused-parameter	\
+	-Wno-maybe-uninitialized \
+	-Wno-missing-field-initializers \
 	-Wwrite-strings	\
+	-Werror \
 	-Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
 
-LOCAL_CFLAGS_linux += -Werror
-LOCAL_CFLAGS_darwin += -Werror -Wno-error=deprecated-declarations
+LOCAL_CFLAGS_darwin += -Wno-error=deprecated-declarations
+
+# Disable certain warnings as errors for use with mingw.
+# We also must undefine WIN32_LEAN_AND_MEAN, since it is being passed globally
+# on the command line, and LLVM defines this internally itself.
+LOCAL_CFLAGS_windows += -Wno-error=array-bounds \
+			-Wno-error=comment \
+			-Wno-error=return-type \
+			-UWIN32_LEAN_AND_MEAN
 
 ifeq ($(FORCE_BUILD_LLVM_DISABLE_NDEBUG),true)
 LOCAL_CFLAGS :=	\
