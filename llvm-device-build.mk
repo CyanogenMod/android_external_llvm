@@ -13,6 +13,7 @@ LOCAL_CFLAGS :=	\
 	-W	\
 	-Wno-unused-parameter	\
 	-Wwrite-strings	\
+	-Werror \
         -Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
 
