@@ -20,7 +20,7 @@
 #define ENABLE_PIC 1
 
 /* Define if timestamp information (e.g., __DATE___) is allowed */
-#define ENABLE_TIMESTAMPS 1
+/* #undef ENABLE_TIMESTAMPS */
 
 /* Directory where gcc is installed. */
 #define GCC_INSTALL_PREFIX ""
