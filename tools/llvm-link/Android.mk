@@ -25,7 +25,7 @@ LOCAL_MODULE := llvm-link
 LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(llvm_link_SRC_FILES)
 LOCAL_STATIC_LIBRARIES := $(llvm_link_STATIC_LIBRARIES)
-LOCAL_LDLIBS += -lpthread -lm -ldl
+LOCAL_LDLIBS += -lpthread
 
 include $(LLVM_HOST_BUILD_MK)
 include $(BUILD_HOST_EXECUTABLE)
@@ -41,9 +41,6 @@ LOCAL_MODULE := llvm-link
 LOCAL_MODULE_TAGS := optional
 LOCAL_SRC_FILES := $(llvm_link_SRC_FILES)
 LOCAL_STATIC_LIBRARIES := $(llvm_link_STATIC_LIBRARIES)
-LOCAL_SHARED_LIBRARIES := \
-  libcutils  \
-  libc++
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(BUILD_EXECUTABLE)
