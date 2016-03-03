@@ -25,6 +25,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/Analysis/GlobalsModRef.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/TargetTransformInfo.h"
 #include "llvm/IR/Attributes.h"
@@ -48,8 +49,8 @@ UserBonusInstThreshold("bonus-inst-threshold", cl::Hidden, cl::init(1),
 
 STATISTIC(NumSimpl, "Number of blocks simplified");
 
-/// mergeEmptyReturnBlocks - If we have more than one empty (other than phi
-/// node) return blocks, merge them together to promote recursive block merging.
+/// If we have more than one empty (other than phi node) return blocks,
+/// merge them together to promote recursive block merging.
 static bool mergeEmptyReturnBlocks(Function &F) {
   bool Changed = false;
 
@@ -67,15 +68,14 @@ static bool mergeEmptyReturnBlocks(Function &F) {
     // single PHI node that is the operand to the return.
     if (Ret != &BB.front()) {
       // Check for something else in the block.
-      BasicBlock::iterator I = Ret;
+      BasicBlock::iterator I(Ret);
       --I;
       // Skip over debug info.
       while (isa<DbgInfoIntrinsic>(I) && I != BB.begin())
         --I;
       if (!isa<DbgInfoIntrinsic>(I) &&
-          (!isa<PHINode>(I) || I != BB.begin() ||
-           Ret->getNumOperands() == 0 ||
-           Ret->getOperand(0) != I))
+          (!isa<PHINode>(I) || I != BB.begin() || Ret->getNumOperands() == 0 ||
+           Ret->getOperand(0) != &*I))
         continue;
     }
 
@@ -124,7 +124,7 @@ static bool mergeEmptyReturnBlocks(Function &F) {
   return Changed;
 }
 
-/// iterativelySimplifyCFG - Call SimplifyCFG on all the blocks in the function,
+/// Call SimplifyCFG on all the blocks in the function,
 /// iterating until no more changes are made.
 static bool iterativelySimplifyCFG(Function &F, const TargetTransformInfo &TTI,
                                    AssumptionCache *AC,
@@ -134,10 +134,9 @@ static bool iterativelySimplifyCFG(Function &F, const TargetTransformInfo &TTI,
   while (LocalChange) {
     LocalChange = false;
 
-    // Loop over all of the basic blocks and remove them if they are unneeded...
-    //
+    // Loop over all of the basic blocks and remove them if they are unneeded.
     for (Function::iterator BBIt = F.begin(); BBIt != F.end(); ) {
-      if (SimplifyCFG(BBIt++, TTI, BonusInstThreshold, AC)) {
+      if (SimplifyCFG(&*BBIt++, TTI, BonusInstThreshold, AC)) {
         LocalChange = true;
         ++NumSimpl;
       }
@@ -159,7 +158,7 @@ static bool simplifyFunctionCFG(Function &F, const TargetTransformInfo &TTI,
   // iterativelySimplifyCFG can (rarely) make some loops dead.  If this happens,
   // removeUnreachableBlocks is needed to nuke them, which means we should
   // iterate between the two optimizations.  We structure the code like this to
-  // avoid reruning iterativelySimplifyCFG if the second pass of
+  // avoid rerunning iterativelySimplifyCFG if the second pass of
   // removeUnreachableBlocks doesn't do anything.
   if (!removeUnreachableBlocks(F))
     return true;
@@ -218,6 +217,7 @@ struct CFGSimplifyPass : public FunctionPass {
   void getAnalysisUsage(AnalysisUsage &AU) const override {
     AU.addRequired<AssumptionCacheTracker>();
     AU.addRequired<TargetTransformInfoWrapperPass>();
+    AU.addPreserved<GlobalsAAWrapperPass>();
   }
 };
 }

@@ -36,6 +36,7 @@ support_SRC_FILES := \
   IntervalMap.cpp \
   IntEqClasses.cpp \
   IntrusiveRefCntPtr.cpp \
+  JamCRC.cpp \
   LEB128.cpp \
   LineIterator.cpp \
   Locale.cpp \

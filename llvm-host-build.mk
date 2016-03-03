@@ -19,14 +19,11 @@ LOCAL_CFLAGS +=	\
 	-Dsprintf=sprintf \
 	$(LOCAL_CFLAGS)
 
-LOCAL_CFLAGS_darwin += -Wno-error=deprecated-declarations
-
-# Disable certain warnings as errors for use with mingw.
+# Disable certain warnings for use with mingw.
 # We also must undefine WIN32_LEAN_AND_MEAN, since it is being passed globally
 # on the command line, and LLVM defines this internally itself.
-LOCAL_CFLAGS_windows += -Wno-error=array-bounds \
-			-Wno-error=comment \
-			-Wno-error=return-type \
+LOCAL_CFLAGS_windows += -Wno-array-bounds \
+			-Wno-comment \
 			-UWIN32_LEAN_AND_MEAN
 
 ifeq ($(FORCE_BUILD_LLVM_DISABLE_NDEBUG),true)
@@ -51,9 +48,15 @@ endif
 
 LOCAL_CPPFLAGS :=	\
 	$(LOCAL_CPPFLAGS)	\
-	-Woverloaded-virtual	\
 	-Wno-sign-promo         \
 	-std=c++11
+
+LOCAL_CPPFLAGS_linux := \
+	-Woverloaded-virtual
+
+LOCAL_CPPFLAGS_darwin += \
+	-Wno-deprecated-declarations \
+	-Woverloaded-virtual
 
 # Make sure bionic is first so we can include system headers.
 LOCAL_C_INCLUDES :=	\

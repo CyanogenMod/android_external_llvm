@@ -1,8 +1,6 @@
-; RUN: llc -march=amdgcn -mcpu=bonaire -verify-machineinstrs -mattr=+load-store-opt -enable-misched < %s | FileCheck -check-prefix=SI %s
-
+; RUN: llc -march=amdgcn -mcpu=bonaire -verify-machineinstrs -mattr=+load-store-opt < %s | FileCheck -check-prefix=SI %s
 
 @lds = addrspace(3) global [512 x float] undef, align 4
-
 
 ; SI-LABEL: @simple_write2st64_one_val_f32_0_1
 ; SI-DAG: buffer_load_dword [[VAL:v[0-9]+]]
@@ -111,9 +109,9 @@ declare i32 @llvm.r600.read.tidig.x() #1
 ; Function Attrs: nounwind readnone
 declare i32 @llvm.r600.read.tidig.y() #1
 
-; Function Attrs: noduplicate nounwind
+; Function Attrs: convergent nounwind
 declare void @llvm.AMDGPU.barrier.local() #2
 
 attributes #0 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "no-realign-stack" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #1 = { nounwind readnone }
-attributes #2 = { noduplicate nounwind }
+attributes #2 = { convergent nounwind }

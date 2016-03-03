@@ -5,6 +5,7 @@ llvm_pre_static_libraries := \
   libLLVMipo \
   libLLVMDebugInfoDWARF \
   libLLVMDebugInfoPDB \
+  libLLVMSymbolize \
   libLLVMIRReader \
   libLLVMBitWriter \
   libLLVMBitReader
@@ -53,7 +54,6 @@ llvm_post_static_libraries := \
   libLLVMInstrumentation \
   libLLVMTransformObjCARC \
   libLLVMTransformUtils \
-  libLLVMipa \
   libLLVMAnalysis \
   libLLVMTarget \
   libLLVMMCDisassembler \

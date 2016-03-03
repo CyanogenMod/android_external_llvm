@@ -6,6 +6,7 @@ tablegen_SRC_FILES := \
   AsmMatcherEmitter.cpp \
   AsmWriterEmitter.cpp \
   AsmWriterInst.cpp \
+  Attributes.cpp \
   CallingConvEmitter.cpp \
   CodeEmitterGen.cpp \
   CodeGenDAGPatterns.cpp \

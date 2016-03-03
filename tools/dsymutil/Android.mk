@@ -8,7 +8,8 @@ llvm_dsymutil_SRC_FILES := \
   DebugMap.cpp \
   dsymutil.cpp \
   DwarfLinker.cpp \
-  MachODebugMapParser.cpp
+  MachODebugMapParser.cpp \
+  MachOUtils.cpp \
 
 llvm_dsymutil_STATIC_LIBRARIES := \
   libLLVMARMCodeGen \

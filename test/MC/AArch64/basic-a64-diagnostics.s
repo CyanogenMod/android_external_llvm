@@ -75,19 +75,19 @@
 // Add/sub (immediate)
 //------------------------------------------------------------------------------
 
-// Out of range immediates: < 0 or more than 12 bits
-        add w4, w5, #-1
+// Out of range immediates: more than 12 bits
+        add w4, w5, #-4096
         add w5, w6, #0x1000
-        add w4, w5, #-1, lsl #12
+        add w4, w5, #-4096, lsl #12
         add w5, w6, #0x1000, lsl #12
 // CHECK-ERROR: error: expected compatible register, symbol or integer in range [0, 4095]
-// CHECK-ERROR-NEXT:         add w4, w5, #-1
+// CHECK-ERROR-NEXT:         add w4, w5, #-4096
 // CHECK-ERROR-NEXT:                     ^
 // CHECK-ERROR-AARCH64-NEXT: error: expected compatible register, symbol or integer in range [0, 4095]
 // CHECK-ERROR-AARCH64-NEXT:         add w5, w6, #0x1000
 // CHECK-ERROR-AARCH64-NEXT:                     ^
 // CHECK-ERROR-NEXT: error: expected compatible register, symbol or integer in range [0, 4095]
-// CHECK-ERROR-NEXT:         add w4, w5, #-1, lsl #12
+// CHECK-ERROR-NEXT:         add w4, w5, #-4096, lsl #12
 // CHECK-ERROR-NEXT:                     ^
 // CHECK-ERROR-NEXT: error: expected compatible register, symbol or integer in range [0, 4095]
 // CHECK-ERROR-NEXT:         add w5, w6, #0x1000, lsl #12
@@ -1603,7 +1603,7 @@
 // CHECK-ERROR: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:         fcsel q3, q20, q9, pl
 // CHECK-ERROR-NEXT:               ^
-// CHECK-ERROR-NEXT: error: invalid operand for instruction
+// CHECK-ERROR-NEXT: error: instruction requires: fullfp16
 // CHECK-ERROR-NEXT:         fcsel h9, h10, h11, mi
 // CHECK-ERROR-NEXT:               ^
 // CHECK-ERROR-NEXT: error: invalid operand for instruction
@@ -1652,7 +1652,7 @@
 // CHECK-ERROR: error: invalid operand for instruction
 // CHECK-ERROR-NEXT:         fmadd b3, b4, b5, b6
 // CHECK-ERROR-NEXT:               ^
-// CHECK-ERROR-NEXT: error: invalid operand for instruction
+// CHECK-ERROR-NEXT: error: instruction requires: fullfp16
 // CHECK-ERROR-NEXT:         fmsub h1, h2, h3, h4
 // CHECK-ERROR-NEXT:               ^
 // CHECK-ERROR-NEXT: error: invalid operand for instruction

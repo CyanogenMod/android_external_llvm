@@ -1,4 +1,4 @@
-//===-- llvm-mc.cpp - Machine Code Hacking Driver -------------------------===//
+//===-- llvm-mc.cpp - Machine Code Hacking Driver ---------------*- C++ -*-===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -39,6 +39,7 @@
 #include "llvm/Support/TargetRegistry.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/ToolOutputFile.h"
+
 using namespace llvm;
 
 static cl::opt<std::string>
@@ -234,7 +235,7 @@ static void setDwarfDebugFlags(int argc, char **argv) {
 }
 
 static std::string DwarfDebugProducer;
-static void setDwarfDebugProducer(void) {
+static void setDwarfDebugProducer() {
   if(!getenv("DEBUG_PRODUCER"))
     return;
   DwarfDebugProducer += getenv("DEBUG_PRODUCER");
@@ -383,7 +384,6 @@ int main(int argc, char **argv) {
   cl::ParseCommandLineOptions(argc, argv, "llvm machine code playground\n");
   MCTargetOptions MCOptions = InitMCTargetOptionsFromFlags();
   TripleName = Triple::normalize(TripleName);
-  Triple TheTriple(TripleName);
   setDwarfDebugFlags(argc, argv);
 
   setDwarfDebugProducer();
@@ -392,11 +392,14 @@ int main(int argc, char **argv) {
   const Target *TheTarget = GetTarget(ProgName);
   if (!TheTarget)
     return 1;
+  // Now that GetTarget() has (potentially) replaced TripleName, it's safe to
+  // construct the Triple object.
+  Triple TheTriple(TripleName);
 
   ErrorOr<std::unique_ptr<MemoryBuffer>> BufferPtr =
       MemoryBuffer::getFileOrSTDIN(InputFilename);
   if (std::error_code EC = BufferPtr.getError()) {
-    errs() << ProgName << ": " << EC.message() << '\n';
+    errs() << InputFilename << ": " << EC.message() << '\n';
     return 1;
   }
   MemoryBuffer *Buffer = BufferPtr->get();
@@ -429,7 +432,7 @@ int main(int argc, char **argv) {
   // MCObjectFileInfo needs a MCContext reference in order to initialize itself.
   MCObjectFileInfo MOFI;
   MCContext Ctx(MAI.get(), MRI.get(), &MOFI, &SrcMgr);
-  MOFI.InitMCObjectFileInfo(TripleName, RelocModel, CMModel, Ctx);
+  MOFI.InitMCObjectFileInfo(TheTriple, RelocModel, CMModel, Ctx);
 
   if (SaveTempLabels)
     Ctx.setAllowTemporaryLabels(false);
@@ -498,6 +501,9 @@ int main(int argc, char **argv) {
   } else {
     assert(FileType == OFT_ObjectFile && "Invalid file type!");
 
+    // Don't waste memory on names of temp labels.
+    Ctx.setUseNamesOnTempLabels(false);
+
     if (!Out->os().supportsSeeking()) {
       BOS = make_unique<buffer_ostream>(Out->os());
       OS = BOS.get();
@@ -505,9 +511,10 @@ int main(int argc, char **argv) {
 
     MCCodeEmitter *CE = TheTarget->createMCCodeEmitter(*MCII, *MRI, Ctx);
     MCAsmBackend *MAB = TheTarget->createMCAsmBackend(*MRI, TripleName, MCPU);
-    Str.reset(TheTarget->createMCObjectStreamer(TheTriple, Ctx, *MAB, *OS, CE,
-                                                *STI, RelaxAll,
-                                                /*DWARFMustBeAtTheEnd*/ false));
+    Str.reset(TheTarget->createMCObjectStreamer(
+        TheTriple, Ctx, *MAB, *OS, CE, *STI, MCOptions.MCRelaxAll,
+        MCOptions.MCIncrementalLinkerCompatible,
+        /*DWARFMustBeAtTheEnd*/ false));
     if (NoExecStack)
       Str->InitSections(true);
   }

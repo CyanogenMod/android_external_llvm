@@ -381,20 +381,35 @@ StringRef MDString::getString() const {
 // MDNode implementation.
 //
 
+// Assert that the MDNode types will not be unaligned by the objects
+// prepended to them.
+#define HANDLE_MDNODE_LEAF(CLASS)                                              \
+  static_assert(                                                               \
+      llvm::AlignOf<uint64_t>::Alignment >= llvm::AlignOf<CLASS>::Alignment,   \
+      "Alignment is insufficient after objects prepended to " #CLASS);
+#include "llvm/IR/Metadata.def"
+
 void *MDNode::operator new(size_t Size, unsigned NumOps) {
-  void *Ptr = ::operator new(Size + NumOps * sizeof(MDOperand));
+  size_t OpSize = NumOps * sizeof(MDOperand);
+  // uint64_t is the most aligned type we need support (ensured by static_assert
+  // above)
+  OpSize = RoundUpToAlignment(OpSize, llvm::alignOf<uint64_t>());
+  void *Ptr = reinterpret_cast<char *>(::operator new(OpSize + Size)) + OpSize;
   MDOperand *O = static_cast<MDOperand *>(Ptr);
-  for (MDOperand *E = O + NumOps; O != E; ++O)
-    (void)new (O) MDOperand;
-  return O;
+  for (MDOperand *E = O - NumOps; O != E; --O)
+    (void)new (O - 1) MDOperand;
+  return Ptr;
 }
 
 void MDNode::operator delete(void *Mem) {
   MDNode *N = static_cast<MDNode *>(Mem);
+  size_t OpSize = N->NumOperands * sizeof(MDOperand);
+  OpSize = RoundUpToAlignment(OpSize, llvm::alignOf<uint64_t>());
+
   MDOperand *O = static_cast<MDOperand *>(Mem);
   for (MDOperand *E = O - N->NumOperands; O != E; --O)
     (O - 1)->~MDOperand();
-  ::operator delete(O);
+  ::operator delete(reinterpret_cast<char *>(Mem) - OpSize);
 }
 
 MDNode::MDNode(LLVMContext &Context, unsigned ID, StorageType Storage,
@@ -502,7 +517,7 @@ void MDNode::decrementUnresolvedOperandCount() {
     resolve();
 }
 
-void MDNode::resolveCycles() {
+void MDNode::resolveCycles(bool MDMaterialized) {
   if (isResolved())
     return;
 
@@ -515,6 +530,8 @@ void MDNode::resolveCycles() {
     if (!N)
       continue;
 
+    if (N->isTemporary() && !MDMaterialized)
+      continue;
     assert(!N->isTemporary() &&
            "Expected all forward declarations to be resolved");
     if (!N->isResolved())
@@ -530,6 +547,18 @@ static bool hasSelfReference(MDNode *N) {
 }
 
 MDNode *MDNode::replaceWithPermanentImpl() {
+  switch (getMetadataID()) {
+  default:
+    // If this type isn't uniquable, replace with a distinct node.
+    return replaceWithDistinctImpl();
+
+#define HANDLE_MDNODE_LEAF_UNIQUABLE(CLASS)                                    \
+  case CLASS##Kind:                                                            \
+    break;
+#include "llvm/IR/Metadata.def"
+  }
+
+  // Even if this type is uniquable, self-references have to be distinct.
   if (hasSelfReference(this))
     return replaceWithDistinctImpl();
   return replaceWithUniquedImpl();
@@ -656,8 +685,8 @@ MDNode *MDNode::uniquify() {
   // Try to insert into uniquing store.
   switch (getMetadataID()) {
   default:
-    llvm_unreachable("Invalid subclass of MDNode");
-#define HANDLE_MDNODE_LEAF(CLASS)                                              \
+    llvm_unreachable("Invalid or non-uniquable subclass of MDNode");
+#define HANDLE_MDNODE_LEAF_UNIQUABLE(CLASS)                                    \
   case CLASS##Kind: {                                                          \
     CLASS *SubclassThis = cast<CLASS>(this);                                   \
     std::integral_constant<bool, HasCachedHash<CLASS>::value>                  \
@@ -672,8 +701,8 @@ MDNode *MDNode::uniquify() {
 void MDNode::eraseFromStore() {
   switch (getMetadataID()) {
   default:
-    llvm_unreachable("Invalid subclass of MDNode");
-#define HANDLE_MDNODE_LEAF(CLASS)                                              \
+    llvm_unreachable("Invalid or non-uniquable subclass of MDNode");
+#define HANDLE_MDNODE_LEAF_UNIQUABLE(CLASS)                                    \
   case CLASS##Kind:                                                            \
     getContext().pImpl->CLASS##s.erase(cast<CLASS>(this));                     \
     break;
@@ -926,6 +955,17 @@ MDNode *MDNode::getMostGenericRange(MDNode *A, MDNode *B) {
   return MDNode::get(A->getContext(), MDs);
 }
 
+MDNode *MDNode::getMostGenericAlignmentOrDereferenceable(MDNode *A, MDNode *B) {
+  if (!A || !B)
+    return nullptr;
+
+  ConstantInt *AVal = mdconst::extract<ConstantInt>(A->getOperand(0));
+  ConstantInt *BVal = mdconst::extract<ConstantInt>(B->getOperand(0));
+  if (AVal->getZExtValue() < BVal->getZExtValue())
+    return A;
+  return B;
+}
+
 //===----------------------------------------------------------------------===//
 // NamedMDNode implementation.
 //
@@ -1030,13 +1070,9 @@ MDNode *Instruction::getMetadataImpl(StringRef Kind) const {
   return getMetadataImpl(getContext().getMDKindID(Kind));
 }
 
-void Instruction::dropUnknownMetadata(ArrayRef<unsigned> KnownIDs) {
+void Instruction::dropUnknownNonDebugMetadata(ArrayRef<unsigned> KnownIDs) {
   SmallSet<unsigned, 5> KnownSet;
   KnownSet.insert(KnownIDs.begin(), KnownIDs.end());
-
-  // Drop debug if needed
-  if (KnownSet.erase(LLVMContext::MD_dbg))
-    DbgLoc = DebugLoc();
 
   if (!hasMetadataHashEntry())
     return; // Nothing to remove!
@@ -1062,7 +1098,7 @@ void Instruction::dropUnknownMetadata(ArrayRef<unsigned> KnownIDs) {
   }
 }
 
-/// setMetadata - Set the metadata of of the specified kind to the specified
+/// setMetadata - Set the metadata of the specified kind to the specified
 /// node.  This updates/replaces metadata if already present, or removes it if
 /// Node is null.
 void Instruction::setMetadata(unsigned KindID, MDNode *Node) {
@@ -1235,4 +1271,12 @@ void Function::clearMetadata() {
     return;
   getContext().pImpl->FunctionMetadata.erase(this);
   setHasMetadataHashEntry(false);
+}
+
+void Function::setSubprogram(DISubprogram *SP) {
+  setMetadata(LLVMContext::MD_dbg, SP);
+}
+
+DISubprogram *Function::getSubprogram() const {
+  return cast_or_null<DISubprogram>(getMetadata(LLVMContext::MD_dbg));
 }

@@ -187,6 +187,9 @@ bool AArch64MCInstLower::lowerOperand(const MachineOperand &MO,
   case MachineOperand::MO_ExternalSymbol:
     MCOp = LowerSymbolOperand(MO, GetExternalSymbolSymbol(MO));
     break;
+  case MachineOperand::MO_MCSymbol:
+    MCOp = LowerSymbolOperand(MO, MO.getMCSymbol());
+    break;
   case MachineOperand::MO_JumpTableIndex:
     MCOp = LowerSymbolOperand(MO, Printer.GetJTISymbol(MO.getIndex()));
     break;
@@ -204,9 +207,9 @@ bool AArch64MCInstLower::lowerOperand(const MachineOperand &MO,
 void AArch64MCInstLower::Lower(const MachineInstr *MI, MCInst &OutMI) const {
   OutMI.setOpcode(MI->getOpcode());
 
-  for (unsigned i = 0, e = MI->getNumOperands(); i != e; ++i) {
+  for (const MachineOperand &MO : MI->operands()) {
     MCOperand MCOp;
-    if (lowerOperand(MI->getOperand(i), MCOp))
+    if (lowerOperand(MO, MCOp))
       OutMI.addOperand(MCOp);
   }
 }

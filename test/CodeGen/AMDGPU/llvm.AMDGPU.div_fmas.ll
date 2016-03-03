@@ -1,10 +1,9 @@
-; RUN: llc -march=amdgcn -mcpu=SI -verify-machineinstrs < %s | FileCheck -check-prefix=GCN -check-prefix=SI %s
-; XUN: llc -march=amdgcn -mcpu=tonga -verify-machineinstrs < %s | FileCheck -check-prefix=GCN -check-prefix=VI %s
+; RUN: llc -march=amdgcn -mcpu=SI -verify-machineinstrs < %s | FileCheck -strict-whitespace -check-prefix=GCN -check-prefix=SI %s
+; XUN: llc -march=amdgcn -mcpu=tonga -verify-machineinstrs < %s | FileCheck -strict-whitespace -check-prefix=GCN -check-prefix=VI %s
 
 ; FIXME: Enable for VI.
 
 declare i32 @llvm.r600.read.tidig.x() nounwind readnone
-declare void @llvm.AMDGPU.barrier.global() nounwind noduplicate
 declare float @llvm.AMDGPU.div.fmas.f32(float, float, float, i1) nounwind readnone
 declare double @llvm.AMDGPU.div.fmas.f64(double, double, double, i1) nounwind readnone
 

@@ -16,7 +16,7 @@
 ;===------------------------------------------------------------------------===;
 
 [common]
-subdirectories = Disassembler MCTargetDesc TargetInfo
+subdirectories = AsmParser Disassembler MCTargetDesc TargetInfo
 
 [component_0]
 type = TargetGroup
@@ -33,10 +33,12 @@ required_libraries =
  AsmPrinter
  CodeGen
  Core
+ HexagonAsmParser
  HexagonDesc
  HexagonInfo
  MC
  SelectionDAG
  Support
  Target
+ TransformUtils
 add_to_library_groups = Hexagon

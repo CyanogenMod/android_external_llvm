@@ -9,6 +9,8 @@
 
 #ifndef LLVM_LIB_CODEGEN_ASMPRINTER_DEBUGLOCENTRY_H
 #define LLVM_LIB_CODEGEN_ASMPRINTER_DEBUGLOCENTRY_H
+
+#include "DebugLocStream.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DebugInfo.h"
@@ -17,7 +19,6 @@
 
 namespace llvm {
 class AsmPrinter;
-class DebugLocStream;
 
 /// \brief This struct describes location entries emitted in the .debug_loc
 /// section.
@@ -142,7 +143,7 @@ public:
   }
 
   /// \brief Lower this entry into a DWARF expression.
-  void finalize(const AsmPrinter &AP, DebugLocStream &Locs,
+  void finalize(const AsmPrinter &AP, DebugLocStream::ListBuilder &List,
                 const DIBasicType *BT);
 };
 

@@ -25,6 +25,7 @@ x86_codegen_SRC_FILES := \
   X86InstrInfo.cpp \
   X86MachineFunctionInfo.cpp \
   X86MCInstLower.cpp \
+  X86OptimizeLEAs.cpp \
   X86PadShortFunction.cpp \
   X86RegisterInfo.cpp \
   X86SelectionDAGInfo.cpp \
@@ -50,6 +51,7 @@ LOCAL_MODULE_HOST_OS := darwin linux windows
 
 include $(LLVM_HOST_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
 
@@ -67,6 +69,7 @@ LOCAL_MODULE:= libLLVMX86CodeGen
 
 include $(LLVM_DEVICE_BUILD_MK)
 include $(LLVM_TBLGEN_RULES_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
 endif

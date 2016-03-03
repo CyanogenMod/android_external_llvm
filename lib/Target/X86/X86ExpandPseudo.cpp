@@ -19,9 +19,10 @@
 #include "X86InstrInfo.h"
 #include "X86MachineFunctionInfo.h"
 #include "X86Subtarget.h"
-#include "llvm/CodeGen/Passes.h" // For IDs of passes that are preserved.
+#include "llvm/Analysis/EHPersonalities.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
+#include "llvm/CodeGen/Passes.h" // For IDs of passes that are preserved.
 #include "llvm/IR/GlobalValue.h"
 using namespace llvm;
 
@@ -84,19 +85,9 @@ bool X86ExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
     int StackAdj = StackAdjust.getImm();
 
     if (StackAdj) {
-      bool Is64Bit = STI->is64Bit();
-      // standard x86_64 and NaCl use 64-bit frame/stack pointers, x32 - 32-bit.
-      const bool Uses64BitFramePtr =
-          STI->isTarget64BitLP64() || STI->isTargetNaCl64();
-      // Check if we should use LEA for SP.
-      bool UseLEAForSP = STI->useLeaForSP() &&
-                         X86FL->canUseLEAForSPInEpilogue(*MBB.getParent());
-      unsigned StackPtr = TRI->getStackRegister();
       // Check for possible merge with preceding ADD instruction.
-      StackAdj += X86FrameLowering::mergeSPUpdates(MBB, MBBI, StackPtr, true);
-      X86FrameLowering::emitSPUpdate(MBB, MBBI, StackPtr, StackAdj, Is64Bit,
-                                     Uses64BitFramePtr, UseLEAForSP, *TII,
-                                     *TRI);
+      StackAdj += X86FL->mergeSPUpdates(MBB, MBBI, true);
+      X86FL->emitSPUpdate(MBB, MBBI, StackAdj, /*InEpilogue=*/true);
     }
 
     // Jump to label or value in register.
@@ -149,6 +140,24 @@ bool X86ExpandPseudo::ExpandMI(MachineBasicBlock &MBB,
             TII->get(Uses64BitFramePtr ? X86::MOV64rr : X86::MOV32rr), StackPtr)
         .addReg(DestAddr.getReg());
     // The EH_RETURN pseudo is really removed during the MC Lowering.
+    return true;
+  }
+  case X86::IRET: {
+    // Adjust stack to erase error code
+    int64_t StackAdj = MBBI->getOperand(0).getImm();
+    X86FL->emitSPUpdate(MBB, MBBI, StackAdj, true);
+    // Replace pseudo with machine iret
+    BuildMI(MBB, MBBI, DL,
+            TII->get(STI->is64Bit() ? X86::IRET64 : X86::IRET32));
+    MBB.erase(MBBI);
+    return true;
+  }
+  case X86::EH_RESTORE: {
+    // Restore ESP and EBP, and optionally ESI if required.
+    bool IsSEH = isAsynchronousEHPersonality(classifyEHPersonality(
+        MBB.getParent()->getFunction()->getPersonalityFn()));
+    X86FL->restoreWin32EHStackPointers(MBB, MBBI, DL, /*RestoreSP=*/IsSEH);
+    MBBI->eraseFromParent();
     return true;
   }
   }

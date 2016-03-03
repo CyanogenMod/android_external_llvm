@@ -93,7 +93,7 @@ FunctionPass *createBitTrackingDCEPass();
 //
 // SROA - Replace aggregates or pieces of aggregates with scalar SSA values.
 //
-FunctionPass *createSROAPass(bool RequiresDomTree = true);
+FunctionPass *createSROAPass();
 
 //===----------------------------------------------------------------------===//
 //
@@ -161,7 +161,8 @@ Pass *createLoopStrengthReducePass();
 // It can also be configured to focus on size optimizations only.
 //
 Pass *createGlobalMergePass(const TargetMachine *TM, unsigned MaximalOffset,
-                            bool OnlyOptimizeForSize = false);
+                            bool OnlyOptimizeForSize = false,
+                            bool MergeExternalByDefault = false);
 
 //===----------------------------------------------------------------------===//
 //
@@ -381,6 +382,13 @@ Pass *createLowerAtomicPass();
 
 //===----------------------------------------------------------------------===//
 //
+// LowerEmuTLS - This pass generates __emutls_[vt].xyz variables for all
+// TLS variables for the emulated TLS model.
+//
+ModulePass *createLowerEmuTLSPass(const TargetMachine *TM);
+
+//===----------------------------------------------------------------------===//
+//
 // ValuePropagation - Propagate CFG-derived value information
 //
 Pass *createCorrelatedValuePropagationPass();
@@ -404,13 +412,6 @@ FunctionPass *createLowerExpectIntrinsicPass();
 // calls such as sqrt.
 //
 FunctionPass *createPartiallyInlineLibCallsPass();
-
-//===----------------------------------------------------------------------===//
-//
-// SampleProfilePass - Loads sample profile data from disk and generates
-// IR metadata to reflect the profile.
-FunctionPass *createSampleProfileLoaderPass();
-FunctionPass *createSampleProfileLoaderPass(StringRef Name);
 
 //===----------------------------------------------------------------------===//
 //
@@ -485,6 +486,12 @@ FunctionPass *createNaryReassociatePass();
 // LoopDistribute - Distribute loops.
 //
 FunctionPass *createLoopDistributePass();
+
+//===----------------------------------------------------------------------===//
+//
+// LoopLoadElimination - Perform loop-aware load elimination.
+//
+FunctionPass *createLoopLoadEliminationPass();
 
 } // End llvm namespace
 

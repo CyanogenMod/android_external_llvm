@@ -23,6 +23,7 @@ codegen_SRC_FILES := \
   ExpandISelPseudos.cpp \
   ExpandPostRAPseudos.cpp \
   FaultMaps.cpp \
+  FuncletLayout.cpp \
   GCMetadata.cpp \
   GCMetadataPrinter.cpp \
   GCRootLowering.cpp \
@@ -32,9 +33,11 @@ codegen_SRC_FILES := \
   ImplicitNullChecks.cpp \
   InlineSpiller.cpp \
   InterferenceCache.cpp \
+  InterleavedAccessPass.cpp \
   IntrinsicLowering.cpp \
   LatencyPriorityQueue.cpp \
   LexicalScopes.cpp \
+  LiveDebugValues.cpp \
   LiveDebugVariables.cpp \
   LiveIntervalAnalysis.cpp \
   LiveInterval.cpp \
@@ -47,6 +50,7 @@ codegen_SRC_FILES := \
   LiveVariables.cpp \
   LLVMTargetMachine.cpp \
   LocalStackSlotAllocation.cpp \
+  LowerEmuTLS.cpp \
   MachineBasicBlock.cpp \
   MachineBlockFrequencyInfo.cpp \
   MachineBlockPlacement.cpp \
@@ -75,9 +79,11 @@ codegen_SRC_FILES := \
   MachineSSAUpdater.cpp \
   MachineTraceMetrics.cpp \
   MachineVerifier.cpp \
+  MIRPrinter.cpp \
   MIRPrintingPass.cpp \
   OcamlGC.cpp \
   OptimizePHIs.cpp \
+  ParallelCG.cpp \
   Passes.cpp \
   PeepholeOptimizer.cpp \
   PHIElimination.cpp \
@@ -135,6 +141,7 @@ LOCAL_MODULE:= libLLVMCodeGen
 LOCAL_MODULE_HOST_OS := darwin linux windows
 
 include $(LLVM_HOST_BUILD_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
 
@@ -147,6 +154,7 @@ LOCAL_SRC_FILES := $(codegen_SRC_FILES)
 LOCAL_MODULE:= libLLVMCodeGen
 
 include $(LLVM_DEVICE_BUILD_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
 endif

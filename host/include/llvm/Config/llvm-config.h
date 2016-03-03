@@ -33,7 +33,11 @@
 #define LLVM_DOCSDIR "/opt/llvm-android/share/doc/llvm"
 
 /* Define if threads enabled */
+#if !defined(_WIN32) && !defined(_WIN64)
 #define LLVM_ENABLE_THREADS 1
+#else
+#define LLVM_ENABLE_THREADS 0
+#endif
 
 /* Installation directory for config files */
 #define LLVM_ETCDIR "/opt/llvm-android/etc/llvm"
@@ -95,7 +99,13 @@
 #define LLVM_VERSION_MAJOR 3
 
 /* Minor version of the LLVM API */
-#define LLVM_VERSION_MINOR 6
+#define LLVM_VERSION_MINOR 8
+
+/* Patch version of the LLVM API */
+#define LLVM_VERSION_PATCH 256229
+
+/* LLVM version string */
+#define LLVM_VERSION_STRING "3.8.256229"
 
 #include "llvm/Config/llvm-platform-config.h"
 

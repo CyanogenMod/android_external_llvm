@@ -28,6 +28,9 @@ class SITargetLowering : public AMDGPUTargetLowering {
   SDValue LowerGlobalAddress(AMDGPUMachineFunction *MFI, SDValue Op,
                              SelectionDAG &DAG) const override;
 
+  SDValue lowerImplicitZextParam(SelectionDAG &DAG, SDValue Op,
+                                 MVT VT, unsigned Offset) const;
+
   SDValue LowerINTRINSIC_WO_CHAIN(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerINTRINSIC_VOID(SDValue Op, SelectionDAG &DAG) const;
   SDValue LowerFrameIndex(SDValue Op, SelectionDAG &DAG) const;
@@ -56,14 +59,16 @@ class SITargetLowering : public AMDGPUTargetLowering {
   SDValue performMin3Max3Combine(SDNode *N, DAGCombinerInfo &DCI) const;
   SDValue performSetCCCombine(SDNode *N, DAGCombinerInfo &DCI) const;
 
+  bool isLegalFlatAddressingMode(const AddrMode &AM) const;
+  bool isLegalMUBUFAddressingMode(const AddrMode &AM) const;
 public:
   SITargetLowering(TargetMachine &tm, const AMDGPUSubtarget &STI);
 
   bool isShuffleMaskLegal(const SmallVectorImpl<int> &/*Mask*/,
                           EVT /*VT*/) const override;
 
-  bool isLegalAddressingMode(const AddrMode &AM,
-                             Type *Ty, unsigned AS) const override;
+  bool isLegalAddressingMode(const DataLayout &DL, const AddrMode &AM, Type *Ty,
+                             unsigned AS) const override;
 
   bool allowsMisalignedMemoryAccesses(EVT VT, unsigned AS,
                                       unsigned Align,
@@ -74,6 +79,9 @@ public:
                           bool ZeroMemset,
                           bool MemcpyStrSrc,
                           MachineFunction &MF) const override;
+
+  bool isMemOpUniform(const SDNode *N) const;
+  bool isNoopAddrSpaceCast(unsigned SrcAS, unsigned DestAS) const override;
 
   TargetLoweringBase::LegalizeTypeAction
   getPreferredVectorAction(EVT VT) const override;
@@ -90,8 +98,9 @@ public:
   MachineBasicBlock * EmitInstrWithCustomInserter(MachineInstr * MI,
                                       MachineBasicBlock * BB) const override;
   bool enableAggressiveFMAFusion(EVT VT) const override;
-  EVT getSetCCResultType(LLVMContext &Context, EVT VT) const override;
-  MVT getScalarShiftAmountTy(EVT VT) const override;
+  EVT getSetCCResultType(const DataLayout &DL, LLVMContext &Context,
+                         EVT VT) const override;
+  MVT getScalarShiftAmountTy(const DataLayout &, EVT) const override;
   bool isFMAFasterThanFMulAndFAdd(EVT VT) const override;
   SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const override;
   SDValue PerformDAGCombine(SDNode *N, DAGCombinerInfo &DCI) const override;
@@ -110,13 +119,10 @@ public:
                            SDValue Ptr,
                            uint32_t RsrcDword1,
                            uint64_t RsrcDword2And3) const;
-  MachineSDNode *buildScratchRSRC(SelectionDAG &DAG,
-                                  SDLoc DL,
-                                  SDValue Ptr) const;
-
-  std::pair<unsigned, const TargetRegisterClass *> getRegForInlineAsmConstraint(
-                                   const TargetRegisterInfo *TRI,
-                                   const std::string &Constraint, MVT VT) const override;
+  std::pair<unsigned, const TargetRegisterClass *>
+  getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                               StringRef Constraint, MVT VT) const override;
+  ConstraintType getConstraintType(StringRef Constraint) const override;
   SDValue copyToM0(SelectionDAG &DAG, SDValue Chain, SDLoc DL, SDValue V) const;
 };
 

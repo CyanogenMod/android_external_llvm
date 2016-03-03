@@ -81,7 +81,6 @@ llvm_lto_STATIC_LIBRARIES := \
   libLLVMInstrumentation \
   libLLVMTransformObjCARC \
   libLLVMTransformUtils \
-  libLLVMipa \
   libLLVMVectorize \
   libLLVMAnalysis \
   libLLVMTarget \
@@ -101,4 +100,6 @@ LOCAL_LDLIBS_linux := -lpthread -ldl
 LOCAL_STATIC_LIBRARIES := $(llvm_lto_STATIC_LIBRARIES) $(llvm_lto_STATIC_LIBRARIES)
 
 include $(LLVM_HOST_BUILD_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
+include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_HOST_SHARED_LIBRARY)

@@ -12,10 +12,12 @@ debuginfo_dwarf_SRC_FILES := \
   DWARFDebugInfoEntry.cpp \
   DWARFDebugLine.cpp \
   DWARFDebugLoc.cpp \
+  DWARFDebugMacro.cpp \
   DWARFDebugRangeList.cpp \
   DWARFFormValue.cpp \
   DWARFTypeUnit.cpp \
   DWARFUnit.cpp \
+  DWARFUnitIndex.cpp \
   SyntaxHighlighting.cpp
 
 # For the host

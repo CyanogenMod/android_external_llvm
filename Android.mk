@@ -18,7 +18,6 @@ include $(CLEAR_VARS)
 # LLVM Libraries
 subdirs := \
   lib/Analysis \
-  lib/Analysis/IPA \
   lib/AsmParser \
   lib/Bitcode/Reader \
   lib/Bitcode/Writer \
@@ -34,6 +33,7 @@ subdirs := \
   lib/CodeGen/SelectionDAG \
   lib/DebugInfo/DWARF \
   lib/DebugInfo/PDB \
+  lib/DebugInfo/Symbolize \
   lib/IR \
   lib/IRReader \
   lib/LibDriver \
@@ -114,6 +114,7 @@ subdirs += \
   tools/llvm-dis \
   tools/llvm-diff \
   tools/llvm-dwarfdump \
+  tools/llvm-dwp \
   tools/llvm-extract \
   tools/llvm-link \
   tools/llvm-lto \
@@ -126,12 +127,13 @@ subdirs += \
   tools/llvm-readobj \
   tools/llvm-rtdyld \
   tools/llvm-size \
+  tools/llvm-split \
   tools/llvm-symbolizer \
   tools/lto \
   tools/gold \
-  tools/macho-dump \
   tools/obj2yaml \
   tools/opt \
+  tools/sancov \
   tools/verify-uselistorder \
   tools/yaml2obj \
 

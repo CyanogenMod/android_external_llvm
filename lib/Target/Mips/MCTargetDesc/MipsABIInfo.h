@@ -36,7 +36,7 @@ public:
   static MipsABIInfo N32() { return MipsABIInfo(ABI::N32); }
   static MipsABIInfo N64() { return MipsABIInfo(ABI::N64); }
   static MipsABIInfo EABI() { return MipsABIInfo(ABI::EABI); }
-  static MipsABIInfo computeTargetABI(Triple TT, StringRef CPU,
+  static MipsABIInfo computeTargetABI(const Triple &TT, StringRef CPU,
                                       const MCTargetOptions &Options);
 
   bool IsKnown() const { return ThisABI != ABI::Unknown; }
@@ -47,10 +47,10 @@ public:
   ABI GetEnumValue() const { return ThisABI; }
 
   /// The registers to use for byval arguments.
-  const ArrayRef<MCPhysReg> GetByValArgRegs() const;
+  ArrayRef<MCPhysReg> GetByValArgRegs() const;
 
   /// The registers to use for the variable argument list.
-  const ArrayRef<MCPhysReg> GetVarArgRegs() const;
+  ArrayRef<MCPhysReg> GetVarArgRegs() const;
 
   /// Obtain the size of the area allocated by the callee for arguments.
   /// CallingConv::FastCall affects the value for O32.
@@ -67,9 +67,12 @@ public:
   unsigned GetFramePtr() const;
   unsigned GetBasePtr() const;
   unsigned GetNullPtr() const;
+  unsigned GetZeroReg() const;
   unsigned GetPtrAdduOp() const;
   unsigned GetPtrAddiuOp() const;
+  unsigned GetGPRMoveOp() const;
   inline bool ArePtrs64bit() const { return IsN64(); }
+  inline bool AreGprs64bit() const { return IsN32() || IsN64(); }
 
   unsigned GetEhDataReg(unsigned I) const;
 };

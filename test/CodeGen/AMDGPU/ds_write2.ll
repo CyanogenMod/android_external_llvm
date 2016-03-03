@@ -1,4 +1,4 @@
-; RUN: llc -march=amdgcn -mcpu=bonaire -verify-machineinstrs -mattr=+load-store-opt -enable-misched < %s | FileCheck -strict-whitespace -check-prefix=SI %s
+; RUN: llc -march=amdgcn -mcpu=bonaire -verify-machineinstrs -mattr=+load-store-opt < %s | FileCheck -strict-whitespace -check-prefix=SI %s
 
 @lds = addrspace(3) global [512 x float] undef, align 4
 @lds.f64 = addrspace(3) global [512 x double] undef, align 8
@@ -25,7 +25,7 @@ define void @simple_write2_one_val_f32(float addrspace(1)* %C, float addrspace(1
 ; SI-DAG: buffer_load_dword [[VAL0:v[0-9]+]], {{v\[[0-9]+:[0-9]+\]}}, {{s\[[0-9]+:[0-9]+\]}}, 0 addr64{{$}}
 ; SI-DAG: buffer_load_dword [[VAL1:v[0-9]+]], {{v\[[0-9]+:[0-9]+\]}}, {{s\[[0-9]+:[0-9]+\]}}, 0 addr64 offset:4
 ; SI-DAG: v_lshlrev_b32_e32 [[VPTR:v[0-9]+]], 2, v{{[0-9]+}}
-; SI: ds_write2_b32 [[VPTR]], [[VAL0]], [[VAL1]] offset1:8 
+; SI: ds_write2_b32 [[VPTR]], [[VAL0]], [[VAL1]] offset1:8
 ; SI: s_endpgm
 define void @simple_write2_two_val_f32(float addrspace(1)* %C, float addrspace(1)* %in) #0 {
   %x.i = tail call i32 @llvm.r600.read.tidig.x() #1
@@ -345,8 +345,9 @@ define void @store_constant_disjoint_offsets() {
 
 ; SI-LABEL: @store_misaligned64_constant_offsets
 ; SI: v_mov_b32_e32 [[ZERO:v[0-9]+]], 0{{$}}
-; SI: ds_write2_b32 [[ZERO]], v{{[0-9]+}}, v{{[0-9]+}} offset1:1
-; SI: ds_write2_b32 [[ZERO]], v{{[0-9]+}}, v{{[0-9]+}} offset0:2 offset1:3
+; SI-DAG: ds_write2_b32 [[ZERO]], v{{[0-9]+}}, v{{[0-9]+}} offset1:1
+; SI-DAG: ds_write2_b32 [[ZERO]], v{{[0-9]+}}, v{{[0-9]+}} offset0:2 offset1:3
+; SI: s_endpgm
 define void @store_misaligned64_constant_offsets() {
   store i64 123, i64 addrspace(3)* getelementptr inbounds ([4 x i64], [4 x i64] addrspace(3)* @bar, i32 0, i32 0), align 4
   store i64 123, i64 addrspace(3)* getelementptr inbounds ([4 x i64], [4 x i64] addrspace(3)* @bar, i32 0, i32 1), align 4
@@ -405,6 +406,19 @@ define void @write2_sgemm_sequence(float addrspace(1)* %C, i32 %lda, i32 %ldb, f
   ret void
 }
 
+; CI-LABEL: {{^}}simple_write2_v4f32_superreg_align4:
+; CI: ds_write2_b32 {{v[0-9]+}}, {{v[0-9]+}}, {{v[0-9]+}} offset0:3 offset1:2{{$}}
+; CI: ds_write2_b32 {{v[0-9]+}}, {{v[0-9]+}}, {{v[0-9]+}} offset0:1{{$}}
+; CI: s_endpgm
+define void @simple_write2_v4f32_superreg_align4(<4 x float> addrspace(3)* %out, <4 x float> addrspace(1)* %in) #0 {
+  %x.i = tail call i32 @llvm.r600.read.tidig.x() #1
+  %in.gep = getelementptr inbounds <4 x float>, <4 x float> addrspace(1)* %in
+  %val0 = load <4 x float>, <4 x float> addrspace(1)* %in.gep, align 4
+  %out.gep = getelementptr inbounds <4 x float>, <4 x float> addrspace(3)* %out, i32 %x.i
+  store <4 x float> %val0, <4 x float> addrspace(3)* %out.gep, align 4
+  ret void
+}
+
 ; Function Attrs: nounwind readnone
 declare i32 @llvm.r600.read.tgid.x() #1
 
@@ -417,9 +431,9 @@ declare i32 @llvm.r600.read.tidig.x() #1
 ; Function Attrs: nounwind readnone
 declare i32 @llvm.r600.read.tidig.y() #1
 
-; Function Attrs: noduplicate nounwind
+; Function Attrs: convergent nounwind
 declare void @llvm.AMDGPU.barrier.local() #2
 
 attributes #0 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "no-realign-stack" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #1 = { nounwind readnone }
-attributes #2 = { noduplicate nounwind }
+attributes #2 = { convergent nounwind }

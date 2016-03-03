@@ -73,7 +73,7 @@ void Mips16DAGToDAGISel::initGlobalBaseReg(MachineFunction &MF) {
   MachineBasicBlock::iterator I = MBB.begin();
   MachineRegisterInfo &RegInfo = MF.getRegInfo();
   const TargetInstrInfo &TII = *Subtarget->getInstrInfo();
-  DebugLoc DL = I != MBB.end() ? I->getDebugLoc() : DebugLoc();
+  DebugLoc DL;
   unsigned V0, V1, V2, GlobalBaseReg = MipsFI->getGlobalBaseReg();
   const TargetRegisterClass *RC = &Mips::CPU16RegsRegClass;
 
@@ -120,13 +120,13 @@ void Mips16DAGToDAGISel::processFunctionAfterISel(MachineFunction &MF) {
 SDValue Mips16DAGToDAGISel::getMips16SPAliasReg() {
   unsigned Mips16SPAliasReg =
     MF->getInfo<MipsFunctionInfo>()->getMips16SPAliasReg();
-  return CurDAG->getRegister(Mips16SPAliasReg,
-                             getTargetLowering()->getPointerTy());
+  auto PtrVT = getTargetLowering()->getPointerTy(CurDAG->getDataLayout());
+  return CurDAG->getRegister(Mips16SPAliasReg, PtrVT);
 }
 
 void Mips16DAGToDAGISel::getMips16SPRefReg(SDNode *Parent, SDValue &AliasReg) {
-  SDValue AliasFPReg = CurDAG->getRegister(Mips::S0,
-                                           getTargetLowering()->getPointerTy());
+  auto PtrVT = getTargetLowering()->getPointerTy(CurDAG->getDataLayout());
+  SDValue AliasFPReg = CurDAG->getRegister(Mips::S0, PtrVT);
   if (Parent) {
     switch (Parent->getOpcode()) {
       case ISD::LOAD: {
@@ -155,7 +155,7 @@ void Mips16DAGToDAGISel::getMips16SPRefReg(SDNode *Parent, SDValue &AliasReg) {
       }
     }
   }
-  AliasReg = CurDAG->getRegister(Mips::SP, getTargetLowering()->getPointerTy());
+  AliasReg = CurDAG->getRegister(Mips::SP, PtrVT);
   return;
 
 }

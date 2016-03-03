@@ -30,6 +30,7 @@ mc_SRC_FILES := \
   MCObjectStreamer.cpp \
   MCObjectWriter.cpp \
   MCRegisterInfo.cpp \
+  MCSchedule.cpp \
   MCSection.cpp \
   MCSectionCOFF.cpp \
   MCSectionELF.cpp \

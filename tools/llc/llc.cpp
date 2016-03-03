@@ -45,6 +45,7 @@
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/Target/TargetSubtargetInfo.h"
+#include "llvm/Transforms/Utils/Cloning.h"
 #include <memory>
 using namespace llvm;
 
@@ -95,6 +96,12 @@ static cl::opt<bool> EnableDwarfDirectory(
 static cl::opt<bool> AsmVerbose("asm-verbose",
                                 cl::desc("Add comments to directives."),
                                 cl::init(true));
+
+static cl::opt<bool>
+    CompileTwice("compile-twice", cl::Hidden,
+                 cl::desc("Run everything twice, re-using the same pass "
+                          "manager and verify the result is the same."),
+                 cl::init(false));
 
 static int compileModule(char **, LLVMContext &);
 
@@ -312,8 +319,7 @@ static int compileModule(char **argv, LLVMContext &Context) {
   PM.add(new TargetLibraryInfoWrapperPass(TLII));
 
   // Add the target data from the target machine, if it exists, or the module.
-  if (const DataLayout *DL = Target->getDataLayout())
-    M->setDataLayout(*DL);
+  M->setDataLayout(Target->createDataLayout());
 
   // Override function attributes based on CPUStr, FeaturesStr, and command line
   // flags.
@@ -326,36 +332,56 @@ static int compileModule(char **argv, LLVMContext &Context) {
 
   {
     raw_pwrite_stream *OS = &Out->os();
-    std::unique_ptr<buffer_ostream> BOS;
-    if (FileType != TargetMachine::CGFT_AssemblyFile &&
-        !Out->os().supportsSeeking()) {
-      BOS = make_unique<buffer_ostream>(*OS);
+
+    // Manually do the buffering rather than using buffer_ostream,
+    // so we can memcmp the contents in CompileTwice mode
+    SmallVector<char, 0> Buffer;
+    std::unique_ptr<raw_svector_ostream> BOS;
+    if ((FileType != TargetMachine::CGFT_AssemblyFile &&
+         !Out->os().supportsSeeking()) ||
+        CompileTwice) {
+      BOS = make_unique<raw_svector_ostream>(Buffer);
       OS = BOS.get();
     }
 
+    AnalysisID StartBeforeID = nullptr;
     AnalysisID StartAfterID = nullptr;
     AnalysisID StopAfterID = nullptr;
     const PassRegistry *PR = PassRegistry::getPassRegistry();
-    if (!StartAfter.empty()) {
-      const PassInfo *PI = PR->getPassInfo(StartAfter);
-      if (!PI) {
-        errs() << argv[0] << ": start-after pass is not registered.\n";
+    if (!RunPass.empty()) {
+      if (!StartAfter.empty() || !StopAfter.empty()) {
+        errs() << argv[0] << ": start-after and/or stop-after passes are "
+                             "redundant when run-pass is specified.\n";
         return 1;
       }
-      StartAfterID = PI->getTypeInfo();
-    }
-    if (!StopAfter.empty()) {
-      const PassInfo *PI = PR->getPassInfo(StopAfter);
+      const PassInfo *PI = PR->getPassInfo(RunPass);
       if (!PI) {
-        errs() << argv[0] << ": stop-after pass is not registered.\n";
+        errs() << argv[0] << ": run-pass pass is not registered.\n";
         return 1;
       }
-      StopAfterID = PI->getTypeInfo();
+      StopAfterID = StartBeforeID = PI->getTypeInfo();
+    } else {
+      if (!StartAfter.empty()) {
+        const PassInfo *PI = PR->getPassInfo(StartAfter);
+        if (!PI) {
+          errs() << argv[0] << ": start-after pass is not registered.\n";
+          return 1;
+        }
+        StartAfterID = PI->getTypeInfo();
+      }
+      if (!StopAfter.empty()) {
+        const PassInfo *PI = PR->getPassInfo(StopAfter);
+        if (!PI) {
+          errs() << argv[0] << ": stop-after pass is not registered.\n";
+          return 1;
+        }
+        StopAfterID = PI->getTypeInfo();
+      }
     }
 
     // Ask the target to add backend passes as necessary.
-    if (Target->addPassesToEmitFile(PM, *OS, FileType, NoVerify, StartAfterID,
-                                    StopAfterID, MIR.get())) {
+    if (Target->addPassesToEmitFile(PM, *OS, FileType, NoVerify, StartBeforeID,
+                                    StartAfterID, StopAfterID, MIR.get())) {
       errs() << argv[0] << ": target does not support generation of this"
              << " file type!\n";
       return 1;
@@ -364,7 +390,39 @@ static int compileModule(char **argv, LLVMContext &Context) {
     // Before executing passes, print the final values of the LLVM options.
     cl::PrintOptionValues();
 
+    // If requested, run the pass manager over the same module again,
+    // to catch any bugs due to persistent state in the passes. Note that
+    // opt has the same functionality, so it may be worth abstracting this out
+    // in the future.
+    SmallVector<char, 0> CompileTwiceBuffer;
+    if (CompileTwice) {
+      std::unique_ptr<Module> M2(llvm::CloneModule(M.get()));
+      PM.run(*M2);
+      CompileTwiceBuffer = Buffer;
+      Buffer.clear();
+    }
+
     PM.run(*M);
+
+    // Compare the two outputs and make sure they're the same
+    if (CompileTwice) {
+      if (Buffer.size() != CompileTwiceBuffer.size() ||
+          (memcmp(Buffer.data(), CompileTwiceBuffer.data(), Buffer.size()) !=
+           0)) {
+        errs()
+            << "Running the pass manager twice changed the output.\n"
+               "Writing the result of the second run to the specified output\n"
+               "To generate the one-run comparison binary, just run without\n"
+               "the compile-twice option\n";
+        Out->os() << Buffer;
+        Out->keep();
+        return 1;
+      }
+    }
+
+    if (BOS) {
+      Out->os() << Buffer;
+    }
   }
 
   // Declare success.

@@ -16,7 +16,7 @@ declare void @f3()
 ; CHECK:       for.end.loopexit:
 ; CHECK-NEXT:    br label %for.end, !dbg [[LOOPEXIT_LOC:![0-9]+]]
 
-define linkonce_odr hidden void @foo(%"Length"* %begin, %"Length"* %end) nounwind ssp uwtable align 2 {
+define linkonce_odr hidden void @foo(%"Length"* %begin, %"Length"* %end) nounwind ssp uwtable align 2 !dbg !6 {
 entry:
   %cmp.4 = icmp eq %"Length"* %begin, %end, !dbg !7
   br i1 %cmp.4, label %for.end, label %for.body, !dbg !8
@@ -47,12 +47,12 @@ for.end:                                          ; preds = %length.exit, %entry
 ; CHECK: catch.preheader.split-lp:
 ; CHECK:   br label %catch, !dbg [[LPAD_PREHEADER_LOC]]
 
-define void @with_landingpad() uwtable ssp {
+define void @with_landingpad() uwtable ssp personality i8* bitcast (i32 (...)* @__gxx_personality_v0 to i8*) {
 entry:
   invoke void @f1() to label %try.cont19 unwind label %catch, !dbg !13
 
 catch:                                            ; preds = %if.else, %entry
-  %0 = landingpad { i8*, i32 } personality i8* bitcast (i32 (...)* @__gxx_personality_v0 to i8*)
+  %0 = landingpad { i8*, i32 }
           catch i8* bitcast ({ i8*, i8*, i8* }* @catchtypeinfo to i8*), !dbg !13
   invoke void @f3() to label %if.else unwind label %eh.resume, !dbg !13
 
@@ -63,7 +63,7 @@ try.cont19:                                       ; preds = %if.else, %entry
   ret void, !dbg !13
 
 eh.resume:                                        ; preds = %catch
-  %1 = landingpad { i8*, i32 } personality i8* bitcast (i32 (...)* @__gxx_personality_v0 to i8*)
+  %1 = landingpad { i8*, i32 }
           cleanup catch i8* bitcast ({ i8*, i8*, i8* }* @catchtypeinfo to i8*), !dbg !13
   resume { i8*, i32 } undef, !dbg !13
 }
@@ -80,7 +80,7 @@ eh.resume:                                        ; preds = %catch
 !3 = !{}
 !4 = !DISubroutineType(types: !3)
 !5 = !DIFile(filename: "Vector.h", directory: "/tmp")
-!6 = !DISubprogram(name: "destruct", scope: !5, file: !5, line: 71, type: !4, isLocal: false, isDefinition: true, scopeLine: 72, flags: DIFlagPrototyped, isOptimized: false, function: void (%"Length"*, %"Length"*)* @foo, variables: !3)
+!6 = distinct !DISubprogram(name: "destruct", scope: !5, file: !5, line: 71, type: !4, isLocal: false, isDefinition: true, scopeLine: 72, flags: DIFlagPrototyped, isOptimized: false, variables: !3)
 !7 = !DILocation(line: 73, column: 38, scope: !6)
 !8 = !DILocation(line: 73, column: 13, scope: !6)
 !9 = !DILocation(line: 73, column: 27, scope: !6)

@@ -96,7 +96,10 @@ struct SystemZAddressingMode {
 
 // Return a mask with Count low bits set.
 static uint64_t allOnes(unsigned int Count) {
-  return Count == 0 ? 0 : (uint64_t(1) << (Count - 1) << 1) - 1;
+  assert(Count <= 64);
+  if (Count > 63)
+    return UINT64_MAX;
+  return (uint64_t(1) << Count) - 1;
 }
 
 // Represents operands 2 to 5 of the ROTATE AND ... SELECTED BITS operation
@@ -582,7 +585,7 @@ bool SystemZDAGToDAGISel::selectAddress(SDValue Addr,
 static void insertDAGNode(SelectionDAG *DAG, SDNode *Pos, SDValue N) {
   if (N.getNode()->getNodeId() == -1 ||
       N.getNode()->getNodeId() > Pos->getNodeId()) {
-    DAG->RepositionNode(Pos, N.getNode());
+    DAG->RepositionNode(Pos->getIterator(), N.getNode());
     N.getNode()->setNodeId(Pos->getNodeId());
   }
 }
@@ -798,7 +801,7 @@ bool SystemZDAGToDAGISel::expandRxSBG(RxSBGOperands &RxSBG) const {
     RxSBG.Input = N.getOperand(0);
     return true;
   }
-      
+
   case ISD::ANY_EXTEND:
     // Bits above the extended operand are don't-care.
     RxSBG.Input = N.getOperand(0);
@@ -815,7 +818,7 @@ bool SystemZDAGToDAGISel::expandRxSBG(RxSBGOperands &RxSBG) const {
       return true;
     }
     // Fall through.
-    
+
   case ISD::SIGN_EXTEND: {
     // Check that the extension bits are don't-care (i.e. are masked out
     // by the final mask).
@@ -903,6 +906,8 @@ SDValue SystemZDAGToDAGISel::convertTo(SDLoc DL, EVT VT, SDValue N) const {
 SDNode *SystemZDAGToDAGISel::tryRISBGZero(SDNode *N) {
   SDLoc DL(N);
   EVT VT = N->getValueType(0);
+  if (!VT.isInteger() || VT.getSizeInBits() > 64)
+    return nullptr;
   RxSBGOperands RISBG(SystemZ::RISBG, SDValue(N, 0));
   unsigned Count = 0;
   while (expandRxSBG(RISBG))
@@ -933,7 +938,23 @@ SDNode *SystemZDAGToDAGISel::tryRISBGZero(SDNode *N) {
       }
       return nullptr;
     }
-  }  
+  }
+
+  // If the RISBG operands require no rotation and just masks the bottom
+  // 8/16 bits, attempt to convert this to a LLC zero extension.
+  if (RISBG.Rotate == 0 && (RISBG.Mask == 0xff || RISBG.Mask == 0xffff)) {
+    unsigned OpCode = (RISBG.Mask == 0xff ? SystemZ::LLGCR : SystemZ::LLGHR);
+    if (VT == MVT::i32) {
+      if (Subtarget->hasHighWord())
+        OpCode = (RISBG.Mask == 0xff ? SystemZ::LLCRMux : SystemZ::LLHRMux);
+      else
+        OpCode = (RISBG.Mask == 0xff ? SystemZ::LLCR : SystemZ::LLHR);
+    }
+
+    SDValue In = convertTo(DL, VT, RISBG.Input);
+    N = CurDAG->getMachineNode(OpCode, DL, VT, In);
+    return convertTo(DL, VT, SDValue(N, 0)).getNode();
+  }
 
   unsigned Opcode = SystemZ::RISBG;
   // Prefer RISBGN if available, since it does not clobber CC.
@@ -958,6 +979,10 @@ SDNode *SystemZDAGToDAGISel::tryRISBGZero(SDNode *N) {
 }
 
 SDNode *SystemZDAGToDAGISel::tryRxSBG(SDNode *N, unsigned Opcode) {
+  SDLoc DL(N);
+  EVT VT = N->getValueType(0);
+  if (!VT.isInteger() || VT.getSizeInBits() > 64)
+    return nullptr;
   // Try treating each operand of N as the second operand of the RxSBG
   // and see which goes deepest.
   RxSBGOperands RxSBG[] = {
@@ -993,8 +1018,6 @@ SDNode *SystemZDAGToDAGISel::tryRxSBG(SDNode *N, unsigned Opcode) {
       Opcode = SystemZ::RISBGN;
   }
 
-  SDLoc DL(N);
-  EVT VT = N->getValueType(0);
   SDValue Ops[5] = {
     convertTo(DL, MVT::i64, Op0),
     convertTo(DL, MVT::i64, RxSBG[I].Input),
@@ -1113,8 +1136,8 @@ bool SystemZDAGToDAGISel::canUseBlockOperation(StoreSDNode *Store,
   if (V1 == V2 && End1 == End2)
     return false;
 
-  return !AA->alias(AliasAnalysis::Location(V1, End1, Load->getAAInfo()),
-                    AliasAnalysis::Location(V2, End2, Store->getAAInfo()));
+  return !AA->alias(MemoryLocation(V1, End1, Load->getAAInfo()),
+                    MemoryLocation(V2, End2, Store->getAAInfo()));
 }
 
 bool SystemZDAGToDAGISel::storeLoadCanUseMVC(SDNode *N) const {

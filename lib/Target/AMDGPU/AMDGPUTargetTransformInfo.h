@@ -37,8 +37,9 @@ class AMDGPUTTIImpl : public BasicTTIImplBase<AMDGPUTTIImpl> {
   const AMDGPUTargetLowering *getTLI() const { return TLI; }
 
 public:
-  explicit AMDGPUTTIImpl(const AMDGPUTargetMachine *TM)
-      : BaseT(TM), ST(TM->getSubtargetImpl()), TLI(ST->getTargetLowering()) {}
+  explicit AMDGPUTTIImpl(const AMDGPUTargetMachine *TM, const DataLayout &DL)
+      : BaseT(TM, DL), ST(TM->getSubtargetImpl()),
+        TLI(ST->getTargetLowering()) {}
 
   // Provide value semantics. MSVC requires that we spell all of these out.
   AMDGPUTTIImpl(const AMDGPUTTIImpl &Arg)
@@ -46,18 +47,6 @@ public:
   AMDGPUTTIImpl(AMDGPUTTIImpl &&Arg)
       : BaseT(std::move(static_cast<BaseT &>(Arg))), ST(std::move(Arg.ST)),
         TLI(std::move(Arg.TLI)) {}
-  AMDGPUTTIImpl &operator=(const AMDGPUTTIImpl &RHS) {
-    BaseT::operator=(static_cast<const BaseT &>(RHS));
-    ST = RHS.ST;
-    TLI = RHS.TLI;
-    return *this;
-  }
-  AMDGPUTTIImpl &operator=(AMDGPUTTIImpl &&RHS) {
-    BaseT::operator=(std::move(static_cast<BaseT &>(RHS)));
-    ST = std::move(RHS.ST);
-    TLI = std::move(RHS.TLI);
-    return *this;
-  }
 
   bool hasBranchDivergence() { return true; }
 
@@ -71,6 +60,11 @@ public:
   unsigned getNumberOfRegisters(bool Vector);
   unsigned getRegisterBitWidth(bool Vector);
   unsigned getMaxInterleaveFactor(unsigned VF);
+
+  unsigned getCFInstrCost(unsigned Opcode);
+
+  int getVectorInstrCost(unsigned Opcode, Type *ValTy, unsigned Index);
+  bool isSourceOfDivergence(const Value *V) const;
 };
 
 } // end namespace llvm

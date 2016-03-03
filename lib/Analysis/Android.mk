@@ -2,9 +2,7 @@ LOCAL_PATH:= $(call my-dir)
 
 analysis_SRC_FILES := \
   AliasAnalysis.cpp \
-  AliasAnalysisCounter.cpp \
   AliasAnalysisEvaluator.cpp \
-  AliasDebugger.cpp \
   AliasSetTracker.cpp \
   Analysis.cpp \
   AssumptionCache.cpp \
@@ -12,29 +10,34 @@ analysis_SRC_FILES := \
   BlockFrequencyInfo.cpp \
   BlockFrequencyInfoImpl.cpp \
   BranchProbabilityInfo.cpp \
+  CallGraph.cpp \
+  CallGraphSCCPass.cpp \
+  CallPrinter.cpp \
+  CaptureTracking.cpp \
   CFG.cpp \
   CFGPrinter.cpp \
   CFLAliasAnalysis.cpp \
   CGSCCPassManager.cpp \
-  CaptureTracking.cpp \
   CodeMetrics.cpp \
   ConstantFolding.cpp \
   CostModel.cpp \
   Delinearization.cpp \
+  DemandedBits.cpp \
   DependenceAnalysis.cpp \
   DivergenceAnalysis.cpp \
-  DomPrinter.cpp \
   DominanceFrontier.cpp \
-  IVUsers.cpp \
+  DomPrinter.cpp \
+  EHPersonalities.cpp \
+  GlobalsModRef.cpp \
+  InlineCost.cpp \
   InstCount.cpp \
   InstructionSimplify.cpp \
   Interval.cpp \
   IntervalPartition.cpp \
   IteratedDominanceFrontier.cpp \
+  IVUsers.cpp \
   LazyCallGraph.cpp \
   LazyValueInfo.cpp \
-  LibCallAliasAnalysis.cpp \
-  LibCallSemantics.cpp \
   Lint.cpp \
   Loads.cpp \
   LoopAccessAnalysis.cpp \
@@ -46,15 +49,18 @@ analysis_SRC_FILES := \
   MemoryDependenceAnalysis.cpp \
   MemoryLocation.cpp \
   ModuleDebugInfoPrinter.cpp \
-  NoAliasAnalysis.cpp \
+  ObjCARCAliasAnalysis.cpp \
+  ObjCARCAnalysisUtils.cpp \
+  ObjCARCInstKind.cpp \
+  OrderedBasicBlock.cpp \
   PHITransAddr.cpp \
   PostDominators.cpp \
   PtrUseVisitor.cpp \
   RegionInfo.cpp \
   RegionPass.cpp \
   RegionPrinter.cpp \
-  ScalarEvolution.cpp \
   ScalarEvolutionAliasAnalysis.cpp \
+  ScalarEvolution.cpp \
   ScalarEvolutionExpander.cpp \
   ScalarEvolutionNormalization.cpp \
   ScopedNoAliasAA.cpp \
@@ -63,7 +69,8 @@ analysis_SRC_FILES := \
   TargetTransformInfo.cpp \
   Trace.cpp \
   TypeBasedAliasAnalysis.cpp \
-  ValueTracking.cpp
+  ValueTracking.cpp \
+  VectorUtils.cpp
 
 # For the host
 # =====================================================
@@ -74,6 +81,7 @@ LOCAL_MODULE_HOST_OS := darwin linux windows
 LOCAL_SRC_FILES := $(analysis_SRC_FILES)
 
 include $(LLVM_HOST_BUILD_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_HOST_STATIC_LIBRARY)
 
@@ -86,6 +94,7 @@ LOCAL_MODULE:= libLLVMAnalysis
 LOCAL_SRC_FILES := $(analysis_SRC_FILES)
 
 include $(LLVM_DEVICE_BUILD_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_STATIC_LIBRARY)
 endif

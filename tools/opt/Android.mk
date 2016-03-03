@@ -50,7 +50,7 @@ llvm_opt_STATIC_LIBRARIES := \
   libLLVMScalarOpts \
   libLLVMPasses \
   libLLVMipo \
-  libLLVMipa \
+  libLLVMLinker \
   libLLVMInstCombine \
   libLLVMInstrumentation \
   libLLVMTransformUtils \
@@ -81,10 +81,12 @@ LOCAL_LDFLAGS_linux := -Wl,--export-dynamic
 
 include $(LLVM_ROOT_PATH)/llvm.mk
 include $(LLVM_HOST_BUILD_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_HOST_EXECUTABLE)
 
 
+ifneq (true,$(DISABLE_LLVM_DEVICE_BUILDS))
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := opt
@@ -96,5 +98,7 @@ LOCAL_STATIC_LIBRARIES := $(llvm_opt_STATIC_LIBRARIES)
 
 include $(LLVM_ROOT_PATH)/llvm.mk
 include $(LLVM_DEVICE_BUILD_MK)
+include $(LLVM_GEN_ATTRIBUTES_MK)
 include $(LLVM_GEN_INTRINSICS_MK)
 include $(BUILD_EXECUTABLE)
+endif

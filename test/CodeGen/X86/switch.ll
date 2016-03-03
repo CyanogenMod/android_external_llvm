@@ -16,23 +16,18 @@ bb1: tail call void @g(i32 1) br label %return
 bb2: tail call void @g(i32 1) br label %return
 return: ret void
 
-; Should be lowered as straight compares in -O0 mode.
-; NOOPT-LABEL: basic
-; NOOPT: subl $1, %eax
-; NOOPT: je
-; NOOPT: subl $3, %eax
-; NOOPT: je
-; NOOPT: subl $4, %eax
-; NOOPT: je
-; NOOPT: subl $5, %eax
-; NOOPT: je
-
-; Jump table otherwise.
+; Lowered as a jump table, both with and without optimization.
 ; CHECK-LABEL: basic
 ; CHECK: decl
 ; CHECK: cmpl $4
 ; CHECK: ja
 ; CHECK: jmpq *.LJTI
+; NOOPT-LABEL: basic
+; NOOPT: decl
+; NOOPT: subl $4
+; NOOPT: ja
+; NOOPT: movq .LJTI
+; NOOPT: jmpq
 }
 
 
@@ -56,7 +51,7 @@ return: ret void
 ; CHECK-LABEL: simple_ranges
 ; CHECK: leal -100
 ; CHECK: cmpl $4
-; CHECK: jae
+; CHECK: jb
 ; CHECK: cmpl $3
 ; CHECK: ja
 
@@ -95,7 +90,7 @@ return: ret void
 ; but with 6-8, the whole switch is suitable for a jump table.
 ; CHECK-LABEL: jt_is_better
 ; CHECK: cmpl $8
-; CHECK: jbe
+; CHECK: ja
 ; CHECK: jmpq *.LJTI
 }
 
@@ -112,7 +107,6 @@ entry:
     i32 2, label %bb2
     i32 5, label %bb2
     i32 8, label %bb2
-
   ]
 bb0: tail call void @g(i32 0) br label %return
 bb1: tail call void @g(i32 1) br label %return
@@ -121,6 +115,10 @@ return: ret void
 
 ; This could be lowered as a jump table, but bit tests is more efficient.
 ; CHECK-LABEL: bt_is_better
+; The bit test on 2,5,8 is unnecessary as all cases cover the rage [0, 8].
+; The range check guarantees that cases other than 0,3,6 and 1,4,7 must be
+; in 2,5,8.
+;
 ; 73 = 2^0 + 2^3 + 2^6
 ; CHECK: movl $73
 ; CHECK: btl
@@ -128,7 +126,74 @@ return: ret void
 ; CHECK: movl $146
 ; CHECK: btl
 ; 292 = 2^2 + 2^5 + 2^8
-; CHECK: movl $292
+; CHECK-NOT: movl $292
+; CHECK-NOT: btl
+}
+
+define void @bt_is_better2(i32 %x) {
+entry:
+  switch i32 %x, label %return [
+    i32 0, label %bb0
+    i32 3, label %bb0
+    i32 6, label %bb0
+    i32 1, label %bb1
+    i32 4, label %bb1
+    i32 7, label %bb1
+    i32 2, label %bb2
+    i32 8, label %bb2
+  ]
+bb0: tail call void @g(i32 0) br label %return
+bb1: tail call void @g(i32 1) br label %return
+bb2: tail call void @g(i32 2) br label %return
+return: ret void
+
+; This will also be lowered as bit test, but as the range [0,8] is not fully
+; covered (5 missing), the default statement can be jumped to and we end up
+; with one more branch.
+; CHECK-LABEL: bt_is_better2
+;
+; 73 = 2^0 + 2^3 + 2^6
+; CHECK: movl $73
+; CHECK: btl
+; 146 = 2^1 + 2^4 + 2^7
+; CHECK: movl $146
+; CHECK: btl
+; 260 = 2^2 + 2^8
+; CHECK: movl $260
+; CHECK: btl
+}
+
+define void @bt_is_better3(i32 %x) {
+entry:
+  switch i32 %x, label %return [
+    i32 10, label %bb0
+    i32 13, label %bb0
+    i32 16, label %bb0
+    i32 11, label %bb1
+    i32 14, label %bb1
+    i32 17, label %bb1
+    i32 12, label %bb2
+    i32 18, label %bb2
+  ]
+bb0: tail call void @g(i32 0) br label %return
+bb1: tail call void @g(i32 1) br label %return
+bb2: tail call void @g(i32 2) br label %return
+return: ret void
+
+; We don't have to subtract 10 from the case value to let the range become
+; [0, 8], as each value in the range [10, 18] can be represented by bits in a
+; word. Then we still need a branch to jump to the default statement for the
+; range [0, 10).
+; CHECK-LABEL: bt_is_better3
+;
+; 74752 = 2^10 + 2^13 + 2^16
+; CHECK: movl $74752
+; CHECK: btl
+; 149504 = 2^11 + 2^14 + 2^17
+; CHECK: movl $149504
+; CHECK: btl
+; 266240 = 2^12 + 2^15 + 2^18
+; CHECK: movl $266240
 ; CHECK: btl
 }
 
@@ -205,6 +270,21 @@ return: ret void
 ; CHECK: leal -5
 ; CHECK: cmpl $10
 ; CHECK: jmpq *.LJTI
+
+; At -O0, we don't build jump tables for only parts of a switch.
+; NOOPT-LABEL: optimal_jump_table1
+; NOOPT: testl %edi, %edi
+; NOOPT: je
+; NOOPT: subl $5, %eax
+; NOOPT: je
+; NOOPT: subl $6, %eax
+; NOOPT: je
+; NOOPT: subl $12, %eax
+; NOOPT: je
+; NOOPT: subl $13, %eax
+; NOOPT: je
+; NOOPT: subl $15, %eax
+; NOOPT: je
 }
 
 
@@ -400,6 +480,9 @@ return: ret void
 ; Cases 1,4,7 have a very large branch weight (which shouldn't overflow), so
 ; their bit test should come first. 0,3,6 and 2,5,8,9 both have a weight of 12,
 ; but the latter set has more cases, so should be tested for earlier.
+; The bit test on 0,3,6 is unnecessary as all cases cover the rage [0, 9].
+; The range check guarantees that cases other than 1,4,7 and 2,5,8,9 must be
+; in 0,3,6.
 
 ; CHECK-LABEL: bt_order_by_weight
 ; 146 = 2^1 + 2^4 + 2^7
@@ -409,8 +492,8 @@ return: ret void
 ; CHECK: movl $804
 ; CHECK: btl
 ; 73 = 2^0 + 2^3 + 2^6
-; CHECK: movl $73
-; CHECK: btl
+; CHECK-NOT: movl $73
+; CHECK-NOT: btl
 }
 
 !1 = !{!"branch_weights",
@@ -489,6 +572,8 @@ entry:
     i32 30, label %bb3
     i32 40, label %bb4
     i32 50, label %bb5
+    i32 60, label %bb6
+    i32 70, label %bb6
   ], !prof !4
 bb0: tail call void @g(i32 0) br label %return
 bb1: tail call void @g(i32 1) br label %return
@@ -496,16 +581,87 @@ bb2: tail call void @g(i32 2) br label %return
 bb3: tail call void @g(i32 3) br label %return
 bb4: tail call void @g(i32 4) br label %return
 bb5: tail call void @g(i32 5) br label %return
+bb6: tail call void @g(i32 6) br label %return
+bb7: tail call void @g(i32 7) br label %return
 return: ret void
 
-; To balance the tree by weight, the pivot is shifted to the right, moving hot
-; cases closer to the root.
+; Without branch probabilities, the pivot would be 40, since that would yield
+; equal-sized sub-trees. When taking weights into account, case 70 becomes the
+; pivot. Since there is room for 3 cases in a leaf, cases 50 and 60 are also
+; included in the right-hand side because that doesn't reduce their rank.
+
 ; CHECK-LABEL: left_leaning_weight_balanced_tree
 ; CHECK-NOT: cmpl
-; CHECK: cmpl $39
+; CHECK: cmpl $49
 }
 
-!4 = !{!"branch_weights", i32 1, i32 10, i32 1, i32 1, i32 1, i32 10, i32 10}
+!4 = !{!"branch_weights", i32 1, i32 10, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1000}
+
+
+define void @left_leaning_weight_balanced_tree2(i32 %x) {
+entry:
+  switch i32 %x, label %return [
+    i32 0,  label %bb0
+    i32 10, label %bb1
+    i32 20, label %bb2
+    i32 30, label %bb3
+    i32 40, label %bb4
+    i32 50, label %bb5
+    i32 60, label %bb6
+    i32 70, label %bb6
+  ], !prof !5
+bb0: tail call void @g(i32 0) br label %return
+bb1: tail call void @g(i32 1) br label %return
+bb2: tail call void @g(i32 2) br label %return
+bb3: tail call void @g(i32 3) br label %return
+bb4: tail call void @g(i32 4) br label %return
+bb5: tail call void @g(i32 5) br label %return
+bb6: tail call void @g(i32 6) br label %return
+bb7: tail call void @g(i32 7) br label %return
+return: ret void
+
+; Same as the previous test, except case 50 has higher rank to the left than it
+; would have on the right. Case 60 would have the same rank on both sides, so is
+; moved into the leaf.
+
+; CHECK-LABEL: left_leaning_weight_balanced_tree2
+; CHECK-NOT: cmpl
+; CHECK: cmpl $59
+}
+
+!5 = !{!"branch_weights", i32 1, i32 10, i32 1, i32 1, i32 1, i32 1, i32 90, i32 70, i32 1000}
+
+
+define void @right_leaning_weight_balanced_tree(i32 %x) {
+entry:
+  switch i32 %x, label %return [
+    i32 0,  label %bb0
+    i32 10, label %bb1
+    i32 20, label %bb2
+    i32 30, label %bb3
+    i32 40, label %bb4
+    i32 50, label %bb5
+    i32 60, label %bb6
+    i32 70, label %bb6
+  ], !prof !6
+bb0: tail call void @g(i32 0) br label %return
+bb1: tail call void @g(i32 1) br label %return
+bb2: tail call void @g(i32 2) br label %return
+bb3: tail call void @g(i32 3) br label %return
+bb4: tail call void @g(i32 4) br label %return
+bb5: tail call void @g(i32 5) br label %return
+bb6: tail call void @g(i32 6) br label %return
+bb7: tail call void @g(i32 7) br label %return
+return: ret void
+
+; Analogous to left_leaning_weight_balanced_tree.
+
+; CHECK-LABEL: right_leaning_weight_balanced_tree
+; CHECK-NOT: cmpl
+; CHECK: cmpl $19
+}
+
+!6 = !{!"branch_weights", i32 1, i32 1000, i32 1, i32 1, i32 1, i32 1, i32 1, i32 1, i32 10}
 
 
 define void @jump_table_affects_balance(i32 %x) {

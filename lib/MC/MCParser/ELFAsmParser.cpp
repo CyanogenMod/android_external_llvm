@@ -52,8 +52,6 @@ public:
     addDirectiveHandler<
       &ELFAsmParser::ParseSectionDirectiveDataRelRo>(".data.rel.ro");
     addDirectiveHandler<
-      &ELFAsmParser::ParseSectionDirectiveDataRelRoLocal>(".data.rel.ro.local");
-    addDirectiveHandler<
       &ELFAsmParser::ParseSectionDirectiveEhFrame>(".eh_frame");
     addDirectiveHandler<&ELFAsmParser::ParseDirectiveSection>(".section");
     addDirectiveHandler<
@@ -81,8 +79,8 @@ public:
   // the best way for us to get access to it?
   bool ParseSectionDirectiveData(StringRef, SMLoc) {
     return ParseSectionSwitch(".data", ELF::SHT_PROGBITS,
-                              ELF::SHF_WRITE |ELF::SHF_ALLOC,
-                              SectionKind::getDataRel());
+                              ELF::SHF_WRITE | ELF::SHF_ALLOC,
+                              SectionKind::getData());
   }
   bool ParseSectionDirectiveText(StringRef, SMLoc) {
     return ParseSectionSwitch(".text", ELF::SHT_PROGBITS,
@@ -113,9 +111,8 @@ public:
   }
   bool ParseSectionDirectiveDataRel(StringRef, SMLoc) {
     return ParseSectionSwitch(".data.rel", ELF::SHT_PROGBITS,
-                              ELF::SHF_ALLOC |
-                              ELF::SHF_WRITE,
-                              SectionKind::getDataRel());
+                              ELF::SHF_ALLOC | ELF::SHF_WRITE,
+                              SectionKind::getData());
   }
   bool ParseSectionDirectiveDataRelRo(StringRef, SMLoc) {
     return ParseSectionSwitch(".data.rel.ro", ELF::SHT_PROGBITS,
@@ -123,17 +120,10 @@ public:
                               ELF::SHF_WRITE,
                               SectionKind::getReadOnlyWithRel());
   }
-  bool ParseSectionDirectiveDataRelRoLocal(StringRef, SMLoc) {
-    return ParseSectionSwitch(".data.rel.ro.local", ELF::SHT_PROGBITS,
-                              ELF::SHF_ALLOC |
-                              ELF::SHF_WRITE,
-                              SectionKind::getReadOnlyWithRelLocal());
-  }
   bool ParseSectionDirectiveEhFrame(StringRef, SMLoc) {
     return ParseSectionSwitch(".eh_frame", ELF::SHT_PROGBITS,
-                              ELF::SHF_ALLOC |
-                              ELF::SHF_WRITE,
-                              SectionKind::getDataRel());
+                              ELF::SHF_ALLOC | ELF::SHF_WRITE,
+                              SectionKind::getData());
   }
   bool ParseDirectivePushSection(StringRef, SMLoc);
   bool ParseDirectivePopSection(StringRef, SMLoc);
@@ -593,10 +583,16 @@ bool ELFAsmParser::ParseDirectiveType(StringRef, SMLoc) {
     Lex();
 
   if (getLexer().isNot(AsmToken::Identifier) &&
-      getLexer().isNot(AsmToken::Hash) && getLexer().isNot(AsmToken::At) &&
-      getLexer().isNot(AsmToken::Percent) && getLexer().isNot(AsmToken::String))
-    return TokError("expected STT_<TYPE_IN_UPPER_CASE>, '#<type>', '@<type>', "
-                    "'%<type>' or \"<type>\"");
+      getLexer().isNot(AsmToken::Hash) &&
+      getLexer().isNot(AsmToken::Percent) &&
+      getLexer().isNot(AsmToken::String)) {
+    if (!getLexer().getAllowAtInIdentifier())
+      return TokError("expected STT_<TYPE_IN_UPPER_CASE>, '#<type>', "
+                      "'%<type>' or \"<type>\"");
+    else if (getLexer().isNot(AsmToken::At))
+      return TokError("expected STT_<TYPE_IN_UPPER_CASE>, '#<type>', '@<type>', "
+                      "'%<type>' or \"<type>\"");
+  }
 
   if (getLexer().isNot(AsmToken::String) &&
       getLexer().isNot(AsmToken::Identifier))

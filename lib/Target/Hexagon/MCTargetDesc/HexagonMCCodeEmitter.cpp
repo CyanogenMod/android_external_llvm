@@ -96,6 +96,12 @@ void HexagonMCCodeEmitter::EncodeSingleInstruction(
   assert(!HexagonMCInstrInfo::isBundle(HMB));
   uint64_t Binary;
 
+  // Compound instructions are limited to using registers 0-7 and 16-23
+  // and here we make a map 16-23 to 8-15 so they can be correctly encoded.
+  static unsigned RegMap[8] = {Hexagon::R8,  Hexagon::R9,  Hexagon::R10,
+                               Hexagon::R11, Hexagon::R12, Hexagon::R13,
+                               Hexagon::R14, Hexagon::R15};
+
   // Pseudo instructions don't get encoded and shouldn't be here
   // in the first place!
   assert(!HexagonMCInstrInfo::getDesc(MCII, HMB).isPseudo() &&
@@ -103,6 +109,16 @@ void HexagonMCCodeEmitter::EncodeSingleInstruction(
   DEBUG(dbgs() << "Encoding insn"
                   " `" << HexagonMCInstrInfo::getName(MCII, HMB) << "'"
                                                                     "\n");
+
+  if (llvm::HexagonMCInstrInfo::getType(MCII, HMB) == HexagonII::TypeCOMPOUND) {
+    for (unsigned i = 0; i < HMB.getNumOperands(); ++i)
+      if (HMB.getOperand(i).isReg()) {
+        unsigned Reg =
+            MCT.getRegisterInfo()->getEncodingValue(HMB.getOperand(i).getReg());
+        if ((Reg <= 23) && (Reg >= 16))
+          HMB.getOperand(i).setReg(RegMap[Reg - 16]);
+      }
+  }
 
   if (HexagonMCInstrInfo::isNewValue(MCII, HMB)) {
     // Calculate the new value distance to the associated producer
@@ -318,7 +334,7 @@ static Hexagon::Fixups getFixupNoBits(MCInstrInfo const &MCII, const MCInst &MI,
   // The only relocs left should be GP relative:
   default:
     if (MCID.mayStore() || MCID.mayLoad()) {
-      for (const uint16_t *ImpUses = MCID.getImplicitUses(); *ImpUses;
+      for (const MCPhysReg *ImpUses = MCID.getImplicitUses(); *ImpUses;
            ++ImpUses) {
         if (*ImpUses == Hexagon::GP) {
           switch (HexagonMCInstrInfo::getAccessSize(MCII, MI)) {
@@ -342,6 +358,36 @@ static Hexagon::Fixups getFixupNoBits(MCInstrInfo const &MCII, const MCInst &MI,
   return LastTargetFixupKind;
 }
 
+namespace llvm {
+extern const MCInstrDesc HexagonInsts[];
+}
+
+namespace {
+  bool isPCRel (unsigned Kind) {
+    switch(Kind){
+    case fixup_Hexagon_B22_PCREL:
+    case fixup_Hexagon_B15_PCREL:
+    case fixup_Hexagon_B7_PCREL:
+    case fixup_Hexagon_B13_PCREL:
+    case fixup_Hexagon_B9_PCREL:
+    case fixup_Hexagon_B32_PCREL_X:
+    case fixup_Hexagon_B22_PCREL_X:
+    case fixup_Hexagon_B15_PCREL_X:
+    case fixup_Hexagon_B13_PCREL_X:
+    case fixup_Hexagon_B9_PCREL_X:
+    case fixup_Hexagon_B7_PCREL_X:
+    case fixup_Hexagon_32_PCREL:
+    case fixup_Hexagon_PLT_B22_PCREL:
+    case fixup_Hexagon_GD_PLT_B22_PCREL:
+    case fixup_Hexagon_LD_PLT_B22_PCREL:
+    case fixup_Hexagon_6_PCREL_X:
+      return true;
+    default:
+      return false;
+    }
+  }
+}
+
 unsigned HexagonMCCodeEmitter::getExprOpValue(const MCInst &MI,
                                               const MCOperand &MO,
                                               const MCExpr *ME,
@@ -359,11 +405,9 @@ unsigned HexagonMCCodeEmitter::getExprOpValue(const MCInst &MI,
     return cast<MCConstantExpr>(ME)->getValue();
   }
   if (MK == MCExpr::Binary) {
-    unsigned Res;
-    Res = getExprOpValue(MI, MO, cast<MCBinaryExpr>(ME)->getLHS(), Fixups, STI);
-    Res +=
-        getExprOpValue(MI, MO, cast<MCBinaryExpr>(ME)->getRHS(), Fixups, STI);
-    return Res;
+    getExprOpValue(MI, MO, cast<MCBinaryExpr>(ME)->getLHS(), Fixups, STI);
+    getExprOpValue(MI, MO, cast<MCBinaryExpr>(ME)->getRHS(), Fixups, STI);
+    return 0;
   }
 
   assert(MK == MCExpr::SymbolRef);
@@ -662,8 +706,13 @@ unsigned HexagonMCCodeEmitter::getExprOpValue(const MCInst &MI,
     break;
   }
 
-  MCFixup fixup =
-      MCFixup::create(*Addend, MO.getExpr(), MCFixupKind(FixupKind));
+  MCExpr const *FixupExpression = (*Addend > 0 && isPCRel(FixupKind)) ?
+    MCBinaryExpr::createAdd(MO.getExpr(),
+                            MCConstantExpr::create(*Addend, MCT), MCT) :
+    MO.getExpr();
+
+  MCFixup fixup = MCFixup::create(*Addend, FixupExpression, 
+                                  MCFixupKind(FixupKind), MI.getLoc());
   Fixups.push_back(fixup);
   // All of the information is in the fixup.
   return (0);
